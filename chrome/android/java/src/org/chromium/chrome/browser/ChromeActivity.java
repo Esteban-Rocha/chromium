@@ -66,6 +66,7 @@ import org.chromium.chrome.browser.compositor.layouts.LayoutManager;
 import org.chromium.chrome.browser.compositor.layouts.SceneChangeObserver;
 import org.chromium.chrome.browser.compositor.layouts.content.ContentOffsetProvider;
 import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
+import org.chromium.chrome.browser.contextual_suggestions.ContextualSuggestionsCoordinator;
 import org.chromium.chrome.browser.contextualsearch.ContextualSearchFieldTrial;
 import org.chromium.chrome.browser.contextualsearch.ContextualSearchManager;
 import org.chromium.chrome.browser.contextualsearch.ContextualSearchManager.ContextualSearchTabPromotionDelegate;
@@ -139,8 +140,7 @@ import org.chromium.chrome.browser.webapps.AddToHomescreenManager;
 import org.chromium.chrome.browser.widget.ControlContainer;
 import org.chromium.chrome.browser.widget.FadingBackgroundView;
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet;
-import org.chromium.chrome.browser.widget.bottomsheet.BottomSheetContentController;
-import org.chromium.chrome.browser.widget.bottomsheet.EmptyBottomSheetObserver;
+import org.chromium.chrome.browser.widget.bottomsheet.BottomSheetController;
 import org.chromium.chrome.browser.widget.findinpage.FindToolbarManager;
 import org.chromium.chrome.browser.widget.textbubble.TextBubble;
 import org.chromium.components.bookmarks.BookmarkId;
@@ -257,8 +257,9 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
     private AppMenuHandler mAppMenuHandler;
     private ToolbarManager mToolbarManager;
     private FindToolbarManager mFindToolbarManager;
+    private BottomSheetController mBottomSheetController;
     private BottomSheet mBottomSheet;
-    private BottomSheetContentController mBottomSheetContentController;
+    private ContextualSuggestionsCoordinator mContextualSuggestionsCoordinator;
     private FadingBackgroundView mFadingBackgroundView;
 
     // Time in ms that it took took us to inflate the initial layout
@@ -658,15 +659,6 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
     @Nullable
     public BottomSheet getBottomSheet() {
         return mBottomSheet;
-    }
-
-    /**
-     * Get the Chrome Home bottom sheet content controller if it exists.
-     * @return The {@link BottomSheetContentController} or null.
-     */
-    @Nullable
-    public BottomSheetContentController getBottomSheetContentController() {
-        return mBottomSheetContentController;
     }
 
     /**
@@ -1143,9 +1135,9 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
             mBottomSheet = null;
         }
 
-        if (mBottomSheetContentController != null) {
-            mBottomSheetContentController.destroy();
-            mBottomSheetContentController = null;
+        if (mContextualSuggestionsCoordinator != null) {
+            mContextualSuggestionsCoordinator.destroy();
+            mContextualSuggestionsCoordinator = null;
         }
 
         if (mTabModelsInitialized) {
@@ -1262,22 +1254,19 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
             getLayoutInflater().inflate(R.layout.bottom_sheet, coordinator);
             mBottomSheet = coordinator.findViewById(R.id.bottom_sheet);
             mBottomSheet.init(coordinator, this);
-            mBottomSheet.setTabModelSelector(mTabModelSelector);
-            mBottomSheet.setFullscreenManager(mFullscreenManager);
 
             mFadingBackgroundView = (FadingBackgroundView) findViewById(R.id.fading_focus_target);
-            mBottomSheet.addObserver(new EmptyBottomSheetObserver() {
-                @Override
-                public void onTransitionPeekToHalf(float transitionFraction) {
-                    mFadingBackgroundView.setViewAlpha(transitionFraction);
-                }
-            });
+            mBottomSheetController = new BottomSheetController(getTabModelSelector(),
+                    getCompositorViewHolder().getLayoutManager(), mFadingBackgroundView,
+                    mBottomSheet);
+
             mFadingBackgroundView.addObserver(mBottomSheet);
 
-            mBottomSheetContentController =
-                    (BottomSheetContentController) ((ViewStub) findViewById(R.id.bottom_nav_stub))
-                            .inflate();
-            mBottomSheetContentController.init(mBottomSheet, mTabModelSelector, this);
+            if (ChromeFeatureList.isEnabled(
+                        ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BOTTOM_SHEET)) {
+                mContextualSuggestionsCoordinator = new ContextualSuggestionsCoordinator(
+                        this, mBottomSheet, getTabModelSelector());
+            }
         }
     }
 
@@ -1735,10 +1724,7 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
     }
 
     private static boolean isInVrUiMode(int uiMode) {
-        // TODO(mthiesse): Use Configuration.UI_MODE_TYPE_VR_HEADSET when building against the O
-        // sdk.
-        final int uiModeTypeVrHeadset = 0x07;
-        return (uiMode & Configuration.UI_MODE_TYPE_MASK) == uiModeTypeVrHeadset;
+        return (uiMode & Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_VR_HEADSET;
     }
 
     /**
@@ -2305,5 +2291,16 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
         // Avoid starting Activities when possible while in VR.
         if (VrShellDelegate.isInVr() && !VrIntentUtils.isVrIntent(intent)) return false;
         return super.startActivityIfNeeded(intent, requestCode, options);
+    }
+
+    /**
+     * If the density of the device changes while Chrome is in the background (not resumed), we
+     * won't have received an onConfigurationChanged yet for this new density. In this case, the
+     * density this Activity thinks it's in, and the actual display density will differ.
+     * @return The density this Activity thinks it's in (the density it was in last time it was in
+     *         the resumed state).
+     */
+    public float getLastActiveDensity() {
+        return mDensityDpi;
     }
 }

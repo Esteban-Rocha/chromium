@@ -44,6 +44,7 @@
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/gfx/transform_util.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/animation/flood_fill_ink_drop_ripple.h"
 #include "ui/views/animation/ink_drop_impl.h"
 #include "ui/views/animation/ink_drop_mask.h"
@@ -151,14 +152,32 @@ constexpr int kShadowElevation = 16;
 constexpr int kBackdropRoundingDp = 4;
 constexpr SkColor kBackdropColor = SkColorSetARGBMacro(0x24, 0xFF, 0xFF, 0xFF);
 
+// Windows in tablet have different animations. Overview headers do not
+// translate when entering or exiting overview mode. Title bars also do not
+// animate in, as tablet mode windows have no title bars. Exceptions are windows
+// that are not maximized, minimized or snapped.
+bool UseTabletModeAnimations(aura::Window* original_window) {
+  if (!IsNewOverviewUi())
+    return false;
+
+  wm::WindowState* state = wm::GetWindowState(original_window);
+  return Shell::Get()
+             ->tablet_mode_controller()
+             ->IsTabletModeWindowManagerEnabled() &&
+         (state->IsMaximized() || state->IsMinimized() || state->IsSnapped());
+}
+
 // Convenience method to fade in a Window with predefined animation settings.
-// Note: The fade in animation will occur after a delay where the delay is how
-// long the lay out animations take.
-void SetupFadeInAfterLayout(views::Widget* widget) {
+void SetupFadeInAfterLayout(views::Widget* widget,
+                            aura::Window* original_window) {
   aura::Window* window = widget->GetNativeWindow();
   window->layer()->SetOpacity(0.0f);
   ScopedOverviewAnimationSettings scoped_overview_animation_settings(
-      OverviewAnimationType::OVERVIEW_ANIMATION_ENTER_OVERVIEW_MODE_FADE_IN,
+      UseTabletModeAnimations(original_window)
+          ? OverviewAnimationType::
+                OVERVIEW_ANIMATION_ENTER_OVERVIEW_MODE_TABLET_FADE_IN
+          : OverviewAnimationType::
+                OVERVIEW_ANIMATION_ENTER_OVERVIEW_MODE_FADE_IN,
       window);
   window->layer()->SetOpacity(1.0f);
 }
@@ -279,6 +298,8 @@ WindowSelectorItem::OverviewCloseButton::OverviewCloseButton(
                     views::ImageButton::ALIGN_MIDDLE);
   const int length = IsNewOverviewUi() ? kHeaderHeightDp : kOldHeaderHeightDp;
   SetMinimumImageSize(gfx::Size(length, length));
+  SetAccessibleName(l10n_util::GetStringUTF16(IDS_APP_ACCNAME_CLOSE));
+  SetTooltipText(l10n_util::GetStringUTF16(IDS_APP_ACCNAME_CLOSE));
 }
 
 WindowSelectorItem::OverviewCloseButton::~OverviewCloseButton() = default;
@@ -340,15 +361,9 @@ class WindowSelectorItem::RoundedContainerView
     SetPaintToLayer();
     layer()->SetFillsBoundsOpaquely(false);
 
-    if (IsNewOverviewUi()) {
-      // Do not animate in the title bar of windows which are maximized in
-      // tablet mode, as their title bars are already hidden.
-      should_animate_ =
-          !(Shell::Get()
-                ->tablet_mode_controller()
-                ->IsTabletModeWindowManagerEnabled() &&
-            wm::GetWindowState(item_->GetWindow())->IsMaximized());
-    }
+    // Do not animate in the title bar of windows which are maximized in
+    // tablet mode, as their title bars are already hidden.
+    should_animate_ = !UseTabletModeAnimations(item_->GetWindow());
   }
 
   ~RoundedContainerView() override { StopObservingImplicitAnimations(); }
@@ -434,11 +449,8 @@ class WindowSelectorItem::RoundedContainerView
     // during the initial animation. Once the initial fade-in completes and the
     // overview header is fully exposed update stacking to keep the label above
     // the item which prevents input events from reaching the window.
-    aura::Window* widget_window = GetWidget()->GetNativeWindow();
-    aura::Window* stacking_window =
-        item_ ? item_->GetWindowForStacking() : nullptr;
-    if (widget_window && stacking_window)
-      widget_window->parent()->StackChildAbove(widget_window, stacking_window);
+    if (item_)
+      item_->RestackItemWidget();
   }
 
   void AnimationProgressed(const gfx::Animation* animation) override {
@@ -706,7 +718,7 @@ void WindowSelectorItem::RestoreWindow(bool reset_transform) {
     background_view_->OnItemRestored();
     background_view_ = nullptr;
   }
-  UpdateHeaderLayout(HeaderFadeInMode::EXIT, GetExitOverviewAnimationType());
+  UpdateHeaderLayout(HeaderFadeInMode::kExit, GetExitOverviewAnimationType());
 }
 
 void WindowSelectorItem::EnsureVisible() {
@@ -739,7 +751,15 @@ void WindowSelectorItem::Shutdown() {
 
 void WindowSelectorItem::PrepareForOverview() {
   transform_window_.PrepareForOverview();
-  UpdateHeaderLayout(HeaderFadeInMode::ENTER,
+  RestackItemWidget();
+  // The minimized widget was unavailable up to this point, but if a window
+  // is minimized, |item_widget_| should stack on top of it, unless the
+  // animation is in progress and will take care of that.
+  if (!background_view_->should_animate() &&
+      wm::GetWindowState(GetWindow())->IsMinimized()) {
+    RestackItemWidget();
+  }
+  UpdateHeaderLayout(HeaderFadeInMode::kEnter,
                      OverviewAnimationType::OVERVIEW_ANIMATION_NONE);
 }
 
@@ -752,6 +772,13 @@ void WindowSelectorItem::SetBounds(const gfx::Rect& target_bounds,
   if (in_bounds_update_)
     return;
   base::AutoReset<bool> auto_reset_in_bounds_update(&in_bounds_update_, true);
+  // If |target_bounds_| is empty, this is the first update. For tablet mode,
+  // let UpdateHeaderLayout know, as we do not want |item_widget_| to be
+  // animated with the window.
+  HeaderFadeInMode mode =
+      target_bounds_.IsEmpty() && UseTabletModeAnimations(GetWindow())
+          ? HeaderFadeInMode::kFirstUpdate
+          : HeaderFadeInMode::kUpdate;
   target_bounds_ = target_bounds;
 
   gfx::Rect inset_bounds(target_bounds);
@@ -760,14 +787,24 @@ void WindowSelectorItem::SetBounds(const gfx::Rect& target_bounds,
 
   // SetItemBounds is called before UpdateHeaderLayout so the header can
   // properly use the updated windows bounds.
-  UpdateHeaderLayout(HeaderFadeInMode::UPDATE, animation_type);
+  UpdateHeaderLayout(mode, animation_type);
+
+  // Shadow is normally set after an animation is finished. In the case of no
+  // animations, manually set the shadow. Shadow relies on both the window
+  // trasnform and |item_widget_|'s new bounds so set it after SetItemBounds
+  // and UpdateHeaderLayout.
+  if (animation_type == OVERVIEW_ANIMATION_NONE) {
+    SetShadowBounds(
+        base::make_optional(transform_window_.GetTransformedBounds()));
+  }
 
   UpdateBackdropBounds();
 }
 
 void WindowSelectorItem::SetSelected(bool selected) {
   selected_ = selected;
-  background_view_->AnimateBackgroundOpacity(selected ? 0.f : kHeaderOpacity);
+  if (!IsNewOverviewUi())
+    background_view_->AnimateBackgroundOpacity(selected ? 0.f : kHeaderOpacity);
 }
 
 void WindowSelectorItem::SendAccessibleSelectionEvent() {
@@ -877,6 +914,12 @@ void WindowSelectorItem::SetDimmed(bool dimmed) {
   SetOpacity(dimmed ? kDimmedItemOpacity : 1.0f);
 }
 
+void WindowSelectorItem::RestackItemWidget() {
+  aura::Window* widget_window = item_widget_->GetNativeWindow();
+  widget_window->parent()->StackChildAbove(widget_window,
+                                           GetWindowForStacking());
+}
+
 void WindowSelectorItem::ButtonPressed(views::Button* sender,
                                        const ui::Event& event) {
   if (sender == close_button_) {
@@ -977,7 +1020,12 @@ void WindowSelectorItem::SetShadowBounds(
   if (!IsNewOverviewUi())
     return;
 
-  DCHECK(shadow_);
+  // Shadow is normally turned off during animations and reapplied when they
+  // are finished. On destruction, |shadow_| is cleaned up before
+  // |transform_window_|, which may call this function, so early exit if
+  // |shadow_| is nullptr.
+  if (!shadow_)
+    return;
 
   if (bounds_in_screen == base::nullopt) {
     shadow_->layer()->SetVisible(false);
@@ -985,10 +1033,12 @@ void WindowSelectorItem::SetShadowBounds(
   }
 
   shadow_->layer()->SetVisible(true);
-  gfx::Rect bounds_in_item = caption_container_view_->GetLocalBounds();
+  gfx::Rect bounds_in_item =
+      gfx::Rect(item_widget_->GetNativeWindow()->GetTargetBounds().size());
   bounds_in_item.Inset(kWindowSelectorMargin, kWindowSelectorMargin);
   bounds_in_item.Inset(0, close_button_->GetPreferredSize().height(), 0, 0);
   bounds_in_item.ClampToCenteredSize(bounds_in_screen.value().size());
+
   shadow_->SetContentBounds(bounds_in_item);
 }
 
@@ -1034,6 +1084,13 @@ float WindowSelectorItem::GetCloseButtonOpacityForTesting() {
 
 float WindowSelectorItem::GetTitlebarOpacityForTesting() {
   return background_view_->layer()->opacity();
+}
+
+gfx::Rect WindowSelectorItem::GetShadowBoundsForTesting() {
+  if (!shadow_ || !shadow_->layer()->visible())
+    return gfx::Rect();
+
+  return shadow_->content_bounds();
 }
 
 gfx::Rect WindowSelectorItem::GetTargetBoundsInScreen() const {
@@ -1088,7 +1145,7 @@ void WindowSelectorItem::CreateWindowLabel(const base::string16& title) {
   params_label.activatable =
       views::Widget::InitParams::Activatable::ACTIVATABLE_DEFAULT;
   params_label.accept_events = true;
-  item_widget_.reset(new views::Widget);
+  item_widget_ = std::make_unique<views::Widget>();
   params_label.parent = transform_window_.window()->parent();
   item_widget_->set_focus_on_creation(false);
   item_widget_->Init(params_label);
@@ -1107,12 +1164,14 @@ void WindowSelectorItem::CreateWindowLabel(const base::string16& title) {
                                              transform_window_.window());
   }
 
-  // Create an image view for and scale down the windows window icon, if it
-  // exists.
+  // Create an image view the header icon. Tries to use the app icon, as it is
+  // higher resolution. If it does not exist, use the window icon. If neither
+  // exist, display nothing.
   views::ImageView* image_view = nullptr;
   if (IsNewOverviewUi()) {
-    gfx::ImageSkia* icon =
-        transform_window_.window()->GetProperty(aura::client::kWindowIconKey);
+    gfx::ImageSkia* icon = GetWindow()->GetProperty(aura::client::kAppIconKey);
+    if (!icon || icon->size().IsEmpty())
+      icon = GetWindow()->GetProperty(aura::client::kWindowIconKey);
     if (icon && !icon->size().IsEmpty()) {
       image_view = new views::ImageView();
       image_view->SetImage(gfx::ImageSkiaOperations::CreateResizedImage(
@@ -1160,6 +1219,10 @@ void WindowSelectorItem::CreateWindowLabel(const base::string16& title) {
 void WindowSelectorItem::UpdateHeaderLayout(
     HeaderFadeInMode mode,
     OverviewAnimationType animation_type) {
+  // On exit while in tablet mode, do not move the header.
+  if (mode == HeaderFadeInMode::kExit && UseTabletModeAnimations(GetWindow()))
+    return;
+
   gfx::Rect transformed_window_bounds =
       transform_window_.window_selector_bounds().value_or(
           transform_window_.GetTransformedBounds());
@@ -1170,7 +1233,7 @@ void WindowSelectorItem::UpdateHeaderLayout(
   // For tabbed windows the initial bounds of the caption are set such that it
   // appears to be "growing" up from the window content area.
   label_rect.set_y(
-      (mode != HeaderFadeInMode::ENTER || transform_window_.GetTopInset())
+      (mode != HeaderFadeInMode::kEnter || transform_window_.GetTopInset())
           ? -label_rect.height()
           : 0);
 
@@ -1178,13 +1241,13 @@ void WindowSelectorItem::UpdateHeaderLayout(
     ui::ScopedLayerAnimationSettings layer_animation_settings(
         item_widget_->GetLayer()->GetAnimator());
     if (background_view_) {
-      if (mode == HeaderFadeInMode::ENTER) {
+      if (mode == HeaderFadeInMode::kEnter) {
         // Animate the color of |background_view_| once the fade in animation of
         // |item_widget_| ends.
         layer_animation_settings.AddObserver(background_view_);
         if (!IsNewOverviewUi())
           background_view_->set_color(kLabelBackgroundColor);
-      } else if (mode == HeaderFadeInMode::EXIT) {
+      } else if (mode == HeaderFadeInMode::kExit) {
         // Make the header visible above the window. It will be faded out when
         // the Shutdown() is called.
         background_view_->AnimateColor(
@@ -1198,17 +1261,21 @@ void WindowSelectorItem::UpdateHeaderLayout(
     }
     if (!label_view_->visible()) {
       label_view_->SetVisible(true);
-      SetupFadeInAfterLayout(item_widget_.get());
+      SetupFadeInAfterLayout(item_widget_.get(), GetWindow());
     }
   }
 
   aura::Window* widget_window = item_widget_->GetNativeWindow();
-  ScopedOverviewAnimationSettings animation_settings(animation_type,
-                                                     widget_window);
+  // For the first update, place the widget at its destination.
+  ScopedOverviewAnimationSettings animation_settings(
+      mode == HeaderFadeInMode::kFirstUpdate
+          ? OverviewAnimationType::OVERVIEW_ANIMATION_NONE
+          : animation_type,
+      widget_window);
   // |widget_window| covers both the transformed window and the header
   // as well as the gap between the windows to prevent events from reaching
   // the window including its sizing borders.
-  if (mode != HeaderFadeInMode::ENTER) {
+  if (mode != HeaderFadeInMode::kEnter) {
     label_rect.set_height(close_button_->GetPreferredSize().height() +
                           transformed_window_bounds.height());
   }
@@ -1293,7 +1360,7 @@ void WindowSelectorItem::StartDrag() {
   scaled_bounds.Inset(-target_bounds_.width() * kDragWindowScale,
                       -target_bounds_.height() * kDragWindowScale);
   OverviewAnimationType animation_type =
-      OverviewAnimationType::OVERVIEW_ANIMATION_DRAGGING_SELECTOR_ITEM;
+      OverviewAnimationType::OVERVIEW_ANIMATION_NONE;
   SetBounds(scaled_bounds, animation_type);
 
   aura::Window* widget_window = item_widget_->GetNativeWindow();
@@ -1303,6 +1370,19 @@ void WindowSelectorItem::StartDrag() {
     // See crbug.com/733760.
     widget_window->parent()->StackChildAtTop(widget_window);
     widget_window->parent()->StackChildBelow(window, widget_window);
+  }
+
+  // If split view mode is actvie and there is already a snapped window, stack
+  // this item's window below the snapped window. Note: this should be temporary
+  // for M66, see https://crbug.com/809298 for details.
+  if (Shell::Get()->IsSplitViewModeActive()) {
+    aura::Window* snapped_window =
+        Shell::Get()->split_view_controller()->GetDefaultSnappedWindow();
+    if (widget_window && widget_window->parent() == window->parent() &&
+        widget_window->parent() == snapped_window->parent()) {
+      widget_window->parent()->StackChildBelow(widget_window, snapped_window);
+      widget_window->parent()->StackChildBelow(window, widget_window);
+    }
   }
 }
 

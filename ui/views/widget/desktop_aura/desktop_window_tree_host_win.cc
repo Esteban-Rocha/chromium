@@ -727,7 +727,8 @@ gfx::Size DesktopWindowTreeHostWin::DIPToScreenSize(
 }
 
 void DesktopWindowTreeHostWin::ResetWindowControls() {
-  GetWidget()->non_client_view()->ResetWindowControls();
+  if (GetWidget()->non_client_view())
+    GetWidget()->non_client_view()->ResetWindowControls();
 }
 
 gfx::NativeViewAccessible DesktopWindowTreeHostWin::GetNativeViewAccessible() {
@@ -845,7 +846,8 @@ void DesktopWindowTreeHostWin::HandleFrameChanged() {
   CheckForMonitorChange();
   SetWindowTransparency();
   // Replace the frame and layout the contents.
-  GetWidget()->non_client_view()->UpdateFrame();
+  if (GetWidget()->non_client_view())
+    GetWidget()->non_client_view()->UpdateFrame();
 }
 
 void DesktopWindowTreeHostWin::HandleNativeFocus(HWND last_focused_window) {
@@ -856,9 +858,9 @@ void DesktopWindowTreeHostWin::HandleNativeBlur(HWND focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
 }
 
-bool DesktopWindowTreeHostWin::HandleMouseEvent(const ui::MouseEvent& event) {
-  SendEventToSink(const_cast<ui::MouseEvent*>(&event));
-  return event.handled();
+bool DesktopWindowTreeHostWin::HandleMouseEvent(ui::MouseEvent* event) {
+  SendEventToSink(event);
+  return event->handled();
 }
 
 bool DesktopWindowTreeHostWin::HandlePointerEvent(ui::PointerEvent* event) {
@@ -870,8 +872,7 @@ void DesktopWindowTreeHostWin::HandleKeyEvent(ui::KeyEvent* event) {
   SendEventToSink(event);
 }
 
-void DesktopWindowTreeHostWin::HandleTouchEvent(
-    const ui::TouchEvent& event) {
+void DesktopWindowTreeHostWin::HandleTouchEvent(ui::TouchEvent* event) {
   // HWNDMessageHandler asynchronously processes touch events. Because of this
   // it's possible for the aura::WindowEventDispatcher to have been destroyed
   // by the time we attempt to process them.
@@ -885,10 +886,10 @@ void DesktopWindowTreeHostWin::HandleTouchEvent(
     DesktopWindowTreeHostWin* target =
         host->window()->GetProperty(kDesktopWindowTreeHostKey);
     if (target && target->HasCapture() && target != this) {
-      POINT target_location(event.location().ToPOINT());
+      POINT target_location(event->location().ToPOINT());
       ClientToScreen(GetHWND(), &target_location);
       ScreenToClient(target->GetHWND(), &target_location);
-      ui::TouchEvent target_event(event, static_cast<View*>(NULL),
+      ui::TouchEvent target_event(*event, static_cast<View*>(NULL),
                                   static_cast<View*>(NULL));
       target_event.set_location(gfx::Point(target_location));
       target_event.set_root_location(target_event.location());
@@ -896,7 +897,7 @@ void DesktopWindowTreeHostWin::HandleTouchEvent(
       return;
     }
   }
-  SendEventToSink(const_cast<ui::TouchEvent*>(&event));
+  SendEventToSink(event);
 }
 
 bool DesktopWindowTreeHostWin::HandleIMEMessage(UINT message,
@@ -949,10 +950,14 @@ void DesktopWindowTreeHostWin::PostHandleMSG(UINT message,
                                              LPARAM l_param) {
 }
 
-bool DesktopWindowTreeHostWin::HandleScrollEvent(
-    const ui::ScrollEvent& event) {
-  SendEventToSink(const_cast<ui::ScrollEvent*>(&event));
-  return event.handled();
+bool DesktopWindowTreeHostWin::HandleScrollEvent(ui::ScrollEvent* event) {
+  SendEventToSink(event);
+  return event->handled();
+}
+
+bool DesktopWindowTreeHostWin::HandleGestureEvent(ui::GestureEvent* event) {
+  SendEventToSink(event);
+  return event->handled();
 }
 
 void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
@@ -965,6 +970,7 @@ void DesktopWindowTreeHostWin::HandleWindowSizeUnchanged() {
   // changed (can occur on Windows 10 when snapping a window to the side of
   // the screen). In that case do a resize to the current size to reenable
   // swaps.
+  // TODO(ccameron): This will violate surface invariants.
   if (compositor()) {
     compositor()->SetScaleAndSize(
         compositor()->device_scale_factor(),
@@ -975,6 +981,12 @@ void DesktopWindowTreeHostWin::HandleWindowSizeUnchanged() {
 
 void DesktopWindowTreeHostWin::HandleWindowScaleFactorChanged(
     float window_scale_factor) {
+  // TODO(ccameron): This will violate surface invariants, and is insane.
+  // Shouldn't the scale factor and window pixel size changes be sent
+  // atomically? And how does this interact with updates to display::Display?
+  // Should we expect the display::Display to be updated before this? If so,
+  // why can't we use the DisplayObserver that the base WindowTreeHost is
+  // using?
   if (compositor()) {
     compositor()->SetScaleAndSize(
         window_scale_factor, message_handler_->GetClientAreaBounds().size(),

@@ -84,7 +84,7 @@ void RemoteFrameView::UpdateViewportIntersectionsForSubtree(
   if (remote_frame_->OwnerLayoutObject()->MapToVisualRectInAncestorSpace(
           nullptr, rect)) {
     IntRect root_visible_rect = local_root_view->VisibleContentRect();
-    IntRect intersected_rect(rect);
+    IntRect intersected_rect = EnclosingIntRect(rect);
     intersected_rect.Intersect(root_visible_rect);
     intersected_rect.Move(-local_root_view->ScrollOffsetInt());
 
@@ -161,7 +161,8 @@ void RemoteFrameView::FrameRectsChanged() {
 
 void RemoteFrameView::Paint(GraphicsContext& context,
                             const GlobalPaintFlags flags,
-                            const CullRect& rect) const {
+                            const CullRect& rect,
+                            const IntSize& paint_offset) const {
   // Painting remote frames is only for printing.
   if (!context.Printing())
     return;
@@ -171,12 +172,16 @@ void RemoteFrameView::Paint(GraphicsContext& context,
 
   DrawingRecorder recorder(context, *GetFrame().OwnerLayoutObject(),
                            DisplayItem::kDocumentBackground);
+  context.Save();
+  context.Translate(paint_offset.Width(), paint_offset.Height());
+
   DCHECK(context.Canvas());
   // Inform the remote frame to print.
   uint32_t content_id = Print(FrameRect(), context.Canvas());
 
   // Record the place holder id on canvas.
   context.Canvas()->recordCustomData(content_id);
+  context.Restore();
 }
 
 void RemoteFrameView::UpdateGeometry() {

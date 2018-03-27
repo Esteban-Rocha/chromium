@@ -46,7 +46,7 @@ class WebLeakDetectorImpl final : public WebLeakDetector,
 
  public:
   explicit WebLeakDetectorImpl(WebLeakDetectorClient* client)
-      : client_(client), detector_(nullptr) {
+      : client_(client) {
     DCHECK(client_);
   }
 
@@ -60,17 +60,17 @@ class WebLeakDetectorImpl final : public WebLeakDetector,
 
  private:
   WebLeakDetectorClient* client_;
-  std::unique_ptr<BlinkLeakDetector> detector_;
   DISALLOW_COPY_AND_ASSIGN(WebLeakDetectorImpl);
 };
 
 void WebLeakDetectorImpl::PrepareForLeakDetection(WebFrame* frame) {
-  detector_.reset(new BlinkLeakDetector(this));
-  detector_->PrepareForLeakDetection(frame);
+  BlinkLeakDetector& detector = BlinkLeakDetector::Instance();
+  detector.SetClient(this);
+  detector.PrepareForLeakDetection(frame);
 }
 
 void WebLeakDetectorImpl::CollectGarbageAndReport() {
-  detector_->CollectGarbage();
+  BlinkLeakDetector::Instance().CollectGarbage();
 }
 
 void WebLeakDetectorImpl::OnLeakDetectionComplete() {
@@ -99,9 +99,12 @@ void WebLeakDetectorImpl::OnLeakDetectionComplete() {
       InstanceCounters::kWorkerGlobalScopeCounter);
   result.number_of_live_ua_css_resources =
       InstanceCounters::CounterValue(InstanceCounters::kUACSSResourceCounter);
+  result.number_of_live_resource_fetchers =
+      InstanceCounters::CounterValue(InstanceCounters::kResourceFetcherCounter);
 
   client_->OnLeakDetectionComplete(result);
-  detector_.reset();
+  // Reset the client for BlinkLeakDetector
+  BlinkLeakDetector::Instance().SetClient(nullptr);
 
 #ifndef NDEBUG
   showLiveDocumentInstances();

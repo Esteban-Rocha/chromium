@@ -26,12 +26,16 @@
 #include "core/paint/LinkHighlightImpl.h"
 
 #include <memory>
+#include <utility>
+
+#include "base/memory/ptr_util.h"
 #include "core/dom/LayoutTreeBuilderTraversal.h"
 #include "core/dom/Node.h"
 #include "core/exported/WebSettingsImpl.h"
 #include "core/exported/WebViewImpl.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
+#include "core/frame/WebFrameWidgetBase.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
@@ -48,7 +52,6 @@
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/PaintCanvas.h"
 #include "platform/graphics/paint/PaintRecorder.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "public/platform/Platform.h"
@@ -68,7 +71,7 @@ namespace blink {
 std::unique_ptr<LinkHighlightImpl> LinkHighlightImpl::Create(
     Node* node,
     WebViewImpl* owning_web_view) {
-  return WTF::WrapUnique(new LinkHighlightImpl(node, owning_web_view));
+  return base::WrapUnique(new LinkHighlightImpl(node, owning_web_view));
 }
 
 LinkHighlightImpl::LinkHighlightImpl(Node* node, WebViewImpl* owning_web_view)
@@ -334,7 +337,7 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
   compositor_animation_->AddKeyframeModel(std::move(keyframe_model));
 
   Invalidate();
-  owning_web_view_->MainFrameImpl()->FrameWidget()->ScheduleAnimation();
+  owning_web_view_->MainFrameImpl()->FrameWidgetImpl()->ScheduleAnimation();
 }
 
 void LinkHighlightImpl::ClearGraphicsLayerLinkHighlightPointer() {

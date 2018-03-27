@@ -42,6 +42,7 @@
 #if defined(OS_CHROMEOS)
 #include "base/sys_info.h"
 #include "chromeos/system/devicemode.h"
+#include "ui/display/manager/chromeos/display_util.h"
 #endif
 
 #if defined(OS_WIN)
@@ -605,7 +606,7 @@ bool DisplayManager::SetDisplayMode(int64_t display_id,
 
           // Different resolutions allow different zoom factors to be set in the
           // UI. To avoid confusion in the UI, reset the zoom factor to 1.0.
-          display_zoom_factors_[display_id] = 1.f;
+          display_info_[display_id].set_zoom_factor(1.f);
           break;
         }
         if (info.device_scale_factor() != display_mode.device_scale_factor()) {
@@ -672,7 +673,7 @@ void DisplayManager::RegisterDisplayProperty(
     display_modes_[display_id] = mode;
   }
 
-  display_zoom_factors_[display_id] = display_zoom_factor;
+  display_info_[display_id].set_zoom_factor(display_zoom_factor);
 }
 
 bool DisplayManager::GetActiveModeForDisplayId(int64_t display_id,
@@ -1492,8 +1493,11 @@ void DisplayManager::ClearTouchCalibrationData(
 void DisplayManager::UpdateZoomFactor(int64_t display_id, float zoom_factor) {
   DCHECK(zoom_factor > 0);
   DCHECK_NE(display_id, kInvalidDisplayId);
+  auto iter = display_info_.find(display_id);
+  if (iter == display_info_.end())
+    return;
 
-  display_zoom_factors_[display_id] = zoom_factor;
+  iter->second.set_zoom_factor(zoom_factor);
 
   for (const auto& display : active_display_list_) {
     if (display.id() == display_id) {
@@ -1503,14 +1507,6 @@ void DisplayManager::UpdateZoomFactor(int64_t display_id, float zoom_factor) {
   }
 }
 #endif
-
-float DisplayManager::GetZoomFactorForDisplay(int64_t display_id) const {
-  // If there is no entry for the given display id, then the zoom factor is
-  // still at its default level of 100% zoom.
-  if (!base::ContainsKey(display_zoom_factors_, display_id))
-    return 1.f;
-  return display_zoom_factors_.at(display_id);
-}
 
 void DisplayManager::SetDefaultMultiDisplayModeForCurrentDisplays(
     MultiDisplayMode mode) {
@@ -1609,6 +1605,56 @@ bool DisplayManager::ZoomInternalDisplay(bool up) {
   }
 
   return result ? SetDisplayMode(display_id, mode) : false;
+}
+
+bool DisplayManager::ZoomDisplay(int64_t display_id, bool up) {
+#if defined(OS_CHROMEOS)
+  DCHECK(!IsInUnifiedMode());
+  ManagedDisplayMode display_mode;
+  if (!GetActiveModeForDisplayId(display_id, &display_mode))
+    return false;
+  const std::vector<double> zooms = GetDisplayZoomFactors(display_mode);
+  auto iter = display_info_.find(display_id);
+  if (iter == display_info_.end())
+    return false;
+
+  const double current_display_zoom = iter->second.zoom_factor();
+
+  // Find the index of |current_display_zoom| in |zooms|. The nearest value is
+  // used if the exact match is not found.
+  std::size_t zoom_idx = 0;
+  double min_diff = std::abs(zooms[zoom_idx] - current_display_zoom);
+  for (std::size_t i = 1; i < zooms.size(); i++) {
+    if (std::abs(current_display_zoom - zooms[i]) < min_diff) {
+      min_diff = std::abs(current_display_zoom - zooms[i]);
+      zoom_idx = i;
+    }
+  }
+  // The index of the next zoom value.
+  const std::size_t next_zoom_idx = zoom_idx + (up ? -1 : 1);
+
+  // If the zoom index is out of bounds, that is, the display is already at
+  // maximum or minimum zoom then do nothing.
+  if (next_zoom_idx < 0 || next_zoom_idx >= zooms.size())
+    return false;
+
+  iter->second.set_zoom_factor(zooms[next_zoom_idx]);
+  UpdateDisplays();
+  return true;
+#else
+  return false;
+#endif  // (OS_CHROMEOS)
+}
+
+void DisplayManager::ResetDisplayZoom(int64_t display_id) {
+  DCHECK(!IsInUnifiedMode());
+  auto iter = display_info_.find(display_id);
+  if (iter == display_info_.end())
+    return;
+  if (std::abs(iter->second.zoom_factor() - 1.f) > 0.001) {
+    iter->second.set_zoom_factor(1.f);
+    UpdateDisplays();
+  }
 }
 
 bool DisplayManager::ResetDisplayToDefaultMode(int64_t id) {
@@ -1977,9 +2023,6 @@ Display DisplayManager::CreateDisplayFromDisplayInfoById(int64_t id) {
   gfx::Rect bounds_in_native(display_info.size_in_pixel());
   float device_scale_factor = display_info.GetEffectiveDeviceScaleFactor();
 
-  // Apply the zoom factor for the display.
-  device_scale_factor *= GetZoomFactorForDisplay(id);
-
   // Simply set the origin to (0,0).  The primary display's origin is
   // always (0,0) and the bounds of non-primary display(s) will be updated
   // in |UpdateNonPrimaryDisplayBoundsForLayout| called in |UpdateDisplay|.
@@ -1988,13 +2031,8 @@ Display DisplayManager::CreateDisplayFromDisplayInfoById(int64_t id) {
   new_display.set_rotation(display_info.GetActiveRotation());
   new_display.set_touch_support(display_info.touch_support());
   new_display.set_maximum_cursor_size(display_info.maximum_cursor_size());
-#if defined(OS_CHROMEOS)
-  // TODO(mcasas): remove this check, http://crbug.com/771345.
-  if (base::FeatureList::IsEnabled(features::kUseMonitorColorSpace))
+  if (!Display::HasForceColorProfile())
     new_display.set_color_space(display_info.color_space());
-#else
-  new_display.set_color_space(display_info.color_space());
-#endif
 
   if (internal_display_has_accelerometer_ && Display::IsInternalDisplayId(id)) {
     new_display.set_accelerometer_support(

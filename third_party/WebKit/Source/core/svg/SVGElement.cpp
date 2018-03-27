@@ -29,6 +29,7 @@
 #include "core/animation/EffectStack.h"
 #include "core/animation/ElementAnimations.h"
 #include "core/animation/InvalidatableInterpolation.h"
+#include "core/animation/KeyframeEffect.h"
 #include "core/animation/SVGInterpolationEnvironment.h"
 #include "core/animation/SVGInterpolationTypesMap.h"
 #include "core/css/resolver/StyleResolver.h"
@@ -202,7 +203,7 @@ void SVGElement::ApplyActiveWebAnimations() {
   ActiveInterpolationsMap active_interpolations_map =
       EffectStack::ActiveInterpolations(
           &GetElementAnimations()->GetEffectStack(), nullptr, nullptr,
-          KeyframeEffectReadOnly::kDefaultPriority, IsSVGAttributeHandle);
+          KeyframeEffect::kDefaultPriority, IsSVGAttributeHandle);
   for (auto& entry : active_interpolations_map) {
     const QualifiedName& attribute = entry.key.SvgAttribute();
     SVGInterpolationTypesMap map;
@@ -1244,13 +1245,6 @@ bool SVGElement::IsAnimatableAttribute(const QualifiedName& name) const {
 }
 #endif  // DCHECK_IS_ON()
 
-SVGElementProxySet* SVGElement::ElementProxySet() {
-  // Limit to specific element types.
-  if (!IsSVGFilterElement(*this) && !IsSVGClipPathElement(*this))
-    return nullptr;
-  return &EnsureSVGRareData()->EnsureElementProxySet();
-}
-
 SVGElementSet* SVGElement::SetOfIncomingReferences() const {
   if (!HasSVGRareData())
     return nullptr;
@@ -1264,33 +1258,12 @@ void SVGElement::AddReferenceTo(SVGElement* target_element) {
   target_element->EnsureSVGRareData()->IncomingReferences().insert(this);
 }
 
-void SVGElement::NotifyIncomingReferences(bool needs_layout) {
-  if (!HasSVGRareData())
-    return;
-
-  SVGElementSet& dependencies = SvgRareData()->IncomingReferences();
-  if (dependencies.IsEmpty())
-    return;
-
-  // We allow cycles in the reference graph in order to avoid expensive
-  // adjustments on changes, so we need to break possible cycles here.
+SVGElementSet& SVGElement::GetDependencyTraversalVisitedSet() {
   // This strong reference is safe, as it is guaranteed that this set will be
-  // emptied at the end of recursion.
+  // emptied at the end of recursion in NotifyIncomingReferences.
   DEFINE_STATIC_LOCAL(SVGElementSet, invalidating_dependencies,
                       (new SVGElementSet));
-
-  for (SVGElement* element : dependencies) {
-    if (LayoutObject* layout_object = element->GetLayoutObject()) {
-      if (UNLIKELY(!invalidating_dependencies.insert(element).is_new_entry)) {
-        // Reference cycle: we are in process of invalidating this dependant.
-        continue;
-      }
-
-      LayoutSVGResourceContainer::MarkForLayoutAndParentResourceInvalidation(
-          *layout_object, needs_layout);
-      invalidating_dependencies.erase(element);
-    }
-  }
+  return invalidating_dependencies;
 }
 
 void SVGElement::RebuildAllIncomingReferences() {

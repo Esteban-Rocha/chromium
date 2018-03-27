@@ -36,8 +36,8 @@ MediaPipelineBackend::BufferStatus VideoDecoderNull::PushBuffer(
   DCHECK(buffer);
   if (buffer->end_of_stream()) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&VideoDecoderNull::OnEndOfStream,
-                              weak_factory_.GetWeakPtr()));
+        FROM_HERE, base::BindOnce(&VideoDecoderNull::OnEndOfStream,
+                                  weak_factory_.GetWeakPtr()));
   }
   return MediaPipelineBackend::kBufferSuccess;
 }
@@ -78,6 +78,22 @@ bool VideoDecoderNull::SetPlaybackRate(float rate) {
 
 bool VideoDecoderNull::SetCurrentPts(int64_t pts) {
   return true;
+}
+
+int64_t VideoDecoderNull::GetDroppedFrames() {
+  return 0;
+}
+
+int64_t VideoDecoderNull::GetRepeatedFrames() {
+  return 0;
+}
+
+int64_t VideoDecoderNull::GetOutputRefreshRate() {
+  return 0;
+}
+
+int64_t VideoDecoderNull::GetCurrentContentRefreshRate() {
+  return 0;
 }
 
 }  // namespace media

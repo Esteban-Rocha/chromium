@@ -45,6 +45,7 @@ Es posible que algunas funciones no estén disponibles y que no se guarden los c
 <translation id="2063848847527508675">Chrome OS se debe reiniciar para que se aplique la actualización.</translation>
 <translation id="2077129598763517140">Utilizar aceleración por hardware cuando esté disponible</translation>
 <translation id="2084710999043359739">Añadir a Chrome</translation>
+<translation id="2094919256425865063">¿Quieres cerrar Chrome de todas formas?</translation>
 <translation id="2120620239521071941">Se eliminarán <ph name="ITEMS_COUNT" /> elementos de este dispositivo. Para recuperar tus datos en otro momento, inicia sesión en Chrome como <ph name="USER_EMAIL" />.</translation>
 <translation id="2123055963409958220">Genera un informe de la <ph name="BEGIN_LINK" />configuración actual<ph name="END_LINK" /> para ayudar a mejorar Chrome</translation>
 <translation id="216054706567564023">Instala Chrome en tu teléfono. Te enviaremos un SMS al número de recuperación de la cuenta.</translation>
@@ -62,6 +63,7 @@ Si decides iniciar sesión de todas formas, se fusionará la información de Chr
 <translation id="2397416548179033562">Mostrar menú de Chrome</translation>
 <translation id="2429317896000329049">Google Chrome no ha podido sincronizar los datos porque la función de sincronización no está disponible para tu dominio.</translation>
 <translation id="2446511512801740068">Chrome no está actualizado porque hace algún tiempo que no se reinicia. Hay una actualización disponible, que se aplicará en cuanto lo reinicies.</translation>
+<translation id="2467438592969358367">Google Chrome quiere exportar tus contraseñas. Escribe tu contraseña de Windows para permitirlo.</translation>
 <translation id="2485422356828889247">Desinstalar</translation>
 <translation id="2534507159460261402">Google Pay (copiada en Chrome)</translation>
 <translation id="2580411288591421699">No se puede instalar la misma versión de Google Chrome que se está ejecutando. Cierra el navegador y vuelve a intentarlo.</translation>
@@ -108,6 +110,7 @@ Consulta tu correo electrónico (<ph name="ACCOUNT_EMAIL" />) para obtener más 
 <translation id="3735758079232443276">La extensión <ph name="EXTENSION_NAME" /> ha cambiado la página que se muestra al iniciar Chrome.</translation>
 <translation id="3780814664026482060">Chrome - <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Desinstalar de Chrome...</translation>
+<translation id="3844992844761326777">Se ha detectado software dañino en tu ordenador. Chrome puede eliminarlo y restaurar tu configuración para que el navegador vuelva a funcionar con normalidad.</translation>
 <translation id="386202838227397562">Cierra todas las ventanas de Google Chrome y vuelve a intentarlo.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3873044882194371212">Abrir enlace en una ventana de incó&amp;gnito de Chrome</translation>
@@ -131,6 +134,7 @@ Consulta tu correo electrónico (<ph name="ACCOUNT_EMAIL" />) para obtener más 
 <translation id="4480040274068703980">Chrome OS no ha podido sincronizar los datos debido a un error de inicio de sesión.</translation>
 <translation id="4561051373932531560">Google Chrome te permite hacer clic en un número de teléfono en la Web y llamar mediante Skype.</translation>
 <translation id="4567424176335768812">Has iniciado sesión como <ph name="USER_EMAIL_ADDRESS" />. Ahora puedes acceder a tus marcadores, a tu historial y a otras opciones en todos los dispositivos en los que hayas iniciado sesión.</translation>
+<translation id="4571503333518166079">Ir a los ajustes de notificaciones de Chrome</translation>
 <translation id="4600710005438004015">No se ha podido actualizar Chrome a la versión más reciente, por lo que no disfrutas de las últimas funciones y correcciones de seguridad.</translation>
 <translation id="4631713731678262610">Ocultar en el menú de Chrome</translation>
 <translation id="4633000520311261472">Para aumentar la seguridad de Chrome, hemos inhabilitado algunas extensiones que no figuran en <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> y que podrían haberse añadido sin tu conocimiento.</translation>
@@ -142,6 +146,7 @@ Consulta tu correo electrónico (<ph name="ACCOUNT_EMAIL" />) para obtener más 
 <translation id="4771048833395599659">Es posible que este archivo sea peligroso, por lo que Chrome lo ha bloqueado.</translation>
 <translation id="4794050651896644714">Guardar detalles en Chrome</translation>
 <translation id="4804732725083176494">El administrador de este dispositivo ha inhabilitado el inicio de sesión en Chrome.</translation>
+<translation id="4833487314064352405">{0,plural, =1{Volver a iniciar Chrome en un día}other{Volver a iniciar Chrome en # días}}</translation>
 <translation id="4891791193823137474">Permitir que Google Chrome se ejecute en segundo plano</translation>
 <translation id="4895437082222824641">Abrir enlace en una pes&amp;taña nueva de Chrome</translation>
 <translation id="4921569541910214635">Si compartes un ordenador, ahora puedes configurar Chrome como quieras.</translation>
@@ -150,6 +155,7 @@ Consulta tu correo electrónico (<ph name="ACCOUNT_EMAIL" />) para obtener más 
 <translation id="4990567037958725628">Google Chrome Canary</translation>
 <translation id="5028489144783860647">Google Chrome no ha podido sincronizar los datos. Actualiza la frase de contraseña de sincronización.</translation>
 <translation id="5037239767309817516">Cierra todas las ventanas de Google Chrome y reinicia el navegador para que se aplique el cambio.</translation>
+<translation id="5131923704757666404">{0,plural, =1{Chrome se volverá a iniciar en una hora}other{Chrome se volverá a iniciar en # horas}}</translation>
 <translation id="5132929315877954718">Descubre formidables aplicaciones, juegos, extensiones y temas para Google Chrome.</translation>
 <translation id="5166975452760862670">Google Chrome se muestra en este idioma</translation>
 <translation id="5170938038195470297">No se puede usar tu perfil porque se corresponde con una versión más reciente de Google Chrome.
@@ -168,6 +174,7 @@ Google Chrome no puede recuperar tu configuración.</translation>
 <translation id="556024056938947818">Google Chrome está intentando mostrar contraseñas.</translation>
 <translation id="5566025111015594046">Google Chrome (tráfico mDNS entrante)</translation>
 <translation id="565744775970812598">Es posible que <ph name="FILE_NAME" /> sea peligroso, por lo que Chrome lo ha bloqueado.</translation>
+<translation id="5715063361988620182">{SECONDS,plural, =1{Google Chrome se reiniciará en 1 segundo}other{Google Chrome se reiniciará en # segundos}}</translation>
 <translation id="573759479754913123">Información de Chrome OS</translation>
 <translation id="5774845247549698882">Chrome OS se muestra en este idioma</translation>
 <translation id="5795887333006832406"><ph name="PAGE_TITLE" /> ‑ Google Chrome Canary</translation>
@@ -196,6 +203,8 @@ Google Chrome no puede recuperar tu configuración.</translation>
 <translation id="6600954340915313787">Copiada a Chrome</translation>
 <translation id="6634887557811630702">Google Chrome está actualizado.</translation>
 <translation id="6676384891291319759">Accede a Internet.</translation>
+<translation id="6679975945624592337">Permitir que Google Chrome se ejecute en segundo plano</translation>
+<translation id="677276454032249905">¿Quieres salir de Chrome de todas formas?</translation>
 <translation id="683440813066116847">Regla entrante para que Google Chrome Canary permita tráfico mDNS.</translation>
 <translation id="686561893457936865">Llévate Chrome a todas partes</translation>
 <translation id="6885412569789873916">Aplicaciones de Chrome Beta</translation>
@@ -248,6 +257,7 @@ Google Chrome no puede recuperar tu configuración.</translation>
 <translation id="8286862437124483331">Google Chrome está intentando mostrar contraseñas. Para permitirlo, escribe tu contraseña de Windows.</translation>
 <translation id="8290100596633877290">¡Vaya! Se ha producido un fallo en Google Chrome. ¿Quieres reiniciar el navegador ahora?</translation>
 <translation id="8342675569599923794">Este archivo es peligroso, por lo que Chrome lo ha bloqueado.</translation>
+<translation id="840084489713044809">Google Chrome quiere exportar tus contraseñas.</translation>
 <translation id="8406086379114794905">Ayuda a mejorar Chrome</translation>
 <translation id="8439301513305169426">Chrome guardará esta contraseña con <ph name="SAVED_PASSWORD_LINK" />, por lo que no es necesario que la recuerdes.</translation>
 <translation id="8455999171311319804">Opcional: Envía datos de uso y diagnóstico automáticamente a Google para ayudarnos a mejorar Chrome OS.</translation>

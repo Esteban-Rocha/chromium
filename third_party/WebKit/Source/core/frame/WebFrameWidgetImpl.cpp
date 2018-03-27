@@ -69,14 +69,12 @@
 #include "core/page/ValidationMessageClient.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "platform/KeyboardCodes.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/animation/CompositorAnimationHost.h"
 #include "platform/graphics/Color.h"
 #include "platform/graphics/CompositorMutatorClient.h"
 #include "platform/graphics/CompositorMutatorImpl.h"
 #include "platform/wtf/AutoReset.h"
 #include "platform/wtf/Optional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/web/WebAutofillClient.h"
 #include "public/web/WebPlugin.h"
 #include "public/web/WebRange.h"
@@ -474,8 +472,8 @@ WebInputEventResult WebFrameWidgetImpl::HandleInputEvent(
         break;
       case WebInputEvent::kMouseUp:
         event_type = EventTypeNames::mouseup;
-        gesture_indicator = WTF::WrapUnique(
-            new UserGestureIndicator(std::move(mouse_capture_gesture_token_)));
+        gesture_indicator = std::make_unique<UserGestureIndicator>(
+            std::move(mouse_capture_gesture_token_));
         break;
       default:
         NOTREACHED();
@@ -541,18 +539,16 @@ void WebFrameWidgetImpl::IntrinsicSizingInfoChanged(
   client_->IntrinsicSizingInfoChanged(web_sizing_info);
 }
 
-CompositorMutatorImpl& WebFrameWidgetImpl::Mutator() {
-  return *CompositorMutator();
-}
-
-CompositorMutatorImpl* WebFrameWidgetImpl::CompositorMutator() {
-  if (!mutator_) {
-    std::unique_ptr<CompositorMutatorClient> mutator_client =
-        CompositorMutatorImpl::CreateClient();
-    mutator_ = static_cast<CompositorMutatorImpl*>(mutator_client->Mutator());
-    layer_tree_view_->SetMutatorClient(std::move(mutator_client));
+base::WeakPtr<CompositorMutatorImpl>
+WebFrameWidgetImpl::EnsureCompositorMutator(
+    scoped_refptr<base::SingleThreadTaskRunner>* mutator_task_runner) {
+  if (!mutator_task_runner_) {
+    layer_tree_view_->SetMutatorClient(
+        CompositorMutatorImpl::CreateClient(&mutator_, &mutator_task_runner_));
   }
 
+  DCHECK(mutator_task_runner_);
+  *mutator_task_runner = mutator_task_runner_;
   return mutator_;
 }
 
@@ -995,9 +991,6 @@ void WebFrameWidgetImpl::InitializeLayerTreeView() {
     animation_host_ = std::make_unique<CompositorAnimationHost>(
         layer_tree_view_->CompositorAnimationHost());
   }
-
-  if (WebDevToolsAgentImpl* dev_tools = local_root_->DevToolsAgentImpl())
-    dev_tools->LayerTreeViewChanged(layer_tree_view_);
 
   GetPage()->GetSettings().SetAcceleratedCompositingEnabled(layer_tree_view_);
   if (layer_tree_view_) {

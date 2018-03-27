@@ -20,6 +20,7 @@
 #include "ui/events/keycodes/keyboard_code_conversion.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
+#include "ui/gfx/vector_icon_types.h"
 
 namespace keyboard_shortcut_viewer {
 
@@ -62,6 +63,9 @@ base::Optional<base::string16> GetSpecialStringForKeyboardCode(
     case ui::VKEY_COMMAND:
       msg_id = ui::DeviceUsesKeyboardLayout2() ? IDS_KSV_MODIFIER_LAUNCHER
                                                : IDS_KSV_MODIFIER_SEARCH;
+      break;
+    case ui::VKEY_ESCAPE:
+      msg_id = IDS_KSV_KEY_ESCAPE;
       break;
     case ui::VKEY_SPACE:
       msg_id = IDS_KSV_KEY_SPACE;
@@ -126,6 +130,8 @@ base::string16 GetStringForKeyboardCode(ui::KeyboardCode key_code) {
   ui::KeyboardCode keycode_ignored;
   if (ui::KeyboardLayoutEngineManager::GetKeyboardLayoutEngine()->Lookup(
           dom_code, 0 /* flags */, &dom_key, &keycode_ignored)) {
+    if (dom_key.IsValid() && dom_key.IsDeadKey())
+      return base::string16();
     return base::UTF8ToUTF16(ui::KeycodeConverter::DomKeyToKeyString(dom_key));
   }
 
@@ -133,6 +139,8 @@ base::string16 GetStringForKeyboardCode(ui::KeyboardCode key_code) {
   const bool has_mapping = ui::DomCodeToUsLayoutDomKey(
       dom_code, 0 /* flags */, &dom_key, &keycode_ignored);
   DCHECK(has_mapping);
+  if (dom_key.IsValid() && dom_key.IsDeadKey())
+    return base::string16();
   return base::UTF8ToUTF16(ui::KeycodeConverter::DomKeyToKeyString(dom_key));
 }
 
@@ -722,7 +730,7 @@ const std::vector<KeyboardShortcutItem>& GetKeyboardShortcutItemList() {
        // |accelerator_ids|
        {},
        // |shortcut_key_codes|
-       {ui::VKEY_LWIN, ui::VKEY_COMMAND, ui::VKEY_UNKNOWN, ui::VKEY_DOWN}},
+       {ui::VKEY_LMENU, ui::VKEY_COMMAND, ui::VKEY_UNKNOWN, ui::VKEY_DOWN}},
 
       {// |categories|
        {ShortcutCategory::kPageAndBrowser},

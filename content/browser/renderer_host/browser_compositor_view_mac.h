@@ -48,6 +48,7 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
       BrowserCompositorMacClient* client,
       bool render_widget_host_is_hidden,
       bool ns_view_attached_to_window,
+      const display::Display& initial_display,
       const viz::FrameSinkId& frame_sink_id);
   ~BrowserCompositorMac() override;
 
@@ -72,7 +73,8 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
   // NSView. This will allocate a new SurfaceId if needed. This will return
   // true if any properties that need to be communicated to the
   // RenderWidgetHostImpl have changed.
-  bool UpdateNSViewAndDisplay();
+  bool UpdateNSViewAndDisplay(const gfx::Size& new_size_dip,
+                              const display::Display& new_display);
 
   // Update the renderer's SurfaceId to reflect |size_dip| in anticipation of
   // the NSView resizing during auto-resize.
@@ -94,9 +96,7 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
 
   const gfx::Size& GetRendererSize() const { return dfh_size_dip_; }
   void GetRendererScreenInfo(ScreenInfo* screen_info) const;
-  const viz::LocalSurfaceId& GetRendererLocalSurfaceId() const {
-    return dfh_surface_id_;
-  }
+  const viz::LocalSurfaceId& GetRendererLocalSurfaceId() const;
 
   // Indicate that the recyclable compositor should be destroyed, and no future
   // compositors should be recycled.
@@ -178,17 +178,17 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
   viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink_ =
       nullptr;
 
-  // The surface for the delegated frame host, rendered into by the renderer
+  // The viz::ParentLocalSurfaceIdAllocator for the delegated frame host
+  // dispenses viz::LocalSurfaceIds that are renderered into by the renderer
   // process.
-  viz::LocalSurfaceId dfh_surface_id_;
+  viz::ParentLocalSurfaceIdAllocator dfh_local_surface_id_allocator_;
   gfx::Size dfh_size_pixels_;
   gfx::Size dfh_size_dip_;
   display::Display dfh_display_;
 
-  // The surface for the ui::Compositor, which will embed |dfh_surface_id_|
-  // into its tree. Updated to match the delegated frame host values when
-  // attached and at OnFirstSurfaceActivation.
-  viz::LocalSurfaceId compositor_surface_id_;
+  // The viz::ParentLocalSurfaceIdAllocator for the ui::Compositor dispenses
+  // viz::LocalSurfaceIds that are renderered into by the ui::Compositor.
+  viz::ParentLocalSurfaceIdAllocator compositor_local_surface_id_allocator_;
   gfx::Size compositor_size_pixels_;
   float compositor_scale_factor_ = 1.f;
 
@@ -204,8 +204,6 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
     ScreenUpdatesDisabled,
   } repaint_state_ = RepaintState::None;
   bool repaint_auto_resize_enabled_ = false;
-
-  viz::ParentLocalSurfaceIdAllocator parent_local_surface_id_allocator_;
 
   base::WeakPtrFactory<BrowserCompositorMac> weak_factory_;
 };

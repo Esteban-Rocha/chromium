@@ -52,6 +52,7 @@
 #include "gpu/command_buffer/service/gles2_cmd_decoder_passthrough.h"
 #include "gpu/command_buffer/service/gles2_cmd_srgb_converter.h"
 #include "gpu/command_buffer/service/gles2_cmd_validation.h"
+#include "gpu/command_buffer/service/gles2_query_manager.h"
 #include "gpu/command_buffer/service/gpu_fence_manager.h"
 #include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/command_buffer/service/gpu_state_tracer.h"
@@ -63,7 +64,6 @@
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/path_manager.h"
 #include "gpu/command_buffer/service/program_manager.h"
-#include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "gpu/command_buffer/service/sampler_manager.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
@@ -213,8 +213,8 @@ void APIENTRY GLDebugMessageCallback(GLenum source,
                                      GLenum severity,
                                      GLsizei length,
                                      const GLchar* message,
-                                     GLvoid* user_param) {
-  Logger* error_logger = static_cast<Logger*>(user_param);
+                                     const GLvoid* user_param) {
+  Logger* error_logger = static_cast<Logger*>(const_cast<void*>(user_param));
   LogGLDebugMessage(source, type, id, severity, length, message, error_logger);
 }
 
@@ -504,7 +504,7 @@ struct FenceCallback {
   FenceCallback() : fence(gl::GLFence::Create()) { DCHECK(fence); }
   FenceCallback(FenceCallback&&) = default;
   FenceCallback& operator=(FenceCallback&&) = default;
-  std::vector<base::Closure> callbacks;
+  std::vector<base::OnceClosure> callbacks;
   std::unique_ptr<gl::GLFence> fence;
 };
 
@@ -545,6 +545,16 @@ bool GLES2Decoder::initialized() const {
 TextureBase* GLES2Decoder::GetTextureBase(uint32_t client_id) {
   return nullptr;
 }
+
+void GLES2Decoder::SetLevelInfo(uint32_t client_id,
+                                int level,
+                                unsigned internal_format,
+                                unsigned width,
+                                unsigned height,
+                                unsigned depth,
+                                unsigned format,
+                                unsigned type,
+                                const gfx::Rect& cleared_rect) {}
 
 void GLES2Decoder::BeginDecoding() {}
 
@@ -661,7 +671,7 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   bool HasPollingWork() const override;
   void PerformPollingWork() override;
 
-  void WaitForReadPixels(base::Closure callback) override;
+  void WaitForReadPixels(base::OnceClosure callback) override;
 
   Logger* GetLogger() override;
 
@@ -681,6 +691,15 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   bool GetServiceTextureId(uint32_t client_texture_id,
                            uint32_t* service_texture_id) override;
   TextureBase* GetTextureBase(uint32_t client_id) override;
+  void SetLevelInfo(uint32_t client_id,
+                    int level,
+                    unsigned internal_format,
+                    unsigned width,
+                    unsigned height,
+                    unsigned depth,
+                    unsigned format,
+                    unsigned type,
+                    const gfx::Rect& cleared_rect) override;
 
   // Restores the current state to the user's settings.
   void RestoreCurrentFramebufferBindings();
@@ -767,6 +786,8 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   void DeleteTransformFeedbacksHelper(GLsizei n,
                                       const volatile GLuint* client_ids);
   void DeleteSyncHelper(GLuint sync);
+
+  bool UnmapBufferHelper(Buffer* buffer);
 
   // Workarounds
   void OnFboChanged() const;
@@ -990,9 +1011,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
 
   void DoCommitOverlayPlanes();
 
-  // Wrapper for SwapInterval.
-  void DoSwapInterval(int interval);
-
   // Wrapper for CopyTexSubImage2D.
   void DoCopyTexSubImage2D(
       GLenum target,
@@ -1089,7 +1107,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
                          TextureRef* texture_ref,
                          const volatile GLbyte* data);
 
-  void EnsureTextureForClientId(GLenum target, GLuint client_id);
   void DoCreateAndConsumeTextureINTERNAL(GLuint client_id,
                                          const volatile GLbyte* key);
   void DoApplyScreenSpaceAntialiasingCHROMIUM();
@@ -1229,11 +1246,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
     return buffer;
   }
 
-  // Removes any buffers in the VertexAtrribInfos and BufferInfos. This is used
-  // on glDeleteBuffers so we can make sure the user does not try to render
-  // with deleted buffers.
-  void RemoveBuffer(GLuint client_id);
-
   // Creates a framebuffer info for the given framebuffer.
   void CreateFramebuffer(GLuint client_id, GLuint service_id) {
     return framebuffer_manager()->CreateFramebuffer(client_id, service_id);
@@ -1283,7 +1295,8 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
       GLuint service_id,
       bool client_visible) {
     return vertex_array_manager()->CreateVertexAttribManager(
-        client_id, service_id, group_->max_vertex_attribs(), client_visible);
+        client_id, service_id, group_->max_vertex_attribs(), client_visible,
+        feature_info_->IsWebGL2OrES3Context());
   }
 
   void DoBindAttribLocation(GLuint client_id,
@@ -2004,7 +2017,6 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
                              GLuint sk_color,
                              GLuint msaa_sample_count,
                              GLboolean can_use_lcd_text,
-                             GLboolean use_distance_field_text,
                              GLint color_type,
                              GLuint color_space_transfer_cache_id);
   void DoRasterCHROMIUM(GLsizeiptr size, const void* list);
@@ -2463,7 +2475,7 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
 
   std::unique_ptr<FramebufferManager> framebuffer_manager_;
 
-  std::unique_ptr<QueryManager> query_manager_;
+  std::unique_ptr<GLES2QueryManager> query_manager_;
 
   std::unique_ptr<GpuFenceManager> gpu_fence_manager_;
 
@@ -3419,9 +3431,12 @@ gpu::ContextResult GLES2DecoderImpl::Initialize(
     api()->glBindTransformFeedbackFn(GL_TRANSFORM_FEEDBACK,
                                      default_transform_feedback);
     state_.bound_transform_feedback = state_.default_transform_feedback.get();
+    state_.bound_transform_feedback->SetIsBound(true);
   }
-  state_.indexed_uniform_buffer_bindings = new IndexedBufferBindingHost(
-      group_->max_uniform_buffer_bindings(), needs_emulation);
+  state_.indexed_uniform_buffer_bindings =
+      new IndexedBufferBindingHost(group_->max_uniform_buffer_bindings(),
+                                   GL_UNIFORM_BUFFER, needs_emulation);
+  state_.indexed_uniform_buffer_bindings->SetIsBound(true);
 
   state_.InitGenericAttribs(group_->max_vertex_attribs());
   vertex_array_manager_.reset(new VertexArrayManager());
@@ -3447,7 +3462,7 @@ gpu::ContextResult GLES2DecoderImpl::Initialize(
       group_->framebuffer_completeness_cache()));
   group_->texture_manager()->AddFramebufferManager(framebuffer_manager_.get());
 
-  query_manager_.reset(new QueryManager(this, feature_info_.get()));
+  query_manager_.reset(new GLES2QueryManager(this, feature_info_.get()));
 
   gpu_fence_manager_.reset(new GpuFenceManager());
 
@@ -4406,9 +4421,9 @@ void GLES2DecoderImpl::DeleteBuffersHelper(GLsizei n,
     GLuint client_id = client_ids[ii];
     Buffer* buffer = GetBuffer(client_id);
     if (buffer && !buffer->IsDeleted()) {
-      buffer->RemoveMappedRange();
+      UnmapBufferHelper(buffer);
       state_.RemoveBoundBuffer(buffer);
-      RemoveBuffer(client_id);
+      buffer_manager()->RemoveBuffer(client_id);
     }
   }
 }
@@ -4520,7 +4535,8 @@ void GLES2DecoderImpl::DeleteTransformFeedbacksHelper(
         // Bind to the default transform feedback.
         DCHECK(state_.default_transform_feedback.get());
         state_.default_transform_feedback->DoBindTransformFeedback(
-            GL_TRANSFORM_FEEDBACK);
+            GL_TRANSFORM_FEEDBACK, state_.bound_transform_feedback.get(),
+            state_.bound_transform_feedback_buffer.get());
         state_.bound_transform_feedback =
             state_.default_transform_feedback.get();
       }
@@ -4968,6 +4984,21 @@ TextureBase* GLES2DecoderImpl::GetTextureBase(uint32_t client_id) {
   return texture_ref ? texture_ref->texture() : nullptr;
 }
 
+void GLES2DecoderImpl::SetLevelInfo(uint32_t client_id,
+                                    int level,
+                                    unsigned internal_format,
+                                    unsigned width,
+                                    unsigned height,
+                                    unsigned depth,
+                                    unsigned format,
+                                    unsigned type,
+                                    const gfx::Rect& cleared_rect) {
+  TextureRef* texture_ref = texture_manager()->GetTexture(client_id);
+  texture_manager()->SetLevelInfo(texture_ref, texture_ref->texture()->target(),
+                                  level, internal_format, width, height, depth,
+                                  0 /* border */, format, type, cleared_rect);
+}
+
 void GLES2DecoderImpl::Destroy(bool have_context) {
   if (!initialized())
     return;
@@ -5066,6 +5097,7 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
       group_->texture_manager()->MarkContextLost();
     if (gr_context_)
       gr_context_->abandonContext();
+    state_.MarkContextLost();
   }
   deschedule_until_finished_fences_.clear();
 
@@ -5654,10 +5686,6 @@ error::Error GLES2DecoderImpl::DoCommands(unsigned int num_commands,
   }
 }
 
-void GLES2DecoderImpl::RemoveBuffer(GLuint client_id) {
-  buffer_manager()->RemoveBuffer(client_id);
-}
-
 void GLES2DecoderImpl::DoFinish() {
   api()->glFinishFn();
   ProcessPendingReadPixels(true);
@@ -5820,10 +5848,10 @@ void GLES2DecoderImpl::BindIndexedBufferImpl(
   DCHECK(bindings);
   switch (function_type) {
     case kBindBufferBase:
-      bindings->DoBindBufferBase(target, index, buffer);
+      bindings->DoBindBufferBase(index, buffer);
       break;
     case kBindBufferRange:
-      bindings->DoBindBufferRange(target, index, buffer, offset, size);
+      bindings->DoBindBufferRange(index, buffer, offset, size);
       break;
     default:
       NOTREACHED();
@@ -6258,7 +6286,9 @@ void GLES2DecoderImpl::DoBindTransformFeedback(
     return;
   }
   LogClientServiceForInfo(transform_feedback, client_id, function_name);
-  transform_feedback->DoBindTransformFeedback(target);
+  transform_feedback->DoBindTransformFeedback(
+      target, state_.bound_transform_feedback.get(),
+      state_.bound_transform_feedback_buffer.get());
   state_.bound_transform_feedback = transform_feedback;
 }
 
@@ -10575,13 +10605,19 @@ error::Error GLES2DecoderImpl::DoDrawArrays(
             "mode differs from active transformfeedback's primitiveMode");
         return error::kNoError;
       }
+      GLsizei vertices = 0;
+      bool valid = state_.bound_transform_feedback->GetVerticesNeededForDraw(
+          mode, count, primcount, &vertices);
+      if (!valid) {
+        LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, function_name,
+                           "integer overflow calculating number of vertices "
+                           "for transform feedback");
+        return error::kNoError;
+      }
       if (!buffer_manager()->RequestBuffersAccess(
-              state_.GetErrorState(),
-              state_.bound_transform_feedback.get(),
+              state_.GetErrorState(), state_.bound_transform_feedback.get(),
               state_.current_program->GetTransformFeedbackVaryingSizes(),
-              count,
-              function_name,
-              "transformfeedback buffers")) {
+              vertices, function_name, "transformfeedback buffers")) {
         return error::kNoError;
       }
     }
@@ -10629,6 +10665,10 @@ error::Error GLES2DecoderImpl::DoDrawArrays(
         api()->glDrawArraysFn(mode, first, count);
       } else {
         api()->glDrawArraysInstancedANGLEFn(mode, first, count, primcount);
+      }
+      if (state_.bound_transform_feedback.get()) {
+        state_.bound_transform_feedback->OnVerticesDrawn(mode, count,
+                                                         primcount);
       }
       if (textures_set) {
         RestoreStateForTextures();
@@ -12089,7 +12129,7 @@ error::Error GLES2DecoderImpl::HandleReadPixels(uint32_t immediate_data_size,
         // sent to GL.
         api()->glReadPixelsFn(x, y, width, height, format, type, 0);
         pending_readpixel_fences_.push(FenceCallback());
-        WaitForReadPixels(base::Bind(
+        WaitForReadPixels(base::BindOnce(
             &GLES2DecoderImpl::FinishReadPixels, weak_ptr_factory_.GetWeakPtr(),
             width, height, format, type, pixels_shm_id, pixels_shm_offset,
             result_shm_id, result_shm_offset, state_.pack_alignment,
@@ -12348,11 +12388,10 @@ error::Error GLES2DecoderImpl::HandleScheduleOverlayPlaneCHROMIUM(
     return error::kNoError;
   }
   if (!surface_->ScheduleOverlayPlane(
-          c.plane_z_order,
-          transform,
-          image,
+          c.plane_z_order, transform, image,
           gfx::Rect(c.bounds_x, c.bounds_y, c.bounds_width, c.bounds_height),
-          gfx::RectF(c.uv_x, c.uv_y, c.uv_width, c.uv_height))) {
+          gfx::RectF(c.uv_x, c.uv_y, c.uv_width, c.uv_height),
+          c.enable_blend)) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
                        "glScheduleOverlayPlaneCHROMIUM",
                        "failed to schedule overlay");
@@ -16161,10 +16200,6 @@ void GLES2DecoderImpl::DoCommitOverlayPlanes() {
   }
 }
 
-void GLES2DecoderImpl::DoSwapInterval(int interval) {
-  context_->SetSwapInterval(interval);
-}
-
 error::Error GLES2DecoderImpl::HandleEnableFeatureCHROMIUM(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
@@ -16466,6 +16501,10 @@ void GLES2DecoderImpl::MarkContextLost(error::ContextLostReason reason) {
   if (transform_feedback_manager_.get()) {
     transform_feedback_manager_->MarkContextLost();
   }
+  if (vertex_array_manager_.get()) {
+    vertex_array_manager_->MarkContextLost();
+  }
+  state_.MarkContextLost();
 }
 
 bool GLES2DecoderImpl::CheckResetStatus() {
@@ -16619,11 +16658,11 @@ void GLES2DecoderImpl::ProcessPendingQueries(bool did_finish) {
 
 // Note that if there are no pending readpixels right now,
 // this function will call the callback immediately.
-void GLES2DecoderImpl::WaitForReadPixels(base::Closure callback) {
+void GLES2DecoderImpl::WaitForReadPixels(base::OnceClosure callback) {
   if (features().use_async_readpixels && !pending_readpixel_fences_.empty()) {
-    pending_readpixel_fences_.back().callbacks.push_back(callback);
+    pending_readpixel_fences_.back().callbacks.push_back(std::move(callback));
   } else {
-    callback.Run();
+    std::move(callback).Run();
   }
 }
 
@@ -16634,11 +16673,11 @@ void GLES2DecoderImpl::ProcessPendingReadPixels(bool did_finish) {
   while (!pending_readpixel_fences_.empty() &&
          (did_finish ||
           pending_readpixel_fences_.front().fence->HasCompleted())) {
-    std::vector<base::Closure> callbacks =
+    std::vector<base::OnceClosure> callbacks =
         std::move(pending_readpixel_fences_.front().callbacks);
     pending_readpixel_fences_.pop();
     for (size_t i = 0; i < callbacks.size(); i++) {
-      callbacks[i].Run();
+      std::move(callbacks[i]).Run();
     }
   }
 }
@@ -16933,7 +16972,11 @@ void GLES2DecoderImpl::DoBindVertexArrayOES(GLuint client_id) {
 
   // Only set the VAO state if it's changed
   if (state_.vertex_attrib_manager.get() != vao) {
+    if (state_.vertex_attrib_manager)
+      state_.vertex_attrib_manager->SetIsBound(false);
     state_.vertex_attrib_manager = vao;
+    if (vao)
+      vao->SetIsBound(true);
     if (!features().native_vertex_array_object) {
       EmulateVertexArrayState();
     } else {
@@ -18241,21 +18284,6 @@ void GLES2DecoderImpl::ProduceTextureRef(const char* func_name,
   group_->mailbox_manager()->ProduceTexture(mailbox, produced);
 }
 
-void GLES2DecoderImpl::EnsureTextureForClientId(
-    GLenum target,
-    GLuint client_id) {
-  TextureRef* texture_ref = GetTexture(client_id);
-  if (!texture_ref) {
-    GLuint service_id;
-    api()->glGenTexturesFn(1, &service_id);
-    DCHECK_NE(0u, service_id);
-    texture_ref = CreateTexture(client_id, service_id);
-    texture_manager()->SetTarget(texture_ref, target);
-    api()->glBindTextureFn(target, service_id);
-    RestoreCurrentTextureBindings(&state_, target, state_.active_texture_unit);
-  }
-}
-
 void GLES2DecoderImpl::DoCreateAndConsumeTextureINTERNAL(
     GLuint client_id,
     const volatile GLbyte* data) {
@@ -18276,8 +18304,8 @@ void GLES2DecoderImpl::DoCreateAndConsumeTextureINTERNAL(
 
   TextureRef* texture_ref = GetTexture(client_id);
   if (texture_ref) {
-    // No need to call EnsureTextureForClientId here, the client_id already has
-    // an associated texture.
+    // No need to create texture here, the client_id already has an associated
+    // texture.
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
         "glCreateAndConsumeTextureCHROMIUM", "client id already in use");
@@ -18286,6 +18314,7 @@ void GLES2DecoderImpl::DoCreateAndConsumeTextureINTERNAL(
   Texture* texture =
       static_cast<Texture*>(group_->mailbox_manager()->ConsumeTexture(mailbox));
   if (!texture) {
+    // Create texture to handle invalid mailbox (see http://crbug.com/472465).
     bool result = GenTexturesHelper(1, &client_id);
     DCHECK(result);
     LOCAL_SET_GL_ERROR(
@@ -18964,6 +18993,43 @@ error::Error GLES2DecoderImpl::HandleMapBufferRange(
   return error::kNoError;
 }
 
+bool GLES2DecoderImpl::UnmapBufferHelper(Buffer* buffer) {
+  DCHECK(buffer);
+  const Buffer::MappedRange* mapped_range = buffer->GetMappedRange();
+  if (!mapped_range)
+    return true;
+  if (!AllBitsSet(mapped_range->access, GL_MAP_WRITE_BIT) ||
+      AllBitsSet(mapped_range->access, GL_MAP_FLUSH_EXPLICIT_BIT)) {
+    // If we don't need to write back, or explict flush is required, no copying
+    // back is needed.
+  } else if (!WasContextLost()) {
+    void* mem = mapped_range->GetShmPointer();
+    DCHECK(mem);
+    DCHECK(mapped_range->pointer);
+    memcpy(mapped_range->pointer, mem, mapped_range->size);
+    if (buffer->shadowed()) {
+      buffer->SetRange(mapped_range->offset, mapped_range->size, mem);
+    }
+  }
+  buffer->RemoveMappedRange();
+  if (WasContextLost())
+    return true;
+  GLboolean rt = api()->glUnmapBufferFn(buffer->initial_target());
+  if (rt == GL_FALSE) {
+    // At this point, we have already done the necessary validation, so
+    // GL_FALSE indicates data corruption.
+    // TODO(zmo): We could redo the map / copy data / unmap to recover, but
+    // the second unmap could still return GL_FALSE. For now, we simply lose
+    // the contexts in the share group.
+    LOG(ERROR) << "glUnmapBuffer unexpectedly returned GL_FALSE";
+    // Need to lose current context before broadcasting!
+    MarkContextLost(error::kGuilty);
+    group_->LoseContexts(error::kInnocent);
+    return false;
+  }
+  return true;
+}
+
 error::Error GLES2DecoderImpl::HandleUnmapBuffer(
     uint32_t immediate_data_size, const volatile void* cmd_data) {
   if (!feature_info_->IsWebGL2OrES3Context()) {
@@ -18990,33 +19056,8 @@ error::Error GLES2DecoderImpl::HandleUnmapBuffer(
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, func_name, "buffer is unmapped");
     return error::kNoError;
   }
-  if (!AllBitsSet(mapped_range->access, GL_MAP_WRITE_BIT) ||
-      AllBitsSet(mapped_range->access, GL_MAP_FLUSH_EXPLICIT_BIT)) {
-    // If we don't need to write back, or explict flush is required, no copying
-    // back is needed.
-  } else {
-    void* mem = mapped_range->GetShmPointer();
-    DCHECK(mem);
-    DCHECK(mapped_range->pointer);
-    memcpy(mapped_range->pointer, mem, mapped_range->size);
-    if (buffer->shadowed()) {
-      buffer->SetRange(mapped_range->offset, mapped_range->size, mem);
-    }
-  }
-  buffer->RemoveMappedRange();
-  GLboolean rt = api()->glUnmapBufferFn(target);
-  if (rt == GL_FALSE) {
-    // At this point, we have already done the necessary validation, so
-    // GL_FALSE indicates data corruption.
-    // TODO(zmo): We could redo the map / copy data / unmap to recover, but
-    // the second unmap could still return GL_FALSE. For now, we simply lose
-    // the contexts in the share group.
-    LOG(ERROR) << func_name << " unexpectedly returned GL_FALSE";
-    // Need to lose current context before broadcasting!
-    MarkContextLost(error::kGuilty);
-    group_->LoseContexts(error::kInnocent);
+  if (!UnmapBufferHelper(buffer))
     return error::kLostContext;
-  }
   return error::kNoError;
 }
 
@@ -20351,7 +20392,6 @@ void GLES2DecoderImpl::DoBeginRasterCHROMIUM(
     GLuint sk_color,
     GLuint msaa_sample_count,
     GLboolean can_use_lcd_text,
-    GLboolean use_distance_field_text,
     GLint color_type,
     GLuint color_space_transfer_cache_id) {
   if (!gr_context_) {
@@ -20444,8 +20484,8 @@ void GLES2DecoderImpl::DoBeginRasterCHROMIUM(
 
   GrBackendTexture gr_texture(width, height, GrMipMapped::kNo, texture_info);
 
-  uint32_t flags =
-      use_distance_field_text ? SkSurfaceProps::kUseDistanceFieldFonts_Flag : 0;
+  uint32_t flags = 0;
+
   // Use unknown pixel geometry to disable LCD text.
   SkSurfaceProps surface_props(flags, kUnknown_SkPixelGeometry);
   if (can_use_lcd_text) {

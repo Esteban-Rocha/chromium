@@ -13,6 +13,7 @@
 #include "ash/frame/frame_header.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/cpp/immersive/immersive_fullscreen_controller_test_api.h"
+#include "ash/public/cpp/vector_icons/vector_icons.h"
 #include "ash/shell.h"
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/splitview/split_view_controller.h"
@@ -27,7 +28,8 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_test.h"
+#include "chrome/browser/ui/ash/multi_user/test_multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/tablet_mode_client.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -61,7 +63,9 @@
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event.h"
+#include "ui/gfx/color_palette.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_util.h"
 
 namespace {
 
@@ -292,10 +296,10 @@ IN_PROC_BROWSER_TEST_P(BrowserNonClientFrameViewAshTest,
   EXPECT_FALSE(MultiUserWindowManager::ShouldShowAvatar(window));
   EXPECT_FALSE(frame_view->profile_indicator_icon());
 
-  const AccountId current_account_id =
+  const AccountId account_id1 =
       multi_user_util::GetAccountIdFromProfile(browser()->profile());
   TestMultiUserWindowManager* manager =
-      new TestMultiUserWindowManager(browser(), current_account_id);
+      new TestMultiUserWindowManager(browser(), account_id1);
 
   // Teleport the window to another desktop.
   const AccountId account_id2(AccountId::FromUserEmail("user2"));
@@ -305,6 +309,11 @@ IN_PROC_BROWSER_TEST_P(BrowserNonClientFrameViewAshTest,
   // An icon should show on the top left corner of the teleported browser
   // window.
   EXPECT_TRUE(frame_view->profile_indicator_icon());
+
+  // Teleport the window back to owner desktop.
+  manager->ShowWindowForUser(window, account_id1);
+  EXPECT_FALSE(MultiUserWindowManager::ShouldShowAvatar(window));
+  EXPECT_FALSE(frame_view->profile_indicator_icon());
 }
 
 // Hit Test for Avatar Menu Button on ChromeOS.
@@ -415,6 +424,40 @@ IN_PROC_BROWSER_TEST_P(BrowserNonClientFrameViewAshTest,
   ASSERT_NE(nullptr, min_window_size);
   EXPECT_GT(min_window_size->height(), min_height_no_bookmarks);
   EXPECT_EQ(*min_window_size, frame_view->GetMinimumSize());
+}
+
+// Tests that when browser frame is minimized, toggling tablet mode doesn't
+// trigger caption button update (https://crbug.com/822890).
+IN_PROC_BROWSER_TEST_P(BrowserNonClientFrameViewAshTest,
+                       ToggleTabletModeOnMinimizedWindow) {
+  BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser());
+  Widget* widget = browser_view->GetWidget();
+  // We know we're using Ash, so static cast.
+  BrowserNonClientFrameViewAsh* frame_view =
+      static_cast<BrowserNonClientFrameViewAsh*>(
+          widget->non_client_view()->frame_view());
+  ash::FrameCaptionButtonContainerView::TestApi test(
+      frame_view->caption_button_container_);
+  widget->Maximize();
+  // Restore icon for size button in maximized window state.
+  EXPECT_EQ(&ash::kWindowControlRestoreIcon,
+            test.size_button()->icon_definition_for_test());
+  widget->Minimize();
+  // When entering tablet mode in minimized window state, size button should not
+  // get updated.
+  TabletModeClient::Get()->OnTabletModeToggled(true);
+  EXPECT_EQ(&ash::kWindowControlRestoreIcon,
+            test.size_button()->icon_definition_for_test());
+  // When leaving tablet mode in minimized window state, size button should not
+  // get updated.
+  TabletModeClient::Get()->OnTabletModeToggled(false);
+  EXPECT_EQ(&ash::kWindowControlRestoreIcon,
+            test.size_button()->icon_definition_for_test());
+  // When unminimizing in non-tablet mode, size button should match with
+  // maximized window state, which is restore icon.
+  ::wm::Unminimize(widget->GetNativeWindow());
+  EXPECT_EQ(&ash::kWindowControlRestoreIcon,
+            test.size_button()->icon_definition_for_test());
 }
 
 namespace {
@@ -558,11 +601,17 @@ IN_PROC_BROWSER_TEST_P(HostedAppNonClientFrameViewAshTest, HostedAppFrame) {
       static_cast<ash::DefaultFrameHeader*>(frame_view->frame_header_.get());
   EXPECT_EQ(SK_ColorBLUE, frame_header->GetActiveFrameColor());
   EXPECT_EQ(SK_ColorBLUE, frame_header->GetInactiveFrameColor());
-  EXPECT_EQ(SK_ColorWHITE, button_container->active_icon_color_);
+  // TODO(afakhry): Figure out the right way to test this (i.e. are we testing
+  // that the caption colors are light since the frame color is dark? Or are we
+  // testing that the colors are contrasting?). Do this while working on themes
+  // in https://crbug.com/820495.
+  const SkColor expected_active_icon_color =
+      GetParam() ? gfx::kGoogleGrey100 : SK_ColorWHITE;
+  EXPECT_EQ(expected_active_icon_color, button_container->active_icon_color_);
 
   // Show a content setting icon.
-  auto& content_setting_views =
-      frame_view->hosted_app_button_container_->content_setting_views_;
+  auto& content_setting_views = frame_view->hosted_app_button_container_
+                                    ->GetContentSettingViewsForTesting();
 
   for (auto* v : content_setting_views)
     EXPECT_FALSE(v->visible());
@@ -792,6 +841,43 @@ IN_PROC_BROWSER_TEST_P(BrowserNonClientFrameViewAshTest,
   frame_view2->split_view_controller_.FlushForTesting();
   EXPECT_TRUE(frame_view->caption_button_container_->visible());
   EXPECT_FALSE(frame_view2->caption_button_container_->visible());
+}
+
+// Tests that the header of a snapped browser window in splitview mode uses
+// the same header height of a maximized window.
+IN_PROC_BROWSER_TEST_P(BrowserNonClientFrameViewAshTest,
+                       HeaderHeightForSnappedBrowserInSplitView) {
+  BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser());
+  Widget* widget = browser_view->GetWidget();
+  BrowserNonClientFrameViewAsh* frame_view =
+      static_cast<BrowserNonClientFrameViewAsh*>(
+          widget->non_client_view()->frame_view());
+  widget->GetNativeWindow()->SetProperty(
+      aura::client::kResizeBehaviorKey,
+      ui::mojom::kResizeBehaviorCanMaximize |
+          ui::mojom::kResizeBehaviorCanResize);
+
+  // Maximize the widget and store its frame header height.
+  widget->Maximize();
+  const int expected_height = frame_view->frame_header_->GetHeaderHeight();
+  widget->Restore();
+
+  ash::Shell* shell = ash::Shell::Get();
+  ash::SplitViewController* split_view_controller =
+      shell->split_view_controller();
+  split_view_controller->BindRequest(
+      mojo::MakeRequest(&frame_view->split_view_controller_));
+  split_view_controller->AddObserver(
+      frame_view->CreateInterfacePtrForTesting());
+  frame_view->split_view_controller_.FlushForTesting();
+
+  shell->tablet_mode_controller()->EnableTabletModeWindowManager(true);
+  shell->window_selector_controller()->ToggleOverview();
+  split_view_controller->SnapWindow(widget->GetNativeWindow(),
+                                    ash::SplitViewController::LEFT);
+  frame_view->split_view_controller_.FlushForTesting();
+  EXPECT_TRUE(frame_view->caption_button_container_->visible());
+  EXPECT_EQ(expected_height, frame_view->frame_header_->GetHeaderHeight());
 }
 
 // Test the V1 apps' kTopViewInset.

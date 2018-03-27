@@ -12,8 +12,8 @@
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
 #include "components/offline_pages/buildflags/buildflags.h"
-#include "extensions/features/features.h"
-#include "media/media_features.h"
+#include "extensions/buildflags/buildflags.h"
+#include "media/media_buildflags.h"
 #include "ppapi/features/features.h"
 #include "rlz/features/features.h"
 
@@ -55,6 +55,7 @@ extern const char kSupervisedUserSecondCustodianProfileImageURL[];
 extern const char kSupervisedUserSecondCustodianProfileURL[];
 extern const char kSupervisedUserSharedSettings[];
 extern const char kSupervisedUserWhitelists[];
+extern const char kTabUnderProtection[];
 extern const char kURLsToRestoreOnStartup[];
 
 #if BUILDFLAG(ENABLE_RLZ)
@@ -299,6 +300,7 @@ extern const char kInstantTetheringEnabled[];
 extern const char kInstantTetheringBleAdvertisingSupported[];
 extern const char kCastReceiverEnabled[];
 extern const char kMinimumAllowedChromeVersion[];
+extern const char kShowSyncSettingsOnSessionStart[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kShowHomeButton[];
 extern const char kSpeechRecognitionFilterProfanities[];
@@ -753,17 +755,7 @@ extern const char kRLZDisabled[];
 #endif
 
 #if BUILDFLAG(ENABLE_APP_LIST)
-extern const char kAppListProfile[];
-extern const char kLastAppListLaunchPing[];
-extern const char kAppListLaunchCount[];
-extern const char kLastAppListAppLaunchPing[];
-extern const char kAppListAppLaunchCount[];
-extern const char kAppLauncherHasBeenEnabled[];
-extern const char kAppListEnableMethod[];
-extern const char kAppListEnableTime[];
 extern const char kAppListLocalState[];
-extern const char kAppLauncherDriveAppMapping[];
-extern const char kAppLauncherUninstalledDriveApps[];
 #endif  // BUILDFLAG(ENABLE_APP_LIST)
 
 #if defined(OS_WIN)
@@ -919,6 +911,7 @@ extern const char kWebDriverOverridesIncompatiblePolicies[];
 
 #if !defined(OS_ANDROID)
 extern const char kAutoplayAllowed[];
+extern const char kAutoplayWhitelist[];
 #endif
 
 }  // namespace prefs

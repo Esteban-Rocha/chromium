@@ -277,6 +277,23 @@ void ViewAndroid::RemoveObserver(ViewAndroidObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
+void ViewAndroid::RequestDisallowInterceptTouchEvent() {
+  ScopedJavaLocalRef<jobject> delegate(GetViewAndroidDelegate());
+  if (delegate.is_null())
+    return;
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_ViewAndroidDelegate_requestDisallowInterceptTouchEvent(env, delegate);
+}
+
+void ViewAndroid::RequestUnbufferedDispatch(const MotionEventAndroid& event) {
+  ScopedJavaLocalRef<jobject> delegate(GetViewAndroidDelegate());
+  if (delegate.is_null())
+    return;
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_ViewAndroidDelegate_requestUnbufferedDispatch(env, delegate,
+                                                     event.GetJavaObject());
+}
+
 void ViewAndroid::OnAttachedToWindow() {
   for (auto& observer : observer_list_)
     observer.OnAttachedToWindow();

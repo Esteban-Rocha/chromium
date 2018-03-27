@@ -30,7 +30,10 @@
 
 #include "core/fileapi/FileReaderLoader.h"
 
+#include <limits>
 #include <memory>
+#include <utility>
+
 #include "base/memory/scoped_refptr.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
@@ -48,7 +51,6 @@
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/loader/fetch/TextResourceDecoderOptions.h"
 #include "platform/loader/fetch/fetch_initiator_type_names.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/Base64.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -68,6 +70,8 @@ FileReaderLoader::FileReaderLoader(ReadType read_type,
                                    FileReaderLoaderClient* client)
     : read_type_(read_type),
       client_(client),
+      // TODO(hajimehoshi): Pass an appropriate task runner to SimpleWatcher
+      // constructor.
       handle_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC),
       binding_(this) {}
 

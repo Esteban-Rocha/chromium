@@ -98,7 +98,6 @@ RasterImplementation::RasterImplementation(
       lose_context_when_out_of_memory_(lose_context_when_out_of_memory),
       use_count_(0),
       current_trace_stack_(0),
-      capabilities_(gpu_control->GetCapabilities()),
       aggressively_free_resources_(false),
       lost_(false) {
   DCHECK(helper);
@@ -216,7 +215,8 @@ void RasterImplementation::ScheduleOverlayPlane(
     gfx::OverlayTransform /* plane_transform */,
     unsigned /* overlay_texture_id */,
     const gfx::Rect& /* display_bounds */,
-    const gfx::RectF& /* uv_rect */) {
+    const gfx::RectF& /* uv_rect */,
+    bool /* enable_blend */) {
   NOTREACHED();
 }
 
@@ -923,20 +923,31 @@ void RasterImplementation::ProduceTextureDirect(GLuint texture,
                                                 const GLbyte* mailbox) {
   NOTIMPLEMENTED();
 }
+
 GLuint RasterImplementation::CreateAndConsumeTexture(
     bool use_buffer,
     gfx::BufferUsage buffer_usage,
     viz::ResourceFormat format,
     const GLbyte* mailbox) {
-  NOTIMPLEMENTED();
-  return 0;
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glCreateAndConsumeTexture("
+                     << use_buffer << ", "
+                     << static_cast<uint32_t>(buffer_usage) << ", "
+                     << static_cast<uint32_t>(format) << ", "
+                     << static_cast<const void*>(mailbox) << ")");
+  GLuint client_id = texture_id_allocator_.AllocateID();
+  helper_->CreateAndConsumeTextureINTERNALImmediate(
+      client_id, use_buffer, buffer_usage, format, mailbox);
+  GPU_CLIENT_LOG("returned " << client_id);
+  CheckGLError();
+  return client_id;
 }
+
 void RasterImplementation::BeginRasterCHROMIUM(
     GLuint texture_id,
     GLuint sk_color,
     GLuint msaa_sample_count,
     GLboolean can_use_lcd_text,
-    GLboolean use_distance_field_text,
     GLint pixel_config,
     const cc::RasterColorSpace& raster_color_space) {
   NOTIMPLEMENTED();

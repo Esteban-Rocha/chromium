@@ -206,6 +206,11 @@ video::-webkit-media-controls:not(.audio-only) [pseudo="-webkit-media-controls-p
     url(default_200_percent/modern/ic_fullscreen_exit_white.png) 2x);
 }
 
+video::-webkit-media-controls-mute-button:disabled,
+video::-webkit-media-controls-fullscreen-button:disabled {
+  opacity: 0.3;
+}
+
 audio::-internal-media-controls-cast-button,
 video::-internal-media-controls-cast-button {
   background-image: -webkit-image-set(
@@ -300,7 +305,7 @@ audio::-webkit-media-controls-timeline,
 video::-webkit-media-controls-timeline {
   -webkit-appearance: -internal-media-control;
 
-  height: 2px;
+  height: 4px;
   padding-left: 16px;
   padding-right: 16px;
   margin: 0;
@@ -333,36 +338,14 @@ video::-webkit-media-controls:not(.audio-only) input[pseudo="-webkit-media-contr
   box-shadow: 0 2px 10px 0 rgba(0,0,0,0.5);
 }
 
-/* thumb-current-time CSS here instead of in the scoped CSS so we can hide on
- * audio-only. */
-input[pseudo="-webkit-media-controls-timeline" i]::-internal-media-controls-thumb-current-time {
-  position: absolute;
-  height: 16px;
-  left: 5px;
-  bottom: 16px;
-  padding: 4px 12px;
-  opacity: 0.9;
-  background: #FFFFFF;
-  border-radius: 100px;
-  font-family: Roboto-Regular, Roboto, sans-serif;
-  font-size: 14px;
-  color: #000000;
-  letter-spacing: 0;
-  text-shadow: 0 0 10px #FFFFFF;
-}
-
-video::-webkit-media-controls.audio-only input[pseudo="-webkit-media-controls-timeline"]::-internal-media-controls-thumb-current-time {
-  display: none;
-}
-
 input[pseudo="-webkit-media-controls-timeline" i]::-webkit-slider-thumb {
   -webkit-appearance: -internal-media-control;
   background: rgba(0, 0, 0, .87);
   box-shadow: 0 0 10px 0 #fff;
 
-  width: 10px;
-  height: 10px;
-  border-radius: 5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
   margin-top: -4px;
   flex: 0 0 0;
 }
@@ -379,14 +362,14 @@ input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-backg
   position: absolute;
   width: 100%;
   top: 0;
-  height: 2px;
+  height: 4px;
   overflow: hidden;
 }
 
 input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-before,
 input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-after {
   position: absolute;
-  height: 2px;
+  height: 4px;
 }
 
 input[pseudo="-webkit-media-controls-timeline" i]::-internal-track-segment-highlight-before {
@@ -647,9 +630,14 @@ video::-webkit-media-controls.audio-only [pseudo="-internal-media-controls-overf
   background: #F1F3F4;
 }
 
+.state-no-metadata input[pseudo="-webkit-media-controls-timeline" i]::-webkit-slider-thumb,
+.state-no-metadata div[pseudo="-webkit-media-controls-current-time-display" i] {
+  display: none;
+}
+
 .state-no-source input[pseudo="-webkit-media-controls-overlay-play-button" i],
-.use-default-poster div[pseudo="-internal-media-controls-button-panel" i],
-.use-default-poster input[pseudo="-webkit-media-controls-timeline" i] {
+.state-no-source div[pseudo="-internal-media-controls-button-panel" i],
+video::-webkit-media-controls.state-no-source input[pseudo="-webkit-media-controls-timeline" i] {
   visibility: hidden;
 }
 
@@ -694,7 +682,6 @@ video::-internal-media-controls-scrubbing-message {
   color: #FFFFFF;
 }
 
-.state-scrubbing div[pseudo="-internal-media-controls-button-panel" i],
 .state-scrubbing input[pseudo="-webkit-media-controls-overlay-play-button" i] {
   display: none;
 }

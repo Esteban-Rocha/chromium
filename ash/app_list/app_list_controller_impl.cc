@@ -16,7 +16,9 @@
 #include "ash/public/cpp/config.h"
 #include "ash/shell.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_macros.h"
 #include "extensions/common/constants.h"
+#include "ui/app_list/answer_card_contents_registry.h"
 #include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/app_list_view.h"
 #include "ui/app_list/views/contents_view.h"
@@ -49,11 +51,22 @@ class ViewDelegateFactoryImpl : public app_list::AppListViewDelegateFactory {
 
 namespace ash {
 
+// TODO(hejq): Get rid of AppListPresenterDelegateFactory and pass in
+// ash::AppListPresenterDelegate directly.
 AppListControllerImpl::AppListControllerImpl()
     : view_delegate_(this),
-      presenter_(std::make_unique<AppListPresenterDelegateFactory>(
-          std::make_unique<ViewDelegateFactoryImpl>(&view_delegate_))) {
+      presenter_(
+          std::make_unique<AppListPresenterDelegateFactory>(
+              std::make_unique<ViewDelegateFactoryImpl>(&view_delegate_)),
+          this) {
   model_.AddObserver(this);
+
+  // Create only for non-mash. Mash uses window tree embed API to get a
+  // token to map answer card contents.
+  if (Shell::GetAshConfig() != Config::MASH) {
+    answer_card_contents_registry_ =
+        std::make_unique<app_list::AnswerCardContentsRegistry>();
+  }
 }
 
 AppListControllerImpl::~AppListControllerImpl() {
@@ -70,7 +83,17 @@ void AppListControllerImpl::BindRequest(
 }
 
 void AppListControllerImpl::AddItem(AppListItemMetadataPtr item_data) {
-  model_.AddItem(CreateAppListItem(std::move(item_data)));
+  const std::string folder_id = item_data->folder_id;
+  if (folder_id.empty()) {
+    model_.AddItem(CreateAppListItem(std::move(item_data)));
+  } else {
+    // When we're setting a whole model of a profile, each item may have its
+    // folder id set properly. However, |AppListModel::AddItemToFolder| requires
+    // the item to add is not in the target folder yet, and sets its folder id
+    // later. So we should clear the folder id here to avoid breaking checks.
+    item_data->folder_id.clear();
+    AddItemToFolder(std::move(item_data), folder_id);
+  }
 }
 
 void AppListControllerImpl::AddItemToFolder(AppListItemMetadataPtr item_data,
@@ -161,13 +184,18 @@ void AppListControllerImpl::SetModelData(
   model_.DeleteAllItems();
   search_model_.DeleteAllResults();
 
-  // Populate new models.
+  // Populate new models. First populate folders and then other items to avoid
+  // automatically creating folder items in |AddItemToFolder|.
   for (auto& app : apps) {
-    const std::string folder_id = app->folder_id;
-    if (folder_id.empty())
-      AddItem(std::move(app));
-    else
-      AddItemToFolder(std::move(app), folder_id);
+    if (!app->is_folder)
+      continue;
+    DCHECK(app->folder_id.empty());
+    AddItem(std::move(app));
+  }
+  for (auto& app : apps) {
+    if (!app)
+      continue;
+    AddItem(std::move(app));
   }
   search_model_.SetSearchEngineIsGoogle(is_search_engine_google);
 }
@@ -222,7 +250,7 @@ void AppListControllerImpl::ResolveOemFolderPosition(
 }
 
 void AppListControllerImpl::DismissAppList() {
-  presenter_.Dismiss();
+  presenter_.Dismiss(base::TimeTicks());
 }
 
 void AppListControllerImpl::GetAppInfoDialogBounds(
@@ -242,7 +270,7 @@ void AppListControllerImpl::ShowAppListAndSwitchToState(
     // TODO(calamity): This may cause the app list to show briefly before the
     // state change. If this becomes an issue, add the ability to ash::Shell to
     // load the app list without showing it.
-    presenter_.Show(GetDisplayIdToShowAppListOn());
+    presenter_.Show(GetDisplayIdToShowAppListOn(), base::TimeTicks());
     app_list_was_open = false;
     app_list_view = presenter_.GetView();
     DCHECK(app_list_view);
@@ -257,7 +285,7 @@ void AppListControllerImpl::ShowAppListAndSwitchToState(
 }
 
 void AppListControllerImpl::ShowAppList() {
-  presenter_.Show(GetDisplayIdToShowAppListOn());
+  presenter_.Show(GetDisplayIdToShowAppListOn(), base::TimeTicks());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -276,6 +304,121 @@ void AppListControllerImpl::OnAppListItemWillBeDeleted(
 
 void AppListControllerImpl::OnAppListItemUpdated(app_list::AppListItem* item) {
   client_->OnItemUpdated(item->CloneMetadata());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Methods used in Ash
+
+bool AppListControllerImpl::GetTargetVisibility() const {
+  return presenter_.GetTargetVisibility();
+}
+
+bool AppListControllerImpl::IsVisible() const {
+  return presenter_.IsVisible();
+}
+
+void AppListControllerImpl::Show(int64_t display_id,
+                                 app_list::AppListShowSource show_source,
+                                 base::TimeTicks event_time_stamp) {
+  UMA_HISTOGRAM_ENUMERATION(app_list::kAppListToggleMethodHistogram,
+                            show_source, app_list::kMaxAppListToggleMethod);
+  presenter_.Show(display_id, event_time_stamp);
+}
+
+void AppListControllerImpl::UpdateYPositionAndOpacity(
+    int y_position_in_screen,
+    float background_opacity) {
+  presenter_.UpdateYPositionAndOpacity(y_position_in_screen,
+                                       background_opacity);
+}
+
+void AppListControllerImpl::EndDragFromShelf(
+    app_list::AppListViewState app_list_state) {
+  presenter_.EndDragFromShelf(app_list_state);
+}
+
+void AppListControllerImpl::ProcessMouseWheelEvent(
+    const ui::MouseWheelEvent& event) {
+  presenter_.ProcessMouseWheelOffset(event.offset().y());
+}
+
+void AppListControllerImpl::ToggleAppList(
+    int64_t display_id,
+    app_list::AppListShowSource show_source,
+    base::TimeTicks event_time_stamp) {
+  if (!IsVisible()) {
+    UMA_HISTOGRAM_ENUMERATION(app_list::kAppListToggleMethodHistogram,
+                              show_source, app_list::kMaxAppListToggleMethod);
+  }
+  presenter_.ToggleAppList(display_id, event_time_stamp);
+}
+
+app_list::AppListViewState AppListControllerImpl::GetAppListViewState() {
+  return model_.state_fullscreen();
+}
+
+void AppListControllerImpl::FlushForTesting() {
+  bindings_.FlushForTesting();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Methods of |client_|:
+
+void AppListControllerImpl::StartSearch(const base::string16& raw_query) {
+  client_->StartSearch(raw_query);
+}
+
+void AppListControllerImpl::OpenSearchResult(const std::string& result_id,
+                                             int event_flags) {
+  client_->OpenSearchResult(result_id, event_flags);
+}
+
+void AppListControllerImpl::InvokeSearchResultAction(
+    const std::string& result_id,
+    int action_index,
+    int event_flags) {
+  client_->InvokeSearchResultAction(result_id, action_index, event_flags);
+}
+
+void AppListControllerImpl::ViewShown(int64_t display_id) {
+  client_->ViewShown(display_id);
+}
+
+void AppListControllerImpl::ViewClosing() {
+  client_->ViewClosing();
+}
+
+void AppListControllerImpl::ActivateItem(const std::string& id,
+                                         int event_flags) {
+  client_->ActivateItem(id, event_flags);
+}
+
+void AppListControllerImpl::GetContextMenuModel(
+    const std::string& id,
+    GetContextMenuModelCallback callback) {
+  client_->GetContextMenuModel(id, std::move(callback));
+}
+
+void AppListControllerImpl::ContextMenuItemSelected(const std::string& id,
+                                                    int command_id,
+                                                    int event_flags) {
+  client_->ContextMenuItemSelected(id, command_id, event_flags);
+}
+
+void AppListControllerImpl::OnVisibilityChanged(bool visible) {
+  client_->OnAppListVisibilityChanged(visible);
+}
+
+void AppListControllerImpl::OnTargetVisibilityChanged(bool visible) {
+  client_->OnAppListTargetVisibilityChanged(visible);
+}
+
+void AppListControllerImpl::StartVoiceInteractionSession() {
+  client_->StartVoiceInteractionSession();
+}
+
+void AppListControllerImpl::ToggleVoiceInteractionSession() {
+  client_->ToggleVoiceInteractionSession();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

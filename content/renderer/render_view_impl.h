@@ -441,6 +441,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                            ScreenMetricsEmulationWithOriginalDSF1);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplScaleFactorTest,
                            ScreenMetricsEmulationWithOriginalDSF2);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplScaleFactorTest,
+                           DeviceEmulationWithOOPIF);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            DecideNavigationPolicyHandlesAllTopLevel);
 #if defined(OS_MACOSX)
@@ -538,9 +540,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnForceRedraw(const ui::LatencyInfo& latency_info);
   void OnSelectWordAroundCaret();
   void OnAudioStateChanged(bool is_audio_playing);
-#if defined(OS_MACOSX)
-  void OnGetRenderedText();
-#endif
 
   // Page message handlers -----------------------------------------------------
   void OnUpdateWindowScreenRect(gfx::Rect window_screen_rect);
@@ -548,6 +547,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnPageWasHidden();
   void OnPageWasShown();
   void OnUpdateScreenInfo(const ScreenInfo& screen_info);
+  void OnFreezePage();
 
   // Adding a new message handler? Please add it in alphabetical order above
   // and put it in the same position in the .cc file.

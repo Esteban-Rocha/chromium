@@ -469,13 +469,11 @@ void AudioOutputDevice::NotifyRenderCallbackOfError() {
   TRACE_EVENT0("audio", "AudioOutputDevice::NotifyRenderCallbackOfError");
   DCHECK(task_runner()->BelongsToCurrentThread());
 
-  {
-    base::AutoLock auto_lock(audio_thread_lock_);
-    // Avoid signaling error if Initialize() hasn't been called yet, or if
-    // Stop() has already been called.
-    if (callback_ && !stopping_hack_)
-      callback_->OnRenderError();
-  }
+  base::AutoLock auto_lock(audio_thread_lock_);
+  // Avoid signaling error if Initialize() hasn't been called yet, or if
+  // Stop() has already been called.
+  if (callback_ && !stopping_hack_)
+    callback_->OnRenderError();
 }
 
 void AudioOutputDevice::WillDestroyCurrentMessageLoop() {
@@ -525,11 +523,11 @@ void AudioOutputDevice::AudioThreadCallback::Process(uint32_t control_signal) {
   buffer->params.frames_skipped = 0;
 
   base::TimeDelta delay =
-      base::TimeDelta::FromMicroseconds(buffer->params.delay);
+      base::TimeDelta::FromMicroseconds(buffer->params.delay_us);
 
   base::TimeTicks delay_timestamp =
       base::TimeTicks() +
-      base::TimeDelta::FromMicroseconds(buffer->params.delay_timestamp);
+      base::TimeDelta::FromMicroseconds(buffer->params.delay_timestamp_us);
 
   TRACE_EVENT_BEGIN2("audio", "AudioOutputDevice::FireRenderCallback",
                      "callback_num", callback_num_, "frames skipped",

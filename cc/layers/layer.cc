@@ -290,7 +290,9 @@ void Layer::SetBounds(const gfx::Size& size) {
   if (!layer_tree_host_)
     return;
 
-  if (masks_to_bounds()) {
+  // Both bounds clipping and mask clipping can result in new areas of subtrees
+  // being exposed on a bounds change. Ensure the damaged areas are updated.
+  if (masks_to_bounds() || inputs_.mask_layer.get()) {
     SetSubtreePropertyChanged();
     SetPropertyTreesNeedRebuild();
   }
@@ -1341,7 +1343,7 @@ void Layer::SetMayContainVideo(bool yes) {
 
 void Layer::SetScrollbarsHiddenFromImplSide(bool hidden) {
   if (inputs_.client)
-    inputs_.client->didChangeScrollbarsHidden(hidden);
+    inputs_.client->didChangeScrollbarsHiddenIfOverlay(hidden);
 }
 
 // On<Property>Animated is called due to an ongoing accelerated animation.

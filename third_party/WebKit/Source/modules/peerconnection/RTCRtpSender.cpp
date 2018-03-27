@@ -8,7 +8,9 @@
 #include "core/dom/DOMException.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 #include "modules/peerconnection/RTCDTMFSender.h"
+#include "modules/peerconnection/RTCErrorUtil.h"
 #include "modules/peerconnection/RTCPeerConnection.h"
+#include "modules/peerconnection/RTCRtpParameters.h"
 #include "platform/peerconnection/RTCVoidRequest.h"
 #include "public/platform/WebRTCDTMFSenderHandler.h"
 
@@ -29,11 +31,8 @@ class ReplaceTrackRequest : public RTCVoidRequest {
     resolver_->Resolve();
   }
 
-  // TODO(hbos): Surface RTCError instead of hard-coding which exception type to
-  // use. This requires the webrtc layer sender interface to be updated.
-  // https://crbug.com/webrtc/8690
-  void RequestFailed(const String& error) override {
-    resolver_->Reject(DOMException::Create(kInvalidModificationError, error));
+  void RequestFailed(const WebRTCError& error) override {
+    resolver_->Reject(CreateDOMExceptionFromWebRTCError(error));
   }
 
   void Trace(blink::Visitor* visitor) override {
@@ -85,6 +84,69 @@ ScriptPromise RTCRtpSender::replaceTrack(ScriptState* script_state,
       new ReplaceTrackRequest(this, with_track, resolver);
   sender_->ReplaceTrack(web_track, request);
   return promise;
+}
+
+void RTCRtpSender::getParameters(RTCRtpParameters& parameters) {
+  // TODO(orphis): Forward missing fields from the WebRTC library:
+  // transactionId, rtcp, headerExtensions, degradationPreference
+  std::unique_ptr<WebRTCRtpParameters> web_parameters =
+      sender_->GetParameters();
+
+  HeapVector<RTCRtpEncodingParameters> encodings;
+  encodings.ReserveCapacity(web_parameters->Encodings().size());
+  for (const auto& web_encoding : web_parameters->Encodings()) {
+    // TODO(orphis): Forward missing fields from the WebRTC library:
+    // codecPayloadType, dtx, ptime, maxFramerate, scaleResolutionDownBy, rid
+    encodings.emplace_back();
+    RTCRtpEncodingParameters& encoding = encodings.back();
+    encoding.setActive(web_encoding.Active());
+    if (web_encoding.MaxBitrate())
+      encoding.setMaxBitrate(web_encoding.MaxBitrate().value());
+
+    const char* priority = "";
+    switch (web_encoding.Priority()) {
+      case WebRTCPriorityType::VeryLow:
+        priority = "very-low";
+        break;
+      case WebRTCPriorityType::Low:
+        priority = "low";
+        break;
+      case WebRTCPriorityType::Medium:
+        priority = "medium";
+        break;
+      case WebRTCPriorityType::High:
+        priority = "high";
+        break;
+      default:
+        NOTREACHED();
+    }
+    encoding.setPriority(priority);
+  }
+  parameters.setEncodings(encodings);
+
+  HeapVector<RTCRtpCodecParameters> codecs;
+  codecs.ReserveCapacity(web_parameters->Codecs().size());
+  for (const auto& web_codec : web_parameters->Codecs()) {
+    // TODO(orphis): Forward missing field from the WebRTC library: sdpFmtpLine
+    codecs.emplace_back();
+    RTCRtpCodecParameters& codec = codecs.back();
+    if (web_codec.PayloadType())
+      codec.setPayloadType(web_codec.PayloadType().value());
+    if (web_codec.MimeType())
+      codec.setMimeType(web_codec.MimeType().value());
+    if (web_codec.ClockRate())
+      codec.setClockRate(web_codec.ClockRate().value());
+    if (web_codec.Channels())
+      codec.setChannels(web_codec.Channels().value());
+  }
+  parameters.setCodecs(codecs);
+}
+
+ScriptPromise RTCRtpSender::setParameters(ScriptState* script_state,
+                                          const RTCRtpParameters&) {
+  return ScriptPromise::RejectWithDOMException(
+      script_state,
+      DOMException::Create(kNotSupportedError, "Method not implemented"));
 }
 
 WebRTCRtpSender* RTCRtpSender::web_sender() {

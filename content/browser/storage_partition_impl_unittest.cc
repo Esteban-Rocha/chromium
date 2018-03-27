@@ -13,8 +13,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "components/leveldb/public/cpp/util.h"
-#include "content/browser/browser_thread_impl.h"
+#include "components/services/leveldb/public/cpp/util.h"
 #include "content/browser/dom_storage/local_storage_database.pb.h"
 #include "content/browser/gpu/shader_cache_factory.h"
 #include "content/browser/storage_partition_impl.h"
@@ -1152,7 +1151,7 @@ TEST_F(StoragePartitionImplTest, RemoveCookieWithMatcher) {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::BindOnce(&ClearCookiesWithMatcher, partition, base::Time(),
-                     base::Time::Max(), false_predicate, &run_loop));
+                     base::Time::Max(), std::move(false_predicate), &run_loop));
   run_loop.RunUntilIdle();
   EXPECT_TRUE(tester.ContainsCookie());
 
@@ -1161,7 +1160,7 @@ TEST_F(StoragePartitionImplTest, RemoveCookieWithMatcher) {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::BindOnce(&ClearCookiesWithMatcher, partition, base::Time(),
-                     base::Time::Max(), true_predicate, &run_loop2));
+                     base::Time::Max(), std::move(true_predicate), &run_loop2));
   run_loop2.RunUntilIdle();
   EXPECT_FALSE(tester.ContainsCookie());
 }

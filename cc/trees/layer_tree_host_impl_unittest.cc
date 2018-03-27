@@ -177,7 +177,11 @@ class LayerTreeHostImplTest : public testing::Test,
     animation_task_ = task;
     requested_animation_delay_ = delay;
   }
-  void DidActivateSyncTree() override {}
+  void DidActivateSyncTree() override {
+    // Make sure the active tree always has a valid LocalSurfaceId.
+    host_impl_->active_tree()->set_local_surface_id(
+        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
+  }
   void WillPrepareTiles() override {}
   void DidPrepareTiles() override {}
   void DidCompletePageScaleAnimationOnImplThread() override {
@@ -237,6 +241,8 @@ class LayerTreeHostImplTest : public testing::Test,
     bool init = host_impl_->InitializeRenderer(layer_tree_frame_sink_.get());
     host_impl_->SetViewportSize(gfx::Size(10, 10));
     host_impl_->active_tree()->PushPageScaleFromMainThread(1.f, 1.f, 1.f);
+    host_impl_->active_tree()->set_local_surface_id(
+        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
     // Set the viz::BeginFrameArgs so that methods which use it are able to.
     host_impl_->WillBeginImplFrame(viz::CreateBeginFrameArgsForTesting(
         BEGINFRAME_FROM_HERE, 0, 1,
@@ -682,7 +688,8 @@ class LayerTreeHostImplTest : public testing::Test,
     SnapContainerData container_data(
         ScrollSnapType(false, SnapAxis::kBoth, SnapStrictness::kMandatory),
         gfx::ScrollOffset(300, 300));
-    SnapAreaData area_data(SnapAxis::kBoth, gfx::ScrollOffset(50, 50), false);
+    SnapAreaData area_data(SnapAxis::kBoth, gfx::ScrollOffset(50, 50),
+                           gfx::RectF(0, 0, 300, 300), false);
     container_data.AddSnapAreaData(area_data);
     overflow->test_properties()->snap_container_data.emplace(container_data);
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
@@ -2178,6 +2185,81 @@ TEST_F(LayerTreeHostImplTest, ImplPinchZoom) {
   }
 }
 
+TEST_F(LayerTreeHostImplTest, ViewportScrollbarGeometry) {
+  // Tests for correct behavior of solid color scrollbars on unscrollable pages
+  // under tricky fractional scale/size issues.
+
+  // Nexus 6 viewport size.
+  const gfx::Size viewport_size(412, 604);
+
+  // The content size of a non-scrollable page we'd expect given Android's
+  // behavior of a 980px layout width on non-mobile pages (often ceiled to 981
+  // due to fractions resulting from DSF). Due to floating point error,
+  // viewport_size.height() / minimum_scale ~= 1438.165 < 1439. Ensure we snap
+  // correctly and err on the side of not showing the scrollbars.
+  const gfx::Size content_size(981, 1439);
+  const float minimum_scale =
+      viewport_size.width() / static_cast<float>(content_size.width());
+
+  // Since the page is unscrollable, the outer viewport matches the content
+  // size.
+  const gfx::Size outer_viewport_size = content_size;
+
+  SolidColorScrollbarLayerImpl* v_scrollbar;
+  SolidColorScrollbarLayerImpl* h_scrollbar;
+
+  // Setup
+  {
+    LayerTreeSettings settings = DefaultSettings();
+    CreateHostImpl(settings, CreateLayerTreeFrameSink());
+    LayerTreeImpl* active_tree = host_impl_->active_tree();
+    active_tree->PushPageScaleFromMainThread(1.f, minimum_scale, 4.f);
+
+    CreateBasicVirtualViewportLayers(viewport_size, content_size);
+
+    // When Chrome on Android loads a non-mobile page, it resizes the main
+    // frame (outer viewport) such that it matches the width of the content,
+    // preventing horizontal scrolling. Replicate that behavior here.
+    host_impl_->OuterViewportScrollLayer()->SetScrollable(outer_viewport_size);
+    LayerImpl* outer_clip =
+        host_impl_->OuterViewportScrollLayer()->test_properties()->parent;
+    outer_clip->SetBounds(outer_viewport_size);
+
+    // Add scrollbars. They will always exist - even if unscrollable - but their
+    // visibility will be determined by whether the content can be scrolled.
+    {
+      std::unique_ptr<SolidColorScrollbarLayerImpl> v_scrollbar_unique =
+          SolidColorScrollbarLayerImpl::Create(active_tree, 400, VERTICAL, 10,
+                                               0, false, true);
+      std::unique_ptr<SolidColorScrollbarLayerImpl> h_scrollbar_unique =
+          SolidColorScrollbarLayerImpl::Create(active_tree, 401, HORIZONTAL, 10,
+                                               0, false, true);
+      v_scrollbar = v_scrollbar_unique.get();
+      h_scrollbar = h_scrollbar_unique.get();
+
+      LayerImpl* scroll = active_tree->OuterViewportScrollLayer();
+      LayerImpl* root = active_tree->InnerViewportContainerLayer();
+      v_scrollbar_unique->SetScrollElementId(scroll->element_id());
+      h_scrollbar_unique->SetScrollElementId(scroll->element_id());
+      root->test_properties()->AddChild(std::move(v_scrollbar_unique));
+      root->test_properties()->AddChild(std::move(h_scrollbar_unique));
+    }
+
+    host_impl_->active_tree()->BuildPropertyTreesForTesting();
+    host_impl_->active_tree()->DidBecomeActive();
+  }
+
+  // Zoom out to the minimum scale. The scrollbars shoud not be scrollable.
+  host_impl_->active_tree()->SetPageScaleOnActiveTree(0.f);
+  EXPECT_FALSE(v_scrollbar->CanScrollOrientation());
+  EXPECT_FALSE(h_scrollbar->CanScrollOrientation());
+
+  // Zoom in a little and confirm that they're now scrollable.
+  host_impl_->active_tree()->SetPageScaleOnActiveTree(minimum_scale * 1.05f);
+  EXPECT_TRUE(v_scrollbar->CanScrollOrientation());
+  EXPECT_TRUE(h_scrollbar->CanScrollOrientation());
+}
+
 TEST_F(LayerTreeHostImplTest, ViewportScrollOrder) {
   LayerTreeSettings settings = DefaultSettings();
   CreateHostImpl(settings, CreateLayerTreeFrameSink());
@@ -3421,6 +3503,8 @@ class LayerTreeHostImplTestScrollbarAnimation : public LayerTreeHostImplTest {
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     host_impl_->active_tree()->DidBecomeActive();
     host_impl_->active_tree()->HandleScrollbarShowRequestsFromMain();
+    host_impl_->active_tree()->set_local_surface_id(
+        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
     DrawFrame();
 
     // SetScrollElementId will initialize the scrollbar which will cause it to
@@ -8215,7 +8299,7 @@ class BlendStateCheckLayer : public LayerImpl {
     test_blending_draw_quad->SetNew(
         shared_quad_state, quad_rect_, visible_quad_rect, needs_blending,
         resource_id_, gfx::RectF(0.f, 0.f, 1.f, 1.f), gfx::Size(1, 1), false,
-        false, false);
+        false, false, false);
 
     EXPECT_EQ(blend_, test_blending_draw_quad->ShouldDrawWithBlending());
     EXPECT_EQ(has_render_surface_,
@@ -8721,7 +8805,10 @@ class LayerTreeHostImplViewportCoveredTest : public LayerTreeHostImplTest {
     VerifyLayerIsLargerThanViewport(last_on_draw_render_passes_);
   }
 
-  void DidActivateSyncTree() override { did_activate_pending_tree_ = true; }
+  void DidActivateSyncTree() override {
+    LayerTreeHostImplTest::DidActivateSyncTree();
+    did_activate_pending_tree_ = true;
+  }
 
   void set_gutter_quad_material(viz::DrawQuad::Material material) {
     gutter_quad_material_ = material;
@@ -8904,6 +8991,8 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   root->test_properties()->AddChild(std::move(child));
   layer_tree_host_impl->active_tree()->SetRootLayerForTesting(std::move(root));
   layer_tree_host_impl->active_tree()->BuildPropertyTreesForTesting();
+  layer_tree_host_impl->active_tree()->set_local_surface_id(
+      viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
 
   TestFrameData frame;
 

@@ -47,6 +47,7 @@
 #include "WebGestureDevice.h"
 #include "WebLocalizedString.h"
 #include "WebPlatformEventType.h"
+#include "WebRTCAPIName.h"
 #include "WebSize.h"
 #include "WebSpeechSynthesizer.h"
 #include "WebString.h"
@@ -77,6 +78,7 @@ class GpuMemoryBufferManager;
 
 namespace service_manager {
 class Connector;
+class InterfaceProvider;
 }
 
 namespace v8 {
@@ -288,7 +290,7 @@ class BLINK_PLATFORM_EXPORT Platform {
   // Cache Storage ----------------------------------------------------------
 
   virtual std::unique_ptr<WebServiceWorkerCacheStorage> CreateCacheStorage(
-      const WebSecurityOrigin&);
+      service_manager::InterfaceProvider* mojo_provider);
 
   // Gamepad -------------------------------------------------------------
 
@@ -630,6 +632,8 @@ class BLINK_PLATFORM_EXPORT Platform {
   // May return null if the functionality is not available.
   virtual std::unique_ptr<WebImageCaptureFrameGrabber>
   CreateImageCaptureFrameGrabber();
+
+  virtual void UpdateWebRTCAPICount(WebRTCAPIName api_name) {}
 
   // WebSocket ----------------------------------------------------------
 

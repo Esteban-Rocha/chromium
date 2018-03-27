@@ -123,6 +123,7 @@
 #include "components/policy/core/common/policy_types.h"
 #include "components/policy/policy_constants.h"
 #include "components/prefs/pref_service.h"
+#include "components/safe_browsing/features.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/security_interstitials/content/security_interstitial_page.h"
@@ -183,7 +184,7 @@
 #include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "extensions/common/switches.h"
 #include "extensions/common/value_builder.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "net/base/net_errors.h"
 #include "net/base/url_util.h"
 #include "net/dns/mock_host_resolver.h"
@@ -291,6 +292,8 @@ const base::FilePath::CharType kGoodUnpackedExt[] =
     FILE_PATH_LITERAL("good_unpacked");
 const base::FilePath::CharType kAppUnpackedExt[] =
     FILE_PATH_LITERAL("app");
+
+const char kAutoplayTestPageURL[] = "/media/autoplay_iframe.html";
 
 #if !defined(OS_MACOSX)
 const base::FilePath::CharType kUnpackedFullscreenAppName[] =
@@ -2603,6 +2606,53 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, URLBlacklist) {
   CheckCanOpenURL(browser(), kURLS[4]);
 }
 
+IN_PROC_BROWSER_TEST_F(PolicyTest, URLBlacklistIncognito) {
+  // Checks that URLs can be blacklisted, and that exceptions can be made to
+  // the blacklist.
+
+  Browser* incognito_browser =
+      OpenURLOffTheRecord(browser()->profile(), GURL("about:blank"));
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  const std::string kURLS[] = {
+      embedded_test_server()->GetURL("aaa.com", "/empty.html").spec(),
+      embedded_test_server()->GetURL("bbb.com", "/empty.html").spec(),
+      embedded_test_server()->GetURL("sub.bbb.com", "/empty.html").spec(),
+      embedded_test_server()->GetURL("bbb.com", "/policy/blank.html").spec(),
+      embedded_test_server()->GetURL("bbb.com.", "/policy/blank.html").spec(),
+  };
+
+  // Verify that "bbb.com" opens before applying the blacklist.
+  CheckCanOpenURL(incognito_browser, kURLS[1]);
+
+  // Set a blacklist.
+  base::ListValue blacklist;
+  blacklist.AppendString("bbb.com");
+  PolicyMap policies;
+  policies.Set(key::kURLBlacklist, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+               POLICY_SOURCE_CLOUD, blacklist.CreateDeepCopy(), nullptr);
+  UpdateProviderPolicy(policies);
+  FlushBlacklistPolicy();
+  // All bbb.com URLs are blocked, and "aaa.com" is still unblocked.
+  CheckCanOpenURL(incognito_browser, kURLS[0]);
+  for (size_t i = 1; i < arraysize(kURLS); ++i)
+    CheckURLIsBlocked(incognito_browser, kURLS[i]);
+
+  // Whitelist some sites of bbb.com.
+  base::ListValue whitelist;
+  whitelist.AppendString("sub.bbb.com");
+  whitelist.AppendString("bbb.com/policy");
+  policies.Set(key::kURLWhitelist, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+               POLICY_SOURCE_CLOUD, whitelist.CreateDeepCopy(), nullptr);
+  UpdateProviderPolicy(policies);
+  FlushBlacklistPolicy();
+  CheckURLIsBlocked(incognito_browser, kURLS[1]);
+  CheckCanOpenURL(incognito_browser, kURLS[2]);
+  CheckCanOpenURL(incognito_browser, kURLS[3]);
+  CheckCanOpenURL(incognito_browser, kURLS[4]);
+}
+
 IN_PROC_BROWSER_TEST_F(PolicyTest, URLBlacklistAndWhitelist) {
   // Regression test for http://crbug.com/755256. Blacklisting * and
   // whitelisting an origin should work.
@@ -3982,6 +4032,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, TaskManagerEndProcessEnabled) {
 // Test that when password protection warning trigger is set by policy, chrome
 // password protection service gets the correct value.
 IN_PROC_BROWSER_TEST_F(PolicyTest, PasswordProtectionWarningTrigger) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      safe_browsing::kEnterprisePasswordProtectionV1);
   // Without setting up the enterprise policy,
   // |GetPasswordProtectionTriggerPref(..) should return |PHISHING_REUSE|.
   const PrefService* const prefs = browser()->profile()->GetPrefs();
@@ -4019,6 +4072,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, PasswordProtectionWarningTrigger) {
 // Test that when password protection risk trigger is set by policy, chrome
 // password protection service gets the correct value.
 IN_PROC_BROWSER_TEST_F(PolicyTest, PasswordProtectionRiskTrigger) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      safe_browsing::kEnterprisePasswordProtectionV1);
   // Without setting up the enterprise policy,
   // |GetPasswordProtectionTriggerPref(..) should return |PHISHING_REUSE|.
   const PrefService* const prefs = browser()->profile()->GetPrefs();
@@ -4056,6 +4112,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, PasswordProtectionRiskTrigger) {
 // Test that when safe browsing whitelist domains are set by policy, safe
 // browsing service gets the correct value.
 IN_PROC_BROWSER_TEST_F(PolicyTest, SafeBrowsingWhitelistDomains) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      safe_browsing::kEnterprisePasswordProtectionV1);
   // Without setting up the enterprise policy,
   // |GetSafeBrowsingDomainsPref(..) should return empty list.
   const PrefService* const prefs = browser()->profile()->GetPrefs();
@@ -4101,6 +4160,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, SafeBrowsingWhitelistDomains) {
 // Test that when password protection login URLs are set by policy, password
 // protection service gets the correct value.
 IN_PROC_BROWSER_TEST_F(PolicyTest, PasswordProtectionLoginURLs) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      safe_browsing::kEnterprisePasswordProtectionV1);
   // Without setting up the enterprise policy,
   // |GetPasswordProtectionLoginURLsPref(..) should return empty list.
   const PrefService* const prefs = browser()->profile()->GetPrefs();
@@ -4144,6 +4206,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, PasswordProtectionLoginURLs) {
 // Test that when password protection change password URL is set by policy,
 // password protection service gets the correct value.
 IN_PROC_BROWSER_TEST_F(PolicyTest, PasswordProtectionChangePasswordURL) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      safe_browsing::kEnterprisePasswordProtectionV1);
   // Without setting up the enterprise policy,
   // |GetChangePasswordURL(..) should return default GAIA change password URL.
   const PrefService* const prefs = browser()->profile()->GetPrefs();
@@ -5057,15 +5122,69 @@ IN_PROC_BROWSER_TEST_F(NoteTakingOnLockScreenPolicyTest,
 
 #if !defined(OS_ANDROID)
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, AutoplayAllowedByPolicy) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  content::WebContents* web_contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
+class AutoplayPolicyTest : public PolicyTest {
+ public:
+  AutoplayPolicyTest() {
+    // Start two embedded test servers on different ports. This will ensure
+    // the test works correctly with cross origin iframes and site-per-process.
+    embedded_test_server2()->AddDefaultHandlers(
+        base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+    EXPECT_TRUE(embedded_test_server()->Start());
+    EXPECT_TRUE(embedded_test_server2()->Start());
+  }
+
+  void NavigateToTestPage() {
+    GURL origin = embedded_test_server()->GetURL(kAutoplayTestPageURL);
+    ui_test_utils::NavigateToURL(browser(), origin);
+
+    // Navigate the subframe to the test page but on the second origin.
+    GURL origin2 = embedded_test_server2()->GetURL(kAutoplayTestPageURL);
+    std::string script = base::StringPrintf(
+        "setTimeout(\""
+        "document.getElementById('subframe').src='%s';"
+        "\",0)",
+        origin2.spec().c_str());
+    content::TestNavigationObserver load_observer(GetWebContents());
+    EXPECT_TRUE(ExecuteScriptWithoutUserGesture(GetWebContents(), script));
+    load_observer.Wait();
+  }
+
+  net::EmbeddedTestServer* embedded_test_server2() {
+    return &embedded_test_server2_;
+  }
+
+  bool TryAutoplay(content::RenderFrameHost* rfh) {
+    bool result = false;
+
+    EXPECT_TRUE(content::ExecuteScriptWithoutUserGestureAndExtractBool(
+        rfh, "tryPlayback();", &result));
+
+    return result;
+  }
+
+  content::WebContents* GetWebContents() {
+    return browser()->tab_strip_model()->GetActiveWebContents();
+  }
+
+  content::RenderFrameHost* GetMainFrame() {
+    return GetWebContents()->GetMainFrame();
+  }
+
+  content::RenderFrameHost* GetChildFrame() {
+    return GetWebContents()->GetAllFrames()[1];
+  }
+
+ private:
+  // Second instance of embedded test server to provide a second test origin.
+  net::EmbeddedTestServer embedded_test_server2_;
+};
+
+IN_PROC_BROWSER_TEST_F(AutoplayPolicyTest, AutoplayAllowedByPolicy) {
+  NavigateToTestPage();
 
   // Check that autoplay was not allowed.
-  EXPECT_EQ(
-      web_contents->GetRenderViewHost()->GetWebkitPreferences().autoplay_policy,
-      content::AutoplayPolicy::kDocumentUserActivationRequired);
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
 
   // Update policy to allow autoplay.
   PolicyMap policies;
@@ -5074,10 +5193,177 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, AutoplayAllowedByPolicy) {
   UpdateProviderPolicy(policies);
 
   // Check that autoplay was allowed by policy.
-  web_contents->GetRenderViewHost()->OnWebkitPreferencesChanged();
-  EXPECT_EQ(
-      web_contents->GetRenderViewHost()->GetWebkitPreferences().autoplay_policy,
-      content::AutoplayPolicy::kNoUserGestureRequired);
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_TRUE(TryAutoplay(GetMainFrame()));
+  EXPECT_TRUE(TryAutoplay(GetChildFrame()));
+}
+
+IN_PROC_BROWSER_TEST_F(AutoplayPolicyTest, AutoplayWhitelist_Allowed) {
+  NavigateToTestPage();
+
+  // Check that autoplay was not allowed.
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Create a test whitelist with our origin.
+  std::vector<base::Value> whitelist;
+  whitelist.push_back(base::Value(embedded_test_server()->GetURL("/").spec()));
+
+  // Update policy to allow autoplay for our test origin.
+  PolicyMap policies;
+  SetPolicy(&policies, key::kAutoplayWhitelist,
+            std::make_unique<base::ListValue>(whitelist));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was allowed by policy.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_TRUE(TryAutoplay(GetMainFrame()));
+  EXPECT_TRUE(TryAutoplay(GetChildFrame()));
+}
+
+IN_PROC_BROWSER_TEST_F(AutoplayPolicyTest, AutoplayWhitelist_PatternAllowed) {
+  NavigateToTestPage();
+
+  // Check that autoplay was not allowed.
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Create a test whitelist with our origin.
+  std::vector<base::Value> whitelist;
+  whitelist.push_back(base::Value("127.0.0.1:*"));
+
+  // Update policy to allow autoplay for our test origin.
+  PolicyMap policies;
+  SetPolicy(&policies, key::kAutoplayWhitelist,
+            std::make_unique<base::ListValue>(whitelist));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was allowed by policy.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_TRUE(TryAutoplay(GetMainFrame()));
+  EXPECT_TRUE(TryAutoplay(GetChildFrame()));
+}
+
+IN_PROC_BROWSER_TEST_F(AutoplayPolicyTest, AutoplayWhitelist_Missing) {
+  NavigateToTestPage();
+
+  // Check that autoplay was not allowed.
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Create a test whitelist with a random origin.
+  std::vector<base::Value> whitelist;
+  whitelist.push_back(base::Value("https://www.example.com"));
+
+  // Update policy to allow autoplay for a random origin.
+  PolicyMap policies;
+  SetPolicy(&policies, key::kAutoplayWhitelist,
+            std::make_unique<base::ListValue>(whitelist));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was not allowed.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+}
+
+IN_PROC_BROWSER_TEST_F(AutoplayPolicyTest, AutoplayDeniedByPolicy) {
+  NavigateToTestPage();
+
+  // Check that autoplay was not allowed.
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Update policy to forbid autoplay.
+  PolicyMap policies;
+  SetPolicy(&policies, key::kAutoplayAllowed,
+            std::make_unique<base::Value>(false));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was not allowed by policy.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Create a test whitelist with a random origin.
+  std::vector<base::Value> whitelist;
+  whitelist.push_back(base::Value("https://www.example.com"));
+
+  // Update policy to allow autoplay for a random origin.
+  SetPolicy(&policies, key::kAutoplayWhitelist,
+            std::make_unique<base::ListValue>(whitelist));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was not allowed.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+}
+
+IN_PROC_BROWSER_TEST_F(AutoplayPolicyTest, AutoplayDeniedAllowedWithURL) {
+  NavigateToTestPage();
+
+  // Check that autoplay was not allowed.
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Update policy to forbid autoplay.
+  PolicyMap policies;
+  SetPolicy(&policies, key::kAutoplayAllowed,
+            std::make_unique<base::Value>(false));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was not allowed by policy.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Create a test whitelist with our test origin.
+  std::vector<base::Value> whitelist;
+  whitelist.push_back(base::Value(embedded_test_server()->GetURL("/").spec()));
+
+  // Update policy to allow autoplay for our test origin.
+  SetPolicy(&policies, key::kAutoplayWhitelist,
+            std::make_unique<base::ListValue>(whitelist));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was allowed by policy.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_TRUE(TryAutoplay(GetMainFrame()));
+  EXPECT_TRUE(TryAutoplay(GetChildFrame()));
+}
+
+IN_PROC_BROWSER_TEST_F(AutoplayPolicyTest, AutoplayAllowedGlobalAndURL) {
+  NavigateToTestPage();
+
+  // Check that autoplay was not allowed.
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Update policy to forbid autoplay.
+  PolicyMap policies;
+  SetPolicy(&policies, key::kAutoplayAllowed,
+            std::make_unique<base::Value>(false));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was not allowed by policy.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_FALSE(TryAutoplay(GetMainFrame()));
+  EXPECT_FALSE(TryAutoplay(GetChildFrame()));
+
+  // Create a test whitelist with our test origin.
+  std::vector<base::Value> whitelist;
+  whitelist.push_back(base::Value(embedded_test_server()->GetURL("/").spec()));
+
+  // Update policy to allow autoplay for our test origin.
+  SetPolicy(&policies, key::kAutoplayWhitelist,
+            std::make_unique<base::ListValue>(whitelist));
+  UpdateProviderPolicy(policies);
+
+  // Check that autoplay was allowed by policy.
+  GetWebContents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+  EXPECT_TRUE(TryAutoplay(GetMainFrame()));
+  EXPECT_TRUE(TryAutoplay(GetChildFrame()));
 }
 
 #endif  // !defined(OS_ANDROID)

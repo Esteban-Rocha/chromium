@@ -17,6 +17,7 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -209,7 +210,7 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreatedOnUI(bool success) {
 
   web_contents->GenerateMHTML(
       content::MHTMLGenerationParams(mhtml_path_),
-      base::Bind(&PageCaptureSaveAsMHTMLFunction::MHTMLGenerated, this));
+      base::BindOnce(&PageCaptureSaveAsMHTMLFunction::MHTMLGenerated, this));
 }
 
 void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(int64_t mhtml_file_size) {

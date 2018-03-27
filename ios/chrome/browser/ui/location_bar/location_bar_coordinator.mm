@@ -21,11 +21,11 @@
 #import "ios/chrome/browser/ui/location_bar/location_bar_mediator.h"
 #import "ios/chrome/browser/ui/location_bar/location_bar_url_loader.h"
 #include "ios/chrome/browser/ui/location_bar/location_bar_view.h"
-#include "ios/chrome/browser/ui/omnibox/location_bar_controller.h"
-#include "ios/chrome/browser/ui/omnibox/location_bar_controller_impl.h"
 #include "ios/chrome/browser/ui/omnibox/location_bar_delegate.h"
+#import "ios/chrome/browser/ui/omnibox/omnibox_coordinator.h"
 #import "ios/chrome/browser/ui/omnibox/omnibox_text_field_ios.h"
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_coordinator.h"
+#include "ios/chrome/browser/ui/omnibox/web_omnibox_edit_controller_impl.h"
 #import "ios/chrome/browser/ui/toolbar/clean/toolbar_coordinator_delegate.h"
 #import "ios/chrome/browser/ui/toolbar/keyboard_assist/toolbar_assistive_keyboard_delegate.h"
 #import "ios/chrome/browser/ui/toolbar/keyboard_assist/toolbar_assistive_keyboard_views.h"
@@ -49,13 +49,15 @@ const int kLocationAuthorizationStatusCount = 4;
 }  // namespace
 
 @interface LocationBarCoordinator ()<LocationBarConsumer, LocationBarDelegate> {
-  std::unique_ptr<LocationBarControllerImpl> _locationBarController;
+  std::unique_ptr<WebOmniboxEditControllerImpl> _editController;
 }
 // Object taking care of adding the accessory views to the keyboard.
 @property(nonatomic, strong)
     ToolbarAssistiveKeyboardDelegateImpl* keyboardDelegate;
 // Coordinator for the omnibox popup.
 @property(nonatomic, strong) OmniboxPopupCoordinator* omniboxPopupCoordinator;
+// Coordinator for the omnibox.
+@property(nonatomic, strong) OmniboxCoordinator* omniboxCoordinator;
 @property(nonatomic, strong) LocationBarMediator* mediator;
 // Redefined as readwrite and as LocationBarView.
 @property(nonatomic, strong, readwrite) LocationBarView* locationBarView;
@@ -73,6 +75,7 @@ const int kLocationAuthorizationStatusCount = 4;
 @synthesize webStateList = _webStateList;
 @synthesize omniboxPopupCoordinator = _omniboxPopupCoordinator;
 @synthesize popupPositioner = _popupPositioner;
+@synthesize omniboxCoordinator = _omniboxCoordinator;
 
 #pragma mark - public
 
@@ -112,17 +115,27 @@ const int kLocationAuthorizationStatusCount = 4;
   }
 
   self.keyboardDelegate = [[ToolbarAssistiveKeyboardDelegateImpl alloc] init];
-  self.keyboardDelegate.dispatcher = self.dispatcher;
+  self.keyboardDelegate.dispatcher =
+      static_cast<id<ApplicationCommands, BrowserCommands>>(self.dispatcher);
   self.keyboardDelegate.omniboxTextField = self.locationBarView.textField;
   ConfigureAssistiveKeyboardViews(self.locationBarView.textField, kDotComTLD,
                                   self.keyboardDelegate);
 
-  _locationBarController = std::make_unique<LocationBarControllerImpl>(
-      self.locationBarView, self.browserState, self, self.dispatcher);
-  _locationBarController->SetURLLoader(self);
+  _editController = std::make_unique<WebOmniboxEditControllerImpl>(self);
+  _editController->SetURLLoader(self);
+
+  self.omniboxCoordinator = [[OmniboxCoordinator alloc] init];
+  self.omniboxCoordinator.textField = self.locationBarView.textField;
+  self.omniboxCoordinator.editController = _editController.get();
+  self.omniboxCoordinator.browserState = self.browserState;
+  self.omniboxCoordinator.dispatcher = self.dispatcher;
+  [self.omniboxCoordinator start];
+
   self.omniboxPopupCoordinator =
-      _locationBarController->CreatePopupCoordinator(self.popupPositioner);
+      [self.omniboxCoordinator createPopupCoordinator:self.popupPositioner];
+  self.omniboxPopupCoordinator.dispatcher = self.dispatcher;
   [self.omniboxPopupCoordinator start];
+
   self.mediator = [[LocationBarMediator alloc] init];
   self.mediator.webStateList = self.webStateList;
   self.mediator.consumer = self;
@@ -131,7 +144,8 @@ const int kLocationAuthorizationStatusCount = 4;
 - (void)stop {
   // The popup has to be destroyed before the location bar.
   [self.omniboxPopupCoordinator stop];
-  _locationBarController.reset();
+  [self.omniboxCoordinator stop];
+  _editController.reset();
 
   self.locationBarView = nil;
   [self.mediator disconnect];
@@ -142,25 +156,11 @@ const int kLocationAuthorizationStatusCount = 4;
   return self.omniboxPopupCoordinator.hasResults;
 }
 
-#pragma mark - LocationBarConsumer
-
-- (void)updateOmniboxState {
-  if (!_locationBarController)
-    return;
-  _locationBarController->SetShouldShowHintText(
-      [self.delegate shouldDisplayHintText]);
-  _locationBarController->OnToolbarUpdated();
-}
-
 - (BOOL)showingOmniboxPopup {
-  OmniboxViewIOS* omniboxViewIOS = static_cast<OmniboxViewIOS*>(
-      _locationBarController.get()->GetLocationEntry());
-  return omniboxViewIOS->IsPopupOpen();
+  return self.omniboxPopupCoordinator.isOpen;
 }
 
 - (void)focusOmniboxFromFakebox {
-  OmniboxEditModel* model = _locationBarController->GetLocationEntry()->model();
-  model->set_focus_source(OmniboxEditModel::FocusSource::FAKEBOX);
   [self focusOmnibox];
 }
 
@@ -176,6 +176,16 @@ const int kLocationAuthorizationStatusCount = 4;
 
 - (void)addContractOmniboxAnimations:(UIViewPropertyAnimator*)animator {
   [self.locationBarView addContractOmniboxAnimations:animator];
+}
+
+#pragma mark - LocationBarConsumer
+
+- (void)updateOmniboxState {
+  [self.omniboxCoordinator updateOmniboxState];
+}
+
+- (void)defocusOmnibox {
+  [self cancelOmniboxEdit];
 }
 
 #pragma mark - VoiceSearchControllerDelegate
@@ -245,8 +255,7 @@ const int kLocationAuthorizationStatusCount = 4;
 }
 
 - (void)cancelOmniboxEdit {
-  _locationBarController->HideKeyboardAndEndEditing();
-  [self updateOmniboxState];
+  [self.omniboxCoordinator endEditing];
 }
 
 #pragma mark - LocationBarDelegate

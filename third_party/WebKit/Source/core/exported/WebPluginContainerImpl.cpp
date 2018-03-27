@@ -163,7 +163,8 @@ IntRect WebPluginContainerImpl::FrameRect() const {
 
 void WebPluginContainerImpl::Paint(GraphicsContext& context,
                                    const GlobalPaintFlags,
-                                   const CullRect& cull_rect) const {
+                                   const CullRect& cull_rect,
+                                   const IntSize& paint_offset) const {
   // Don't paint anything if the plugin doesn't intersect.
   if (!cull_rect.IntersectsCullRect(FrameRect()))
     return;
@@ -187,9 +188,9 @@ void WebPluginContainerImpl::Paint(GraphicsContext& context,
 
   // The plugin is positioned in the root frame's coordinates, so it needs to
   // be painted in them too.
-  IntPoint origin = ParentFrameView().ContentsToRootFrame(IntPoint(0, 0));
-  context.Translate(static_cast<float>(-origin.X()),
-                    static_cast<float>(-origin.Y()));
+  FloatPoint origin(ParentFrameView().ContentsToRootFrame(IntPoint()));
+  origin.Move(-paint_offset);
+  context.Translate(-origin.X(), -origin.Y());
 
   WebCanvas* canvas = context.Canvas();
 
@@ -565,9 +566,14 @@ bool WebPluginContainerImpl::IsRectTopmost(const WebRect& rect) {
   // FIXME: We'll be off by 1 when the width or height is even.
   LayoutPoint center = document_rect.Center();
   // Make the rect we're checking (the point surrounded by padding rects)
-  // contained inside the requested rect. (Note that -1/2 is 0.)
-  LayoutSize padding((document_rect.Width() - 1) / 2,
-                     (document_rect.Height() - 1) / 2);
+  // contained inside the requested rect.
+  // TODO(pdr): This logic for calculating padding is only needed because the
+  // hit test rect for a point has non-zero dimensions. This can be simplified
+  // when the hit test rect is 0px x 0px, see: HitTestLocation::RectForPoint.
+  LayoutRect hit_rect = HitTestLocation::RectForPoint(center);
+  LayoutRectOutsets padding(
+      hit_rect.Y() - document_rect.Y(), document_rect.MaxX() - hit_rect.MaxX(),
+      document_rect.MaxY() - hit_rect.MaxY(), hit_rect.X() - document_rect.X());
   HitTestResult result = frame->GetEventHandler().HitTestResultAtPoint(
       center,
       HitTestRequest::kReadOnly | HitTestRequest::kActive |
@@ -990,12 +996,10 @@ void WebPluginContainerImpl::HandleGestureEvent(GestureEvent* event) {
   WebGestureEvent translated_event = event->NativeEvent();
   WebFloatPoint absolute_root_frame_location =
       event->NativeEvent().PositionInRootFrame();
-  IntPoint local_point =
-      RoundedIntPoint(element_->GetLayoutObject()->AbsoluteToLocal(
-          absolute_root_frame_location, kUseTransforms));
+  FloatPoint local_point = element_->GetLayoutObject()->AbsoluteToLocal(
+      absolute_root_frame_location, kUseTransforms);
   translated_event.FlattenTransform();
-  translated_event.x = local_point.X();
-  translated_event.y = local_point.Y();
+  translated_event.SetPositionInWidget(local_point);
 
   WebCursorInfo cursor_info;
   if (web_plugin_->HandleInputEvent(WebCoalescedInputEvent(translated_event),

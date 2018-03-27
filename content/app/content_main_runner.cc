@@ -55,7 +55,7 @@
 #include "content/public/common/zygote_buildflags.h"
 #include "gin/v8_initializer.h"
 #include "media/base/media.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "ppapi/features/features.h"
 #include "services/service_manager/embedder/switches.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
@@ -106,7 +106,7 @@
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER) && !defined(CHROME_MULTIPLE_DLL_CHILD)
 #include "content/browser/gpu/gpu_main_thread_factory.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
-#include "content/browser/utility_process_host_impl.h"
+#include "content/browser/utility_process_host.h"
 #include "content/gpu/in_process_gpu_thread.h"
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
@@ -336,6 +336,10 @@ int RunZygote(ContentMainDelegate* delegate) {
       command_line.GetSwitchValueASCII(switches::kProcessType);
   ContentClientInitializer::Set(process_type, delegate);
 
+#if !defined(OS_ANDROID)
+  tracing::EnableStartupTracingIfNeeded();
+#endif  // !OS_ANDROID
+
   MainFunctionParams main_params(command_line);
   main_params.zygote_child = true;
 
@@ -362,7 +366,7 @@ int RunZygote(ContentMainDelegate* delegate) {
 
 static void RegisterMainThreadFactories() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER) && !defined(CHROME_MULTIPLE_DLL_CHILD)
-  UtilityProcessHostImpl::RegisterUtilityMainThreadFactory(
+  UtilityProcessHost::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
   RenderProcessHostImpl::RegisterRendererMainThreadFactory(
       CreateInProcessRendererThread);
@@ -544,12 +548,11 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // Enable startup tracing asap to avoid early TRACE_EVENT calls being
     // ignored. For Android, startup tracing is enabled in an even earlier place
     // content/app/android/library_loader_hooks.cc.
-    // Zygote process does not have file thread and renderer process on Win10
-    // cannot access the file system.
-    // TODO(ssid): Check if other processes can enable startup tracing here.
-    bool can_access_file_system = (process_type != switches::kZygoteProcess &&
-                                   process_type != switches::kRendererProcess);
-    tracing::EnableStartupTracingIfNeeded(can_access_file_system);
+    //
+    // Startup tracing flags are not (and should not) passed to Zygote
+    // processes. We will enable tracing when forked, if needed.
+    if (process_type != switches::kZygoteProcess)
+      tracing::EnableStartupTracingIfNeeded();
 #endif  // !OS_ANDROID
 
 #if defined(OS_WIN)

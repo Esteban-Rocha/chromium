@@ -99,6 +99,15 @@ class GPU_GLES2_EXPORT GLES2Decoder : public CommonDecoder,
   // DecoderContext implementation.
   bool initialized() const override;
   TextureBase* GetTextureBase(uint32_t client_id) override;
+  void SetLevelInfo(uint32_t client_id,
+                    int level,
+                    unsigned internal_format,
+                    unsigned width,
+                    unsigned height,
+                    unsigned depth,
+                    unsigned format,
+                    unsigned type,
+                    const gfx::Rect& cleared_rect) override;
   void BeginDecoding() override;
   void EndDecoding() override;
   base::StringPiece GetLogPrefix() override;
@@ -213,7 +222,7 @@ class GPU_GLES2_EXPORT GLES2Decoder : public CommonDecoder,
                             int height,
                             int depth) = 0;
 
-  virtual void WaitForReadPixels(base::Closure callback) = 0;
+  virtual void WaitForReadPixels(base::OnceClosure callback) = 0;
 
   virtual Logger* GetLogger() = 0;
 

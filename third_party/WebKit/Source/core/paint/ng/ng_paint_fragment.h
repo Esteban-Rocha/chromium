@@ -50,9 +50,12 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
     return children_;
   }
 
-  // Returns offset to its container box for inline fragments.
+  // Returns the container line box for inline fragments.
+  const NGPaintFragment* ContainerLineBox() const;
+
+  // Returns offset to its container box for inline and line box fragments.
   const NGPhysicalOffset& InlineOffsetToContainerBox() const {
-    DCHECK(PhysicalFragment().IsInline());
+    DCHECK(PhysicalFragment().IsInline() || PhysicalFragment().IsLineBox());
     return inline_offset_to_container_box_;
   }
 
@@ -150,6 +153,14 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
   // Returns a range of NGPaintFragment in an inline formatting context that are
   // for a LayoutObject.
   static FragmentRange InlineFragmentsFor(const LayoutObject*);
+
+  // Computes LocalVisualRect for an inline LayoutObject in the
+  // LayoutObject::LocalVisualRect semantics; i.e., physical coordinates with
+  // flipped block-flow direction. See layout/README.md for the coordinate
+  // spaces.
+  // Returns false if the LayoutObject is not in LayoutNG inline formatting
+  // context.
+  static bool FlippedLocalVisualRectFor(const LayoutObject*, LayoutRect*);
 
  private:
   void PopulateDescendants(

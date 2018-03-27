@@ -26,7 +26,6 @@
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/payment_handler_support.h"
-#include "content/browser/service_worker/service_worker_client_utils.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_installed_scripts_sender.h"
@@ -52,9 +51,6 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 
 namespace content {
-
-using StatusCallback = ServiceWorkerVersion::StatusCallback;
-
 namespace {
 
 // Timeout for an installed worker to start.
@@ -102,7 +98,7 @@ void RunCallbacks(ServiceWorkerVersion* version,
 
 // An adapter to run a |callback| after StartWorker.
 void RunCallbackAfterStartWorker(base::WeakPtr<ServiceWorkerVersion> version,
-                                 StatusCallback callback,
+                                 ServiceWorkerVersion::StatusCallback callback,
                                  ServiceWorkerStatusCode status) {
   if (status == SERVICE_WORKER_OK &&
       version->running_status() != EmbeddedWorkerStatus::RUNNING) {
@@ -1034,16 +1030,6 @@ void ServiceWorkerVersion::OnReportConsoleMessage(int source_identifier,
   }
 }
 
-bool ServiceWorkerVersion::OnMessageReceived(const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(ServiceWorkerVersion, message)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PostMessageToClient,
-                        OnPostMessageToClient)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
-}
-
 void ServiceWorkerVersion::OnStartSentAndScriptEvaluated(
     ServiceWorkerStatusCode status) {
   if (status != SERVICE_WORKER_OK) {
@@ -1123,6 +1109,10 @@ void ServiceWorkerVersion::GetClient(const std::string& client_uuid,
   if (!provider_host ||
       provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
     // The promise will be resolved to 'undefined'.
+    // Note that we don't BadMessage here since Clients#get() can be passed an
+    // arbitrary UUID. The BadMessages for the origin mismatches below are
+    // appropriate because the UUID is taken directly from a Client object so we
+    // expect it to be valid.
     std::move(callback).Run(nullptr);
     return;
   }
@@ -1131,7 +1121,7 @@ void ServiceWorkerVersion::GetClient(const std::string& client_uuid,
 
 void ServiceWorkerVersion::OpenNewTab(const GURL& url,
                                       OpenNewTabCallback callback) {
-  OpenWindow(url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+  OpenWindow(url, service_worker_client_utils::WindowType::NEW_TAB_WINDOW,
              std::move(callback));
 }
 
@@ -1149,10 +1139,30 @@ void ServiceWorkerVersion::OpenPaymentHandlerWindow(
   PaymentHandlerSupport::ShowPaymentHandlerWindow(
       url, context_.get(),
       base::BindOnce(&DidShowPaymentHandlerWindow, url, context_),
-      base::BindOnce(&ServiceWorkerVersion::OpenWindow,
-                     weak_factory_.GetWeakPtr(), url,
-                     WindowOpenDisposition::NEW_POPUP),
+      base::BindOnce(
+          &ServiceWorkerVersion::OpenWindow, weak_factory_.GetWeakPtr(), url,
+          service_worker_client_utils::WindowType::PAYMENT_HANDLER_WINDOW),
       std::move(callback));
+}
+
+void ServiceWorkerVersion::PostMessageToClient(
+    const std::string& client_uuid,
+    blink::TransferableMessage message) {
+  if (!context_)
+    return;
+  ServiceWorkerProviderHost* provider_host =
+      context_->GetProviderHostByClientID(client_uuid);
+  if (!provider_host) {
+    // The client may already have been closed, just ignore.
+    return;
+  }
+  if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
+    mojo::ReportBadMessage(
+        "Received Client#postMessage() request for a cross-origin client.");
+    binding_.Close();
+    return;
+  }
+  provider_host->PostMessageToClient(this, std::move(message));
 }
 
 void ServiceWorkerVersion::FocusClient(const std::string& client_uuid,
@@ -1169,15 +1179,16 @@ void ServiceWorkerVersion::FocusClient(const std::string& client_uuid,
     return;
   }
   if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
-    // The client does not belong to the same origin as this ServiceWorker,
-    // possibly due to timing issue or bad message.
-    std::move(callback).Run(nullptr /* client */);
+    mojo::ReportBadMessage(
+        "Received WindowClient#focus() request for a cross-origin client.");
+    binding_.Close();
     return;
   }
   if (provider_host->client_type() !=
       blink::mojom::ServiceWorkerClientType::kWindow) {
     // focus() should be called only for WindowClient.
-    mojo::ReportBadMessage("Received focus() request for a non-window client.");
+    mojo::ReportBadMessage(
+        "Received WindowClient#focus() request for a non-window client.");
     binding_.Close();
     return;
   }
@@ -1220,6 +1231,20 @@ void ServiceWorkerVersion::NavigateClient(const std::string& client_uuid,
   if (!provider_host) {
     std::move(callback).Run(false /* success */, nullptr /* client */,
                             std::string("The client was not found."));
+    return;
+  }
+  if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
+    mojo::ReportBadMessage(
+        "Received WindowClient#navigate() request for a cross-origin client.");
+    binding_.Close();
+    return;
+  }
+  if (provider_host->client_type() !=
+      blink::mojom::ServiceWorkerClientType::kWindow) {
+    // navigate() should be called only for WindowClient.
+    mojo::ReportBadMessage(
+        "Received WindowClient#navigate() request for a non-window client.");
+    binding_.Close();
     return;
   }
   if (provider_host->active_version() != this) {
@@ -1290,9 +1315,10 @@ void ServiceWorkerVersion::OnClearCachedMetadataFinished(int64_t callback_id,
     listener.OnCachedMetadataUpdated(this, 0);
 }
 
-void ServiceWorkerVersion::OpenWindow(GURL url,
-                                      WindowOpenDisposition disposition,
-                                      OpenNewTabCallback callback) {
+void ServiceWorkerVersion::OpenWindow(
+    GURL url,
+    service_worker_client_utils::WindowType type,
+    OpenNewTabCallback callback) {
   // Just respond failure if we are shutting down.
   if (!context_) {
     std::move(callback).Run(
@@ -1325,7 +1351,7 @@ void ServiceWorkerVersion::OpenWindow(GURL url,
   }
 
   service_worker_client_utils::OpenWindow(
-      url, script_url_, embedded_worker_->process_id(), context_, disposition,
+      url, script_url_, embedded_worker_->process_id(), context_, type,
       base::BindOnce(&OnOpenWindowFinished, std::move(callback)));
 }
 
@@ -1367,29 +1393,6 @@ bool ServiceWorkerVersion::IsInstalled(ServiceWorkerVersion::Status status) {
   }
   NOTREACHED() << "Unexpected status: " << status;
   return false;
-}
-
-void ServiceWorkerVersion::OnPostMessageToClient(
-    const std::string& client_uuid,
-    const scoped_refptr<base::RefCountedData<blink::TransferableMessage>>&
-        message) {
-  if (!context_)
-    return;
-  TRACE_EVENT1("ServiceWorker",
-               "ServiceWorkerVersion::OnPostMessageToDocument",
-               "Client id", client_uuid);
-  ServiceWorkerProviderHost* provider_host =
-      context_->GetProviderHostByClientID(client_uuid);
-  if (!provider_host) {
-    // The client may already have been closed, just ignore.
-    return;
-  }
-  if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
-    // The client does not belong to the same origin as this ServiceWorker,
-    // possibly due to timing issue or bad message.
-    return;
-  }
-  provider_host->PostMessageToClient(this, std::move(message->data));
 }
 
 void ServiceWorkerVersion::OnPongFromWorker() {

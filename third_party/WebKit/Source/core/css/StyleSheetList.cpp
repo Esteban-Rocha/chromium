@@ -31,6 +31,11 @@ namespace blink {
 
 using namespace HTMLNames;
 
+StyleSheetList* StyleSheetList::Create() {
+  DCHECK(RuntimeEnabledFeatures::ConstructableStylesheetsEnabled());
+  return new StyleSheetList();
+}
+
 StyleSheetList* StyleSheetList::Create(
     const HeapVector<Member<CSSStyleSheet>>& style_sheet_vector,
     ExceptionState& exception_state) {
@@ -38,7 +43,6 @@ StyleSheetList* StyleSheetList::Create(
     exception_state.ThrowTypeError("Illegal constructor");
     return nullptr;
   }
-
   return new StyleSheetList(style_sheet_vector);
 }
 
@@ -73,6 +77,9 @@ StyleSheet* StyleSheetList::item(unsigned index) {
 }
 
 HTMLStyleElement* StyleSheetList::GetNamedItem(const AtomicString& name) const {
+  if (!tree_scope_)
+    return nullptr;
+
   // IE also supports retrieving a stylesheet by name, using the name/id of the
   // <style> tag (this is consistent with all the other collections) ### Bad
   // implementation because returns a single element (are IDs always unique?)

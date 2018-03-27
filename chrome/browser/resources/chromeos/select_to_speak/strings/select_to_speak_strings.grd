@@ -138,18 +138,6 @@
       <message desc="Label for the slowest synthesized speech rate in the Select-to-speak options dialog." name="IDS_SELECT_TO_SPEAK_OPTIONS_RATE_SLOWEST">
         Slowest
       </message>
-      <message desc="Label for slow synthesized speech rate in the Select-to-speak options dialog." name="IDS_SELECT_TO_SPEAK_OPTIONS_RATE_SLOW">
-        Slow
-      </message>
-      <message desc="Label for a normal synthesized speech rate in the Select-to-speak options dialog." name="IDS_SELECT_TO_SPEAK_OPTIONS_RATE_NORMAL">
-        Normal
-      </message>
-      <message desc="Label for fast synthesized speech rate in the Select-to-speak options dialog." name="IDS_SELECT_TO_SPEAK_OPTIONS_RATE_FAST">
-        Fast
-      </message>
-      <message desc="Label for faster synthesized speech rate in the Select-to-speak options dialog." name="IDS_SELECT_TO_SPEAK_OPTIONS_RATE_FASTER">
-        Faster
-      </message>
       <message desc="Label for the fastest synthesized speech rate in the Select-to-speak options dialog." name="IDS_SELECT_TO_SPEAK_OPTIONS_RATE_FASTEST">
         Fastest
       </message>
@@ -203,12 +191,6 @@
       </message>
       <message desc="Label for highest synthesized speech pitch in the Select-to-speak options dialog." name="IDS_SELECT_TO_SPEAK_OPTIONS_PITCH_HIGHEST">
         Highest
-      </message>
-      <message desc="Group of options for controlling behavior" name="IDS_SELECT_TO_SPEAK_OPTIONS_BEHAVIOR">
-        Behavior
-      </message>
-      <message desc="Label for option to continue reading after text goes away, or stop when text goes away" name="IDS_SELECT_TO_SPEAK_OPTIONS_READ_AFTER_CLOSE">
-        Continue reading if text being spoken goes away
       </message>
     </messages>
   </release>

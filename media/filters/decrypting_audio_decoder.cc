@@ -36,33 +36,52 @@ static inline bool IsOutOfSync(const base::TimeDelta& timestamp_1,
 
 DecryptingAudioDecoder::DecryptingAudioDecoder(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    MediaLog* media_log,
-    const base::Closure& waiting_for_decryption_key_cb)
+    MediaLog* media_log)
     : task_runner_(task_runner),
       media_log_(media_log),
       state_(kUninitialized),
-      waiting_for_decryption_key_cb_(waiting_for_decryption_key_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
+      support_clear_content_(false),
       weak_factory_(this) {}
 
 std::string DecryptingAudioDecoder::GetDisplayName() const {
   return "DecryptingAudioDecoder";
 }
 
-void DecryptingAudioDecoder::Initialize(const AudioDecoderConfig& config,
-                                        CdmContext* cdm_context,
-                                        const InitCB& init_cb,
-                                        const OutputCB& output_cb) {
+void DecryptingAudioDecoder::Initialize(
+    const AudioDecoderConfig& config,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb) {
   DVLOG(2) << "Initialize()";
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(decode_cb_.is_null());
   DCHECK(reset_cb_.is_null());
-  DCHECK(cdm_context);
+
+  init_cb_ = BindToCurrentLoop(init_cb);
+  if (!cdm_context) {
+    // Once we have a CDM context, one should always be present.
+    DCHECK(!support_clear_content_);
+    base::ResetAndReturn(&init_cb_).Run(false);
+    return;
+  }
+
+  if (!config.is_encrypted() && !support_clear_content_) {
+    base::ResetAndReturn(&init_cb_).Run(false);
+    return;
+  }
+
+  // Once initialized with encryption support, the value is sticky, so we'll use
+  // the decryptor for clear content as well.
+  support_clear_content_ = true;
 
   weak_this_ = weak_factory_.GetWeakPtr();
-  init_cb_ = BindToCurrentLoop(init_cb);
   output_cb_ = BindToCurrentLoop(output_cb);
+
+  DCHECK(!waiting_for_decryption_key_cb.is_null());
+  waiting_for_decryption_key_cb_ = waiting_for_decryption_key_cb;
 
   // TODO(xhwang): We should be able to DCHECK config.IsValidConfig().
   if (!config.IsValidConfig()) {

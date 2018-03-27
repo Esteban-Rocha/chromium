@@ -6,12 +6,12 @@
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/utility_process_host.h"
+#include "content/browser/utility_process_host_client.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_service_registry.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/utility_process_host.h"
-#include "content/public/browser/utility_process_host_client.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/service_names.mojom.h"
 #include "content/public/test/browser_test_utils.h"
@@ -43,7 +43,9 @@ void VerifyPowerStateInChildProcess(mojom::PowerMonitorTest* power_monitor_test,
 }
 
 void StartUtilityProcessOnIOThread(mojom::PowerMonitorTestRequest request) {
-  UtilityProcessHost* host = UtilityProcessHost::Create(nullptr, nullptr);
+  UtilityProcessHost* host =
+      new UtilityProcessHost(/*client=*/nullptr,
+                             /*client_task_runner=*/nullptr);
   host->SetName(base::ASCIIToUTF16("TestProcess"));
   EXPECT_TRUE(host->Start());
 
@@ -137,7 +139,7 @@ class PowerMonitorTest : public ContentBrowserTest {
  protected:
   void StartUtilityProcess(mojom::PowerMonitorTestPtr* power_monitor_test,
                            base::Closure utility_bound_closure) {
-    utility_bound_closure_ = utility_bound_closure;
+    utility_bound_closure_ = std::move(utility_bound_closure);
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::BindOnce(&StartUtilityProcessOnIOThread,
@@ -145,11 +147,11 @@ class PowerMonitorTest : public ContentBrowserTest {
   }
 
   void set_renderer_bound_closure(base::Closure closure) {
-    renderer_bound_closure_ = closure;
+    renderer_bound_closure_ = std::move(closure);
   }
 
   void set_gpu_bound_closure(base::Closure closure) {
-    gpu_bound_closure_ = closure;
+    gpu_bound_closure_ = std::move(closure);
   }
 
   int request_count_from_renderer() { return request_count_from_renderer_; }

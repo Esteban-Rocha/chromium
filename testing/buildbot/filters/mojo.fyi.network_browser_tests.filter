@@ -2,11 +2,8 @@
 # See https://crbug.com/769401
 
 # Uncategorized timeouts or test failures.
--AdsPageLoadMetricsObserverBrowserTest.DocOverwritesNavigation
--AdsPageLoadMetricsObserverBrowserTest.SubresourceFilter
 -BackgroundXhrTest.HttpAuth
 -BackgroundXhrTest.TlsClientAuth
--BrowsingDataRemoverBrowserTest.CookieDeletion
 -ChromeSecurityExploitBrowserTest.CreateFilesystemURLInExtensionOrigin
 -DevToolsSanityTest.TestRawHeadersWithRedirectAndHSTS
 -DisabledSignInIsolationBrowserTest.SyntheticTrial
@@ -14,25 +11,13 @@
 -EnabledSignInIsolationBrowserTest.SyntheticTrial
 -ExpectCTBrowserTest.TestDynamicExpectCTHeaderProcessing
 -ExpectCTBrowserTest.TestDynamicExpectCTReporting
--ExtensionApiTest.Cookies
 -ExtensionApiTest.Debugger
 -ExtensionApiTestWithSwitch.ExtensionDebugger
 -ExtensionUnloadBrowserTest.UnloadWithContentScripts
--InstantThemeTest.ThemeBackgroundAccess
--IsolatedAppTest.CookieIsolation
--IsolatedAppTest.SubresourceCookieIsolation
--LocalNTPJavascriptTest.SimpleJavascriptTests
--LocalNTPVoiceJavascriptTest.MicrophoneTests
--LocalNTPVoiceJavascriptTest.SpeechTests
 -LocalNTPVoiceJavascriptTest.TextTests
--LocalNTPVoiceJavascriptTest.ViewTests
 -MediaGalleriesPlatformAppBrowserTest.ToURL
 -NetInternalsTest.netInternalsSessionBandwidthSucceed
 -NewlibPackagedAppTest.SuccessfulLoad
--PageLoadMetricsBrowserTest.LoadingMetrics
--PageLoadMetricsBrowserTest.LoadingMetricsFailed
--PageLoadMetricsBrowserTest.PayloadSize
--PageLoadMetricsBrowserTest.PayloadSizeChildFrame
 -PKPModelClientTest.PKPBypass
 -PKPModelClientTest.PKPEnforced
 -PlatformAppBrowserTest.AppWindowAdjustBoundsToBeVisibleOnScreen
@@ -42,49 +27,59 @@
 -PolicyTest.DefaultCookiesSetting
 -PrefetchBrowserTestPredictionDisabled.ExperimentDisabled
 -PreviewsOptimizationGuideBrowserTest.NoScriptPreviewsEnabledByWhitelist
--ProcessManagerBrowserTest.ExtensionProcessReuse
 -ProcessManagerBrowserTest.NestedURLNavigationsToExtensionAllowed
 -ProfileWindowBrowserTest.GuestClearsCookies
 -ProxySettingsApiTest.ProxyEventsInvalidProxy
 -RegisterProtocolHandlerBrowserTest.CustomHandler
 -SafeBrowsingTriggeredPopupBlockerBrowserTest.NoFeature_NoMessages
 -SubresourceFilterBrowserTest.FailedProvisionalLoadInMainframe
--TaskManagerBrowserTest.SentDataObserved
--TaskManagerBrowserTest.TotalSentDataObserved
 -TaskManagerUtilityProcessBrowserTest.UtilityJSHeapMemory
--WebSocketBrowserTest.WebSocketAppliesHSTS
--WebSocketBrowserTest.WebSocketBasicAuthInHTTPSURL
--WebSocketBrowserTest.WebSocketBasicAuthInHTTPURL
 -WebstoreInstallerBrowserTest.SimultaneousInstall
 -WebViewTests/WebViewTest.ClearData/0
 -WebViewTests/WebViewTest.ClearData/1
 -WebViewTests/WebViewTest.ClearDataCache/0
 -WebViewTests/WebViewTest.ClearDataCache/1
+-WebViewTests/WebViewTest.WebViewInBackgroundPage/0
+-WebViewTests/WebViewTest.WebViewInBackgroundPage/1
+
+# Need support for blocking cookies via content settings:
+# https://crbug.com/803452.
+-ClientHintsBrowserTest.ClientHintsLifetimeNotAttachedCookiesBlocked
+-ClientHintsBrowserTest.ClientHintsNoLifetimeCookiesNotAllowed
+-ContentSettingsTest.AllowCookiesForASessionUsingExceptions
+-ContentSettingsTest.RedirectCrossOrigin
+-ContentSettingsTest.RedirectLoopCookies
+
+# http://crbug.com/816684 Track Page Load Metrics.
+-AdsPageLoadMetricsObserverBrowserTest.DocOverwritesNavigation
+-AdsPageLoadMetricsObserverBrowserTest.SubresourceFilter
+-PageLoadMetricsBrowserTest.LoadingMetrics
+-PageLoadMetricsBrowserTest.LoadingMetricsFailed
+-PageLoadMetricsBrowserTest.PayloadSize
+-PageLoadMetricsBrowserTest.PayloadSizeChildFrame
+
+# http://crbug.com/822415 Plumb metrics from network process to browser.
+-TaskManagerBrowserTest.SentDataObserved
+-TaskManagerBrowserTest.TotalSentDataObserved
+
+# http://crbug.com/823297 StoragePartition::ClearData needs to use
+# CookieManager.
+-BrowsingDataRemoverBrowserTest.CookieDeletion
 -WebViewTests/WebViewTest.ClearPersistentCookies/0
 -WebViewTests/WebViewTest.ClearPersistentCookies/1
 -WebViewTests/WebViewTest.ClearSessionCookies/0
 -WebViewTests/WebViewTest.ClearSessionCookies/1
--WebViewTests/WebViewTest.CookieIsolation/0
--WebViewTests/WebViewTest.CookieIsolation/1
--WebViewTests/WebViewTest.DownloadCookieIsolation/0
--WebViewTests/WebViewTest.DownloadCookieIsolation/1
--WebViewTests/WebViewTest.DownloadCookieIsolation_CrossSession/0
--WebViewTests/WebViewTest.DownloadCookieIsolation_CrossSession/1
--WebViewTests/WebViewTest.StoragePersistence/0
--WebViewTests/WebViewTest.StoragePersistence/1
--WebViewTests/WebViewTest.WebViewInBackgroundPage/0
--WebViewTests/WebViewTest.WebViewInBackgroundPage/1
 
-# http://crbug.com/706030 handle external protocols
--ChromeSitePerProcessTest.LaunchExternalProtocolFromSubframe
--WebViewTests/WebViewTest.Shim_TestNavigationToExternalProtocol/0
--WebViewTests/WebViewTest.Shim_TestNavigationToExternalProtocol/1
+# http://crbug.com/721400 support WebSockets.
+-WebSocketBrowserTest.WebSocketAppliesHSTS
+-WebSocketBrowserTest.WebSocketBasicAuthInHTTPSURL
+-WebSocketBrowserTest.WebSocketBasicAuthInHTTPURL
+-WebSocketBrowserTest.ReuseMainPageBasicAuthCredentialsForWebSocket
 
-# Need support for blocking cookies via content settings:
-# https://crbug.com/803452.
--ContentSettingsTest.AllowCookiesForASessionUsingExceptions
--ContentSettingsTest.RedirectCrossOrigin
--ContentSettingsTest.RedirectLoopCookies
+# Accessing cookies after they were set in onload handler is flaky:
+# https://crbug.com/820969.
+-ContentSettingsTest.BasicCookies
+-ContentSettingsTest.BasicCookiesHttps
 
 # https://crbug.com/810329 DnsProbe browsertests that rely on delaying requests:
 -DnsProbeBrowserTest.NxdomainProbeResultWithWorkingSlowCorrections
@@ -96,10 +91,6 @@
 -DnsProbeBrowserTest.NoInternetProbeResultWithSlowBrokenCorrections
 
 # crbug.com/776589 Intercepting requests with net::URLRequestFilter.
--ClientHintsBrowserTest.ClientHintsHttpsSubresourceDifferentOrigin
--ClientHintsBrowserTest.ClientHintsLifetimeNotAttachedCookiesBlocked
--ClientHintsBrowserTest.ClientHintsNoLifetimeCookiesNotAllowed
--ClientHintsBrowserTest.ClientHintsNoLifetimeScriptNotAllowed
 -ContinueWhereILeftOffTest.CookiesClearedOnExit
 -DevToolsSanityTest.TestNetworkPushTime
 -DownloadExtensionTest.DownloadExtensionTest_Download_FileSystemURL
@@ -110,7 +101,6 @@
 -PolicyTest.ForceGoogleSafeSearch
 -ProfileBrowserTest.SendHPKPReport
 -ProfileBrowserTest.SendHPKPReportServerHangs
--SecurityIndicatorTest.CheckIndicatorText
 
 # https://bugs.chromium.org/p/chromium/issues/detail?id=789670
 -DiceBrowserTest.Reauth
@@ -145,9 +135,6 @@
 # crbug.com/778860 SecurityStyleExplanations::info_explanations is empty.
 -BrowserTestNonsecureURLRequest.DidChangeVisibleSecurityStateObserverObsoleteTLSSettings
 
-# crbug.com/779217 The NetworkContext is not created when the network service is enabled.
--SpellingMenuObserverTest.SuggestionsForceTopSeparator
-
 # http://crbug.com/783990
 # Add support for http auth.
 -DownloadExtensionTest.DownloadExtensionTest_Download_AuthBasic_Fail
@@ -158,7 +145,6 @@
 -LoginPromptBrowserTest.NoLoginPromptForFavicon
 -LoginPromptBrowserTest.NoLoginPromptForXHRWithBadCredentials
 -LoginPromptBrowserTest.TestCancelAuth_OnForward
--WebSocketBrowserTest.ReuseMainPageBasicAuthCredentialsForWebSocket
 
 # These rely on proxy configuration and PAC execution being configured on the
 # legacy in-process URLRequestContext. They should be removed or updated to
@@ -183,13 +169,18 @@
 
 # http://crbug.com/721414
 # TODO(rockot): add support for webRequest API.
--ExtensionWebRequestApiTest.PostData1
--ExtensionWebRequestApiTest.PostData2
 -ExtensionWebRequestApiTest.WebRequestBlocking
 -ExtensionWebRequestApiTest.WebRequestClientsGoogleComProtection
 -ExtensionWebRequestApiTest.WebRequestDeclarative2
 -ExtensionWebRequestApiTest.WebRequestDiceHeaderProtection
 -ExtensionWebRequestApiTest.WebRequestTypes
+
+# https://crbug.com/721400
+# WebSocket with the network service
+-DeclarativeNetRequestResourceTypeBrowserTest.Test2/1
+-DeclarativeNetRequestResourceTypeBrowserTest.Test2/0
+-ExtensionWebRequestApiTest.WebSocketRequestAuthRequired
+-ExtensionWebRequestApiTest.WebSocketRequest
 
 # http://crbug.com/705114
 # Remove streams concept from code and replace with data pipe passing.
@@ -223,8 +214,9 @@
 -ErrorPageSniffTest.SniffSmallHttpErrorResponseAsDownload
 -DNSErrorPageTest.StaleCacheStatus
 
-# Switch test from using a net::URLRequestInterceptor to using a test
-# URLLoaderFactory via SetNetworkFactoryForTesting.
+# http://crbug.com/809583
+# Switch Predictor from using ResourceThrottle and ResourceDispatcherHost to
+# using WebContentsObserver and NavigationHandle.
 -PredictorBrowserTest.CrossSiteNoReferrerNoPredictionAfterOneNavigation
 -PredictorBrowserTest.CrossSiteRedirectNoPredictionWithPath
 -PredictorBrowserTest.CrossSiteRedirectPredictionWithNoPath
@@ -306,9 +298,6 @@
 -ChromeResourceDispatcherHostDelegateBrowserTest.ThrottlesAddedExactlyOnceToLargeSniffedDownloads
 -ChromeResourceDispatcherHostDelegateBrowserTest.ThrottlesAddedExactlyOnceToTinySniffedDownloads
 -ChromeResourceDispatcherHostDelegateBrowserTest.MirrorRequestHeader
-# These tests rely on using a delegate to ResourceDispatcherHost.
--ContentFaviconDriverTest.ReloadBypassingCache
--ContentFaviconDriverTest.MixedContentSecureFaviconAllowed
 
 # Add support of download_to_file for URLLoader.
 # http://crbug.com/791702
@@ -323,12 +312,6 @@
 -PPAPINaClPNaClNonSfiTest.FileRef2
 -PPAPINaClPNaClNonSfiTest.URLLoader1
 
-# Session cookies tests are flaky.
-# https://crbug.com/795417
--ContinueWhereILeftOffTest.SessionCookies
--RestartTest.SessionCookies
-
-
 # Requires a replacement for ChromeNetworkDelegate.
 -VariationsHttpHeadersBrowserTest.TestStrippingHeadersFromResourceRequest
 
@@ -337,8 +320,16 @@
 -SBNavigationObserverBrowserTest.DownloadViaHTML5FileApi
 -ProcessManagerBrowserTest.NestedURLNavigationsToExtensionBlocked
 
-# Flakes https://logs.chromium.org/v/?s=chromium%2Fbb%2Fchromium.linux%2FLinux_Tests%2F65822%2F%2B%2Frecipes%2Fsteps%2Fnetwork_service_browser_tests%2F0%2Flogs%2FNoSessionRestoreTest.PRE_CookiesClearedOnExit%2F0
--NoSessionRestoreTest.CookiesClearedOnExit
+# Fails because data: URL is not downloaded but navigated to.
+-BrowserActionApiTest.BrowserActionPopupDownload
 
-# Flakes https://logs.chromium.org/v/?s=chromium%2Fbb%2Fchromium.linux%2FLinux_Tests%2F65817%2F%2B%2Frecipes%2Fsteps%2Fnetwork_service_browser_tests%2F0%2Flogs%2FRestartTest.CookiesClearedOnExit%2F0
--RestartTest.CookiesClearedOnExit
+# Flaky in linux tests.
+# https://crbug.com/820995
+-PlatformAppBrowserTest.Restrictions
+
+# Tests check state of NQE in the browser process, but need to be updated to
+# watch NQE in the renderer process.
+# https://crbug.com/819244
+-IOThreadEctCommandLineBrowserTest.ForceECTFromCommandLine
+-IOThreadEctFieldTrialAndCommandLineBrowserTest.ECTFromCommandLineOverridesFieldTrial
+-IOThreadEctFieldTrialBrowserTest.ForceECTUsingFieldTrial

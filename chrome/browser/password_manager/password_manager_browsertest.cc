@@ -44,6 +44,7 @@
 #include "components/password_manager/core/browser/test_password_store.h"
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "components/version_info/version_info.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
@@ -1959,16 +1960,8 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_FALSE(prompt_observer->IsSavePromptShownAutomatically());
 }
 
-// https://crbug.com/814845 Flaky on macOS ASan.
-#if defined(ADDRESS_SANITIZER) && defined(OS_MACOSX)
-#define MAYBE_InFrameNavigationDoesNotClearPopupState \
-  DISABLED_InFrameNavigationDoesNotClearPopupState
-#else
-#define MAYBE_InFrameNavigationDoesNotClearPopupState \
-  InFrameNavigationDoesNotClearPopupState
-#endif
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTestBase,
-                       MAYBE_InFrameNavigationDoesNotClearPopupState) {
+                       InFrameNavigationDoesNotClearPopupState) {
   scoped_refptr<password_manager::TestPasswordStore> password_store =
       static_cast<password_manager::TestPasswordStore*>(
           PasswordStoreFactory::GetForProfile(
@@ -3045,17 +3038,10 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTestBase,
                       "mypassword");
 }
 
-
-// Flaky on Linux. http://crbug.com/804398
-#if defined(OS_LINUX)
-#define MAYBE_InternalsPage_Renderer DISABLED_InternalsPage_Renderer
-#else
-#define MAYBE_InternalsPage_Renderer InternalsPage_Renderer
-#endif
-
+// TODO(crbug.com/804398): Flaky.
 // Check that the internals page contains logs from the renderer.
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTestBase,
-    MAYBE_InternalsPage_Renderer) {
+                       DISABLED_InternalsPage_Renderer) {
   // Open the internals page.
   ui_test_utils::NavigateToURLWithDisposition(
       browser(), GURL("chrome://password-manager-internals"),

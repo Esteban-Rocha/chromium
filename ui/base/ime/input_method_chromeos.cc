@@ -134,20 +134,20 @@ ui::EventDispatchDetails InputMethodChromeOS::DispatchKeyEvent(
 
   handling_key_event_ = true;
   if (GetEngine()->IsInterestedInKeyEvent()) {
-    ui::IMEEngineHandlerInterface::KeyEventDoneCallback callback = base::Bind(
-        &InputMethodChromeOS::KeyEventDoneCallback,
-        weak_ptr_factory_.GetWeakPtr(),
-        // Pass the ownership of the new copied event.
-        base::Owned(new ui::KeyEvent(*event)), Passed(&ack_callback));
-    GetEngine()->ProcessKeyEvent(*event, callback);
+    ui::IMEEngineHandlerInterface::KeyEventDoneCallback callback =
+        base::BindOnce(&InputMethodChromeOS::KeyEventDoneCallback,
+                       weak_ptr_factory_.GetWeakPtr(),
+                       // Pass the ownership of the new copied event.
+                       base::Owned(new ui::KeyEvent(*event)),
+                       std::move(ack_callback));
+    GetEngine()->ProcessKeyEvent(*event, std::move(callback));
     return ui::EventDispatchDetails();
   }
   return ProcessKeyEventDone(event, std::move(ack_callback), false);
 }
 
-bool InputMethodChromeOS::OnUntranslatedIMEMessage(
-    const base::NativeEvent& event,
-    NativeEventResult* result) {
+bool InputMethodChromeOS::OnUntranslatedIMEMessage(const PlatformEvent& event,
+                                                   NativeEventResult* result) {
   return false;
 }
 
@@ -703,9 +703,9 @@ void InputMethodChromeOS::ExtractCompositionText(
         continue;
       ImeTextSpan ime_text_span(ui::ImeTextSpan::Type::kComposition,
                                 char16_offsets[start], char16_offsets[end],
-                                text_ime_text_spans[i].underline_color,
                                 text_ime_text_spans[i].thickness,
                                 text_ime_text_spans[i].background_color);
+      ime_text_span.underline_color = text_ime_text_spans[i].underline_color;
       out_composition->ime_text_spans.push_back(ime_text_span);
     }
   }
@@ -716,7 +716,7 @@ void InputMethodChromeOS::ExtractCompositionText(
     const uint32_t end = text.selection.end();
     ImeTextSpan ime_text_span(ui::ImeTextSpan::Type::kComposition,
                               char16_offsets[start], char16_offsets[end],
-                              SK_ColorBLACK, ui::ImeTextSpan::Thickness::kThick,
+                              ui::ImeTextSpan::Thickness::kThick,
                               SK_ColorTRANSPARENT);
     out_composition->ime_text_spans.push_back(ime_text_span);
 
@@ -732,11 +732,11 @@ void InputMethodChromeOS::ExtractCompositionText(
     }
   }
 
-  // Use a black thin underline by default.
+  // Use a thin underline with text color by default.
   if (out_composition->ime_text_spans.empty()) {
-    out_composition->ime_text_spans.push_back(ImeTextSpan(
-        ui::ImeTextSpan::Type::kComposition, 0, length, SK_ColorBLACK,
-        ui::ImeTextSpan::Thickness::kThin, SK_ColorTRANSPARENT));
+    out_composition->ime_text_spans.push_back(
+        ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, length,
+                    ui::ImeTextSpan::Thickness::kThin, SK_ColorTRANSPARENT));
   }
 }
 

@@ -20,7 +20,6 @@
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/frame_host/render_frame_proxy_host.h"
@@ -61,25 +60,6 @@
 #endif
 
 namespace content {
-
-namespace {
-
-std::vector<ui::ImeTextSpan> ConvertToUiImeTextSpan(
-    const std::vector<blink::WebImeTextSpan>& ime_text_spans) {
-  std::vector<ui::ImeTextSpan> ui_ime_text_spans;
-  for (const auto& ime_text_span : ime_text_spans) {
-    ui_ime_text_spans.emplace_back(ui::ImeTextSpan(
-        ConvertWebImeTextSpanTypeToUiType(ime_text_span.type),
-        ime_text_span.start_offset, ime_text_span.end_offset,
-        ime_text_span.underline_color,
-        ConvertUiImeTextSpanThicknessToUiThickness(ime_text_span.thickness),
-        ime_text_span.background_color,
-        ime_text_span.suggestion_highlight_color, ime_text_span.suggestions));
-  }
-  return ui_ime_text_spans;
-}
-
-};  // namespace
 
 class BrowserPluginGuest::EmbedderVisibilityObserver
     : public WebContentsObserver {
@@ -440,8 +420,8 @@ void BrowserPluginGuest::ResendEventToEmbedder(
   if (event.GetType() == blink::WebInputEvent::kGestureScrollUpdate) {
     blink::WebGestureEvent resent_gesture_event;
     memcpy(&resent_gesture_event, &event, sizeof(blink::WebGestureEvent));
-    resent_gesture_event.x += offset_from_embedder.x();
-    resent_gesture_event.y += offset_from_embedder.y();
+    resent_gesture_event.SetPositionInWidget(
+        resent_gesture_event.PositionInWidget() + offset_from_embedder);
     // Mark the resend source with the browser plugin's instance id, so the
     // correct browser_plugin will know to ignore the event.
     resent_gesture_event.resending_plugin_id = browser_plugin_instance_id_;
@@ -638,7 +618,7 @@ void BrowserPluginGuest::SendTextInputTypeChangedToView(
 
   if (last_text_input_state_.get()) {
     guest_rwhv->TextInputStateChanged(*last_text_input_state_);
-    if (auto* rwh = guest_rwhv->GetRenderWidgetHostImpl()) {
+    if (auto* rwh = guest_rwhv->host()) {
       // We need composition range information for some IMEs. To get the
       // updates, we need to explicitly ask the renderer to monitor and send the
       // composition information changes. RenderWidgetHostView of the page will
@@ -914,7 +894,7 @@ void BrowserPluginGuest::OnImeSetComposition(
     int browser_plugin_instance_id,
     const BrowserPluginHostMsg_SetComposition_Params& params) {
   std::vector<ui::ImeTextSpan> ui_ime_text_spans =
-      ConvertToUiImeTextSpan(params.ime_text_spans);
+      ConvertBlinkImeTextSpansToUiImeTextSpans(params.ime_text_spans);
   GetWebContents()
       ->GetRenderViewHost()
       ->GetWidget()
@@ -931,7 +911,7 @@ void BrowserPluginGuest::OnImeCommitText(
     const gfx::Range& replacement_range,
     int relative_cursor_pos) {
   std::vector<ui::ImeTextSpan> ui_ime_text_spans =
-      ConvertToUiImeTextSpan(ime_text_spans);
+      ConvertBlinkImeTextSpansToUiImeTextSpans(ime_text_spans);
   GetWebContents()
       ->GetRenderViewHost()
       ->GetWidget()

@@ -267,10 +267,18 @@ void DelegatedFrameHost::WasResized(
 
   if (enable_surface_synchronization_) {
     if (!client_->DelegatedFrameHostIsVisible()) {
-      if (HasFallbackSurface()) {
+      // If the tab is resized while hidden, reset the fallback so that the next
+      // time user switches back to it the page is blank. This is preferred to
+      // showing contents of old size. Don't call EvictDelegatedFrame to avoid
+      // races when dragging tabs across displays. See https://crbug.com/813157.
+      if (pending_surface_dip_size_ != current_frame_size_in_dip_ &&
+          HasFallbackSurface()) {
         client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
             viz::SurfaceId());
       }
+      // Don't update the SurfaceLayer when invisible to avoid blocking on
+      // renderers that do not submit CompositorFrames. Next time the renderer
+      // is visible, WasResized will be called again. See WasShown.
       return;
     }
 
@@ -288,7 +296,7 @@ void DelegatedFrameHost::WasResized(
 #endif
       client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
           surface_id, current_frame_size_in_dip_, GetGutterColor(),
-          deadline_policy);
+          deadline_policy, false /* stretch_content_to_fill_bounds */);
       if (compositor_ && !base::CommandLine::ForCurrentProcess()->HasSwitch(
                              switches::kDisableResizeLock)) {
         compositor_->OnChildResizing();
@@ -521,7 +529,8 @@ void DelegatedFrameHost::OnFirstSurfaceActivation(
   } else {
     client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
         surface_info.id(), frame_size_in_dip, GetGutterColor(),
-        cc::DeadlinePolicy::UseDefaultDeadline());
+        cc::DeadlinePolicy::UseDefaultDeadline(),
+        false /* stretch_content_to_fill_bounds */);
   }
 
   client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(

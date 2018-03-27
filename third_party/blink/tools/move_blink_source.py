@@ -43,12 +43,15 @@ class FileType(object):
     TYPEMAP = 6
     BLINK_BUILD_PY = 7
     LAYOUT_TESTS_WITH_MOJOM = 8
+    BLINK_DEPS = 9
 
     @staticmethod
     def detect(path):
         slash_dir, basename = os.path.split(path)
         slash_dir = slash_dir.replace(os.path.sep, '/')
         if basename == 'DEPS':
+            if 'third_party/WebKit' in path:
+                return FileType.BLINK_DEPS
             return FileType.DEPS
         if basename == 'OWNERS':
             return FileType.OWNERS
@@ -124,10 +127,10 @@ class MoveBlinkSource(object):
                'src/third_party/blink/renderer/devtools')]),
             ('WATCHLISTS',
              [('third_party/WebKit/Source', 'third_party/blink/renderer'),
-              ('third_party/WebKit/public', 'third_party/blink/renderer/public')]),
+              ('third_party/WebKit/public', 'third_party/blink/public')]),
             ('build/check_gn_headers_whitelist.txt',
              [('third_party/WebKit/Source', 'third_party/blink/renderer'),
-              ('third_party/WebKit/public', 'third_party/blink/renderer/public'),
+              ('third_party/WebKit/public', 'third_party/blink/public'),
               self._update_basename]),
             ('chrome/browser/resources/chromeos/chromevox/tools/jsbundler.py',
              [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
@@ -135,7 +138,7 @@ class MoveBlinkSource(object):
              [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
             ('third_party/WebKit/Source/BUILD.gn',
              [('$root_gen_dir/third_party/WebKit',
-               '$root_gen_dir/third_party/blink/renderer')]),
+               '$root_gen_dir/third_party/blink')]),
             ('third_party/WebKit/Source/config.gni',
              [('snake_case_source_files = false',
                'snake_case_source_files = true')]),
@@ -157,15 +160,20 @@ class MoveBlinkSource(object):
              [('InternalRuntimeFlags.h', 'internal_runtime_flags.h')]),
             ('third_party/WebKit/Source/platform/probe/PlatformProbes.json5',
              [self._update_basename]),
+            ('third_party/WebKit/Tools/Scripts/audit-non-blink-usage.py',
+             [('third_party/WebKit/Source', 'third_party/blink/renderer'),
+              ('ls-files third_party/WebKit', 'ls-files third_party/blink')]),
+            ('third_party/WebKit/Tools/Scripts/webkitpy/style/checker.py',
+             [('Source/', 'renderer/')]),
             ('third_party/WebKit/public/BUILD.gn',
              [('$root_gen_dir/third_party/WebKit',
-               '$root_gen_dir/third_party/blink/renderer')]),
+               '$root_gen_dir/third_party/blink')]),
             ('third_party/WebKit/public/blink_resources.grd',
-             [('../Source/', '../')]),
+             [('../Source/', '../renderer/')]),
             ('third_party/blink/tools/compile_devtools_frontend.py',
              [('\'WebKit\', \'Source\'', '\'blink\', \'renderer\'')]),
             ('tools/android/eclipse/.classpath',
-             [('third_party/WebKit/public', 'third_party/blink/renderer/public')]),
+             [('third_party/WebKit/public', 'third_party/blink/public')]),
             ('tools/android/loading/cloud/backend/deploy.sh',
              [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
             ('tools/android/loading/emulation_unittest.py',
@@ -175,7 +183,7 @@ class MoveBlinkSource(object):
             ('tools/android/loading/request_track.py',
              [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
             ('tools/gritsettings/resource_ids',
-             [('third_party/WebKit/public', 'third_party/blink/renderer/public'),
+             [('third_party/WebKit/public', 'third_party/blink/public'),
               ('third_party/WebKit/Source', 'third_party/blink/renderer')]),
             ('tools/metrics/actions/extract_actions.py',
              [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
@@ -186,7 +194,7 @@ class MoveBlinkSource(object):
              [('third_party/WebKit/Source/core/frame/UseCounter.cpp',
                'third_party/blink/renderer/core/frame/use_counter.cc')]),
             ('tools/metrics/histograms/update_use_counter_feature_enum.py',
-             [('third_party/WebKit/public', 'third_party/blink/renderer/public')]),
+             [('third_party/WebKit/public', 'third_party/blink/public')]),
         ]
         for file_path, replacement_list in file_replacement_list:
             if not apply_only or file_path in apply_only:
@@ -210,6 +218,8 @@ class MoveBlinkSource(object):
 Update file contents without moving files.
 
 NOAUTOREVERT=true
+NOPRESUBMIT=true
+NOTREECHECKS=true
 Bug: 768828
 """)
 
@@ -266,6 +276,8 @@ Bug: 768828
 Move and rename files.
 
 NOAUTOREVERT=true
+NOPRESUBMIT=true
+NOTREECHECKS=true
 Bug: 768828
 """)
 
@@ -343,6 +355,10 @@ Bug: 768828
                 basename_map[source_header] = dest_base.replace('.idl', '.h')
                 pattern += re.escape(source_header) + '|'
                 idl_headers.add(source_header)
+            elif source_base.endswith('.proto'):
+                source_header = source_base.replace('.proto', '.pb.h')
+                basename_map[source_header] = dest_base.replace('.proto', '.pb.h')
+                pattern += re.escape(source_header) + '|'
         _log.info('Rename %d files for snake_case', len(basename_map))
         self._basename_map = basename_map
         self._basename_re = re.compile(pattern[0:len(pattern) - 1] + ')(?=["\']|$)')
@@ -361,10 +377,12 @@ Bug: 768828
     def _update_build(self, content):
         content = content.replace('//third_party/WebKit/Source', '//third_party/blink/renderer')
         content = content.replace('//third_party/WebKit/common', '//third_party/blink/common')
-        content = content.replace('//third_party/WebKit/public', '//third_party/blink/renderer/public')
+        content = content.replace('//third_party/WebKit/public', '//third_party/blink/public')
         # export_header_blink exists outside of Blink too.
         content = content.replace('export_header_blink = "third_party/WebKit/public/platform/WebCommon.h"',
-                                  'export_header_blink = "third_party/blink/renderer/public/platform/web_common.h"')
+                                  'export_header_blink = "third_party/blink/public/platform/web_common.h"')
+        content = content.replace('$root_gen_dir/blink/public', '$root_gen_dir/third_party/blink/public')
+        content = content.replace('$root_gen_dir/blink', '$root_gen_dir/third_party/blink/renderer')
         return content
 
     def _update_blink_build(self, content):
@@ -373,40 +391,55 @@ Bug: 768828
         # Update visibility=[...]
         content = content.replace('//third_party/WebKit/*', '//third_party/blink/*')
         content = content.replace('//third_party/WebKit/Source/*', '//third_party/blink/renderer/*')
-        content = content.replace('//third_party/WebKit/public/*', '//third_party/blink/renderer/public/*')
+        content = content.replace('//third_party/WebKit/public/*', '//third_party/blink/public/*')
 
         # Update mojom variables
         content = content.replace('export_header = "third_party/WebKit/common',
                                   'export_header = "third_party/blink/common')
         content = content.replace('export_header_blink = "third_party/WebKit/Source',
                                   'export_header_blink = "third_party/blink/renderer')
+
+        # Update buildflag_header() rules
+        content = content.replace('header_dir = "blink/',
+                                  'header_dir = "third_party/blink/renderer/')
+
         return self._update_basename(content)
 
     def _update_owners(self, content):
         content = content.replace('//third_party/WebKit/Source', '//third_party/blink/renderer')
         content = content.replace('//third_party/WebKit/common', '//third_party/blink/common')
-        content = content.replace('//third_party/WebKit/public', '//third_party/blink/renderer/public')
+        content = content.replace('//third_party/WebKit/public', '//third_party/blink/public')
         return content
 
     def _update_deps(self, content):
         original_content = content
         content = content.replace('third_party/WebKit/Source', 'third_party/blink/renderer')
         content = content.replace('third_party/WebKit/common', 'third_party/blink/common')
-        content = content.replace('third_party/WebKit/public', 'third_party/blink/renderer/public')
+        content = content.replace('third_party/WebKit/public', 'third_party/blink/public')
+        content = content.replace('third_party/WebKit', 'third_party/blink')
+        if original_content == content:
+            return content
+        return self._update_basename(content)
+
+    def _update_blink_deps(self, content):
+        original_content = content
+        content = re.sub('(?<=[-+!])public', 'third_party/blink/public', content)
+        content = re.sub('(?<=[-+!])(bindings|controller|core|modules|platform)',
+                         'third_party/blink/renderer/\\1', content)
         content = content.replace('third_party/WebKit', 'third_party/blink')
         if original_content == content:
             return content
         return self._update_basename(content)
 
     def _update_mojom(self, content):
-        content = content.replace('third_party/WebKit/public', 'third_party/blink/renderer/public')
+        content = content.replace('third_party/WebKit/public', 'third_party/blink/public')
         content = content.replace('third_party/WebKit/common', 'third_party/blink/common')
         return content
 
     def _update_typemap(self, content):
         content = content.replace('//third_party/WebKit/Source', '//third_party/blink/renderer')
         content = content.replace('//third_party/WebKit/common', '//third_party/blink/common')
-        content = content.replace('//third_party/WebKit/public', '//third_party/blink/renderer/public')
+        content = content.replace('//third_party/WebKit/public', '//third_party/blink/public')
         return self._update_basename(content)
 
     def _update_blink_build_py(self, content):
@@ -452,6 +485,8 @@ Bug: 768828
                     _log.info("Skip //DEPS")
                     continue
                 content = self._update_deps(content)
+            elif file_type == FileType.BLINK_DEPS:
+                content = self._update_blink_deps(content)
             elif file_type == FileType.MOJOM:
                 content = self._update_mojom(content)
             elif file_type == FileType.TYPEMAP:
@@ -499,30 +534,35 @@ Bug: 768828
         include_or_import = match.group(1)
         path = match.group(2)
 
+        # If |path| starts with 'blink/public/resources', we should prepend
+        # 'third_party/'.
+        #
         # If |path| starts with 'third_party/WebKit', we should adjust the
         # directory name for third_party/blink, and replace its basename by
         # self._basename_map.
         #
         # If |path| starts with a Blink-internal directory such as bindings,
         # core, modules, platform, public, it refers to a checked-in file, or a
-        # generated file. For the former, we should add
-        # 'third_party/blink/renderer/' and replace the basename.  For the
-        # latter, we should update the basename for a name mapped from an IDL
-        # renaming, and should not add 'third_party/blink/renderer'.
+        # generated file. For the former, we should add 'third_party/blink/' and
+        # replace the basename.  For the latter, we should update the basename
+        # for a name mapped from an IDL renaming, and should add
+        # 'third_party/blink/'.
+
+        if path.startswith('blink/public/resources'):
+            path = path.replace('blink/public', 'third_party/blink/public')
+            return '#%s "%s"' % (include_or_import, path)
 
         if path.startswith('third_party/WebKit'):
             path = path.replace('third_party/WebKit/Source', 'third_party/blink/renderer')
             path = path.replace('third_party/WebKit/common', 'third_party/blink/common')
-            path = path.replace('third_party/WebKit/public', 'third_party/blink/renderer/public')
+            path = path.replace('third_party/WebKit/public', 'third_party/blink/public')
             path = self._update_basename(path)
             return '#%s "%s"' % (include_or_import, path)
 
         match = self._checked_in_header_re.search(path)
         if match:
             if match.group(1) in self._basename_map:
-                path = 'third_party/blink/renderer/' + path[:match.start(1)] + self._basename_map[match.group(1)]
-            else:
-                path = 'third_party/blink/renderer/' + path
+                path = path[:match.start(1)] + self._basename_map[match.group(1)]
         elif 'core/inspector/protocol/' not in path:
             basename_start = path.rfind('/') + 1
             basename = path[basename_start:]
@@ -530,17 +570,21 @@ Bug: 768828
                 path = path[:basename_start] + self._basename_map[basename]
             elif basename.startswith('V8'):
                 path = path[:basename_start] + NameStyleConverter(basename[:len(basename) - 2]).to_snake_case() + '.h'
+        if path.startswith('public'):
+            path = 'third_party/blink/' + path
+        else:
+            path = 'third_party/blink/renderer/' + path
         return '#%s "%s"' % (include_or_import, path)
 
     def _update_cpp_includes(self, content):
-        pattern = re.compile(r'#(include|import)\s+"((bindings|controller||core|modules|platform|public|' +
-                             r'third_party/WebKit/(Source|common|public))/[-_\w/.]+)"')
+        pattern = re.compile(r'#(include|import)\s+"((bindings|controller|core|modules|platform|public|' +
+                             r'third_party/WebKit/(Source|common|public)|blink/public/resources)/[-_\w/.]+)"')
         return pattern.sub(self._replace_include_path, content)
 
     def _replace_basename_only_include(self, subdir, source_path, match):
         source_basename = match.group(1)
         if source_basename in self._basename_map:
-            return '#include "third_party/blink/renderer/public/%s/%s"' % (subdir, self._basename_map[source_basename])
+            return '#include "third_party/blink/public/%s/%s"' % (subdir, self._basename_map[source_basename])
         _log.warning('Basename-only %s in %s', match.group(0), self._shorten_path(source_path))
         return match.group(0)
 
@@ -548,7 +592,7 @@ Bug: 768828
         if not source_path.endswith('.h') or '/third_party/WebKit/public/' not in source_path.replace('\\', '/'):
             return
         # In public/ header files, we should replace |#include "WebFoo.h"|
-        # with |#include "third_party/blink/renderer/public/platform-or-web/web_foo.h"|
+        # with |#include "third_party/blink/public/platform-or-web/web_foo.h"|
         subdir = self._fs.basename(self._fs.dirname(source_path))
         # subdir is 'web' or 'platform'.
         return re.sub(r'#include\s+"(\w+\.h)"',

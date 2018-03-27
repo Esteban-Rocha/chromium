@@ -368,13 +368,16 @@ PaintResult PaintLayerPainter::PaintLayerContents(
   ShouldRespectOverflowClipType respect_overflow_clip =
       ShouldRespectOverflowClip(paint_flags, paint_layer_.GetLayoutObject());
 
+  PaintLayerPaintingInfo painting_info = painting_info_arg;
+  AdjustForPaintProperties(painting_info, paint_flags);
+
   bool should_create_subsequence = ShouldCreateSubsequence(
       paint_layer_, context, painting_info_arg, paint_flags);
 
   Optional<SubsequenceRecorder> subsequence_recorder;
   bool should_clear_empty_paint_phase_flags = false;
   if (should_create_subsequence) {
-    if (!ShouldRepaintSubsequence(paint_layer_, painting_info_arg,
+    if (!ShouldRepaintSubsequence(paint_layer_, painting_info,
                                   respect_overflow_clip,
                                   should_clear_empty_paint_phase_flags) &&
         SubsequenceRecorder::UseCachedSubsequenceIfPossible(context,
@@ -391,9 +394,6 @@ PaintResult PaintLayerPainter::PaintLayerContents(
     paint_layer_.SetPreviousPaintPhaseFloatEmpty(false);
     paint_layer_.SetPreviousPaintPhaseDescendantBlockBackgroundsEmpty(false);
   }
-
-  PaintLayerPaintingInfo painting_info = painting_info_arg;
-  AdjustForPaintProperties(painting_info, paint_flags);
 
   LayoutPoint offset_from_root;
   paint_layer_.ConvertToLayerCoords(painting_info.root_layer, offset_from_root);
@@ -448,9 +448,13 @@ PaintResult PaintLayerPainter::PaintLayerContents(
 
   sk_sp<PaintFilter> image_filter = FilterPainter::GetImageFilter(paint_layer_);
 
-  bool should_paint_content = paint_layer_.HasVisibleContent() &&
-                              is_self_painting_layer &&
-                              !is_painting_overlay_scrollbars;
+  bool should_paint_content =
+      paint_layer_.HasVisibleContent() &&
+      // Content under a LayoutSVGHiddenContainer is auxiliary resources for
+      // painting. Foreign content should never paint in this situation, as it
+      // is primary, not auxiliary.
+      !paint_layer_.IsUnderSVGHiddenContainer() && is_self_painting_layer &&
+      !is_painting_overlay_scrollbars;
 
   PaintLayerFragments layer_fragments;
 
@@ -729,7 +733,8 @@ bool PaintLayerPainter::NeedsToClip(
   // the embedded content itself. Doing so would clip out the
   // border because LayoutEmbeddedObject does not obey the painting phases
   // of a normal box object.
-  if (layout_object.IsLayoutEmbeddedContent())
+  if (layout_object.IsLayoutEmbeddedContent() &&
+      layout_object.GetCompositingState() == kPaintsIntoOwnBacking)
     return paint_flags & kPaintLayerPaintingChildClippingMaskPhase;
 
   return clip_rect.Rect() != local_painting_info.paint_dirty_rect ||
@@ -1390,7 +1395,6 @@ void PaintLayerPainter::PaintChildClippingMaskForFragments(
               context.GetPaintController(), state, client,
               DisplayItem::PaintPhaseToDrawingType(PaintPhase::kClippingMask));
           ClipRect mask_rect = fragment.background_rect;
-          mask_rect.MoveBy(fragment.fragment_data->PaintOffset());
           FillMaskingFragment(context, mask_rect, client);
         });
     return;

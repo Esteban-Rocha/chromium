@@ -23,6 +23,7 @@ import org.chromium.chrome.browser.vr_shell.VrClassesWrapperImpl;
 import org.chromium.chrome.browser.vr_shell.VrDaydreamApi;
 import org.chromium.chrome.browser.vr_shell.VrIntentUtils;
 import org.chromium.chrome.browser.vr_shell.VrShellDelegate;
+import org.chromium.chrome.browser.vr_shell.VrShellImpl;
 import org.chromium.chrome.browser.vr_shell.VrTestFramework;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
@@ -199,18 +200,20 @@ public class TransitionUtils {
      * @param autopresent If this intent is expected to auto-present WebVR
      */
     public static void sendVrLaunchIntent(
-            String url, final Activity activity, boolean autopresent) {
+            String url, final Activity activity, boolean autopresent, boolean avoidRelaunch) {
         // Create an intent that will launch Chrome at the specified URL.
         final Intent intent =
                 new Intent(ContextUtils.getApplicationContext(), VrMainActivity.class);
         intent.setData(Uri.parse(url));
-        intent.putExtra(VrIntentUtils.DAYDREAM_VR_EXTRA, true);
+        intent.addCategory(VrIntentUtils.DAYDREAM_CATEGORY);
         DaydreamApi.setupVrIntent(intent);
+
         if (autopresent) {
             // Daydream removes this category for deep-linked URLs for legacy reasons.
             intent.removeCategory(VrIntentUtils.DAYDREAM_CATEGORY);
             intent.putExtra(VrIntentUtils.AUTOPRESENT_WEVBVR_EXTRA, true);
         }
+        if (avoidRelaunch) intent.putExtra(VrIntentUtils.AVOID_RELAUNCH_EXTRA, true);
 
         final VrClassesWrapperImpl wrapper = new VrClassesWrapperImpl();
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
@@ -221,5 +224,19 @@ public class TransitionUtils {
                 api.close();
             }
         });
+    }
+
+    /**
+     * Waits until either a JavaScript dialog or permission prompt is being displayed using the
+     * Android native UI in the VR browser.
+     */
+    public static void waitForNativeUiPrompt(final int timeout) {
+        CriteriaHelper.pollInstrumentationThread(new Criteria() {
+            @Override
+            public boolean isSatisfied() {
+                VrShellImpl vrShell = (VrShellImpl) TestVrShellDelegate.getVrShellForTesting();
+                return vrShell.isDisplayingDialogView();
+            }
+        }, timeout, POLL_CHECK_INTERVAL_SHORT_MS);
     }
 }

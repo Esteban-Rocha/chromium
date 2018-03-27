@@ -709,7 +709,7 @@ class CORE_EXPORT Document : public ContainerNode,
   bool FinishingOrIsPrinting() {
     return printing_ == kPrinting || printing_ == kFinishingPrinting;
   }
-  void SetPrinting(PrintingState state) { printing_ = state; }
+  void SetPrinting(PrintingState);
 
   bool PaginatedForScreen() const { return paginated_for_screen_; }
   void SetPaginatedForScreen(bool p) { paginated_for_screen_ = p; }
@@ -1273,11 +1273,6 @@ class CORE_EXPORT Document : public ContainerNode,
     engagement_level_ = level;
   }
 
-  void SetHasHighMediaEngagement(bool has_high_media_engagement) {
-    has_high_media_engagement_ = has_high_media_engagement;
-  }
-  bool HasHighMediaEngagement() const { return has_high_media_engagement_; }
-
   // TODO(thestig): Rename these and related functions, since we can call them
   // for controls outside of forms as well.
   void DidAssociateFormControl(Element*);
@@ -1566,7 +1561,7 @@ class CORE_EXPORT Document : public ContainerNode,
   PendingSheetLayout pending_sheet_layout_;
 
   Member<LocalFrame> frame_;
-  Member<LocalDOMWindow> dom_window_;
+  TraceWrapperMember<LocalDOMWindow> dom_window_;
   TraceWrapperMember<HTMLImportsController> imports_controller_;
 
   // The document of creator browsing context for frame-less documents such as
@@ -1809,8 +1804,6 @@ class CORE_EXPORT Document : public ContainerNode,
   SecureContextState secure_context_state_;
 
   Member<NetworkStateObserver> network_state_observer_;
-
-  bool has_high_media_engagement_;
 
   std::unique_ptr<DocumentOutliveTimeReporter> document_outlive_time_reporter_;
 

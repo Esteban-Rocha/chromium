@@ -147,7 +147,7 @@
 #include "core/frame/SmartClip.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/VisualViewport.h"
-#include "core/frame/WebFrameWidgetImpl.h"
+#include "core/frame/WebFrameWidgetBase.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLFrameElementBase.h"
@@ -182,7 +182,7 @@
 #include "core/paint/TransformRecorder.h"
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/WindowPerformance.h"
-#include "platform/WebFrameScheduler.h"
+#include "platform/FrameScheduler.h"
 #include "platform/bindings/DOMWrapperWorld.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/bindings/V8PerIsolateData.h"
@@ -208,7 +208,6 @@
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "platform/wtf/HashMap.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Time.h"
 #include "public/platform/InterfaceRegistry.h"
 #include "public/platform/TaskType.h"
@@ -228,7 +227,6 @@
 #include "public/web/WebConsoleMessage.h"
 #include "public/web/WebDOMEvent.h"
 #include "public/web/WebDocument.h"
-#include "public/web/WebFindOptions.h"
 #include "public/web/WebFormElement.h"
 #include "public/web/WebFrameClient.h"
 #include "public/web/WebFrameOwnerProperties.h"
@@ -474,7 +472,7 @@ class ChromePluginPrintContext final : public ChromePrintContext {
   }
 
   void ComputePageRects(const FloatSize& print_size) override {
-    IntRect rect(FloatRect(FloatPoint(0, 0), print_size));
+    IntRect rect(IntPoint(0, 0), FlooredIntSize(print_size));
     print_params_.print_content_area = rect;
     page_rects_.Fill(rect, plugin_->PrintBegin(print_params_));
   }
@@ -742,6 +740,28 @@ void WebLocalFrameImpl::AddMessageToConsole(const WebConsoleMessage& message) {
                              message.column_number, nullptr));
   console_message->SetNodes(GetFrame(), std::move(nodes));
   GetFrame()->GetDocument()->AddConsoleMessage(console_message);
+}
+
+void WebLocalFrameImpl::Alert(const WebString& message) {
+  DCHECK(GetFrame());
+  ScriptState* script_state = ToScriptStateForMainWorld(GetFrame());
+  DCHECK(script_state);
+  GetFrame()->DomWindow()->alert(script_state, message);
+}
+
+bool WebLocalFrameImpl::Confirm(const WebString& message) {
+  DCHECK(GetFrame());
+  ScriptState* script_state = ToScriptStateForMainWorld(GetFrame());
+  DCHECK(script_state);
+  return GetFrame()->DomWindow()->confirm(script_state, message);
+}
+
+WebString WebLocalFrameImpl::Prompt(const WebString& message,
+                                    const WebString& default_value) {
+  DCHECK(GetFrame());
+  ScriptState* script_state = ToScriptStateForMainWorld(GetFrame());
+  DCHECK(script_state);
+  return GetFrame()->DomWindow()->prompt(script_state, message, default_value);
 }
 
 void WebLocalFrameImpl::CollectGarbage() {
@@ -1089,7 +1109,7 @@ bool WebLocalFrameImpl::ExecuteCommand(const WebString& name,
 
 bool WebLocalFrameImpl::IsCommandEnabled(const WebString& name) const {
   DCHECK(GetFrame());
-  return GetFrame()->GetEditor().CreateCommand(name).IsEnabled();
+  return GetFrame()->GetEditor().IsCommandEnabled(name);
 }
 
 bool WebLocalFrameImpl::SelectionTextDirection(WebTextDirection& start,
@@ -1595,8 +1615,8 @@ void WebLocalFrameImpl::PrintPagesForTesting(
 
 WebRect WebLocalFrameImpl::GetSelectionBoundsRectForTesting() const {
   return HasSelection()
-             ? WebRect(
-                   IntRect(GetFrame()->Selection().AbsoluteUnclippedBounds()))
+             ? WebRect(PixelSnappedIntRect(
+                   GetFrame()->Selection().AbsoluteUnclippedBounds()))
              : WebRect();
 }
 
@@ -1702,7 +1722,6 @@ WebLocalFrameImpl* WebLocalFrameImpl::CreateProvisional(
     // which triggers a cross-process navigation.
     new_frame->Loader().ForceSandboxFlags(static_cast<SandboxFlags>(flags));
   }
-  new_frame->SetIsProvisional(true);
 
   return web_frame;
 }
@@ -1722,8 +1741,8 @@ WebLocalFrameImpl::WebLocalFrameImpl(
     WebFrameClient* client,
     blink::InterfaceRegistry* interface_registry)
     : WebLocalFrame(scope),
-      local_frame_client_(LocalFrameClientImpl::Create(this)),
       client_(client),
+      local_frame_client_(LocalFrameClientImpl::Create(this)),
       autofill_client_(nullptr),
       input_events_scale_factor_for_emulation_(1),
       interface_registry_(interface_registry),
@@ -1766,7 +1785,7 @@ void WebLocalFrameImpl::SetCoreFrame(LocalFrame* frame) {
   frame_ = frame;
 
   local_frame_client_->SetVirtualTimePauser(
-      frame_ ? frame_->FrameScheduler()->CreateWebScopedVirtualTimePauser(
+      frame_ ? frame_->GetFrameScheduler()->CreateWebScopedVirtualTimePauser(
                    WebScopedVirtualTimePauser::VirtualTaskDuration::kInstant)
              : WebScopedVirtualTimePauser());
 }
@@ -1797,7 +1816,7 @@ void WebLocalFrameImpl::InitializeCoreFrame(Page& page,
     // This trace event is needed to detect the main frame of the
     // renderer in telemetry metrics. See crbug.com/692112#c11.
     TRACE_EVENT_INSTANT1("loading", "markAsMainFrame", TRACE_EVENT_SCOPE_THREAD,
-                         "frame", frame_);
+                         "frame", ToTraceValue(frame_));
   }
 }
 
@@ -1854,9 +1873,11 @@ void WebLocalFrameImpl::CreateFrameView() {
     return;
 
   bool is_main_frame = !Parent();
-  IntSize initial_size = (is_main_frame || !FrameWidget())
+  // TODO(dcheng): Can this be better abstracted away? It's pretty ugly that
+  // only local roots are special-cased here.
+  IntSize initial_size = (is_main_frame || !frame_widget_)
                              ? web_view->MainFrameSize()
-                             : (IntSize)FrameWidget()->Size();
+                             : static_cast<IntSize>(frame_widget_->Size());
   Color base_background_color = web_view->BaseBackgroundColor();
   if (!is_main_frame && Parent()->IsWebRemoteFrame())
     base_background_color = Color::kTransparent;
@@ -1875,8 +1896,8 @@ void WebLocalFrameImpl::CreateFrameView() {
       input_events_scale_factor_for_emulation_);
   GetFrame()->View()->SetDisplayMode(web_view->DisplayMode());
 
-  if (FrameWidget())
-    FrameWidget()->DidCreateLocalRootView();
+  if (frame_widget_)
+    frame_widget_->DidCreateLocalRootView();
 }
 
 WebLocalFrameImpl* WebLocalFrameImpl::FromFrame(LocalFrame* frame) {
@@ -1965,6 +1986,14 @@ void WebLocalFrameImpl::SetAutofillClient(WebAutofillClient* autofill_client) {
 
 WebAutofillClient* WebLocalFrameImpl::AutofillClient() {
   return autofill_client_;
+}
+
+bool WebLocalFrameImpl::IsLocalRoot() const {
+  return frame_->IsLocalRoot();
+}
+
+bool WebLocalFrameImpl::IsProvisional() const {
+  return frame_->IsProvisional();
 }
 
 WebLocalFrameImpl* WebLocalFrameImpl::LocalRoot() {
@@ -2215,7 +2244,7 @@ void WebLocalFrameImpl::SetCommittedFirstRealLoad() {
   GetFrame()->DidSendResourceTimingInfoToParent();
 }
 
-void WebLocalFrameImpl::SetHasReceivedUserGesture() {
+void WebLocalFrameImpl::NotifyUserActivation() {
   Frame::NotifyUserActivation(GetFrame(), UserGestureToken::kNewGesture);
 }
 
@@ -2273,109 +2302,6 @@ void WebLocalFrameImpl::DidCallIsSearchProviderInstalled() {
   UseCounter::Count(GetFrame(), WebFeature::kExternalIsSearchProviderInstalled);
 }
 
-void WebLocalFrameImpl::RequestFind(int identifier,
-                                    const WebString& search_text,
-                                    const WebFindOptions& options) {
-  // Send "no results" if this frame has no visible content.
-  if (!HasVisibleContent() && !options.force) {
-    Client()->ReportFindInPageMatchCount(identifier, 0 /* count */,
-                                         true /* finalUpdate */);
-    return;
-  }
-
-  WebRange current_selection = SelectionRange();
-  bool result = false;
-  bool active_now = false;
-
-  // Search for an active match only if this frame is focused or if this is a
-  // find next request.
-  if (IsFocused() || options.find_next) {
-    result = Find(identifier, search_text, options, false /* wrapWithinFrame */,
-                  &active_now);
-  }
-
-  if (result && !options.find_next) {
-    // Indicate that at least one match has been found. 1 here means
-    // possibly more matches could be coming.
-    Client()->ReportFindInPageMatchCount(identifier, 1 /* count */,
-                                         false /* finalUpdate */);
-  }
-
-  // There are three cases in which scoping is needed:
-  //
-  // (1) This is an initial find request (|options.findNext| is false). This
-  // will be the first scoping effort for this find session.
-  //
-  // (2) Something has been selected since the last search. This means that we
-  // cannot just increment the current match ordinal; we need to re-generate
-  // it.
-  //
-  // (3) TextFinder::Find() found what should be the next match (|result| is
-  // true), but was unable to activate it (|activeNow| is false). This means
-  // that the text containing this match was dynamically added since the last
-  // scope of the frame. The frame needs to be re-scoped so that any matches
-  // in the new text can be highlighted and included in the reported number of
-  // matches.
-  //
-  // If none of these cases are true, then we just report the current match
-  // count without scoping.
-  if (/* (1) */ options.find_next && /* (2) */ current_selection.IsNull() &&
-      /* (3) */ !(result && !active_now)) {
-    // Force report of the actual count.
-    IncreaseMatchCount(0, identifier);
-    return;
-  }
-
-  // Start a new scoping request. If the scoping function determines that it
-  // needs to scope, it will defer until later.
-  EnsureTextFinder().StartScopingStringMatches(identifier, search_text,
-                                               options);
-}
-
-bool WebLocalFrameImpl::Find(int identifier,
-                             const WebString& search_text,
-                             const WebFindOptions& options,
-                             bool wrap_within_frame,
-                             bool* active_now) {
-  if (!GetFrame())
-    return false;
-
-  // Unlikely, but just in case we try to find-in-page on a detached frame.
-  DCHECK(GetFrame()->GetPage());
-
-  // Up-to-date, clean tree is required for finding text in page, since it
-  // relies on TextIterator to look over the text.
-  GetFrame()->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  return EnsureTextFinder().Find(identifier, search_text, options,
-                                 wrap_within_frame, active_now);
-}
-
-void WebLocalFrameImpl::StopFinding(StopFindAction action) {
-  bool clear_selection = action == kStopFindActionClearSelection;
-  if (clear_selection)
-    ExecuteCommand(WebString::FromUTF8("Unselect"));
-
-  if (text_finder_) {
-    if (!clear_selection)
-      text_finder_->SetFindEndstateFocusAndSelection();
-    text_finder_->StopFindingAndClearSelection();
-  }
-
-  if (action == kStopFindActionActivateSelection && IsFocused()) {
-    WebDocument doc = GetDocument();
-    if (!doc.IsNull()) {
-      WebElement element = doc.FocusedElement();
-      if (!element.IsNull())
-        element.SimulateClick();
-    }
-  }
-}
-
-void WebLocalFrameImpl::IncreaseMatchCount(int count, int identifier) {
-  EnsureTextFinder().IncreaseMatchCount(identifier, count);
-}
-
 void WebLocalFrameImpl::DispatchMessageEventWithOriginCheck(
     const WebSecurityOrigin& intended_target_origin,
     const WebDOMEvent& event,
@@ -2395,43 +2321,6 @@ void WebLocalFrameImpl::DispatchMessageEventWithOriginCheck(
   GetFrame()->DomWindow()->DispatchMessageEventWithOriginCheck(
       intended_target_origin.Get(), event,
       SourceLocation::Create(String(), 0, 0, nullptr));
-}
-
-int WebLocalFrameImpl::FindMatchMarkersVersion() const {
-  if (text_finder_)
-    return text_finder_->FindMatchMarkersVersion();
-  return 0;
-}
-
-int WebLocalFrameImpl::SelectNearestFindMatch(const WebFloatPoint& point,
-                                              WebRect* selection_rect) {
-  return EnsureTextFinder().SelectNearestFindMatch(point, selection_rect);
-}
-
-float WebLocalFrameImpl::DistanceToNearestFindMatch(
-    const WebFloatPoint& point) {
-  float nearest_distance;
-  EnsureTextFinder().NearestFindMatch(point, &nearest_distance);
-  return nearest_distance;
-}
-
-WebFloatRect WebLocalFrameImpl::ActiveFindMatchRect() {
-  if (text_finder_)
-    return text_finder_->ActiveFindMatchRect();
-  return WebFloatRect();
-}
-
-void WebLocalFrameImpl::FindMatchRects(WebVector<WebFloatRect>& output_rects) {
-  EnsureTextFinder().FindMatchRects(output_rects);
-}
-
-void WebLocalFrameImpl::SetTickmarks(const WebVector<WebRect>& tickmarks) {
-  if (GetFrameView()) {
-    Vector<IntRect> tickmarks_converted(tickmarks.size());
-    for (size_t i = 0; i < tickmarks.size(); ++i)
-      tickmarks_converted[i] = tickmarks[i];
-    GetFrameView()->SetTickmarks(tickmarks_converted);
-  }
 }
 
 WebNode WebLocalFrameImpl::ContextMenuNode() const {
@@ -2455,22 +2344,11 @@ void WebLocalFrameImpl::WillDetachParent() {
   }
 }
 
-TextFinder* WebLocalFrameImpl::GetTextFinder() const {
-  return text_finder_;
-}
-
-TextFinder& WebLocalFrameImpl::EnsureTextFinder() {
-  if (!text_finder_)
-    text_finder_ = TextFinder::Create(*this);
-
-  return *text_finder_;
-}
-
 void WebLocalFrameImpl::SetFrameWidget(WebFrameWidgetBase* frame_widget) {
   frame_widget_ = frame_widget;
 }
 
-WebFrameWidgetBase* WebLocalFrameImpl::FrameWidget() const {
+WebFrameWidget* WebLocalFrameImpl::FrameWidget() const {
   return frame_widget_;
 }
 
@@ -2517,12 +2395,6 @@ void WebLocalFrameImpl::SetEngagementLevel(mojom::EngagementLevel level) {
   GetFrame()->GetDocument()->SetEngagementLevel(level);
 }
 
-void WebLocalFrameImpl::SetHasHighMediaEngagement(
-    bool has_high_media_engagement) {
-  GetFrame()->GetDocument()->SetHasHighMediaEngagement(
-      has_high_media_engagement);
-}
-
 WebSandboxFlags WebLocalFrameImpl::EffectiveSandboxFlags() const {
   if (!GetFrame())
     return WebSandboxFlags::kNone;
@@ -2566,8 +2438,8 @@ void WebLocalFrameImpl::UsageCountChromeLoadTimes(const WebString& metric) {
   Deprecation::CountDeprecation(GetFrame(), feature);
 }
 
-WebFrameScheduler* WebLocalFrameImpl::Scheduler() const {
-  return GetFrame()->FrameScheduler();
+FrameScheduler* WebLocalFrameImpl::Scheduler() const {
+  return GetFrame()->GetFrameScheduler();
 }
 
 scoped_refptr<base::SingleThreadTaskRunner> WebLocalFrameImpl::GetTaskRunner(
@@ -2651,7 +2523,7 @@ void WebLocalFrameImpl::SetSpellCheckPanelHostClient(
 }
 
 WebFrameWidgetBase* WebLocalFrameImpl::LocalRootFrameWidget() {
-  return LocalRoot()->FrameWidget();
+  return LocalRoot()->FrameWidgetImpl();
 }
 
 Node* WebLocalFrameImpl::ContextMenuNodeInner() const {

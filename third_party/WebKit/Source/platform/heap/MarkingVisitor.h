@@ -11,19 +11,18 @@
 
 namespace blink {
 
+class BasePage;
+
 // Visitor used to mark Oilpan objects.
 class PLATFORM_EXPORT MarkingVisitor final : public Visitor {
  public:
   enum MarkingMode {
-    // This is a default visitor. This is used for GCType=GCWithSweep
-    // and GCType=GCWithoutSweep.
+    // This is a default visitor. This is used for MarkingType=kAtomicMarking
+    // and MarkingType=kIncrementalMarking.
     kGlobalMarking,
     // This visitor just marks objects and ignores weak processing.
-    // This is used for GCType=TakeSnapshot.
+    // This is used for MarkingType=kTakeSnapshot.
     kSnapshotMarking,
-    // This visitor is used to trace objects during weak processing.
-    // This visitor is allowed to trace only already marked objects.
-    kWeakProcessing,
     // Perform global marking along with preparing for additional sweep
     // compaction of heap arenas afterwards. Compared to the GlobalMarking
     // visitor, this visitor will also register references to objects
@@ -38,33 +37,33 @@ class PLATFORM_EXPORT MarkingVisitor final : public Visitor {
   MarkingVisitor(ThreadState*, MarkingMode);
   virtual ~MarkingVisitor();
 
-  inline MarkingMode GetMarkingMode() const { return marking_mode_; }
-
   // Marking implementation.
 
-  // This method marks an object and adds it to the set of objects that should
-  // have their trace method called. Since not all objects have vtables we have
-  // to have the callback as an explicit argument, but we can use the templated
-  // one-argument mark method above to automatically provide the callback
-  // function.
-  inline void Mark(const void* object_pointer, TraceCallback);
+  // Conservatively marks an object if pointed to by Address.
+  void ConservativelyMarkAddress(BasePage*, Address);
+#if DCHECK_IS_ON()
+  void ConservativelyMarkAddress(BasePage*,
+                                 Address,
+                                 MarkedPointerCallbackForTesting);
+#endif  // DCHECK_IS_ON()
 
-  // Used to mark objects during conservative scanning.
+  // Marks an object and adds a tracing callback for processing of the object.
   inline void MarkHeader(HeapObjectHeader*, TraceCallback);
-  inline void MarkHeaderNoTracing(HeapObjectHeader*);
 
-  // Marks the header of an object. Is used for eagerly tracing of objects.
-  inline bool EnsureMarked(const void* pointer);
-
-  // Used for eagerly marking objects and for delayed marking of backing stores
-  // when the actual payload is processed differently, e.g., by weak handling.
-  inline void MarkNoTracing(const void* pointer) {
-    Mark(pointer, reinterpret_cast<TraceCallback>(0));
-  }
+  // Try to mark an object without tracing. Returns true when the object was not
+  // marked upon calling.
+  inline bool MarkHeaderNoTracing(HeapObjectHeader*);
 
   // Implementation of the visitor interface. See above for descriptions.
 
   void Visit(void* object, TraceDescriptor desc) final {
+    DCHECK(object);
+    if (desc.base_object_payload == BlinkGC::kNotFullyConstructedObject) {
+      // This means that the objects are not-yet-fully-constructed. See comments
+      // on GarbageCollectedMixin for how those objects are handled.
+      not_fully_constructed_worklist_.Push(object);
+      return;
+    }
     // Default mark method of the trait just calls the two-argument mark
     // method on the visitor. The second argument is the static trace method
     // of the trait, which by default calls the instance method
@@ -87,13 +86,22 @@ class PLATFORM_EXPORT MarkingVisitor final : public Visitor {
       // that lead to many recursions.
       DCHECK(Heap().GetStackFrameDepth().IsAcceptableStackUse());
       if (LIKELY(Heap().GetStackFrameDepth().IsSafeToRecurse())) {
-        if (EnsureMarked(desc.base_object_payload)) {
+        if (MarkHeaderNoTracing(
+                HeapObjectHeader::FromPayload(desc.base_object_payload))) {
           desc.callback(this, desc.base_object_payload);
         }
         return;
       }
     }
-    Mark(desc.base_object_payload, desc.callback);
+    MarkHeader(HeapObjectHeader::FromPayload(desc.base_object_payload),
+               desc.callback);
+  }
+
+  void VisitWeak(void* object,
+                 void** object_slot,
+                 TraceDescriptor desc,
+                 WeakCallback callback) final {
+    RegisterWeakCallback(object_slot, callback);
   }
 
   void VisitBackingStoreStrongly(void* object,
@@ -112,20 +120,15 @@ class PLATFORM_EXPORT MarkingVisitor final : public Visitor {
   void VisitBackingStoreWeakly(void* object,
                                void** object_slot,
                                TraceDescriptor desc) final {
-    DCHECK(GetMarkingMode() != kWeakProcessing);
     RegisterBackingStoreReference(object_slot);
-    Heap().PushPostMarkingCallback(object, &MarkNoTracingCallback);
+    post_marking_worklist_.Push({object, &MarkNoTracingCallback});
   }
 
   void RegisterBackingStoreCallback(void* backing_store,
                                     MovingObjectCallback,
                                     void* callback_data) final;
   bool RegisterWeakTable(const void* closure,
-                         EphemeronCallback iteration_callback,
-                         EphemeronCallback iteration_done_callback) final;
-#if DCHECK_IS_ON()
-  bool WeakTableRegistered(const void* closure) final;
-#endif
+                         EphemeronCallback iteration_callback) final;
   void RegisterWeakCallback(void* closure, WeakCallback) final;
 
  private:
@@ -133,57 +136,37 @@ class PLATFORM_EXPORT MarkingVisitor final : public Visitor {
 
   void RegisterBackingStoreReference(void* slot);
 
+  void ConservativelyMarkHeader(HeapObjectHeader*);
+
+  MarkingWorklist::View marking_worklist_;
+  NotFullyConstructedWorklist::View not_fully_constructed_worklist_;
+  PostMarkingWorklist::View post_marking_worklist_;
+  WeakCallbackWorklist::View weak_callback_worklist_;
   const MarkingMode marking_mode_;
 };
+
+inline bool MarkingVisitor::MarkHeaderNoTracing(HeapObjectHeader* header) {
+  DCHECK(header);
+  DCHECK(State()->IsInGC() || State()->IsIncrementalMarking());
+  // A GC should only mark the objects that belong in its heap.
+  DCHECK_EQ(State(),
+            PageFromObject(header->Payload())->Arena()->GetThreadState());
+  // Never mark free space objects. This would e.g. hint to marking a promptly
+  // freed backing store.
+  DCHECK(!header->IsFree());
+
+  return header->TryMark();
+}
 
 inline void MarkingVisitor::MarkHeader(HeapObjectHeader* header,
                                        TraceCallback callback) {
   DCHECK(header);
-  if (header->IsMarked())
-    return;
+  DCHECK(callback);
 
-  DCHECK(ThreadState::Current()->IsInGC() ||
-         ThreadState::Current()->IsIncrementalMarking());
-  DCHECK(GetMarkingMode() != kWeakProcessing);
-
-  const void* object_pointer = header->Payload();
-  // A GC should only mark the objects that belong in its heap.
-  DCHECK(&PageFromObject(object_pointer)->Arena()->GetThreadState()->Heap() ==
-         &Heap());
-
-  header->Mark();
-
-  if (callback)
-    Heap().PushTraceCallback(const_cast<void*>(object_pointer), callback);
-}
-
-inline void MarkingVisitor::Mark(const void* object_pointer,
-                                 TraceCallback callback) {
-  if (!object_pointer)
-    return;
-  HeapObjectHeader* header = HeapObjectHeader::FromPayload(object_pointer);
-  MarkHeader(header, callback);
-}
-
-inline void MarkingVisitor::MarkHeaderNoTracing(HeapObjectHeader* header) {
-  MarkHeader(header, reinterpret_cast<TraceCallback>(0));
-}
-
-inline bool MarkingVisitor::EnsureMarked(const void* object_pointer) {
-  if (!object_pointer)
-    return false;
-
-  HeapObjectHeader* header = HeapObjectHeader::FromPayload(object_pointer);
-  if (header->IsMarked())
-    return false;
-#if DCHECK_IS_ON()
-  MarkNoTracing(object_pointer);
-#else
-  // Inline what the above markNoTracing() call expands to,
-  // so as to make sure that we do get all the benefits (asserts excepted.)
-  header->Mark();
-#endif
-  return true;
+  if (MarkHeaderNoTracing(header)) {
+    marking_worklist_.Push(
+        {reinterpret_cast<void*>(header->Payload()), callback});
+  }
 }
 
 }  // namespace blink

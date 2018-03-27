@@ -18,14 +18,6 @@
         {
             "type": "setting",
             "category": "Performance",
-            "title": "Record heap allocation stack traces",
-            "settingName": "recordAllocationStacks",
-            "settingType": "boolean",
-            "defaultValue": false
-        },
-        {
-            "type": "setting",
-            "category": "Performance",
             "title": "High resolution CPU profiling",
             "settingName": "highResolutionCpuProfiling",
             "settingType": "boolean",
@@ -105,12 +97,14 @@
         "HeapSnapshotGridNodes.js",
         "HeapSnapshotView.js",
         "HeapProfilerPanel.js",
+        "IsolateSelector.js",
         "ProfileLauncherView.js",
         "ProfileTypeRegistry.js",
         "TargetsComboBoxController.js"
     ],
     "resources": [
         "heapProfiler.css",
+        "profileLauncherView.css",
         "profilesPanel.css",
         "profilesSidebarTree.css"
     ]

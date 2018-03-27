@@ -60,7 +60,7 @@ void InitNavigateParams(FrameHostMsg_DidCommitProvisionalLoad_Params* params,
 }
 
 TestRenderWidgetHostView::TestRenderWidgetHostView(RenderWidgetHost* rwh)
-    : rwh_(RenderWidgetHostImpl::From(rwh)),
+    : RenderWidgetHostViewBase(rwh),
       is_showing_(false),
       is_occluded_(false),
       did_swap_compositor_frame_(false),
@@ -80,7 +80,7 @@ TestRenderWidgetHostView::TestRenderWidgetHostView(RenderWidgetHost* rwh)
   }
 #endif
 
-  rwh_->SetView(this);
+  host()->SetView(this);
 
 #if defined(USE_AURA)
   window_.reset(new aura::Window(
@@ -161,24 +161,12 @@ SkColor TestRenderWidgetHostView::background_color() const {
 }
 
 #if defined(OS_MACOSX)
-
 void TestRenderWidgetHostView::SetActive(bool active) {
   // <viettrungluu@gmail.com>: Do I need to do anything here?
 }
 
-bool TestRenderWidgetHostView::SupportsSpeech() const {
-  return false;
-}
-
 void TestRenderWidgetHostView::SpeakSelection() {
 }
-
-bool TestRenderWidgetHostView::IsSpeaking() const {
-  return false;
-}
-
-void TestRenderWidgetHostView::StopSpeaking() {}
-
 #endif
 
 gfx::Vector2d TestRenderWidgetHostView::GetOffsetFromRootSurface() {
@@ -209,11 +197,6 @@ bool TestRenderWidgetHostView::LockMouse() {
 }
 
 void TestRenderWidgetHostView::UnlockMouse() {
-}
-
-RenderWidgetHostImpl* TestRenderWidgetHostView::GetRenderWidgetHostImpl()
-    const {
-  return rwh_;
 }
 
 viz::FrameSinkId TestRenderWidgetHostView::GetFrameSinkId() {

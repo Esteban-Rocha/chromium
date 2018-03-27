@@ -30,7 +30,10 @@
 
 #include "core/layout/LayoutBlockFlow.h"
 
+#include <algorithm>
 #include <memory>
+#include <utility>
+
 #include "core/editing/Editor.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
@@ -57,7 +60,6 @@
 #include "core/paint/BlockFlowPaintInvalidator.h"
 #include "core/paint/PaintLayer.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -662,21 +664,8 @@ void LayoutBlockFlow::DetermineLogicalLeftPositionForChild(LayoutBox& child) {
   LayoutUnit new_position = start_position + child_margin_start;
 
   if (child.AvoidsFloats() && ContainsFloats()) {
-    LayoutUnit position_to_avoid_floats =
-        StartOffsetForLine(LogicalTopForChild(child), kDoNotIndentText,
-                           LogicalHeightForChild(child));
-
-    // This section of code is just for a use counter. It counts if something
-    // that avoids floats may have been affected by a float with shape-outside.
-    if (!ShapeOutsideInfo::IsEmpty()) {
-      LayoutUnit alternate_position_to_avoid_floats =
-          StartOffsetForAvoidingFloats(LogicalTopForChild(child),
-                                       LogicalHeightForChild(child));
-      if (alternate_position_to_avoid_floats != position_to_avoid_floats) {
-        UseCounter::Count(GetDocument(),
-                          WebFeature::kShapeOutsideMaybeAffectedInlinePosition);
-      }
-    }
+    LayoutUnit position_to_avoid_floats = StartOffsetForAvoidingFloats(
+        LogicalTopForChild(child), LogicalHeightForChild(child));
 
     // If the child has an offset from the content edge to avoid floats then use
     // that, otherwise let any negative margin pull it back over the content
@@ -2839,8 +2828,8 @@ LayoutUnit LayoutBlockFlow::GetClearDelta(LayoutBox* child,
         IsHorizontalWritingMode() ? border_box.Width() : border_box.Height();
     while (true) {
       LayoutUnit available_logical_width_at_new_logical_top_offset =
-          AvailableLogicalWidthForLine(new_logical_top, kDoNotIndentText,
-                                       LogicalHeightForChild(*child));
+          AvailableLogicalWidthForAvoidingFloats(new_logical_top,
+                                                 LogicalHeightForChild(*child));
       if (available_logical_width_at_new_logical_top_offset ==
           AvailableLogicalWidthForContent())
         return new_logical_top - logical_top;
@@ -2877,7 +2866,7 @@ LayoutUnit LayoutBlockFlow::GetClearDelta(LayoutBox* child,
 
 void LayoutBlockFlow::CreateFloatingObjects() {
   floating_objects_ =
-      WTF::WrapUnique(new FloatingObjects(this, IsHorizontalWritingMode()));
+      std::make_unique<FloatingObjects>(this, IsHorizontalWritingMode());
 }
 
 void LayoutBlockFlow::WillBeDestroyed() {
@@ -2915,8 +2904,7 @@ void LayoutBlockFlow::WillBeDestroyed() {
       // that will outlast this block. In the non-anonymous block case those
       // children will be destroyed by the time we return from this function.
       if (IsAnonymousBlock()) {
-        for (InlineFlowBox* box = FirstLineBox(); box;
-             box = box->NextLineBox()) {
+        for (InlineFlowBox* box : *LineBoxes()) {
           while (InlineBox* child_box = box->FirstChild())
             child_box->Remove();
         }

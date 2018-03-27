@@ -6,10 +6,10 @@
 
 #include "core/frame/LocalFrameView.h"
 #include "core/layout/LayoutBoxModelObject.h"
-#include "core/layout/LayoutTestHelper.h"
 #include "core/layout/LayoutView.h"
 #include "core/paint/PaintLayer.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "core/testing/CoreUnitTestHelper.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "public/platform/WebContentLayer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -430,7 +430,9 @@ TEST_P(CompositedLayerMappingTest, LayerOffscreenInterestRect) {
 
 TEST_P(CompositedLayerMappingTest, ScrollingLayerInterestRect) {
   SetBodyInnerHTML(R"HTML(
-    <style>div::-webkit-scrollbar{ width: 5px; }</style>
+    <style>
+      div::-webkit-scrollbar{ width: 5px; }
+    </style>
     <div id='target' style='width: 200px; height: 200px; will-change:
     transform; overflow: scroll'>
     <div style='width: 100px; height: 10000px'></div></div>
@@ -442,8 +444,14 @@ TEST_P(CompositedLayerMappingTest, ScrollingLayerInterestRect) {
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(paint_layer->GraphicsLayerBacking());
   // Offscreen layers are painted as usual.
-  ASSERT_TRUE(paint_layer->GetCompositedLayerMapping()->ScrollingLayer());
-  EXPECT_EQ(IntRect(0, 0, 195, 4592),
+  ASSERT_TRUE(
+      paint_layer->GetCompositedLayerMapping()->ScrollingContentsLayer());
+  // In screen space, the scroller is (8, 8, 195, 193) (because of overflow clip
+  // of 'target', scrollbar and root margin).
+  // Applying the viewport clip of the root has no effect because
+  // the clip is already small. Mapping it down into the graphics layer
+  // space yields (0, 0, 195, 193). This is then expanded by 4000px.
+  EXPECT_EQ(IntRect(0, 0, 195, 4193),
             RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
@@ -716,26 +724,26 @@ TEST_P(CompositedLayerMappingTest, InterestRectChangeOnScroll) {
   Element* scroller = GetDocument().getElementById("scroller");
   GraphicsLayer* scrolling_layer =
       scroller->GetLayoutBox()->Layer()->GraphicsLayerBacking();
-  EXPECT_EQ(IntRect(0, 0, 400, 4600), PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 4400), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(300);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Still use the previous interest rect because the recomputed rect hasn't
   // changed enough.
-  EXPECT_EQ(IntRect(0, 0, 400, 4900), RecomputeInterestRect(scrolling_layer));
-  EXPECT_EQ(IntRect(0, 0, 400, 4600), PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 4700), RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 4400), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(600);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Use recomputed interest rect because it changed enough.
-  EXPECT_EQ(IntRect(0, 0, 400, 5200), RecomputeInterestRect(scrolling_layer));
-  EXPECT_EQ(IntRect(0, 0, 400, 5200), PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 5000), RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 5000), PreviousInterestRect(scrolling_layer));
 
-  scroller->setScrollTop(5400);
+  scroller->setScrollTop(5600);
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_EQ(IntRect(0, 1400, 400, 8600),
+  EXPECT_EQ(IntRect(0, 1600, 400, 8400),
             RecomputeInterestRect(scrolling_layer));
-  EXPECT_EQ(IntRect(0, 1400, 400, 8600), PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1600, 400, 8400), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(9000);
   GetDocument().View()->UpdateAllLifecyclePhases();
@@ -743,13 +751,13 @@ TEST_P(CompositedLayerMappingTest, InterestRectChangeOnScroll) {
   // interest rect.
   EXPECT_EQ(IntRect(0, 5000, 400, 5000),
             RecomputeInterestRect(scrolling_layer));
-  EXPECT_EQ(IntRect(0, 1400, 400, 8600), PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1600, 400, 8400), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(2000);
   // Use recomputed interest rect because it changed enough.
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_EQ(IntRect(0, 0, 400, 6600), RecomputeInterestRect(scrolling_layer));
-  EXPECT_EQ(IntRect(0, 0, 400, 6600), PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 6400), RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 6400), PreviousInterestRect(scrolling_layer));
 }
 
 TEST_P(CompositedLayerMappingTest,
@@ -776,12 +784,10 @@ TEST_P(CompositedLayerMappingTest,
   scroller->setScrollTop(5400);
   GetDocument().View()->UpdateAllLifecyclePhases();
   scroller->setScrollTop(9400);
-  // The above code creates an interest rect bigger than the interest rect if
-  // recomputed now.
   GetDocument().View()->UpdateAllLifecyclePhases();
   EXPECT_EQ(IntRect(0, 5400, 400, 4600),
             RecomputeInterestRect(scrolling_layer));
-  EXPECT_EQ(IntRect(0, 1400, 400, 8600), PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 5400, 400, 4600), PreviousInterestRect(scrolling_layer));
 
   // Paint invalidation and repaint should change previous paint interest rect.
   GetDocument().getElementById("content")->setTextContent("Change");
@@ -2606,6 +2612,43 @@ TEST_P(CompositedLayerMappingTest, SquashingScrollInterestRect) {
 
   EXPECT_EQ(IntRect(0, 1000, 200, 5000),
             squashed->GroupedMapping()->SquashingLayer()->InterestRect());
+}
+
+TEST_P(CompositedLayerMappingTest,
+       SquashingBoundsUnderCompositedScrollingWithTransform) {
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    return;
+
+  SetHtmlInnerHTML(R"HTML(
+    <div id=scroller style="transform: translateZ(0); overflow: scroll;
+    width: 200px; height: 400px;">
+      <div id=squashing
+          style='width: 200px; height: 200px; position: relative; will-change:
+transform'></div>
+      <div id=squashed style="width: 200px; height: 6000px; top: -100px;
+          position: relative;">
+      </div>
+    </div>
+    )HTML");
+  Element* scroller_element = GetDocument().getElementById("scroller");
+  auto* scroller = scroller_element->GetLayoutObject();
+  EXPECT_EQ(kPaintsIntoOwnBacking, scroller->GetCompositingState());
+
+  auto* squashing =
+      ToLayoutBoxModelObject(GetLayoutObjectByElementId("squashing"))->Layer();
+  EXPECT_EQ(kPaintsIntoOwnBacking, squashing->GetCompositingState());
+
+  auto* squashed =
+      ToLayoutBoxModelObject(GetLayoutObjectByElementId("squashed"))->Layer();
+  EXPECT_EQ(kPaintsIntoGroupedBacking, squashed->GetCompositingState());
+
+  scroller_element->setScrollTop(300);
+
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // 100px down from squashing's main graphics layer.
+  EXPECT_EQ(FloatPoint(0, 100),
+            squashed->GraphicsLayerBacking()->GetPosition());
 }
 
 }  // namespace blink

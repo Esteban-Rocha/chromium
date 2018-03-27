@@ -19,7 +19,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
-#include "base/strings/string16.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -130,6 +129,8 @@ namespace browser_sync {
 //
 //   Sync configuration is accomplished via the following APIs:
 //    * OnUserChoseDatatypes(): Set the data types the user wants to sync.
+//    * OnUserChangedSyncEverythingOnly(): Set only the keepEverythingSynced
+//        value.
 //    * SetDecryptionPassphrase(): Attempt to decrypt the user's encrypted data
 //        using the passed passphrase.
 //    * SetEncryptionPassphrase(): Re-encrypt the user's data using the passed
@@ -313,6 +314,11 @@ class ProfileSyncService : public syncer::SyncServiceBase,
   void GetAllNodes(const base::Callback<void(std::unique_ptr<base::ListValue>)>&
                        callback) override;
   syncer::GlobalIdMapper* GetGlobalIdMapper() const override;
+
+  // Changes only the KeepEverythingSynced value.
+  // TODO(crbug/820625): Refactor sync code for more robust way to get/set
+  // preferred datatypes.
+  void OnUserChangedSyncEverythingOnly(bool sync_everything);
 
   // Add a sync type preference provider. Each provider may only be added once.
   void AddPreferenceProvider(syncer::SyncTypePreferenceProvider* provider);

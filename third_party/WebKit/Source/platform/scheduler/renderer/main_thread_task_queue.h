@@ -10,7 +10,7 @@
 
 namespace blink {
 
-class WebFrameScheduler;
+class FrameScheduler;
 
 namespace scheduler {
 
@@ -46,9 +46,14 @@ class PLATFORM_EXPORT MainThreadTaskQueue : public TaskQueue {
     kIPC = 17,
     kInput = 18,
 
+    // Detached is used in histograms for tasks which are run after frame
+    // is detached and task queue is gracefully shutdown.
+    // TODO(altimin): Move to the top when histogram is renumbered.
+    kDetached = 19,
+
     // Used to group multiple types when calculating Expected Queueing Time.
-    kOther = 19,
-    kCount = 20
+    kOther = 20,
+    kCount = 21
   };
 
   // Returns name of the given queue type. Returned string has application
@@ -121,7 +126,7 @@ class PLATFORM_EXPORT MainThreadTaskQueue : public TaskQueue {
 
     QueueType queue_type;
     TaskQueue::Spec spec;
-    WebFrameScheduler* frame_;
+    FrameScheduler* frame_;
     bool can_be_blocked;
     bool can_be_throttled;
     bool can_be_paused;
@@ -157,8 +162,8 @@ class PLATFORM_EXPORT MainThreadTaskQueue : public TaskQueue {
   // Override base method to notify RendererScheduler about shutdown queue.
   void ShutdownTaskQueue() override;
 
-  WebFrameScheduler* GetFrameScheduler() const;
-  void SetFrameScheduler(WebFrameScheduler* frame);
+  FrameScheduler* GetFrameScheduler() const;
+  void SetFrameScheduler(FrameScheduler* frame);
 
  protected:
   MainThreadTaskQueue(std::unique_ptr<internal::TaskQueueImpl> impl,
@@ -168,6 +173,11 @@ class PLATFORM_EXPORT MainThreadTaskQueue : public TaskQueue {
 
  private:
   friend class TaskQueueManager;
+
+  // Clear references to main thread scheduler and frame scheduler and dispatch
+  // appropriate notifications. This is the common part of ShutdownTaskQueue and
+  // DetachFromRendererScheduler.
+  void ClearReferencesToSchedulers();
 
   QueueType queue_type_;
   QueueClass queue_class_;
@@ -180,7 +190,7 @@ class PLATFORM_EXPORT MainThreadTaskQueue : public TaskQueue {
   // Needed to notify renderer scheduler about completed tasks.
   RendererSchedulerImpl* renderer_scheduler_;  // NOT OWNED
 
-  WebFrameScheduler* web_frame_scheduler_;  // NOT OWNED
+  FrameScheduler* frame_scheduler_;  // NOT OWNED
 
   DISALLOW_COPY_AND_ASSIGN(MainThreadTaskQueue);
 };

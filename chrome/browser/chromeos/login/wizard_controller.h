@@ -141,6 +141,7 @@ class WizardController : public BaseScreenDelegate,
   void ShowUserImageScreen();
   void ShowEulaScreen();
   void ShowEnrollmentScreen();
+  void ShowDemoModeSetupScreen();
   void ShowResetScreen();
   void ShowKioskAutolaunchScreen();
   void ShowEnableDebuggingScreen();
@@ -188,6 +189,7 @@ class WizardController : public BaseScreenDelegate,
   void OnVoiceInteractionValuePropAccepted();
   void OnControllerPairingFinished();
   void OnAutoEnrollmentCheckCompleted();
+  void OnDemoSetupClosed();
   void OnWaitForContainerReadyFinished();
   void OnOobeFlowFinished();
 
@@ -296,9 +298,6 @@ class WizardController : public BaseScreenDelegate,
   // pairing remora OOBE from the beginning no matter an eligible controller is
   // detected or not.
   bool IsRemoraPairingOobe() const;
-
-  // Returns true if arc terms of service should be shown.
-  bool ShouldShowArcTerms() const;
 
   // Returns true if voice interaction value prop should be shown.
   bool ShouldShowVoiceInteractionValueProp() const;

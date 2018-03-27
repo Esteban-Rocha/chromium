@@ -904,6 +904,58 @@ TEST_F(TabletModeWindowManagerTest, MinimizedEnterAndLeaveTabletMode) {
   EXPECT_TRUE(window_state->IsMinimized());
 }
 
+// Tests that pre-minimized window show state is persistent after entering and
+// leaving tablet mode, that is not cleared in tablet mode.
+TEST_F(TabletModeWindowManagerTest, PersistPreMinimizedShowState) {
+  gfx::Rect rect(10, 10, 100, 100);
+  std::unique_ptr<aura::Window> window(
+      CreateWindow(aura::client::WINDOW_TYPE_NORMAL, rect));
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  window_state->Maximize();
+  window_state->Minimize();
+  EXPECT_EQ(ui::SHOW_STATE_MAXIMIZED,
+            window->GetProperty(aura::client::kPreMinimizedShowStateKey));
+
+  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
+  window_state->Unminimize();
+  // Check that pre-minimized window show state is not cleared due to
+  // unminimizing in tablet mode.
+  EXPECT_EQ(ui::SHOW_STATE_MAXIMIZED,
+            window->GetProperty(aura::client::kPreMinimizedShowStateKey));
+  window_state->Minimize();
+  EXPECT_EQ(ui::SHOW_STATE_MAXIMIZED,
+            window->GetProperty(aura::client::kPreMinimizedShowStateKey));
+
+  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(false);
+  window_state->Unminimize();
+  EXPECT_TRUE(window_state->IsMaximized());
+}
+
+// Tests unminimizing in tablet mode and then existing tablet mode should have
+// pre-minimized window show state.
+TEST_F(TabletModeWindowManagerTest, UnminimizeInTabletMode) {
+  // Tests restoring to maximized show state.
+  gfx::Rect rect(10, 10, 100, 100);
+  std::unique_ptr<aura::Window> window(
+      CreateWindow(aura::client::WINDOW_TYPE_NORMAL, rect));
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  window_state->Maximize();
+  window_state->Minimize();
+  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
+  window_state->Unminimize();
+  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(false);
+  EXPECT_TRUE(window_state->IsMaximized());
+
+  // Tests restoring to normal show state.
+  window_state->Restore();
+  EXPECT_EQ(gfx::Rect(10, 10, 100, 100), window->GetBoundsInScreen());
+  window_state->Minimize();
+  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
+  window_state->Unminimize();
+  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(false);
+  EXPECT_EQ(gfx::Rect(10, 10, 100, 100), window->GetBoundsInScreen());
+}
+
 // Check that a full screen window remains full screen upon entering maximize
 // mode. Furthermore, checks that this window is not full screen upon exiting
 // tablet mode if it was un-full-screened while in tablet mode.
@@ -1744,6 +1796,32 @@ TEST_F(TabletModeWindowManagerTest, NoWindowResizerInTabletMode) {
   resizer = CreateWindowResizer(window.get(), gfx::Point(), HTCAPTION,
                                 ::wm::WINDOW_MOVE_SOURCE_MOUSE);
   EXPECT_FALSE(resizer.get());
+}
+
+// Test that the minimized window bounds doesn't change until it's unminimized.
+TEST_F(TabletModeWindowManagerTest, DontChangeBoundsForMinimizedWindow) {
+  gfx::Rect rect(10, 10, 200, 50);
+  std::unique_ptr<aura::Window> window(
+      CreateWindow(aura::client::WINDOW_TYPE_NORMAL, rect));
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  window_state->Minimize();
+  EXPECT_TRUE(window_state->IsMinimized());
+
+  TabletModeWindowManager* manager = CreateTabletModeWindowManager();
+  ASSERT_TRUE(manager);
+  EXPECT_EQ(1, manager->GetNumberOfManagedWindows());
+  EXPECT_TRUE(window_state->IsMinimized());
+  EXPECT_EQ(window->bounds(), rect);
+
+  WindowSelectorController* window_selector_controller =
+      Shell::Get()->window_selector_controller();
+  window_selector_controller->ToggleOverview();
+  EXPECT_EQ(window->bounds(), rect);
+
+  // Exit overview mode will update all windows' bounds. However, if the window
+  // is minimized, the bounds will not be updated.
+  window_selector_controller->ToggleOverview();
+  EXPECT_EQ(window->bounds(), rect);
 }
 
 }  // namespace ash

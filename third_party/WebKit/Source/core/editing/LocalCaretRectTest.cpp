@@ -10,7 +10,7 @@
 #include "core/html/forms/TextControlElement.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/ng/ng_physical_box_fragment.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 
@@ -19,7 +19,7 @@ bool operator==(const LocalCaretRect& rect1, const LocalCaretRect& rect2) {
 }
 
 std::ostream& operator<<(std::ostream& out, const LocalCaretRect& caret_rect) {
-  return out << "layout_object = " << caret_rect.layout_object->GetNode()
+  return out << "layout_object = " << caret_rect.layout_object
              << ", rect = " << caret_rect.rect;
 }
 
@@ -747,13 +747,10 @@ TEST_P(ParameterizedLocalCaretRectTest, CollapsedSpace) {
   EXPECT_EQ(LocalCaretRect(foo->GetLayoutObject(), LayoutRect(30, 0, 1, 10)),
             LocalCaretRectOfPosition(PositionWithAffinity(
                 Position(foo, 3), TextAffinity::kDownstream)));
+  EXPECT_EQ(LocalCaretRect(foo->GetLayoutObject(), LayoutRect(30, 0, 1, 10)),
+            LocalCaretRectOfPosition(PositionWithAffinity(
+                Position::AfterNode(*foo), TextAffinity::kDownstream)));
   // TODO(yoichio): Following should return valid rect: crbug.com/812535.
-  EXPECT_EQ(
-      LayoutNGEnabled()
-          ? LocalCaretRect(foo->GetLayoutObject(), LayoutRect(0, 0, 0, 0))
-          : LocalCaretRect(foo->GetLayoutObject(), LayoutRect(30, 0, 1, 10)),
-      LocalCaretRectOfPosition(PositionWithAffinity(
-          Position::AfterNode(*foo), TextAffinity::kDownstream)));
   EXPECT_EQ(
       LocalCaretRect(first_span->GetLayoutObject(), LayoutRect(0, 0, 0, 0)),
       LocalCaretRectOfPosition(PositionWithAffinity(

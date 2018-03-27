@@ -50,7 +50,7 @@ const bool kShouldNotProcessData = false;
 class TestStream : public QuicStream {
  public:
   TestStream(QuicStreamId id, QuicSession* session, bool should_process_data)
-      : QuicStream(id, session) {}
+      : QuicStream(id, session, /*is_static=*/false) {}
 
   void OnDataAvailable() override {}
 
@@ -123,7 +123,9 @@ class QuicStreamTest : public QuicTestWithParam<bool> {
         .Times(AnyNumber());
     write_blocked_list_ =
         QuicSessionPeer::GetWriteBlockedStreams(session_.get());
-    write_blocked_list_->RegisterStream(kTestStreamId, kV3HighestPriority);
+    if (!session_->register_streams_early()) {
+      write_blocked_list_->RegisterStream(kTestStreamId, kV3HighestPriority);
+    }
   }
 
   bool fin_sent() { return QuicStreamPeer::FinSent(stream_); }
@@ -134,7 +136,7 @@ class QuicStreamTest : public QuicTestWithParam<bool> {
   }
 
   bool HasWriteBlockedStreams() {
-    return write_blocked_list_->HasWriteBlockedCryptoOrHeadersStream() ||
+    return write_blocked_list_->HasWriteBlockedSpecialStream() ||
            write_blocked_list_->HasWriteBlockedDataStreams();
   }
 
@@ -457,13 +459,9 @@ TEST_F(QuicStreamTest, StopReadingSendsFlowControl) {
   EXPECT_CALL(*connection_,
               CloseConnection(QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA, _, _))
       .Times(0);
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*connection_, SendControlFrame(_))
-        .Times(AtLeast(1))
-        .WillRepeatedly(Invoke(this, &QuicStreamTest::ClearControlFrame));
-  } else {
-    EXPECT_CALL(*connection_, SendWindowUpdate(_, _)).Times(AtLeast(1));
-  }
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .Times(AtLeast(1))
+      .WillRepeatedly(Invoke(this, &QuicStreamTest::ClearControlFrame));
 
   QuicString data(1000, 'x');
   for (QuicStreamOffset offset = 0;
@@ -821,7 +819,7 @@ TEST_F(QuicStreamTest, RstFrameReceivedStreamFinishSending) {
   QuicRstStreamFrame rst_frame(kInvalidControlFrameId, stream_->id(),
                                QUIC_STREAM_CANCELLED, 1234);
   stream_->OnStreamReset(rst_frame);
-  // Stream stops waiting for acks as it has unacked data.
+  // Stream still waits for acks as it finishes sending and has unacked data.
   EXPECT_TRUE(stream_->IsWaitingForAcks());
   EXPECT_EQ(1u, QuicStreamPeer::SendBuffer(stream_).size());
 }
@@ -1215,12 +1213,8 @@ TEST_F(QuicStreamTest, MarkConnectionLevelWriteBlockedOnWindowUpdateFrame) {
 
   EXPECT_CALL(*session_, WritevData(_, _, _, _, _))
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*connection_, SendControlFrame(_))
-        .WillOnce(Invoke(this, &QuicStreamTest::ClearControlFrame));
-  } else {
-    EXPECT_CALL(*connection_, SendBlocked(stream_->id()));
-  }
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .WillOnce(Invoke(this, &QuicStreamTest::ClearControlFrame));
   QuicString data(1024, '.');
   stream_->WriteOrBufferData(data, false, nullptr);
   EXPECT_FALSE(HasWriteBlockedStreams());
@@ -1251,12 +1245,8 @@ TEST_F(QuicStreamTest,
   QuicString data(kSmallWindow, '.');
   EXPECT_CALL(*session_, WritevData(_, _, _, _, _))
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*connection_, SendControlFrame(_))
-        .WillOnce(Invoke(this, &QuicStreamTest::ClearControlFrame));
-  } else {
-    EXPECT_CALL(*connection_, SendBlocked(stream_->id()));
-  }
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .WillOnce(Invoke(this, &QuicStreamTest::ClearControlFrame));
   stream_->WriteOrBufferData(data, false, nullptr);
   EXPECT_FALSE(HasWriteBlockedStreams());
 

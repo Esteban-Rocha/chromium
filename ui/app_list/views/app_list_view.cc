@@ -9,11 +9,11 @@
 #include <vector>
 
 #include "ash/app_list/model/app_list_model.h"
+#include "ash/public/cpp/wallpaper_types.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/strings/string_util.h"
-#include "components/wallpaper/wallpaper_color_profile.h"
 #include "mojo/public/cpp/bindings/type_converter.h"
 #include "services/ui/public/cpp/property_type_converters.h"
 #include "services/ui/public/interfaces/window_manager.mojom.h"
@@ -56,7 +56,7 @@
 #include "ui/wm/core/coordinate_conversion.h"
 #include "ui/wm/core/shadow_types.h"
 
-using wallpaper::ColorProfileType;
+using ash::ColorProfileType;
 
 namespace app_list {
 
@@ -293,6 +293,7 @@ void AppListView::Initialize(const InitParams& params) {
   is_side_shelf_ = params.is_side_shelf;
   InitContents(params.initial_apps_page);
   AddAccelerator(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
+  AddAccelerator(ui::Accelerator(ui::VKEY_BROWSER_BACK, ui::EF_NONE));
   parent_window_ = params.parent;
 
   InitializeFullscreen(params.parent, params.parent_container_id);
@@ -568,13 +569,6 @@ void AppListView::StartDrag(const gfx::Point& location) {
 }
 
 void AppListView::UpdateDrag(const gfx::Point& location) {
-  if (initial_drag_point_ == gfx::Point()) {
-    // When the app grid view redirects the event to the app list view, we
-    // detect this by seeing that StartDrag was not called. This sets up the
-    // drag.
-    StartDrag(location);
-    return;
-  }
   // Update the widget bounds based on the initial widget bounds and drag delta.
   gfx::Point location_in_screen_coordinates = location;
   ConvertPointToScreen(this, &location_in_screen_coordinates);
@@ -803,7 +797,7 @@ display::Display AppListView::GetDisplayNearestView() const {
 }
 
 AppsContainerView* AppListView::GetAppsContainerView() {
-  return app_list_main_view_->contents_view()->apps_container_view();
+  return app_list_main_view_->contents_view()->GetAppsContainerView();
 }
 
 AppsGridView* AppListView::GetRootAppsGridView() {
@@ -979,12 +973,18 @@ ax::mojom::Role AppListView::GetAccessibleWindowRole() const {
 }
 
 bool AppListView::AcceleratorPressed(const ui::Accelerator& accelerator) {
-  DCHECK_EQ(ui::VKEY_ESCAPE, accelerator.key_code());
-
-  // If the ContentsView does not handle the back action, then this is the
-  // top level, so we close the app list.
-  if (!app_list_main_view_->contents_view()->Back()) {
-    Dismiss();
+  switch (accelerator.key_code()) {
+    case ui::VKEY_ESCAPE:
+    case ui::VKEY_BROWSER_BACK:
+      // If the ContentsView does not handle the back action, then this is the
+      // top level, so we close the app list.
+      if (!app_list_main_view_->contents_view()->Back()) {
+        Dismiss();
+      }
+      break;
+    default:
+      NOTREACHED();
+      return false;
   }
 
   // Don't let DialogClientView handle the accelerator.

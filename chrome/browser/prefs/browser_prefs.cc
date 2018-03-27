@@ -54,8 +54,8 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/task_manager/task_manager_interface.h"
 #include "chrome/browser/tracing/chrome_tracing_delegate.h"
-#include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/blocked_content/safe_browsing_triggered_popup_blocker.h"
+#include "chrome/browser/ui/blocked_content/tab_under_navigation_throttle.h"
 #include "chrome/browser/ui/browser_ui_prefs.h"
 #include "chrome/browser/ui/navigation_correction_tab_observer.h"
 #include "chrome/browser/ui/network_profile_bubble.h"
@@ -109,7 +109,7 @@
 #include "components/update_client/update_client.h"
 #include "components/variations/service/variations_service.h"
 #include "content/public/browser/render_process_host.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/http/http_server_properties_manager.h"
 #include "ppapi/features/features.h"
 #include "printing/features/features.h"
@@ -201,6 +201,7 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/arc/arc_session_manager.h"
 #include "chrome/browser/chromeos/arc/policy/arc_policy_bridge.h"
+#include "chrome/browser/chromeos/crostini/crostini_registry_service.h"
 #include "chrome/browser/chromeos/customization/customization_document.h"
 #include "chrome/browser/chromeos/display/display_prefs.h"
 #include "chrome/browser/chromeos/extensions/echo_private_api.h"
@@ -272,6 +273,7 @@
 #include "chrome/browser/apps/app_launch_for_metro_restart_win.h"
 #include "chrome/browser/component_updater/sw_reporter_installer_win.h"
 #if defined(GOOGLE_CHROME_BUILD)
+#include "chrome/browser/conflicts/module_database_win.h"
 #include "chrome/browser/conflicts/problematic_programs_updater_win.h"
 #endif  // defined(GOOGLE_CHROME_BUILD)
 #include "chrome/browser/safe_browsing/chrome_cleaner/settings_resetter_win.h"
@@ -349,7 +351,6 @@ void RegisterProfilePrefsForMigration(
 
 void RegisterLocalState(PrefRegistrySimple* registry) {
   // Please keep this list alphabetized.
-  AppListService::RegisterPrefs(registry);
   browser_shutdown::RegisterPrefs(registry);
   BrowserProcessImpl::RegisterPrefs(registry);
   ChromeContentBrowserClient::RegisterLocalStatePrefs(registry);
@@ -467,6 +468,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   desktop_ios_promotion::RegisterLocalPrefs(registry);
   password_manager::PasswordManager::RegisterLocalPrefs(registry);
 #if defined(GOOGLE_CHROME_BUILD)
+  ModuleDatabase::RegisterLocalStatePrefs(registry);
   ProblematicProgramsUpdater::RegisterLocalStatePrefs(registry);
 #endif  // defined(GOOGLE_CHROME_BUILD)
 #endif
@@ -527,6 +529,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   SessionStartupPref::RegisterProfilePrefs(registry);
   signin::RegisterAccountConsistencyProfilePrefs(registry);
   syncer::SyncPrefs::RegisterProfilePrefs(registry);
+  TabUnderNavigationThrottle::RegisterProfilePrefs(registry);
   TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
   translate::TranslatePrefs::RegisterProfilePrefs(registry);
   UINetworkQualityEstimatorService::RegisterProfilePrefs(registry);
@@ -620,6 +623,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 #if defined(OS_CHROMEOS)
   arc::prefs::RegisterProfilePrefs(registry);
+  chromeos::CrostiniRegistryService::RegisterProfilePrefs(registry);
   chromeos::first_run::RegisterProfilePrefs(registry);
   chromeos::file_system_provider::RegisterProfilePrefs(registry);
   chromeos::KeyPermissions::RegisterProfilePrefs(registry);

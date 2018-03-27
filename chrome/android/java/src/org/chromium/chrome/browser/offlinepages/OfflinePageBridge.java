@@ -523,7 +523,7 @@ public class OfflinePageBridge {
      * @param callback A callback that will be called once operation is completed.
      */
     public void deletePagesByClientIdAndOrigin(
-            List<ClientId> clientIds, String origin, Callback<Integer> callback) {
+            List<ClientId> clientIds, OfflinePageOrigin origin, Callback<Integer> callback) {
         String[] namespaces = new String[clientIds.size()];
         String[] ids = new String[clientIds.size()];
 
@@ -533,7 +533,7 @@ public class OfflinePageBridge {
         }
 
         nativeDeletePagesByClientIdAndOrigin(
-                mNativeOfflinePageBridge, namespaces, ids, origin, callback);
+                mNativeOfflinePageBridge, namespaces, ids, origin.encodeAsJsonString(), callback);
     }
 
     /**
@@ -644,6 +644,15 @@ public class OfflinePageBridge {
      */
     public boolean isOfflinePage(WebContents webContents) {
         return nativeIsOfflinePage(mNativeOfflinePageBridge, webContents);
+    }
+
+    /**
+     * Checks if the supplied file path is in a private dir internal to chrome.
+     * @param file_path Path of the file to check.
+     * @return True if the file is in a private directory.
+     */
+    public boolean isInPrivateDirectory(String filePath) {
+        return nativeIsInPrivateDirectory(mNativeOfflinePageBridge, filePath);
     }
 
     /**
@@ -820,6 +829,8 @@ public class OfflinePageBridge {
             WebContents webContents, String nameSpace, String url, int uiAction, String origin);
     private native boolean nativeIsOfflinePage(
             long nativeOfflinePageBridge, WebContents webContents);
+    private native boolean nativeIsInPrivateDirectory(
+            long nativeOfflinePageBridge, String filePath);
     private native OfflinePageItem nativeGetOfflinePage(
             long nativeOfflinePageBridge, WebContents webContents);
     private native void nativeCheckForNewOfflineContent(

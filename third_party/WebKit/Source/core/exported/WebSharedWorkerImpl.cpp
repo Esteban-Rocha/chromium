@@ -46,10 +46,10 @@
 #include "core/workers/SharedWorkerContentSettingsProxy.h"
 #include "core/workers/SharedWorkerGlobalScope.h"
 #include "core/workers/SharedWorkerThread.h"
+#include "core/workers/WorkerClassicScriptLoader.h"
 #include "core/workers/WorkerContentSettingsClient.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerInspectorProxy.h"
-#include "core/workers/WorkerScriptLoader.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/heap/Handle.h"
 #include "platform/heap/Persistent.h"
@@ -60,7 +60,6 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "platform/wtf/Functional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/TaskType.h"
 #include "public/platform/WebContentSettingsClient.h"
 #include "public/platform/WebString.h"
@@ -119,7 +118,7 @@ void WebSharedWorkerImpl::OnShadowPageInitialized() {
   DCHECK(!main_script_loader_);
   shadow_page_->DocumentLoader()->SetServiceWorkerNetworkProvider(
       client_->CreateServiceWorkerNetworkProvider());
-  main_script_loader_ = WorkerScriptLoader::Create();
+  main_script_loader_ = WorkerClassicScriptLoader::Create();
 
   network::mojom::FetchRequestMode fetch_request_mode =
       network::mojom::FetchRequestMode::kSameOrigin;
@@ -299,6 +298,11 @@ void WebSharedWorkerImpl::OnScriptLoaderFinished() {
   }
   auto worker_settings = std::make_unique<WorkerSettings>(
       shadow_page_->GetDocument()->GetFrame()->GetSettings());
+
+  // TODO(nhiroki); Set the coordinator for module fetch.
+  // (https://crbug.com/680046)
+  WorkerOrWorkletModuleFetchCoordinator* module_fetch_coordinator = nullptr;
+
   auto global_scope_creation_params =
       std::make_unique<GlobalScopeCreationParams>(
           url_, document->UserAgent(),
@@ -308,7 +312,7 @@ void WebSharedWorkerImpl::OnScriptLoaderFinished() {
           worker_clients, main_script_loader_->ResponseAddressSpace(),
           main_script_loader_->OriginTrialTokens(), devtools_worker_token_,
           std::move(worker_settings), kV8CacheOptionsDefault,
-          std::move(pending_interface_provider_));
+          module_fetch_coordinator, std::move(pending_interface_provider_));
   String source_code = main_script_loader_->SourceText();
 
   // SharedWorker can sometimes run tasks that are initiated by/associated with

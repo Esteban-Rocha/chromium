@@ -31,6 +31,7 @@
 #include "content/public/common/stop_find_action.h"
 #include "third_party/WebKit/public/common/frame/sandbox_flags.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/accessibility/ax_modes.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect.h"
@@ -299,10 +300,11 @@ class WebContents : public PageNavigator,
   virtual RenderWidgetHostView* GetTopLevelRenderWidgetHostView() = 0;
 
   // Request a one-time snapshot of the accessibility tree without changing
-  // the accessibility mode.
+  // the accessibility mode. |ax_mode| is the accessibility mode to use.
   using AXTreeSnapshotCallback =
       base::OnceCallback<void(const ui::AXTreeUpdate&)>;
-  virtual void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback) = 0;
+  virtual void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback,
+                                     ui::AXMode ax_mode) = 0;
 
   // Causes the current page to be closed, including running its onunload event
   // handler.
@@ -472,6 +474,10 @@ class WebContents : public PageNavigator,
       WebContents* outer_web_contents,
       RenderFrameHost* outer_contents_frame) = 0;
 
+  // Returns the outer WebContents of this WebContents if any.
+  // Otherwise, return nullptr.
+  virtual WebContents* GetOuterWebContents() = 0;
+
   // Invoked when visible security state changes.
   virtual void DidChangeVisibleSecurityState() = 0;
 
@@ -479,6 +485,9 @@ class WebContents : public PageNavigator,
 
   // Stop any pending navigation.
   virtual void Stop() = 0;
+
+  // Freeze the current page.
+  virtual void FreezePage() = 0;
 
   // Creates a new WebContents with the same state as this one. The returned
   // heap-allocated pointer is owned by the caller.
@@ -606,9 +615,11 @@ class WebContents : public PageNavigator,
   // provided, is used to make a request to the URL rather than using cache.
   // Format of |headers| is a new line separated list of key value pairs:
   // "<key1>: <value1>\r\n<key2>: <value2>".
-  virtual void SaveFrameWithHeaders(const GURL& url,
-                                    const Referrer& referrer,
-                                    const std::string& headers) = 0;
+  virtual void SaveFrameWithHeaders(
+      const GURL& url,
+      const Referrer& referrer,
+      const std::string& headers,
+      const base::string16& suggested_filename) = 0;
 
   // Generate an MHTML representation of the current page in the given file.
   // If |use_binary_encoding| is specified, a Content-Transfer-Encoding value of
@@ -617,7 +628,7 @@ class WebContents : public PageNavigator,
   // not the recommended encoding for shareable content.
   virtual void GenerateMHTML(
       const MHTMLGenerationParams& params,
-      const base::Callback<void(int64_t /* size of the file */)>& callback) = 0;
+      base::OnceCallback<void(int64_t /* size of the file */)> callback) = 0;
 
   // Returns the contents MIME type after a navigation.
   virtual const std::string& GetContentsMimeType() const = 0;
@@ -696,17 +707,16 @@ class WebContents : public PageNavigator,
   // Returns the WakeLockContext accociated with this WebContents.
   virtual device::mojom::WakeLockContext* GetWakeLockContext() = 0;
 
-  typedef base::Callback<void(
-      int, /* id */
-      int, /* HTTP status code */
-      const GURL&, /* image_url */
+  using ImageDownloadCallback = base::OnceCallback<void(
+      int,                          /* id */
+      int,                          /* HTTP status code */
+      const GURL&,                  /* image_url */
       const std::vector<SkBitmap>&, /* bitmaps */
       /* The sizes in pixel of the bitmaps before they were resized due to the
          max bitmap size passed to DownloadImage(). Each entry in the bitmaps
          vector corresponds to an entry in the sizes vector. If a bitmap was
          resized, there should be a single returned bitmap. */
-      const std::vector<gfx::Size>&)>
-          ImageDownloadCallback;
+      const std::vector<gfx::Size>&)>;
 
   // Sends a request to download the given image |url| and returns the unique
   // id of the download request. When the download is finished, |callback| will
@@ -723,7 +733,7 @@ class WebContents : public PageNavigator,
                             bool is_favicon,
                             uint32_t max_bitmap_size,
                             bool bypass_cache,
-                            const ImageDownloadCallback& callback) = 0;
+                            ImageDownloadCallback callback) = 0;
 
   // Returns true if the WebContents is responsible for displaying a subframe
   // in a different process from its parent page.
@@ -751,11 +761,11 @@ class WebContents : public PageNavigator,
   // The callback invoked when the renderer responds to a request for the main
   // frame document's manifest. The url will be empty if the document specifies
   // no manifest, and the manifest will be empty if any other failures occurred.
-  typedef base::Callback<void(const GURL&, const Manifest&)>
-      GetManifestCallback;
+  using GetManifestCallback =
+      base::OnceCallback<void(const GURL&, const Manifest&)>;
 
   // Requests the manifest URL and the Manifest of the main frame's document.
-  virtual void GetManifest(const GetManifestCallback& callback) = 0;
+  virtual void GetManifest(GetManifestCallback callback) = 0;
 
   // Returns whether the renderer is in fullscreen mode.
   virtual bool IsFullscreenForCurrentTab() const = 0;

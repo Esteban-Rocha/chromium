@@ -42,6 +42,7 @@
 #include "platform/heap/StackFrameDepth.h"
 #include "platform/heap/ThreadState.h"
 #include "platform/heap/Visitor.h"
+#include "platform/heap/Worklist.h"
 #include "platform/wtf/AddressSanitizer.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Assertions.h"
@@ -50,9 +51,30 @@
 
 namespace blink {
 
-class CallbackStack;
+namespace incremental_marking_test {
+class IncrementalMarkingScopeBase;
+}  // namespace incremental_marking_test
+
 class PagePool;
 class RegionTree;
+
+struct MarkingItem {
+  void* object;
+  TraceCallback callback;
+};
+
+using CustomCallbackItem = MarkingItem;
+using NotFullyConstructedItem = void*;
+
+// Segment size of 512 entries necessary to avoid throughput regressions. Since
+// the work list is currently a temporary object this is not a problem.
+using MarkingWorklist = Worklist<MarkingItem, 512 /* local entries */>;
+using NotFullyConstructedWorklist =
+    Worklist<NotFullyConstructedItem, 16 /* local entries */>;
+using PostMarkingWorklist =
+    Worklist<CustomCallbackItem, 128 /* local entries */>;
+using WeakCallbackWorklist =
+    Worklist<CustomCallbackItem, 256 /* local entries */>;
 
 class PLATFORM_EXPORT HeapAllocHooks {
  public:
@@ -224,14 +246,22 @@ class PLATFORM_EXPORT ThreadHeap {
   StackFrameDepth& GetStackFrameDepth() { return stack_frame_depth_; }
 
   ThreadHeapStats& HeapStats() { return stats_; }
-  CallbackStack* MarkingStack() const { return marking_stack_.get(); }
-  CallbackStack* PostMarkingCallbackStack() const {
-    return post_marking_callback_stack_.get();
+
+  MarkingWorklist* GetMarkingWorklist() const {
+    return marking_worklist_.get();
   }
-  CallbackStack* WeakCallbackStack() const {
-    return weak_callback_stack_.get();
+
+  NotFullyConstructedWorklist* GetNotFullyConstructedWorklist() const {
+    return not_fully_constructed_worklist_.get();
   }
-  CallbackStack* EphemeronStack() const { return ephemeron_stack_.get(); }
+
+  PostMarkingWorklist* GetPostMarkingWorklist() const {
+    return post_marking_worklist_.get();
+  }
+
+  WeakCallbackWorklist* GetWeakCallbackWorklist() const {
+    return weak_callback_worklist_.get();
+  }
 
   void VisitPersistentRoots(Visitor*);
   void VisitStackRoots(MarkingVisitor*);
@@ -271,44 +301,9 @@ class PLATFORM_EXPORT ThreadHeap {
         page, const_cast<T*>(object_pointer));
   }
 
-  // Push a trace callback on the marking stack.
-  void PushTraceCallback(void* container_object, TraceCallback);
-
-  // Push a trace callback on the post-marking callback stack.  These
-  // callbacks are called after normal marking (including ephemeron
-  // iteration).
-  void PushPostMarkingCallback(void*, TraceCallback);
-
-  // Push a weak callback. The weak callback is called when the object
-  // doesn't get marked in the current GC.
-  void PushWeakCallback(void*, WeakCallback);
-
-  // Pop the top of a marking stack and call the callback with the visitor
-  // and the object.  Returns false when there is nothing more to do.
-  bool PopAndInvokeTraceCallback(Visitor*);
-
-  // Remove an item from the post-marking callback stack and call
-  // the callback with the visitor and the object pointer.  Returns
-  // false when there is nothing more to do.
-  bool PopAndInvokePostMarkingCallback(Visitor*);
-
-  // Invokes all ephemeronIterationDone callbacks on weak tables to do cleanup
-  // (specifically to clear the queued bits for weak hash tables). Needs to be
-  // called even when marking has been aborted.
-  void InvokeEphemeronIterationDoneCallbacks(Visitor*);
-
-  // Remove an item from the weak callback work list and call the callback
-  // with the visitor and the closure pointer.  Returns false when there is
-  // nothing more to do.
-  bool PopAndInvokeWeakCallback(Visitor*);
-
   // Register an ephemeron table for fixed-point iteration.
   void RegisterWeakTable(void* container_object,
-                         EphemeronCallback,
                          EphemeronCallback);
-#if DCHECK_IS_ON()
-  bool WeakTableRegistered(const void*);
-#endif
 
   // Heap compaction registration methods:
 
@@ -355,6 +350,7 @@ class PLATFORM_EXPORT ThreadHeap {
   void ProcessMarkingStack(Visitor*);
   void PostMarkingProcessing(Visitor*);
   void WeakProcessing(Visitor*);
+  void MarkNotFullyConstructedObjects(Visitor*);
   bool AdvanceMarkingStackProcessing(Visitor*, double deadline_seconds);
   void VerifyMarking();
 
@@ -501,8 +497,6 @@ class PLATFORM_EXPORT ThreadHeap {
 #endif
 
  private:
-  friend class incremental_marking_test::IncrementalMarkingScope;
-
   // Reset counters that track live and allocated-since-last-GC sizes.
   void ResetHeapCounters();
 
@@ -510,6 +504,8 @@ class PLATFORM_EXPORT ThreadHeap {
 
   void CommitCallbackStacks();
   void DecommitCallbackStacks();
+
+  void InvokeEphemeronCallbacks(Visitor*);
 
   // Fast write barrier assuming that incremental marking is running and
   // |value| is not nullptr.
@@ -520,11 +516,13 @@ class PLATFORM_EXPORT ThreadHeap {
   std::unique_ptr<RegionTree> region_tree_;
   std::unique_ptr<HeapDoesNotContainCache> heap_does_not_contain_cache_;
   std::unique_ptr<PagePool> free_page_pool_;
-  std::unique_ptr<CallbackStack> marking_stack_;
-  std::unique_ptr<CallbackStack> post_marking_callback_stack_;
-  std::unique_ptr<CallbackStack> weak_callback_stack_;
-  std::unique_ptr<CallbackStack> ephemeron_stack_;
-  std::unique_ptr<CallbackStack> ephemeron_iteration_done_stack_;
+  std::unique_ptr<MarkingWorklist> marking_worklist_;
+  std::unique_ptr<NotFullyConstructedWorklist> not_fully_constructed_worklist_;
+  std::unique_ptr<PostMarkingWorklist> post_marking_worklist_;
+  std::unique_ptr<WeakCallbackWorklist> weak_callback_worklist_;
+  // No duplicates allowed for ephemeron callbacks. Hence, we use a hashmap
+  // with the key being the HashTable.
+  WTF::HashMap<void*, EphemeronCallback> ephemeron_callbacks_;
   StackFrameDepth stack_frame_depth_;
 
   std::unique_ptr<HeapCompact> compaction_;
@@ -546,6 +544,7 @@ class PLATFORM_EXPORT ThreadHeap {
 
   static ThreadHeap* main_thread_heap_;
 
+  friend class incremental_marking_test::IncrementalMarkingScopeBase;
   template <typename T>
   friend class Member;
   friend class ThreadState;

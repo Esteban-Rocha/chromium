@@ -37,7 +37,6 @@
 #include "core/html/forms/HTMLFormElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "platform/scheduler/child/worker_scheduler_proxy.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebApplicationCacheHost.h"
 #include "public/platform/WebMediaPlayer.h"
@@ -58,46 +57,6 @@ class EmptyPopupMenu : public PopupMenu {
   void Hide() override {}
   void UpdateFromElement(UpdateReason) override {}
   void DisconnectClient() override {}
-};
-
-class EmptyFrameScheduler : public WebFrameScheduler {
- public:
-  EmptyFrameScheduler() { DCHECK(IsMainThread()); }
-
-  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
-      TaskType type) override {
-    return Platform::Current()->MainThread()->GetTaskRunner();
-  }
-
-  std::unique_ptr<ThrottlingObserverHandle> AddThrottlingObserver(
-      ObserverType,
-      Observer*) override {
-    return nullptr;
-  }
-  void SetFrameVisible(bool) override {}
-  bool IsFrameVisible() const override { return false; }
-  bool IsPageVisible() const override { return false; }
-  void SetPaused(bool) override {}
-  void SetCrossOrigin(bool) override {}
-  bool IsCrossOrigin() const override { return false; }
-  void TraceUrlChange(const String&) override {}
-  WebFrameScheduler::FrameType GetFrameType() const override {
-    return WebFrameScheduler::FrameType::kSubframe;
-  }
-  WebViewScheduler* GetWebViewScheduler() const override { return nullptr; }
-  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser(
-      WebScopedVirtualTimePauser::VirtualTaskDuration) {
-    return WebScopedVirtualTimePauser();
-  }
-  void DidStartProvisionalLoad(bool is_main_frame) override {}
-  void DidCommitProvisionalLoad(bool is_web_history_inert_commit,
-                                bool is_reload,
-                                bool is_main_frame) override {}
-  void OnFirstMeaningfulPaint() override {}
-  std::unique_ptr<ActiveConnectionHandle> OnActiveConnectionCreated() override {
-    return nullptr;
-  }
-  bool IsExemptFromBudgetBasedThrottling() const override { return false; }
 };
 
 PopupMenu* EmptyChromeClient::OpenPopupMenu(LocalFrame&, HTMLSelectElement&) {
@@ -131,12 +90,6 @@ void EmptyChromeClient::AttachRootGraphicsLayer(GraphicsLayer* layer,
 
 String EmptyChromeClient::AcceptLanguages() {
   return String();
-}
-
-std::unique_ptr<WebFrameScheduler> EmptyChromeClient::CreateFrameScheduler(
-    BlameContext* blame_context,
-    WebFrameScheduler::FrameType frame_type) {
-  return std::make_unique<EmptyFrameScheduler>();
 }
 
 NavigationPolicy EmptyLocalFrameClient::DecidePolicyForNavigation(

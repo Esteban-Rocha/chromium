@@ -5,7 +5,10 @@
 #include "core/script/WorkerModulatorImpl.h"
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
+#include "core/loader/modulescript/WorkerOrWorkletModuleScriptFetcher.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "platform/bindings/V8ThrowException.h"
+#include "platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -19,22 +22,25 @@ WorkerModulatorImpl::WorkerModulatorImpl(
     : ModulatorImplBase(std::move(script_state)) {}
 
 ModuleScriptFetcher* WorkerModulatorImpl::CreateModuleScriptFetcher() {
-  // TODO(nhiroki): Support module loading for workers.
-  // (https://crbug.com/680046)
-  NOTIMPLEMENTED();
-  return nullptr;
+  auto* global_scope = ToWorkerGlobalScope(GetExecutionContext());
+  return new WorkerOrWorkletModuleScriptFetcher(
+      global_scope->ModuleFetchCoordinatorProxy());
 }
 
-void WorkerModulatorImpl::ResolveDynamically(const String& specifier,
-                                             const KURL&,
-                                             const ReferrerScriptInfo&,
-                                             ScriptPromiseResolver* resolver) {
-  // TODO(nhiroki): Support module loading for workers.
+bool WorkerModulatorImpl::IsDynamicImportForbidden(String* reason) {
+  // TODO(nhiroki): Remove this flag check once module loading for
+  // DedicatedWorker is enabled by default (https://crbug.com/680046).
+  if (GetExecutionContext()->IsDedicatedWorkerGlobalScope() &&
+      RuntimeEnabledFeatures::ModuleDedicatedWorkerEnabled()) {
+    return false;
+  }
+
+  // TODO(nhiroki): Support module loading for SharedWorker and Service Worker.
   // (https://crbug.com/680046)
-  resolver->Reject(V8ThrowException::CreateTypeError(
-      GetScriptState()->GetIsolate(),
+  *reason =
       "Module scripts are not supported on WorkerGlobalScope yet (see "
-      "https://crbug.com/680046)."));
+      "https://crbug.com/680046).";
+  return true;
 }
 
 }  // namespace blink

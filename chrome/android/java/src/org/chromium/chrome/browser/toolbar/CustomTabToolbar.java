@@ -215,7 +215,8 @@ public class CustomTabToolbar extends ToolbarLayout implements LocationBar,
 
     @Override
     public void updateCustomActionButton(int index, Drawable drawable, String description) {
-        ImageButton button = (ImageButton) mCustomActionButtons.getChildAt(index);
+        ImageButton button = (ImageButton) mCustomActionButtons.getChildAt(
+                mCustomActionButtons.getChildCount() - 1 - index);
         assert button != null;
         updateCustomActionButtonVisuals(button, drawable, description);
     }
@@ -379,7 +380,7 @@ public class CustomTabToolbar extends ToolbarLayout implements LocationBar,
             mUrlBar.setUrl("", null);
             return;
         }
-        String displayText = getToolbarDataProvider().getText();
+        String displayText = getToolbarDataProvider().getDisplayText();
         Pair<String, String> urlText = LocationBarLayout.splitPathFromUrlDisplayText(displayText);
         displayText = urlText.first;
 

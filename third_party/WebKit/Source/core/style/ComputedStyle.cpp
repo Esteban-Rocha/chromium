@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "build/build_config.h"
 #include "core/animation/css/CSSAnimationData.h"
@@ -32,8 +33,8 @@
 #include "core/css/CSSPaintValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSPropertyEquality.h"
-#include "core/css/properties/CSSProperty.h"
 #include "core/css/properties/Longhand.h"
+#include "core/css/properties/css_property.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -43,7 +44,6 @@
 #include "core/style/AppliedTextDecoration.h"
 #include "core/style/BorderEdge.h"
 #include "core/style/ComputedStyleConstants.h"
-#include "core/style/ComputedStyleInitialValues.h"
 #include "core/style/ContentData.h"
 #include "core/style/CursorData.h"
 #include "core/style/DataEquivalency.h"
@@ -54,6 +54,7 @@
 #include "core/style/StyleInheritedVariables.h"
 #include "core/style/StyleNonInheritedVariables.h"
 #include "core/style/StyleRay.h"
+#include "core/style/computed_style_initial_values.h"
 #include "platform/LengthFunctions.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontSelector.h"
@@ -64,7 +65,6 @@
 #include "platform/transforms/TranslateTransformOperation.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/MathExtras.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/SaturatedArithmetic.h"
 #include "platform/wtf/SizeAssertions.h"
 #include "public/platform/WebOverscrollBehavior.h"
@@ -446,7 +446,7 @@ ComputedStyle* ComputedStyle::AddCachedPseudoStyle(
   ComputedStyle* result = pseudo.get();
 
   if (!cached_pseudo_styles_)
-    cached_pseudo_styles_ = WTF::WrapUnique(new PseudoStyleCache);
+    cached_pseudo_styles_ = std::make_unique<PseudoStyleCache>();
 
   cached_pseudo_styles_->push_back(std::move(pseudo));
 
@@ -906,7 +906,8 @@ static bool HasPropertyThatCreatesStackingContext(
 }
 
 void ComputedStyle::UpdateIsStackingContext(bool is_document_element,
-                                            bool is_in_top_layer) {
+                                            bool is_in_top_layer,
+                                            bool is_svg_stacking) {
   if (IsStackingContext())
     return;
 
@@ -931,6 +932,9 @@ void ComputedStyle::UpdateIsStackingContext(bool is_document_element,
       ContainsPaint()) {
     SetIsStackingContext(true);
   }
+
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() && is_svg_stacking)
+    SetIsStackingContext(true);
 }
 
 void ComputedStyle::AddCallbackSelector(const String& selector) {
@@ -1283,7 +1287,7 @@ CounterDirectiveMap& ComputedStyle::AccessCounterDirectives() {
   std::unique_ptr<CounterDirectiveMap>& map =
       MutableCounterDirectivesInternal();
   if (!map)
-    map = WTF::WrapUnique(new CounterDirectiveMap);
+    map = std::make_unique<CounterDirectiveMap>();
   return *map;
 }
 

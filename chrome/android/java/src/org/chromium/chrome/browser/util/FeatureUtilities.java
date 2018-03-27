@@ -207,7 +207,6 @@ public class FeatureUtilities {
      *
      * @return Whether or not chrome should attach the toolbar to the bottom of the screen.
      */
-    @CalledByNative
     public static boolean isChromeHomeEnabled() {
         return false;
     }
@@ -269,12 +268,18 @@ public class FeatureUtilities {
     }
 
     /**
+     * Resets whether Chrome modern design is enabled for tests. After this is called, the next
+     * call to #isChromeModernDesignEnabled() will retrieve the value from shared preferences.
+     */
+    public static void resetChromeModernDesignEnabledForTests() {
+        sIsChromeModernDesignEnabled = null;
+    }
+
+    /**
      * @return Whether Chrome modern design is enabled. This returns true if Chrome Home is enabled.
      */
     @CalledByNative
     public static boolean isChromeModernDesignEnabled() {
-        if (isChromeHomeEnabled()) return true;
-
         if (sIsChromeModernDesignEnabled == null) {
             ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
             try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {

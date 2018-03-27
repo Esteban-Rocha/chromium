@@ -25,11 +25,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/download/public/common/download_create_info.h"
+#include "components/download/public/common/download_file_factory.h"
 #include "components/download/public/common/download_interrupt_reasons.h"
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_request_handle_interface.h"
 #include "content/browser/byte_stream.h"
-#include "content/browser/download/download_file_factory.h"
+#include "content/browser/download/byte_stream_input_stream.h"
 #include "content/browser/download/download_item_factory.h"
 #include "content/browser/download/download_item_impl.h"
 #include "content/browser/download/download_item_impl_delegate.h"
@@ -289,7 +290,7 @@ DownloadItemImpl* MockDownloadItemFactory::CreateSavePageItem(
 }
 
 class MockDownloadFileFactory
-    : public DownloadFileFactory,
+    : public download::DownloadFileFactory,
       public base::SupportsWeakPtr<MockDownloadFileFactory> {
  public:
   MockDownloadFileFactory() {}
@@ -298,12 +299,12 @@ class MockDownloadFileFactory
   // Overridden method from DownloadFileFactory
   MOCK_METHOD2(MockCreateFile,
                MockDownloadFile*(const download::DownloadSaveInfo&,
-                                 DownloadManager::InputStream*));
+                                 download::InputStream*));
 
-  DownloadFile* CreateFile(
+  download::DownloadFile* CreateFile(
       std::unique_ptr<download::DownloadSaveInfo> save_info,
       const base::FilePath& default_download_directory,
-      std::unique_ptr<DownloadManager::InputStream> stream,
+      std::unique_ptr<download::InputStream> stream,
       uint32_t download_id,
       base::WeakPtr<download::DownloadDestinationObserver> observer) override {
     return MockCreateFile(*save_info, stream.get());
@@ -315,7 +316,7 @@ class MockBrowserContext : public BrowserContext {
   MockBrowserContext() {
     content::BrowserContext::Initialize(this, base::FilePath());
   }
-  ~MockBrowserContext() {}
+  ~MockBrowserContext() { BrowserContext::NotifyWillBeDestroyed(this); }
 
   MOCK_CONST_METHOD0(GetPath, base::FilePath());
 #if !defined(OS_ANDROID)
@@ -423,7 +424,7 @@ class DownloadManagerTest : public testing::Test {
         std::unique_ptr<DownloadItemFactory>(
             mock_download_item_factory_.get()));
     download_manager_->SetDownloadFileFactoryForTesting(
-        std::unique_ptr<DownloadFileFactory>(
+        std::unique_ptr<download::DownloadFileFactory>(
             mock_download_file_factory_.get()));
     observer_.reset(new MockDownloadManagerObserver());
     download_manager_->AddObserver(observer_.get());
@@ -467,7 +468,8 @@ class DownloadManagerTest : public testing::Test {
     // we call Start on it immediately, so we need to set that expectation
     // in the factory.
     std::unique_ptr<download::DownloadRequestHandleInterface> req_handle;
-    item.Start(std::unique_ptr<DownloadFile>(), std::move(req_handle), info);
+    item.Start(std::unique_ptr<download::DownloadFile>(), std::move(req_handle),
+               info, nullptr);
     DCHECK(id < download_urls_.size());
     EXPECT_CALL(item, GetURL()).WillRepeatedly(ReturnRef(download_urls_[id]));
 
@@ -571,13 +573,13 @@ TEST_F(DownloadManagerTest, StartDownload) {
       .WillRepeatedly(Return("client-id"));
   MockDownloadFile* mock_file = new MockDownloadFile;
   auto input_stream =
-      std::make_unique<DownloadManager::InputStream>(std::move(stream));
+      std::make_unique<ByteStreamInputStream>(std::move(stream));
   EXPECT_CALL(*mock_download_file_factory_.get(),
               MockCreateFile(Ref(*info->save_info.get()), input_stream.get()))
       .WillOnce(Return(mock_file));
 
   download_manager_->StartDownload(
-      std::move(info), std::move(input_stream),
+      std::move(info), std::move(input_stream), nullptr,
       download::DownloadUrlParameters::OnStartedCallback());
   EXPECT_TRUE(download_manager_->GetDownload(local_id));
 
@@ -677,7 +679,7 @@ TEST_F(DownloadManagerTest, RemoveDownloadsByURL) {
   base::Callback<bool(const GURL&)> url_filter =
       GetSingleURLFilter(download_urls_[0]);
   int remove_count = download_manager_->RemoveDownloadsByURLAndTime(
-      url_filter, base::Time(), base::Time::Max());
+      std::move(url_filter), base::Time(), base::Time::Max());
   EXPECT_EQ(remove_count, 1);
 }
 

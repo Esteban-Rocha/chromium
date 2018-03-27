@@ -25,8 +25,21 @@ import org.chromium.ui.base.WindowAndroid;
  * See https://crbug.com/598880.
  */
 public interface ContentViewCore {
-    public static ContentViewCore create(Context context, String productVersion) {
-        return new ContentViewCoreImpl(context, productVersion);
+    /**
+     * Create {@link ContentViewCore} object.
+     * @param context The context used to create this object.
+     * @param productVersion Product version for accessibility.
+     * @param viewDelegate Delegate to add/remove anchor views.
+     * @param internalDispatcher Handles dispatching all hidden or super methods to the
+     *                           containerView.
+     * @param webContents A WebContents instance to connect to.
+     * @param windowAndroid An instance of the WindowAndroid.
+     */
+    public static ContentViewCore create(Context context, String productVersion,
+            WebContents webContents, ViewAndroidDelegate viewDelegate,
+            InternalAccessDelegate internalDispatcher, WindowAndroid windowAndroid) {
+        return ContentViewCoreImpl.create(context, productVersion, webContents, viewDelegate,
+                internalDispatcher, windowAndroid);
     }
 
     public static ContentViewCore fromWebContents(WebContents webContents) {
@@ -75,11 +88,6 @@ public interface ContentViewCore {
     }
 
     /**
-     * @return The context used for creating this ContentViewCore.
-     */
-    Context getContext();
-
-    /**
      * @return The ViewGroup that all view actions of this ContentViewCore should interact with.
      */
     ViewGroup getContainerView();
@@ -88,22 +96,6 @@ public interface ContentViewCore {
      * @return The WebContents currently being rendered.
      */
     WebContents getWebContents();
-
-    /**
-     * @return The WindowAndroid associated with this ContentViewCore.
-     */
-    WindowAndroid getWindowAndroid();
-
-    /**
-     * Initialize {@link ContentViewCore} object.
-     * @param viewDelegate Delegate to add/remove anchor views.
-     * @param internalDispatcher Handles dispatching all hidden or super methods to the
-     *                           containerView.
-     * @param webContents A WebContents instance to connect to.
-     * @param windowAndroid An instance of the WindowAndroid.
-     */
-    void initialize(ViewAndroidDelegate viewDelegate, InternalAccessDelegate internalDispatcher,
-            WebContents webContents, WindowAndroid windowAndroid);
 
     /**
      * Updates the native {@link ContentViewCore} with a new window. This moves the NativeView and
@@ -158,11 +150,6 @@ public interface ContentViewCore {
     boolean isAlive();
 
     /**
-     * @return Whether a scroll targeting web content is in progress.
-     */
-    boolean isScrollInProgress();
-
-    /**
      * To be called when the ContentView is shown.
      */
     void onShow();
@@ -171,11 +158,6 @@ public interface ContentViewCore {
      * To be called when the ContentView is hidden.
      */
     void onHide();
-
-    /**
-     * Whether or not the associated ContentView is currently attached to a window.
-     */
-    boolean isAttachedToWindow();
 
     /**
      * @see View#onAttachedToWindow()
@@ -216,16 +198,6 @@ public interface ContentViewCore {
      * @see View#scrollTo(int, int)
      */
     void scrollTo(float xPix, float yPix);
-
-    /**
-     * Update the text selection UI depending on the focus of the page. This will hide the selection
-     * handles and selection popups if focus is lost.
-     * TODO(mdjones): This was added as a temporary measure to hide text UI while Reader Mode or
-     * Contextual Search are showing. This should be removed in favor of proper focusing of the
-     * panel's ContentViewCore (which is currently not being added to the view hierarchy).
-     * @param focused If the ContentViewCore currently has focus.
-     */
-    void updateTextSelectionUI(boolean focused);
 
     /**
      * When the activity pauses, the content should lose focus.
@@ -303,11 +275,6 @@ public interface ContentViewCore {
      * @param supportsDoubleTap {@code true} if the feature is enabled.
      */
     void updateDoubleTapSupport(boolean supportsDoubleTap);
-
-    /**
-     * Ensure the selection is preserved the next time the view loses focus.
-     */
-    void preserveSelectionOnNextLossOfFocus();
 
     // Test-only methods
 

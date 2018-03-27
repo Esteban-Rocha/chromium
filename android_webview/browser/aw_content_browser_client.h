@@ -176,6 +176,14 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       bool first_auth_attempt,
       const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
           auth_required_callback) override;
+  bool HandleExternalProtocol(
+      const GURL& url,
+      content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+      int child_id,
+      content::NavigationUIData* navigation_data,
+      bool is_main_frame,
+      ui::PageTransition page_transition,
+      bool has_user_gesture) override;
 
   static void DisableCreatingTaskScheduler();
 
@@ -193,6 +201,8 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
 
   scoped_refptr<safe_browsing::UrlCheckerDelegate>
       safe_browsing_url_checker_delegate_;
+
+  bool sniff_file_urls_;
 
   DISALLOW_COPY_AND_ASSIGN(AwContentBrowserClient);
 };

@@ -83,7 +83,7 @@
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/power/freezer_cgroup_process_manager.h"
 #include "chrome/browser/chromeos/power/idle_action_warning_observer.h"
-#include "chrome/browser/chromeos/power/ml/user_activity_logging_controller.h"
+#include "chrome/browser/chromeos/power/ml/user_activity_controller.h"
 #include "chrome/browser/chromeos/power/power_data_collector.h"
 #include "chrome/browser/chromeos/power/power_metrics_reporter.h"
 #include "chrome/browser/chromeos/power/power_prefs.h"
@@ -179,13 +179,18 @@
 #include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ime/chromeos/input_method_util.h"
 #include "ui/base/touch/touch_device.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/chromeos/events/event_rewriter_chromeos.h"
 #include "ui/chromeos/events/pref_names.h"
 #include "ui/events/event_utils.h"
-#include "ui/keyboard/content/keyboard.h"
+#include "ui/keyboard/keyboard_resource_util.h"
 
 #if BUILDFLAG(ENABLE_RLZ)
 #include "components/rlz/rlz_tracker.h"
+#endif
+
+#if BUILDFLAG(ENABLE_CROS_ASSISTANT)
+#include "chrome/browser/chromeos/assistant/assistant_client.h"
 #endif
 
 namespace chromeos {
@@ -293,13 +298,13 @@ class DBusPreEarlyInit {
   DBusPreEarlyInit() {
     SystemSaltGetter::Initialize();
 
+    // Initialize DBusThreadManager for the browser.
+    DBusThreadManager::Initialize(DBusThreadManager::kAll);
+
     // Initialize the device settings service so that we'll take actions per
     // signals sent from the session manager. This needs to happen before
     // g_browser_process initializes BrowserPolicyConnector.
     DeviceSettingsService::Initialize();
-
-    // Initialize DBusThreadManager for the browser.
-    DBusThreadManager::Initialize(DBusThreadManager::kAll);
   }
 
   ~DBusPreEarlyInit() {
@@ -701,11 +706,18 @@ void ChromeBrowserMainPartsChromeos::PreMainMessageLoopRun() {
   arc_voice_interaction_controller_client_ =
       std::make_unique<arc::VoiceInteractionControllerClient>();
 
+#if BUILDFLAG(ENABLE_CROS_ASSISTANT)
+  if (chromeos::switches::IsAssistantEnabled())
+    assistant_client_ = std::make_unique<assistant::AssistantClient>();
+#endif
+
   chromeos::ResourceReporter::GetInstance()->StartMonitoring(
       task_manager::TaskManagerInterface::GetTaskManager());
 
-  if (!base::FeatureList::IsEnabled(features::kNativeNotifications))
+  if (!base::FeatureList::IsEnabled(features::kNativeNotifications) &&
+      !base::FeatureList::IsEnabled(features::kMash)) {
     notification_client_.reset(NotificationPlatformBridge::Create());
+  }
 
   ChromeBrowserMainPartsLinux::PreMainMessageLoopRun();
 }
@@ -812,7 +824,7 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
 
   // Initialize the keyboard before any session state changes (i.e. before
   // loading the default profile).
-  keyboard::InitializeKeyboard();
+  keyboard::InitializeKeyboardResources();
 
   if (lock_screen_apps::StateController::IsEnabled()) {
     lock_screen_apps_state_controller_ =
@@ -1045,8 +1057,8 @@ void ChromeBrowserMainPartsChromeos::PostBrowserStart() {
   shutdown_policy_forwarder_ = std::make_unique<ShutdownPolicyForwarder>();
 
   if (base::FeatureList::IsEnabled(features::kUserActivityEventLogging)) {
-    user_activity_logging_controller_ =
-        std::make_unique<power::ml::UserActivityLoggingController>();
+    user_activity_controller_ =
+        std::make_unique<power::ml::UserActivityController>();
   }
 
   ChromeBrowserMainPartsLinux::PostBrowserStart();
@@ -1067,6 +1079,10 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   arc_service_launcher_->Shutdown();
 
   arc_voice_interaction_controller_client_.reset();
+
+#if BUILDFLAG(ENABLE_CROS_ASSISTANT)
+  assistant_client_.reset();
+#endif
 
   // Unregister CrosSettings observers before CrosSettings is destroyed.
   shutdown_policy_forwarder_.reset();
@@ -1102,7 +1118,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   ScreenLocker::ShutDownClass();
   keyboard_event_rewriters_.reset();
   low_disk_notification_.reset();
-  user_activity_logging_controller_.reset();
+  user_activity_controller_.reset();
 
   // Detach D-Bus clients before DBusThreadManager is shut down.
   idle_action_warning_observer_.reset();

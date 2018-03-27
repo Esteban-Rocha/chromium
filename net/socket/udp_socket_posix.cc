@@ -94,14 +94,19 @@ int GetIPv4AddressFromIndex(int socket, uint32_t index, uint32_t* address) {
     return MapSystemError(errno);
   result = reinterpret_cast<sockaddr_in*>(&ifr.ifr_addr);
 #elif defined(OS_FUCHSIA)
-  netc_get_if_info_t netconfig;
-  int size = ioctl_netc_get_if_info(socket, &netconfig);
-  if (size < 0)
+  uint32_t num_ifs = 0;
+  if (ioctl_netc_get_num_ifs(socket, &num_ifs) < 0) {
+    PLOG(ERROR) << "ioctl_netc_get_num_ifs";
     return MapSystemError(errno);
-  for (size_t i = 0; i < netconfig.n_info; ++i) {
-    netc_if_info_t* interface = netconfig.info + i;
-    if (interface->index == index && interface->addr.ss_family == AF_INET) {
-      result = reinterpret_cast<sockaddr_in*>(&(interface->addr));
+  }
+  for (uint32_t i = 0; i < num_ifs; ++i) {
+    netc_if_info_t interface;
+    if (ioctl_netc_get_if_info_at(socket, &i, &interface) < 0) {
+      PLOG(WARNING) << "ioctl_netc_get_if_info_at";
+      continue;
+    }
+    if (interface.index == index && interface.addr.ss_family == AF_INET) {
+      result = reinterpret_cast<sockaddr_in*>(&(interface.addr));
       break;
     }
   }
@@ -187,17 +192,16 @@ const guardid_t kSocketFdGuard = 0xD712BC0BC9A4EAD4;
 }  // namespace
 
 UDPSocketPosix::UDPSocketPosix(DatagramSocket::BindType bind_type,
-                               const RandIntCallback& rand_int_cb,
                                net::NetLog* net_log,
                                const net::NetLogSource& source)
     : socket_(kInvalidSocket),
       addr_family_(0),
       is_connected_(false),
       socket_options_(SOCKET_OPTION_MULTICAST_LOOP),
+      sendto_flags_(0),
       multicast_interface_(0),
       multicast_time_to_live_(1),
       bind_type_(bind_type),
-      rand_int_cb_(rand_int_cb),
       read_socket_watcher_(FROM_HERE),
       write_socket_watcher_(FROM_HERE),
       read_watcher_(this),
@@ -210,8 +214,6 @@ UDPSocketPosix::UDPSocketPosix(DatagramSocket::BindType bind_type,
       experimental_recv_optimization_enabled_(false) {
   net_log_.BeginEvent(NetLogEventType::SOCKET_ALIVE,
                       source.ToEventParametersCallback());
-  if (bind_type == DatagramSocket::RANDOM_BIND)
-    DCHECK(!rand_int_cb.is_null());
 }
 
 UDPSocketPosix::~UDPSocketPosix() {
@@ -644,6 +646,16 @@ int UDPSocketPosix::SetDoNotFragment() {
 #endif
 }
 
+void UDPSocketPosix::SetMsgConfirm(bool confirm) {
+#if !defined(OS_MACOSX) && !defined(OS_IOS)
+  if (confirm) {
+    sendto_flags_ |= MSG_CONFIRM;
+  } else {
+    sendto_flags_ &= ~MSG_CONFIRM;
+  }
+#endif  // !defined(OS_MACOSX) && !defined(OS_IOS)
+}
+
 int UDPSocketPosix::AllowAddressReuse() {
   DCHECK_NE(socket_, kInvalidSocket);
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -862,12 +874,8 @@ int UDPSocketPosix::InternalSendTo(IOBuffer* buf,
     }
   }
 
-  int result = HANDLE_EINTR(sendto(socket_,
-                            buf->data(),
-                            buf_len,
-                            0,
-                            addr,
-                            storage.addr_len));
+  int result = HANDLE_EINTR(sendto(socket_, buf->data(), buf_len, sendto_flags_,
+                                   addr, storage.addr_len));
   if (result < 0)
     result = MapSystemError(errno);
   if (result != ERR_IO_PENDING)
@@ -961,14 +969,14 @@ int UDPSocketPosix::DoBind(const IPEndPoint& address) {
 }
 
 int UDPSocketPosix::RandomBind(const IPAddress& address) {
-  DCHECK(bind_type_ == DatagramSocket::RANDOM_BIND && !rand_int_cb_.is_null());
+  DCHECK_EQ(bind_type_, DatagramSocket::RANDOM_BIND);
 
   for (int i = 0; i < kBindRetries; ++i) {
-    int rv = DoBind(IPEndPoint(address,
-                               rand_int_cb_.Run(kPortStart, kPortEnd)));
+    int rv = DoBind(IPEndPoint(address, base::RandInt(kPortStart, kPortEnd)));
     if (rv != ERR_ADDRESS_IN_USE)
       return rv;
   }
+
   return DoBind(IPEndPoint(address, 0));
 }
 

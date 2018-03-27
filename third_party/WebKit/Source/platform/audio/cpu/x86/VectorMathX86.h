@@ -91,6 +91,53 @@ SplitFramesToProcess(const float* source_p, size_t frames_to_process) {
   return counts;
 }
 
+static ALWAYS_INLINE void PrepareFilterForConv(
+    const float* filter_p,
+    int filter_stride,
+    size_t filter_size,
+    AudioFloatArray* prepared_filter) {
+  if (CPUSupportsAVX()) {
+    AVX::PrepareFilterForConv(filter_p, filter_stride, filter_size,
+                              prepared_filter);
+  } else {
+    SSE::PrepareFilterForConv(filter_p, filter_stride, filter_size,
+                              prepared_filter);
+  }
+}
+
+static ALWAYS_INLINE void Conv(const float* source_p,
+                               int source_stride,
+                               const float* filter_p,
+                               int filter_stride,
+                               float* dest_p,
+                               int dest_stride,
+                               size_t frames_to_process,
+                               size_t filter_size,
+                               const AudioFloatArray* prepared_filter) {
+  const float* prepared_filter_p =
+      prepared_filter ? prepared_filter->Data() : nullptr;
+  if (source_stride == 1 && dest_stride == 1 && prepared_filter_p) {
+    if (CPUSupportsAVX() && (filter_size & ~AVX::kFramesToProcessMask) == 0u) {
+      // |frames_to_process| is always a multiply of render quantum and
+      // therefore the frames can always be processed using AVX.
+      CHECK_EQ(frames_to_process & ~AVX::kFramesToProcessMask, 0u);
+      AVX::Conv(source_p, prepared_filter_p, dest_p, frames_to_process,
+                filter_size);
+      return;
+    }
+    if ((filter_size & ~SSE::kFramesToProcessMask) == 0u) {
+      // |frames_to_process| is always a multiply of render quantum and
+      // therefore the frames can always be processed using SSE.
+      CHECK_EQ(frames_to_process & ~SSE::kFramesToProcessMask, 0u);
+      SSE::Conv(source_p, prepared_filter_p, dest_p, frames_to_process,
+                filter_size);
+      return;
+    }
+  }
+  Scalar::Conv(source_p, source_stride, filter_p, filter_stride, dest_p,
+               dest_stride, frames_to_process, filter_size, nullptr);
+}
+
 static ALWAYS_INLINE void Vadd(const float* source1p,
                                int source_stride1,
                                const float* source2p,

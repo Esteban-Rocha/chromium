@@ -47,7 +47,8 @@ RendererWebMediaPlayerDelegate::RendererWebMediaPlayerDelegate(
 #if defined(OS_ANDROID)
   // On Android, due to the instability of the OS level media components, we
   // consider all pre-KitKat devices to be potentially buggy.
-  is_jelly_bean_ |= base::android::BuildInfo::GetInstance()->sdk_int() <= 18;
+  is_jelly_bean_ |= base::android::BuildInfo::GetInstance()->sdk_int() <=
+                    base::android::SDK_VERSION_JELLY_BEAN_MR2;
 #endif
 
   idle_cleanup_timer_.SetTaskRunner(
@@ -114,6 +115,12 @@ void RendererWebMediaPlayerDelegate::DidPlayerMutedStatusChange(int delegate_id,
                                                                 bool muted) {
   Send(new MediaPlayerDelegateHostMsg_OnMutedStatusChanged(routing_id(),
                                                            delegate_id, muted));
+}
+
+void RendererWebMediaPlayerDelegate::DidPictureInPictureSourceChange(
+    int delegate_id) {
+  Send(new MediaPlayerDelegateHostMsg_OnPictureInPictureSourceChanged(
+      routing_id(), delegate_id));
 }
 
 void RendererWebMediaPlayerDelegate::DidPause(int player_id) {

@@ -103,6 +103,14 @@ void WindowPortMus::Embed(ui::mojom::WindowTreeClientPtr client,
                              std::move(callback));
 }
 
+void WindowPortMus::EmbedUsingToken(
+    const base::UnguessableToken& token,
+    uint32_t flags,
+    ui::mojom::WindowTree::EmbedCallback callback) {
+  window_tree_client_->EmbedUsingToken(window_, token, flags,
+                                       std::move(callback));
+}
+
 std::unique_ptr<viz::ClientLayerTreeFrameSink>
 WindowPortMus::RequestLayerTreeFrameSink(
     scoped_refptr<viz::ContextProvider> context_provider,
@@ -657,7 +665,8 @@ void WindowPortMus::OnSurfaceChanged(const viz::SurfaceInfo& surface_info) {
   DCHECK_EQ(surface_info.id().local_surface_id(), local_surface_id_);
   window_->layer()->SetShowPrimarySurface(
       surface_info.id(), window_->bounds().size(), SK_ColorWHITE,
-      cc::DeadlinePolicy::UseDefaultDeadline());
+      cc::DeadlinePolicy::UseDefaultDeadline(),
+      false /* stretch_content_to_fill_bounds */);
   window_->layer()->SetFallbackSurfaceId(surface_info.id());
 }
 

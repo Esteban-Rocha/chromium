@@ -221,9 +221,10 @@ class CORE_EXPORT StyleEngine final
   StyleInvalidator& GetStyleInvalidator() { return style_invalidator_; }
   bool MediaQueryAffectedByViewportChange();
   bool MediaQueryAffectedByDeviceChange();
-  bool HasViewportDependentMediaQueries() const {
+  bool HasViewportDependentMediaQueries() {
     DCHECK(IsMaster());
     DCHECK(global_rule_set_);
+    UpdateActiveStyle();
     return !global_rule_set_->GetRuleFeatureSet()
                 .ViewportDependentMediaQueryResults()
                 .IsEmpty();
@@ -309,7 +310,8 @@ class CORE_EXPORT StyleEngine final
       const AtomicString& animation_name);
 
   virtual void Trace(blink::Visitor*);
-  void TraceWrappers(const ScriptWrappableVisitor*) const;
+  void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  const char* NameInHeapSnapshot() const override { return "StyleEngine"; }
 
  private:
   // FontSelectorClient implementation.

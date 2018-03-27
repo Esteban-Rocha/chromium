@@ -27,8 +27,8 @@ const int kHardCorrectionThresholdUs = 200000;
 
 // When doing a soft correction, we will do so by changing the rate of video
 // playback. These constants define the multiplier in either direction.
-const double kRateReduceMultiplier = 0.9;
-const double kRateIncreaseMultiplier = 1.1;
+const double kRateReduceMultiplier = 0.95;
+const double kRateIncreaseMultiplier = 1.05;
 
 // Length of time after which data is forgotten from our linear regression
 // models.
@@ -37,6 +37,19 @@ const int kLinearRegressionDataLifetimeUs = 500000;
 // Time interval between AV sync upkeeps.
 constexpr base::TimeDelta kAvSyncUpkeepInterval =
     base::TimeDelta::FromMilliseconds(10);
+
+#if DCHECK_IS_ON()
+// Time interval between checking playbacks statistics.
+constexpr base::TimeDelta kPlaybackStatisticsCheckInterval =
+    base::TimeDelta::FromSeconds(1);
+#endif
+
+// When we're in sync (i.e. the apts and vpts difference is
+// < kSoftCorrectionThresholdUs), if the apts and vpts slopes are different by
+// this threshold, we'll reset the video playback rate to be equal to the apts
+// slope.
+const double kInSyncResetThreshold = 0.05;
+
 }  // namespace
 
 std::unique_ptr<AvSync> AvSync::Create(
@@ -131,25 +144,23 @@ void AvSyncVideo::UpkeepAvSync() {
   }
 
   int64_t difference;
+  double difference_slope;
   error_->EstimateY(now, &difference, &error);
+  error_->EstimateSlope(&difference_slope, &error);
 
-  VLOG(4) << "Pts_monitor."
-          << " current_apts=" << current_apts / 1000
-          << " current_vpts=" << std::setw(5) << current_vpts / 1000
+  VLOG(3) << "Pts_monitor."
           << " difference=" << std::setw(5) << difference / 1000
-          << " wall_time=" << std::setw(5) << now / 1000
           << " apts_slope=" << std::setw(10) << apts_slope
-          << " vpts_slope=" << std::setw(10) << vpts_slope;
+          << " vpts_slope=" << std::setw(10) << vpts_slope
+          << " difference_slope=" << std::setw(10) << difference_slope;
 
   // Seems the ideal value here depends on the frame rate.
   if (abs(difference) > kSoftCorrectionThresholdUs) {
     VLOG(2) << "Correction."
-            << " current_apts=" << current_apts / 1000
-            << " current_vpts=" << std::setw(5) << current_vpts / 1000
             << " difference=" << std::setw(5) << difference / 1000
-            << " wall_time=" << std::setw(5) << now / 1000
             << " apts_slope=" << std::setw(10) << apts_slope
-            << " vpts_slope=" << std::setw(10) << vpts_slope;
+            << " vpts_slope=" << std::setw(10) << vpts_slope
+            << " difference_slope=" << std::setw(10) << difference_slope;
 
     if (abs(difference) > kHardCorrectionThresholdUs) {
       // Do a hard correction.
@@ -177,9 +188,59 @@ void AvSyncVideo::UpkeepAvSync() {
     // find the video playback rate at which vtps_slope == apts_slope. These
     // are slightly different values since the video playback rate is probably
     // not phase locked at all with monotonic_raw.
-    backend_->video_decoder()->SetPlaybackRate(apts_slope);
-    current_video_playback_rate_ = apts_slope;
+    if (abs(current_video_playback_rate_ - apts_slope) >
+        kInSyncResetThreshold) {
+      backend_->video_decoder()->SetPlaybackRate(apts_slope);
+      current_video_playback_rate_ = apts_slope;
+    }
   }
+}
+
+void AvSyncVideo::GatherPlaybackStatistics() {
+  DCHECK(backend_);
+  if (!backend_->video_decoder()) {
+    return;
+  }
+
+  int64_t frame_rate_difference =
+      (backend_->video_decoder()->GetCurrentContentRefreshRate() -
+       backend_->video_decoder()->GetOutputRefreshRate()) /
+      1000;
+
+  int64_t expected_dropped_frames_per_second =
+      std::max<int64_t>(frame_rate_difference, 0);
+
+  int64_t expected_repeated_frames_per_second =
+      std::max<int64_t>(-frame_rate_difference, 0);
+
+  int64_t current_time = backend_->MonotonicClockNow();
+  int64_t expected_dropped_frames =
+      std::round(expected_dropped_frames_per_second *
+                 (current_time - last_gather_timestamp_us_) / 1000000);
+
+  int64_t expected_repeated_frames =
+      std::round(expected_repeated_frames_per_second *
+                 (current_time - last_gather_timestamp_us_) / 1000000);
+
+  int64_t dropped_frames = backend_->video_decoder()->GetDroppedFrames();
+  int64_t repeated_frames = backend_->video_decoder()->GetRepeatedFrames();
+
+  int64_t unexpected_dropped_frames =
+      (dropped_frames - last_dropped_frames_) - expected_dropped_frames;
+  int64_t unexpected_repeated_frames =
+      (repeated_frames - last_repeated_frames_) - expected_repeated_frames;
+
+  VLOG_IF(2, unexpected_dropped_frames != 0 || unexpected_repeated_frames != 0)
+      << "Playback diagnostics:"
+      << " CurrentContentRefreshRate="
+      << backend_->video_decoder()->GetCurrentContentRefreshRate()
+      << " OutputRefreshRate="
+      << backend_->video_decoder()->GetOutputRefreshRate()
+      << " unexpected_dropped_frames=" << unexpected_dropped_frames
+      << " unexpected_repeated_frames=" << unexpected_repeated_frames;
+  last_gather_timestamp_us_ = current_time;
+  last_repeated_frames_ = repeated_frames;
+  last_dropped_frames_ = dropped_frames;
 }
 
 void AvSyncVideo::StopAvSync() {
@@ -189,12 +250,12 @@ void AvSyncVideo::StopAvSync() {
       new WeightedMovingLinearRegression(kLinearRegressionDataLifetimeUs));
   error_.reset(
       new WeightedMovingLinearRegression(kLinearRegressionDataLifetimeUs));
-  timer_.Stop();
+  upkeep_av_sync_timer_.Stop();
+  playback_statistics_timer_.Stop();
 }
 
 void AvSyncVideo::NotifyStart() {
-  timer_.Start(FROM_HERE, kAvSyncUpkeepInterval, this,
-               &AvSyncVideo::UpkeepAvSync);
+  StartAvSync();
 }
 
 void AvSyncVideo::NotifyStop() {
@@ -207,8 +268,19 @@ void AvSyncVideo::NotifyPause() {
 }
 
 void AvSyncVideo::NotifyResume() {
-  timer_.Start(FROM_HERE, kAvSyncUpkeepInterval, this,
-               &AvSyncVideo::UpkeepAvSync);
+  StartAvSync();
+}
+
+void AvSyncVideo::StartAvSync() {
+  upkeep_av_sync_timer_.Start(FROM_HERE, kAvSyncUpkeepInterval, this,
+                              &AvSyncVideo::UpkeepAvSync);
+#if DCHECK_IS_ON()
+  // TODO(almasrymina): if this logic turns out to be useful for metrics
+  // recording, keep it and remove this TODO. Otherwise remove it.
+  playback_statistics_timer_.Start(FROM_HERE, kPlaybackStatisticsCheckInterval,
+                                   this,
+                                   &AvSyncVideo::GatherPlaybackStatistics);
+#endif
 }
 
 AvSyncVideo::~AvSyncVideo() = default;

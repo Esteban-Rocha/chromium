@@ -127,12 +127,14 @@ ShelfController::ShelfController()
 }
 
 ShelfController::~ShelfController() {
-  Shell::Get()->window_tree_host_manager()->RemoveObserver(this);
-  if (Shell::Get()->tablet_mode_controller())
-    Shell::Get()->tablet_mode_controller()->RemoveObserver(this);
-  Shell::Get()->session_controller()->RemoveObserver(this);
   model_.RemoveObserver(this);
   model_.DestroyItemDelegates();
+}
+
+void ShelfController::Shutdown() {
+  Shell::Get()->window_tree_host_manager()->RemoveObserver(this);
+  Shell::Get()->tablet_mode_controller()->RemoveObserver(this);
+  Shell::Get()->session_controller()->RemoveObserver(this);
 }
 
 // static

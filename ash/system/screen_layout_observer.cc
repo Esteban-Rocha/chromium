@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "ash/display/screen_orientation_controller_chromeos.h"
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/metrics/user_metrics_action.h"
 #include "ash/metrics/user_metrics_recorder.h"
 #include "ash/resources/grit/ash_resources.h"
@@ -376,7 +376,6 @@ void ScreenLayoutObserver::CreateOrUpdateNotification(
               base::Bind(&OnNotificationClicked)),
           kNotificationScreenIcon,
           message_center::SystemNotificationWarningLevel::NORMAL);
-  notification->set_clickable(true);
   notification->set_priority(message_center::SYSTEM_PRIORITY);
 
   Shell::Get()->metrics()->RecordUserMetricsAction(

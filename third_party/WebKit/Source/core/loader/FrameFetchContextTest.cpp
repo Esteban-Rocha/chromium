@@ -32,6 +32,7 @@
 
 #include <memory>
 #include "core/dom/Document.h"
+#include "core/frame/AdTracker.h"
 #include "core/frame/FrameOwner.h"
 #include "core/frame/FrameTypes.h"
 #include "core/frame/LocalFrameView.h"
@@ -101,8 +102,12 @@ class FrameFetchContextMockLocalFrameClient : public EmptyLocalFrameClient {
 
 class FixedPolicySubresourceFilter : public WebDocumentSubresourceFilter {
  public:
-  FixedPolicySubresourceFilter(LoadPolicy policy, int* filtered_load_counter)
-      : policy_(policy), filtered_load_counter_(filtered_load_counter) {}
+  FixedPolicySubresourceFilter(LoadPolicy policy,
+                               int* filtered_load_counter,
+                               bool is_associated_with_ad_subframe)
+      : policy_(policy),
+        filtered_load_counter_(filtered_load_counter),
+        is_associated_with_ad_subframe_(is_associated_with_ad_subframe) {}
 
   LoadPolicy GetLoadPolicy(const WebURL& resource_url,
                            WebURLRequest::RequestContext) override {
@@ -117,9 +122,14 @@ class FixedPolicySubresourceFilter : public WebDocumentSubresourceFilter {
 
   bool ShouldLogToConsole() override { return false; }
 
+  bool GetIsAssociatedWithAdSubframe() const override {
+    return is_associated_with_ad_subframe_;
+  }
+
  private:
   const LoadPolicy policy_;
   int* filtered_load_counter_;
+  bool is_associated_with_ad_subframe_;
 };
 
 class FrameFetchContextTest : public ::testing::Test {
@@ -191,10 +201,12 @@ class FrameFetchContextSubresourceFilterTest : public FrameFetchContextTest {
     return filtered_load_callback_counter_;
   }
 
-  void SetFilterPolicy(WebDocumentSubresourceFilter::LoadPolicy policy) {
+  void SetFilterPolicy(WebDocumentSubresourceFilter::LoadPolicy policy,
+                       bool is_associated_with_ad_subframe = false) {
     document->Loader()->SetSubresourceFilter(SubresourceFilter::Create(
         *document, std::make_unique<FixedPolicySubresourceFilter>(
-                       policy, &filtered_load_callback_counter_)));
+                       policy, &filtered_load_callback_counter_,
+                       is_associated_with_ad_subframe)));
   }
 
   ResourceRequestBlockedReason CanRequest() {
@@ -214,6 +226,26 @@ class FrameFetchContextSubresourceFilterTest : public FrameFetchContextTest {
                                 url, Resource::kMock,
                                 WebURLRequest::kRequestContextUnspecified));
     return reason;
+  }
+
+  bool DispatchWillSendRequestAndVerifyIsAd(const KURL& url) {
+    ResourceRequest request(url);
+    ResourceResponse response;
+    FetchInitiatorInfo initiator_info;
+
+    fetch_context->DispatchWillSendRequest(1, request, response,
+                                           Resource::kImage, initiator_info);
+    return request.IsAdResource();
+  }
+
+  void AppendExecutingScriptToAdTracker(const String& url) {
+    AdTracker* ad_tracker = document->GetFrame()->GetAdTracker();
+    ad_tracker->WillExecuteScript(url);
+  }
+
+  void AppendAdScriptToAdTracker(const KURL& ad_script_url) {
+    AdTracker* ad_tracker = document->GetFrame()->GetAdTracker();
+    ad_tracker->AppendToKnownAdScripts(ad_script_url);
   }
 
  private:
@@ -1114,6 +1146,8 @@ TEST_F(FrameFetchContextMockedLocalFrameClientTest,
 
 // Tests that the client hints lifetime header is parsed correctly only when the
 // frame belongs to a secure context.
+// TODO(lunalu): remove this test when blink side use counter is removed
+// (crbug.com/811948).
 TEST_F(FrameFetchContextMockedLocalFrameClientTest,
        PersistClientHintsSecureContext) {
   HistogramTester histogram_tester;
@@ -1136,7 +1170,7 @@ TEST_F(FrameFetchContextMockedLocalFrameClientTest,
         FetchContext::ResourceResponseType::kNotFromMemoryCache);
 
     histogram_tester.ExpectBucketCount(
-        "Blink.UseCounter.Features",
+        "Blink.UseCounter.Features_Legacy",
         static_cast<int>(WebFeature::kPersistentClientHintHeader), 1);
   }
 
@@ -1161,7 +1195,7 @@ TEST_F(FrameFetchContextMockedLocalFrameClientTest,
 
     // There should not be a change in the usage count.
     histogram_tester.ExpectBucketCount(
-        "Blink.UseCounter.Features",
+        "Blink.UseCounter.Features_Legacy",
         static_cast<int>(WebFeature::kPersistentClientHintHeader), 1);
   }
 
@@ -1186,7 +1220,7 @@ TEST_F(FrameFetchContextMockedLocalFrameClientTest,
 
     // There should not be a change in the usage count.
     histogram_tester.ExpectBucketCount(
-        "Blink.UseCounter.Features",
+        "Blink.UseCounter.Features_Legacy",
         static_cast<int>(WebFeature::kPersistentClientHintHeader), 1);
   }
 }
@@ -1253,11 +1287,32 @@ TEST_F(FrameFetchContextSubresourceFilterTest, WouldDisallow) {
 // is fetched from a frame that is tagged as an ad, then the subresource should
 // be tagged as well.
 TEST_F(FrameFetchContextSubresourceFilterTest, AdTaggingBasedOnFrame) {
-  SetFilterPolicy(WebDocumentSubresourceFilter::kAllow);
-  document->Loader()->GetSubresourceFilter()->SetIsAdSubframe(true);
+  SetFilterPolicy(WebDocumentSubresourceFilter::kAllow,
+                  true /* is_associated_with_ad_subframe */);
 
   EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestAndVerifyIsAd(true));
   EXPECT_EQ(0, GetFilteredLoadCallCount());
+}
+
+// Tests that if a subresource is allowed as per subresource filter ruleset and
+// is not fetched from a frame that is tagged as an ad, then the subresource
+// should be tagged as ad if one of the executing scripts is tagged as an ad.
+TEST_F(FrameFetchContextSubresourceFilterTest,
+       AdTaggingBasedOnExecutingScript) {
+  SetFilterPolicy(WebDocumentSubresourceFilter::kAllow,
+                  false /* is_associated_with_ad_subframe */);
+
+  KURL ad_script_url("https://example.com/bar.js");
+  AppendAdScriptToAdTracker(ad_script_url);
+  AppendExecutingScriptToAdTracker(ad_script_url.GetString());
+
+  EXPECT_EQ(ResourceRequestBlockedReason::kNone,
+            CanRequestAndVerifyIsAd(false));
+  EXPECT_EQ(0, GetFilteredLoadCallCount());
+
+  // After WillSendRequest probe, it should be marked as an ad.
+  EXPECT_TRUE(DispatchWillSendRequestAndVerifyIsAd(
+      KURL("https://www.example.com/image.jpg")));
 }
 
 TEST_F(FrameFetchContextTest, AddAdditionalRequestHeadersWhenDetached) {

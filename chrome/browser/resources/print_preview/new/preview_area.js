@@ -64,12 +64,27 @@ Polymer({
       observer: 'onStateChanged_',
     },
 
+    /** @type {?print_preview.MeasurementSystem} */
+    measurementSystem: Object,
+
     /** @private {string} */
     previewState_: {
       type: String,
       notify: true,
       value: PreviewAreaState_.LOADING,
     },
+
+    /** @private {boolean} */
+    previewLoaded_: {
+      type: Boolean,
+      notify: true,
+      computed: 'computePreviewLoaded_(previewState_)',
+    },
+  },
+
+  listeners: {
+    'pointerover': 'onPointerOver_',
+    'pointerout': 'onPointerOut_',
   },
 
   observers: [
@@ -78,7 +93,7 @@ Polymer({
         'settings.layout.value, settings.margins.value, ' +
         'settings.mediaSize.value, settings.ranges.value,' +
         'settings.selectionOnly.value, settings.scaling.value, ' +
-        'destination.id, destination.capabilities)',
+        'settings.rasterize.value, destination.id, destination.capabilities)',
   ],
 
   /** @private {print_preview.NativeLayer} */
@@ -119,9 +134,57 @@ Polymer({
     }
   },
 
+  /**
+   * @return {boolean} Whether the preview is loaded.
+   * @private
+   */
+  computePreviewLoaded_: function() {
+    return this.previewState_ == PreviewAreaState_.DISPLAY_PREVIEW;
+  },
+
   /** @return {boolean} Whether the preview is loaded. */
   previewLoaded: function() {
-    return this.previewState_ == PreviewAreaState_.DISPLAY_PREVIEW;
+    return this.previewLoaded_;
+  },
+
+  /**
+   * Called when the pointer moves onto the component. Shows the margin
+   * controls if custom margins are being used.
+   * @param {!Event} event Contains element pointer moved from.
+   * @private
+   */
+  onPointerOver_: function(event) {
+    const marginControlContainer = this.$.marginControlContainer;
+    let fromElement = event.fromElement;
+    while (fromElement != null) {
+      if (fromElement == marginControlContainer)
+        return;
+
+      fromElement = fromElement.parentElement;
+    }
+    marginControlContainer.visible = true;
+  },
+
+  /**
+   * Called when the pointer moves off of the component. Hides the margin
+   * controls if they are visible.
+   * @param {!Event} event Contains element pointer moved to.
+   * @private
+   */
+  onPointerOut_: function(event) {
+    const marginControlContainer = this.$.marginControlContainer;
+    let toElement = event.toElement;
+    while (toElement != null) {
+      if (toElement == marginControlContainer)
+        return;
+
+      toElement = toElement.parentElement;
+    }
+
+    if (marginControlContainer.isDragging())
+      return;
+
+    marginControlContainer.visible = false;
   },
 
   /** @private */
@@ -298,7 +361,7 @@ Polymer({
     if (this.inFlightRequestId_ != previewResponseId)
       return;
     this.documentInfo.updatePageCount(pageCount);
-    this.documentInfo.fitToPageScaling_ = fitToPageScaling;
+    this.documentInfo.updateFitToPageScaling(fitToPageScaling);
     this.notifyPath('documentInfo.pageCount');
     this.notifyPath('documentInfo.fitToPageScaling');
   },
@@ -315,6 +378,27 @@ Polymer({
       this.previewState_ = PreviewAreaState_.DISPLAY_PREVIEW;
       this.fire('preview-loaded');
     }
+  },
+
+  /**
+   * Called when the preview plugin's visual state has changed. This is a
+   * consequence of scrolling or zooming the plugin. Updates the custom
+   * margins component if shown.
+   * @param {number} pageX The horizontal offset for the page corner in pixels.
+   * @param {number} pageY The vertical offset for the page corner in pixels.
+   * @param {number} pageWidth The page width in pixels.
+   * @param {number} viewportWidth The viewport width in pixels.
+   * @param {number} viewportHeight The viewport height in pixels.
+   * @private
+   */
+  onPreviewVisualStateChange_: function(
+      pageX, pageY, pageWidth, viewportWidth, viewportHeight) {
+    this.$.marginControlContainer.updateTranslationTransform(
+        new print_preview.Coordinate2d(pageX, pageY));
+    this.$.marginControlContainer.updateScaleTransform(
+        pageWidth / this.documentInfo.pageSize.width);
+    this.$.marginControlContainer.updateClippingMask(
+        new print_preview.Size(viewportWidth, viewportHeight));
   },
 
   /**
@@ -361,7 +445,7 @@ Polymer({
     assert(!this.plugin_);
     const srcUrl = this.getPreviewUrl_(previewUid, index);
     this.plugin_ = /** @type {print_preview_new.PDFPlugin} */ (
-        PDFCreateOutOfProcessPlugin(srcUrl));
+        PDFCreateOutOfProcessPlugin(srcUrl, 'chrome://print/pdf'));
     this.plugin_.classList.add('preview-area-plugin');
     this.plugin_.setAttribute('aria-live', 'polite');
     this.plugin_.setAttribute('aria-atomic', 'true');
@@ -373,6 +457,22 @@ Polymer({
         .appendChild(/** @type {Node} */ (this.plugin_));
 
     this.plugin_.setLoadCallback(this.onPluginLoad_.bind(this));
+    this.plugin_.setViewportChangedCallback(
+        this.onPreviewVisualStateChange_.bind(this));
+  },
+
+  /**
+   * Called when dragging margins starts or stops.
+   */
+  onMarginDragChanged_: function(e) {
+    if (!this.plugin_)
+      return;
+
+    // When hovering over the plugin (which may be in a separate iframe)
+    // pointer events will be sent to the frame. When dragging the margins,
+    // we don't want this to happen as it can cause the margin to stop
+    // being draggable.
+    this.plugin_.style.pointerEvents = e.detail ? 'none' : 'auto';
   },
 
   /**
@@ -418,7 +518,7 @@ Polymer({
       printWithCloudPrint: !this.destination.isLocal,
       printWithPrivet: this.destination.isPrivet,
       printWithExtension: this.destination.isExtension,
-      rasterizePDF: false,
+      rasterizePDF: this.getSettingValue('rasterize'),
     };
 
     // Set 'cloudPrintID' only if the this.destination is not local.

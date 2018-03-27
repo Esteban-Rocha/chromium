@@ -322,7 +322,6 @@ jumbo_component("base") {
     "deferred_sequenced_task_runner.h",
     "environment.cc",
     "environment.h",
-    "event_types.h",
     "export_template.h",
     "feature_list.cc",
     "feature_list.h",
@@ -563,6 +562,8 @@ jumbo_component("base") {
     "message_loop/timer_slack.h",
     "metrics/bucket_ranges.cc",
     "metrics/bucket_ranges.h",
+    "metrics/dummy_histogram.cc",
+    "metrics/dummy_histogram.h",
     "metrics/field_trial.cc",
     "metrics/field_trial.h",
     "metrics/field_trial_param_associator.cc",
@@ -1420,11 +1421,19 @@ jumbo_component("base") {
         "allocator/partition_allocator/oom.h",
         "allocator/partition_allocator/page_allocator.cc",
         "allocator/partition_allocator/page_allocator.h",
+        "allocator/partition_allocator/page_allocator_internal.h",
         "allocator/partition_allocator/partition_alloc.cc",
         "allocator/partition_allocator/partition_alloc.h",
         "allocator/partition_allocator/spin_lock.cc",
         "allocator/partition_allocator/spin_lock.h",
       ]
+      if (is_win) {
+        sources +=
+            [ "allocator/partition_allocator/page_allocator_internals_win.h" ]
+      } else if (is_posix) {
+        sources +=
+            [ "allocator/partition_allocator/page_allocator_internals_posix.h" ]
+      }
     }
   }
 
@@ -2240,7 +2249,6 @@ test("base_unittests") {
     "process/memory_unittest_mac.mm",
     "process/process_info_unittest.cc",
     "process/process_metrics_unittest.cc",
-    "process/process_metrics_unittest_ios.cc",
     "process/process_unittest.cc",
     "process/process_util_unittest.cc",
     "profiler/stack_sampling_profiler_unittest.cc",
@@ -2477,6 +2485,7 @@ test("base_unittests") {
   if (use_partition_alloc) {
     sources += [
       "allocator/partition_allocator/address_space_randomization_unittest.cc",
+      "allocator/partition_allocator/page_allocator_unittest.cc",
       "allocator/partition_allocator/partition_alloc_unittest.cc",
       "allocator/partition_allocator/spin_lock_unittest.cc",
     ]
@@ -2976,9 +2985,56 @@ fuzzer_test("base64_encode_fuzzer") {
 
 fuzzer_test("base_json_correctness_fuzzer") {
   sources = [
-    "json/correctness_fuzzer.cc",
+    "json/json_correctness_fuzzer.cc",
   ]
   deps = [
     ":base",
+  ]
+  dict = "//testing/libfuzzer/fuzzers/dicts/json.dict"
+}
+
+fuzzer_test("base_json_reader_fuzzer") {
+  sources = [
+    "json/json_reader_fuzzer.cc",
+  ]
+  deps = [
+    "//base",
+  ]
+  dict = "//testing/libfuzzer/fuzzers/dicts/json.dict"
+}
+
+fuzzer_test("base_json_string_escape_fuzzer") {
+  sources = [
+    "json/string_escape_fuzzer.cc",
+  ]
+  deps = [
+    "//base",
+  ]
+}
+
+fuzzer_test("string_number_conversions_fuzzer") {
+  sources = [
+    "strings/string_number_conversions_fuzzer.cc",
+  ]
+  deps = [
+    "//base",
+  ]
+}
+
+fuzzer_test("string_tokenizer_fuzzer") {
+  sources = [
+    "strings/string_tokenizer_fuzzer.cc",
+  ]
+  deps = [
+    "//base",
+  ]
+}
+
+fuzzer_test("utf_string_conversions_fuzzer") {
+  sources = [
+    "strings/utf_string_conversions_fuzzer.cc",
+  ]
+  deps = [
+    "//base",
   ]
 }

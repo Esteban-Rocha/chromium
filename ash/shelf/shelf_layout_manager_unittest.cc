@@ -28,6 +28,7 @@
 #include "ash/system/tray/test_system_tray_item.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/lock_state_controller.h"
+#include "ash/wm/splitview/split_view_controller.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
@@ -36,6 +37,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
+#include "services/ui/public/interfaces/window_manager_constants.mojom.h"
 #include "ui/app_list/app_list_features.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_parenting_client.h"
@@ -1980,6 +1982,35 @@ TEST_F(ShelfLayoutManagerTest, ShelfBackgroundColor) {
   EXPECT_EQ(SHELF_BACKGROUND_DEFAULT, GetShelfWidget()->GetBackgroundType());
 }
 
+// Test the background color for split view mode.
+TEST_F(ShelfLayoutManagerTest, ShelfBackgroundColorInSplitView) {
+  // Split view is only enabled in tablet mode.
+  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
+
+  std::unique_ptr<aura::Window> window1(CreateTestWindow());
+  window1->SetProperty(aura::client::kResizeBehaviorKey,
+                       ui::mojom::kResizeBehaviorCanResize |
+                           ui::mojom::kResizeBehaviorCanMaximize);
+  window1->Show();
+
+  SplitViewController* split_view_controller =
+      Shell::Get()->split_view_controller();
+  split_view_controller->SnapWindow(window1.get(), SplitViewController::LEFT);
+  EXPECT_EQ(SHELF_BACKGROUND_SPLIT_VIEW, GetShelfWidget()->GetBackgroundType());
+
+  std::unique_ptr<aura::Window> window2(CreateTestWindow());
+  window2->SetProperty(aura::client::kResizeBehaviorKey,
+                       ui::mojom::kResizeBehaviorCanResize |
+                           ui::mojom::kResizeBehaviorCanMaximize);
+  window2->Show();
+  split_view_controller->SnapWindow(window2.get(), SplitViewController::RIGHT);
+  EXPECT_EQ(SHELF_BACKGROUND_SPLIT_VIEW, GetShelfWidget()->GetBackgroundType());
+
+  // Ending split view mode will maximize the two windows.
+  split_view_controller->EndSplitView();
+  EXPECT_EQ(SHELF_BACKGROUND_MAXIMIZED, GetShelfWidget()->GetBackgroundType());
+}
+
 // Verify that the shelf doesn't have the opaque background if it's auto-hide
 // status.
 TEST_F(ShelfLayoutManagerTest, ShelfBackgroundColorAutoHide) {
@@ -2063,7 +2094,7 @@ TEST_F(ShelfLayoutManagerTest, ShutdownHandlesWindowActivation) {
   window2->Show();
   wm::ActivateWindow(window1);
 
-  GetShelfWidget()->Shutdown();
+  GetShelfLayoutManager()->PrepareForShutdown();
 
   // Deleting a focused maximized window will switch focus to |window2|. This
   // would normally cause the ShelfLayoutManager to update its state. However

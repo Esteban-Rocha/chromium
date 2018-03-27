@@ -832,12 +832,6 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_DESCRIPTION_BACKGROUND_SYNC" desc="The description for the allow Background Sync for website dialog.">
         Allow Background Sync for a specific site.
       </message>
-      <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_DESCRIPTION_CLIPBOARD_ALLOW" desc="The description for the allow clipboard for website dialog.">
-        Allow clipboard read access for a specific site.
-      </message>
-      <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_DESCRIPTION_CLIPBOARD_BLOCK" desc="The description for the block clipboard for website dialog.">
-        Block clipboard read access for a specific site.
-      </message>
       <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_DESCRIPTION_SOUND_ALLOW" desc="The description for the allow sound for website dialog.">
         Allow sound for a specific site.
       </message>
@@ -1195,9 +1189,6 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
 
       <!-- Downloads preferences -->
-      <message name="IDS_DOWNLOAD_LOCATION_TITLE" desc="Title for 'Downloads location' preference that changes the default device directory that stores downloaded items.">
-        Location
-      </message>
       <message name="IDS_DOWNLOADS_LOCATION_SELECTOR_TITLE" desc="Title of the preference that allows the user to select which of the folders they would like to make the default location to save their downloads.">
         Download location
       </message>
@@ -2305,7 +2296,30 @@ To obtain new licenses, connect to the internet and play your downloaded content
         Waiting for Google Play Services to finish updating
       </message>
 
-      <!-- New Signin Promos Strings -->
+      <!-- Strings for Streamlined Signin and Unified Consent. -->
+      <!-- TODO(https://crbug.com/814728): Make translatable when strings are approved. -->
+      <message name="IDS_SIGNIN_TITLE" desc="Title for the screen that asks users to sign-in and turn on Sync and personalization. [CHAR-LIMIT=27]" translateable="false">
+        Get even more from Chrome
+      </message>
+      <message name="IDS_SIGNIN_SYNC_DESCRIPTION" desc="Description of Sync feature for the screen that asks users to sign-in and turn on Sync and personalization." translateable="false">
+        Sync your bookmarks, passwords, history, and more on all your devices
+      </message>
+      <message name="IDS_SIGNIN_PERSONALIZATION_DESCRIPTION" desc="Description of personalization feature for the screen that asks users to sign-in and turn on Sync and personalization." translateable="false">
+        Get more personalized experiences, such as better content suggestions and smarter Translate
+      </message>
+      <message name="IDS_SIGNIN_GOOGLE_SERVICES_DESCRIPTION" desc="Description of Google Services for the screen that asks users to sign-in and turn on Sync and personalization." translateable="false">
+        Bring powerful Google services to Chrome, like Google Pay and tap to search
+      </message>
+      <message name="IDS_SIGNIN_DETAILS_DESCRIPTION" desc="Message explaining that user can customize Sync and personalization and explains what data is shared with Google. This message is shown in the screen that asks users to sign-in and turn on Sync and personalization." translateable="false">
+        You can customize what information Google collects in <ph name="BEGIN_LINK1">&lt;LINK1&gt;</ph>Settings<ph name="END_LINK1">&lt;/LINK1&gt;</ph> anytime.
+
+Google may use your browsing activity, content on some sites you visit, and other browser interactions to personalize Chrome and other Google services like Translate, Search and ads.
+      </message>
+      <message name="IDS_SIGNIN_ACCEPT_BUTTON" desc="Text for the confirmation button in the sign-in screen. By clicking this button users signs in and turns on Sync and personalization. [CHAR-LIMIT=20]" translateable="false">
+        Yes, I'm in
+      </message>
+
+      <!-- Personalized Signin Promos Strings -->
       <message name="IDS_SIGNIN_PROMO_DESCRIPTION_BOOKMARKS" desc="Description string for 'Continue as' signin promo shown in Bookmarks screen.">
         To get your bookmarks on all your devices, sign in to Chrome.
       </message>
@@ -2433,8 +2447,8 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_NTP_ALL_DISMISSED_REFRESH" desc="Text label for button to refresh the New Tab Page when all suggested content has been dismissed. [CHAR-LIMIT=20]">
         Refresh
       </message>
-      <message name="IDS_CONTEXTUAL_SUGGESTIONS_TITLE" desc="The title for a section containing a list of article suggestions based on the user's current webpage. The title tells users that the list contains articles viewed by people who also viewed the current webpage.">
-        People also viewed
+      <message name="IDS_CONTEXTUAL_SUGGESTIONS_TOOLBAR_TITLE" desc="The title displayed above a list of content suggestions based on the user's current webpage. The title tells the user that the list contains more suggestions related to the topic they are currently viewing.">
+        More about <ph name="TOPIC">%1$s<ex>Game of Thrones</ex></ph>
       </message>
 
       <!-- Toolbar button strings -->
@@ -3180,9 +3194,6 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_IPH_DOWNLOAD_HOME_ACCESSIBILITY_TEXT_CHROME_HOME" desc="The in-product-help accessibility text to open download home after a restart in chrome home mode.">
         Pull up the toolbar to find your files and pages in downloads
       </message>
-      <message name="IDS_IPH_DOWNLOAD_HOME_ACCESSIBILITY_TEXT_CHROME_HOME_EXPAND" desc="The in-product-help accessibility text to open download home after a restart in chrome home mode with expand button enabled.">
-        Double tap the expand button to find your files and pages in downloads
-      </message>
       <message name="IDS_IPH_DATA_SAVER_PREVIEW_TEXT" desc="In-product help for when a data saver preview page and infobar are shown.">
           Chrome is using less data to show you this page
       </message>
@@ -3212,15 +3223,6 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       </message>
 
       <!-- Chrome Home -->
-      <message name="IDS_BOTTOM_SHEET_HELP_BUBBLE_MESSAGE" desc="Text displayed in a help bubble above the bottom navigation sheet prompting users to pull the sheet up to see their bookmarks and other content.">
-        Pull up to see bookmarks and more
-      </message>
-      <message name="IDS_BOTTOM_SHEET_PULL_TO_REFRESH_HELP_BUBBLE_MESSAGE" desc="Text displayed in a help bubble above the address bar. “access” is a verb (imperative). The intent of the string is to help users find the address bar at the bottom of the screen.">
-        Access the address bar here
-      </message>
-      <message name="IDS_BOTTOM_SHEET_PULL_TO_REFRESH_HELP_BUBBLE_ACCESSIBILITY_MESSAGE" desc="Text displayed in a help bubble above the address bar when TalkBack is enabled. “access” is a verb (imperative). The intent of the string is to help users find the address bar at the bottom of the screen.">
-        Access the address bar at the bottom of your screen
-      </message>
      <message name="IDS_BOTTOM_SHEET_ACCESSIBILITY_DESCRIPTION" desc="Accessibility string read when the navigation panel is focused informing the user that the panel can be closed by swiping down.">
         Navigation panel. Swipe down to close.
       </message>
@@ -3232,30 +3234,6 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       </message>
       <message name="IDS_BOTTOM_SHEET_CLOSED" desc="Accessibility string read when the bottom navigation panel is closed.">
         Navigation panel closed
-      </message>
-      <message name="IDS_BOTTOM_SHEET_BOOKMARKS_TAB" desc="Accessibility string read when the bookmarks tab is selected.">
-        Bookmarks tab selected
-      </message>
-      <message name="IDS_BOTTOM_SHEET_DOWNLOADS_TAB" desc="Accessibility string read when the downloads tab is selected.">
-        Downloads tab selected
-      </message>
-      <message name="IDS_BOTTOM_SHEET_HISTORY_TAB" desc="Accessibility string read when the history tab is selected.">
-        History tab selected
-      </message>
-      <message name="IDS_BOTTOM_SHEET_HOME_TAB" desc="Accessibility string read when the home tab is selected.">
-        Home tab selected
-      </message>
-      <message name="IDS_BOTTOM_SHEET_APP_MENU_IPH" desc="Label for in-product help that appears in the Chrome three-dot menu (navigation menu). In previous versions of Chrome, the menu contained Downloads, Bookmarks, and History. In this version of Chrome, these three items have been moved out of the menu. Tapping this help text will show the user where they can find these three items. 'Downloads', 'Bookmarks', and 'History' should use the same translations as in Chrome settings and menu items. The tone of this string is that of the user asking Chrome, 'where are these 3 things?'">
-        Where are downloads, bookmarks, and history?
-      </message>
-      <message name="IDS_CHROME_HOME_MENU_BOOKMARKS_HELP_BUBBLE" desc="Help text. Shown after a user taps the ‘Bookmarks’ item in the three-dot menu of mobile Chrome. Context: In Chrome Hub, ‘Bookmarks’ is moving from the three-dot menu to a bottom navigation bar, which can be accessed by swiping the address bar up. This help text notifies the user of the change. Please ensure ‘Bookmarks’ in this message matches the ‘Bookmarks’ menu item and button label.">
-        “Bookmarks” is moving. Next time, pull the address bar up.
-      </message>
-      <message name="IDS_CHROME_HOME_MENU_DOWNLOADS_HELP_BUBBLE" desc="Help text. Shown after a user taps the ‘Downloads’ item in the three-dot menu of mobile Chrome. Context: In Chrome Hub, ‘Downloads’ is moving from the three-dot menu to a bottom navigation bar, which can be accessed by swiping the address bar up. This help text notifies the user of the change. Please ensure ‘Downloads’ in this message matches the ‘Downloads’ menu item and button label.">
-        “Downloads” is moving. Next time, pull the address bar up.
-      </message>
-      <message name="IDS_CHROME_HOME_MENU_HISTORY_HELP_BUBBLE" desc="Help text. Shown after a user taps the ‘History’ item in the three-dot menu of mobile Chrome. Context: In Chrome Hub, ‘History’ is moving from the three-dot menu to a bottom navigation bar, which can be accessed by swiping the address bar up. This help text notifies the user of the change. Please ensure ‘History’ in this message matches the ‘History’ menu item and button label.">
-        “History” is moving. Next time, pull the address bar up.
       </message>
 
       <!-- Photo picker -->

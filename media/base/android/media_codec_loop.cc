@@ -4,6 +4,7 @@
 
 #include "media/base/android/media_codec_loop.h"
 
+#include "base/android/build_info.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
@@ -279,7 +280,8 @@ bool MediaCodecLoop::ProcessOneOutputBuffer() {
 
         media_codec_->ReleaseOutputBuffer(out.index, false);
 
-        client_->OnDecodedEos(out);
+        if (!client_->OnDecodedEos(out))
+          SetState(STATE_ERROR);
       } else {
         if (!client_->OnDecodedFrame(out))
           SetState(STATE_ERROR);
@@ -345,7 +347,7 @@ bool MediaCodecLoop::CodecNeedsFlushWorkaround() const {
   // we have to completely destroy and recreate the codec there.
   // TODO(liberato): MediaCodecUtil implements the same function.  We should
   // call that one, except that it doesn't compile outside of android right now.
-  return sdk_int_ < 18;
+  return sdk_int_ < base::android::SDK_VERSION_JELLY_BEAN_MR2;
 }
 
 // static

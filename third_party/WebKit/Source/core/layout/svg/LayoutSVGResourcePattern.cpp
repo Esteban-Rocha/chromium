@@ -23,6 +23,7 @@
 
 #include <memory>
 
+#include "base/memory/ptr_util.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
@@ -34,7 +35,6 @@
 #include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/PaintRecord.h"
 #include "platform/graphics/paint/PaintRecordBuilder.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -56,7 +56,8 @@ void LayoutSVGResourcePattern::RemoveAllClientsFromCache(
   pattern_map_.clear();
   should_collect_pattern_attributes_ = true;
   MarkAllClientsForInvalidation(
-      mark_for_invalidation ? kPaintInvalidation : kParentOnlyInvalidation);
+      mark_for_invalidation ? SVGResourceClient::kPaintInvalidation
+                            : SVGResourceClient::kParentOnlyInvalidation);
 }
 
 bool LayoutSVGResourcePattern::RemoveClientFromCache(LayoutObject& client) {
@@ -119,7 +120,7 @@ std::unique_ptr<PatternData> LayoutSVGResourcePattern::BuildPatternData(
     }
   }
 
-  std::unique_ptr<PatternData> pattern_data = WTF::WrapUnique(new PatternData);
+  std::unique_ptr<PatternData> pattern_data = base::WrapUnique(new PatternData);
   pattern_data->pattern = Pattern::CreatePaintRecordPattern(
       AsPaintRecord(tile_bounds.Size(), tile_transform),
       FloatRect(FloatPoint(), tile_bounds.Size()));
@@ -136,18 +137,13 @@ SVGPaintServer LayoutSVGResourcePattern::PreparePaintServer(
     const FloatRect& object_bounding_box) {
   ClearInvalidationMask();
 
-  SVGPatternElement* pattern_element = ToSVGPatternElement(GetElement());
-  if (!pattern_element)
-    return SVGPaintServer::Invalid();
-
   // Validate pattern DOM state before building the actual
   // pattern. This should avoid tearing down the pattern we're
   // currently working on. Preferably the state validation should have
   // no side-effects though.
   if (should_collect_pattern_attributes_) {
-    pattern_element->SynchronizeAnimatedSVGAttribute(AnyQName());
-
     attributes_wrapper_->Set(PatternAttributes());
+    SVGPatternElement* pattern_element = ToSVGPatternElement(GetElement());
     pattern_element->CollectPatternAttributes(MutableAttributes());
     should_collect_pattern_attributes_ = false;
   }

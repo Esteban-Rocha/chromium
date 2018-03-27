@@ -16,11 +16,6 @@
 #error \
     "Failed to include content/common/browser_plugin/browser_plugin_messages.h"
 #endif
-#undef CONTENT_COMMON_CACHE_STORAGE_CACHE_STORAGE_MESSAGES_H_
-#include "content/common/cache_storage/cache_storage_messages.h"
-#ifndef CONTENT_COMMON_CACHE_STORAGE_CACHE_STORAGE_MESSAGES_H_
-#error "Failed to include content/common/cache_storage/cache_storage_messages.h"
-#endif
 #undef CONTENT_COMMON_DOM_STORAGE_DOM_STORAGE_MESSAGES_H_
 #include "content/common/dom_storage/dom_storage_messages.h"
 #ifndef CONTENT_COMMON_DOM_STORAGE_DOM_STORAGE_MESSAGES_H_
@@ -114,7 +109,7 @@
 #ifndef CONTENT_COMMON_VIEW_MESSAGES_H_
 #error "Failed to include content/common/view_messages.h"
 #endif
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 
 #undef CONTENT_COMMON_SYNC_COMPOSITOR_MESSAGES_H_
 #include "content/common/input/sync_compositor_messages.h"

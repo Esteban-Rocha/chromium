@@ -28,14 +28,21 @@ namespace blink {
 WorkletGlobalScope::WorkletGlobalScope(
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
     v8::Isolate* isolate,
-    WorkerReportingProxy& reporting_proxy)
+    WorkerReportingProxy& reporting_proxy,
+    scoped_refptr<base::SingleThreadTaskRunner> document_loading_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> worklet_loading_task_runner)
     : WorkerOrWorkletGlobalScope(isolate,
                                  creation_params->worker_clients,
                                  reporting_proxy),
       url_(creation_params->script_url),
       user_agent_(creation_params->user_agent),
       document_security_origin_(creation_params->starter_origin),
-      document_secure_context_(creation_params->starter_secure_context) {
+      document_secure_context_(creation_params->starter_secure_context),
+      fetch_coordinator_proxy_(
+          WorkerOrWorkletModuleFetchCoordinatorProxy::Create(
+              creation_params->module_fetch_coordinator,
+              std::move(document_loading_task_runner),
+              std::move(worklet_loading_task_runner))) {
   // Step 2: "Let inheritedAPIBaseURL be outsideSettings's API base URL."
   // |url_| is the inheritedAPIBaseURL passed from the parent Document.
 
@@ -76,18 +83,10 @@ bool WorkletGlobalScope::IsSecureContext(String& error_message) const {
 // https://drafts.css-houdini.org/worklets/#fetch-and-invoke-a-worklet-script
 void WorkletGlobalScope::FetchAndInvokeScript(
     const KURL& module_url_record,
-    WorkletModuleResponsesMap* module_responses_map,
     network::mojom::FetchCredentialsMode credentials_mode,
     scoped_refptr<base::SingleThreadTaskRunner> outside_settings_task_runner,
     WorkletPendingTasks* pending_tasks) {
   DCHECK(IsContextThread());
-  if (!module_responses_map_proxy_) {
-    // |kUnspecedLoading| is used here because this is a part of script module
-    // loading and this usage is not explicitly spec'ed.
-    module_responses_map_proxy_ = WorkletModuleResponsesMapProxy::Create(
-        module_responses_map, outside_settings_task_runner,
-        GetTaskRunner(TaskType::kUnspecedLoading));
-  }
 
   // Step 1: "Let insideSettings be the workletGlobalScope's associated
   // environment settings object."
@@ -105,17 +104,11 @@ void WorkletGlobalScope::FetchAndInvokeScript(
   FetchModuleScript(module_url_record, credentials_mode, client);
 }
 
-WorkletModuleResponsesMapProxy* WorkletGlobalScope::ModuleResponsesMapProxy()
-    const {
+WorkerOrWorkletModuleFetchCoordinatorProxy*
+WorkletGlobalScope::ModuleFetchCoordinatorProxy() const {
   DCHECK(IsContextThread());
-  DCHECK(module_responses_map_proxy_);
-  return module_responses_map_proxy_;
-}
-
-void WorkletGlobalScope::SetModuleResponsesMapProxyForTesting(
-    WorkletModuleResponsesMapProxy* proxy) {
-  DCHECK(!module_responses_map_proxy_);
-  module_responses_map_proxy_ = proxy;
+  DCHECK(fetch_coordinator_proxy_);
+  return fetch_coordinator_proxy_;
 }
 
 KURL WorkletGlobalScope::CompleteURL(const String& url) const {
@@ -129,7 +122,7 @@ KURL WorkletGlobalScope::CompleteURL(const String& url) const {
 }
 
 void WorkletGlobalScope::Trace(blink::Visitor* visitor) {
-  visitor->Trace(module_responses_map_proxy_);
+  visitor->Trace(fetch_coordinator_proxy_);
   WorkerOrWorkletGlobalScope::Trace(visitor);
 }
 

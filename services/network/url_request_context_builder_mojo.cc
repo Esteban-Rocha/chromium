@@ -35,9 +35,11 @@ void URLRequestContextBuilderMojo::SetMojoProxyResolverFactory(
 URLRequestContextOwner URLRequestContextBuilderMojo::Create(
     mojom::NetworkContextParams* params,
     bool quic_disabled,
-    net::NetLog* net_log) {
-  return NetworkContext::ApplyContextParamsToBuilder(this, params,
-                                                     quic_disabled, net_log);
+    net::NetLog* net_log,
+    net::NetworkQualityEstimator* network_quality_estimator) {
+  return NetworkContext::ApplyContextParamsToBuilder(
+      this, params, quic_disabled, net_log, network_quality_estimator,
+      nullptr /* out_static_user_agent_settings */);
 }
 
 std::unique_ptr<net::ProxyResolutionService>

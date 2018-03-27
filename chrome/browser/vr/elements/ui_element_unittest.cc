@@ -72,10 +72,55 @@ TEST(UiElement, BoundsContainChildren) {
   grand_parent->set_padding(0.1, 0.2);
   grand_parent->AddChild(std::move(parent));
 
+  auto anchored = std::make_unique<UiElement>();
+  anchored->set_y_anchoring(BOTTOM);
+  anchored->set_contributes_to_parent_bounds(false);
+
+  auto* anchored_ptr = anchored.get();
+  grand_parent->AddChild(std::move(anchored));
+
   grand_parent->DoLayOutChildren();
   EXPECT_RECT_NEAR(
       gfx::RectF(-0.5f, 0.5f, 9.4f, 7.8f),
       gfx::RectF(grand_parent->local_origin(), grand_parent->size()), kEpsilon);
+
+  gfx::Point3F p;
+  anchored_ptr->LocalTransform().TransformPoint(&p);
+  EXPECT_FLOAT_EQ(-3.9, p.y());
+}
+
+TEST(UiElement, IgnoringAsymmetricPadding) {
+  // This test ensures that when we ignore asymmetric padding that we don't
+  // accidentally shift the location of the parent; it should stay put.
+  auto a = std::make_unique<UiElement>();
+  a->set_bounds_contain_children(true);
+
+  auto b = std::make_unique<UiElement>();
+  b->set_bounds_contain_children(true);
+  b->set_bounds_contain_padding(false);
+  b->set_padding(0.0f, 5.0f, 0.0f, 0.0f);
+
+  auto c = std::make_unique<UiElement>();
+  c->set_bounds_contain_children(true);
+  c->set_bounds_contain_padding(false);
+  c->set_padding(0.0f, 2.0f, 0.0f, 0.0f);
+
+  auto d = std::make_unique<UiElement>();
+  d->SetSize(0.5f, 0.5f);
+
+  c->AddChild(std::move(d));
+  c->DoLayOutChildren();
+  b->AddChild(std::move(c));
+  b->DoLayOutChildren();
+  a->AddChild(std::move(b));
+  a->DoLayOutChildren();
+
+  a->UpdateWorldSpaceTransformRecursive();
+
+  gfx::Point3F p;
+  a->world_space_transform().TransformPoint(&p);
+
+  EXPECT_VECTOR3DF_EQ(gfx::Point3F(), p);
 }
 
 TEST(UiElement, BoundsContainScaledChildren) {

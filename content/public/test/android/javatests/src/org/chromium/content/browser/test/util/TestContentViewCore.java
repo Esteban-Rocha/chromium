@@ -13,7 +13,6 @@ import android.view.ViewGroup;
 import org.chromium.content_public.browser.ContentViewCore;
 import org.chromium.content_public.browser.ContentViewCore.InternalAccessDelegate;
 import org.chromium.content_public.browser.WebContents;
-import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.WindowAndroid;
 
 /**
@@ -24,11 +23,6 @@ public class TestContentViewCore implements ContentViewCore {
     public TestContentViewCore(Context context, String productVersion) {}
 
     @Override
-    public Context getContext() {
-        return null;
-    }
-
-    @Override
     public ViewGroup getContainerView() {
         return null;
     }
@@ -37,16 +31,6 @@ public class TestContentViewCore implements ContentViewCore {
     public WebContents getWebContents() {
         return null;
     }
-
-    @Override
-    public WindowAndroid getWindowAndroid() {
-        return null;
-    }
-
-    @Override
-    public void initialize(ViewAndroidDelegate viewDelegate,
-            InternalAccessDelegate internalDispatcher, WebContents webContents,
-            WindowAndroid windowAndroid) {}
 
     @Override
     public void updateWindowAndroid(WindowAndroid windowAndroid) {}
@@ -66,20 +50,10 @@ public class TestContentViewCore implements ContentViewCore {
     }
 
     @Override
-    public boolean isScrollInProgress() {
-        return false;
-    }
-
-    @Override
     public void onShow() {}
 
     @Override
     public void onHide() {}
-
-    @Override
-    public boolean isAttachedToWindow() {
-        return false;
-    }
 
     @Override
     public void onAttachedToWindow() {}
@@ -110,9 +84,6 @@ public class TestContentViewCore implements ContentViewCore {
 
     @Override
     public void scrollTo(float xPix, float yPix) {}
-
-    @Override
-    public void updateTextSelectionUI(boolean focused) {}
 
     @Override
     public void onPause() {}
@@ -166,9 +137,6 @@ public class TestContentViewCore implements ContentViewCore {
 
     @Override
     public void updateDoubleTapSupport(boolean supportsDoubleTap) {}
-
-    @Override
-    public void preserveSelectionOnNextLossOfFocus() {}
 
     @Override
     public boolean isSelectPopupVisibleForTest() {

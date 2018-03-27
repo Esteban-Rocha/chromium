@@ -7,8 +7,8 @@ import("//build/util/process_version.gni")
 import("//chrome/common/features.gni")
 import("//chrome/process_version_rc_template.gni")  # For branding_file_path.
 import("//components/nacl/features.gni")
-import("//device/vr/features/features.gni")
-import("//extensions/features/features.gni")
+import("//device/vr/buildflags/buildflags.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//pdf/features.gni")
@@ -210,6 +210,7 @@ static_library("common") {
     ":ini_parser",
     ":mojo_bindings",
     ":page_load_metrics_mojom",
+    ":supervised_user_commands_mojom",
     "//base:base",
     "//base:base_static",
     "//base:i18n",
@@ -254,16 +255,16 @@ static_library("common") {
     "//components/variations",
     "//components/visitedlink/common",
     "//content/public/common",
+    "//extensions/buildflags",
     "//extensions/common:common_constants",
-    "//extensions/features",
     "//google_apis",
     "//gpu/command_buffer/service",
     "//gpu/config",
     "//ipc",
     "//media",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//mojo/public/cpp/bindings",
-    "//pdf:features",
+    "//pdf:buildflags",
     "//ppapi/features",
     "//printing/features",
     "//services/service_manager/sandbox",
@@ -338,8 +339,6 @@ static_library("common") {
       "extensions/manifest_handlers/app_launch_info.h",
       "extensions/manifest_handlers/app_theme_color_info.cc",
       "extensions/manifest_handlers/app_theme_color_info.h",
-      "extensions/manifest_handlers/automation.cc",
-      "extensions/manifest_handlers/automation.h",
       "extensions/manifest_handlers/extension_action_handler.cc",
       "extensions/manifest_handlers/extension_action_handler.h",
       "extensions/manifest_handlers/linked_app_icons.cc",
@@ -387,7 +386,7 @@ static_library("common") {
     }
     if (use_aura) {
       # This dependency is for a header used only by extensions code.
-      public_deps += [ "//ui/keyboard:keyboard_with_content" ]
+      public_deps += [ "//ui/keyboard:keyboard" ]
     }
   }
 
@@ -475,13 +474,6 @@ static_library("common") {
       "pepper_permission_util.h",
     ]
   }
-  if (enable_library_cdms) {
-    sources += [
-      "widevine_cdm_constants.cc",
-      "widevine_cdm_constants.h",
-    ]
-    public_deps += [ "//media/cdm:cdm_paths" ]
-  }
   if (!enable_webrtc) {
     sources -= [ "media/webrtc_logging_messages.h" ]
   }
@@ -566,7 +558,7 @@ static_library("constants") {
     ":buildflags",
     ":non_code_constants",
     "//content/public/common:result_codes",
-    "//extensions/features",
+    "//extensions/buildflags",
     "//printing/features",
     "//rlz/features",
     "//ui/base:ui_features",
@@ -579,8 +571,8 @@ static_library("constants") {
     "//components/bookmarks/common",
     "//components/nacl/common:switches",
     "//components/offline_pages/buildflags",
-    "//device/vr/features",
-    "//media:media_features",
+    "//device/vr/buildflags",
+    "//media:media_buildflags",
     "//media/cdm:cdm_paths",  # Needed by chrome_paths.cc.
     "//ppapi/features",
     "//third_party/widevine/cdm:headers",
@@ -694,6 +686,7 @@ mojom("mojo_bindings") {
     "//components/content_settings/core/common:mojo_bindings",
     "//content/public/common:interfaces",
     "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//third_party/WebKit/public:mojo_bindings",
     "//ui/gfx/geometry/mojo",
     "//url/mojom:url_mojom_gurl",
@@ -722,6 +715,7 @@ mojom("search_mojom") {
 
   public_deps = [
     "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//url/mojom:url_mojom_gurl",
   ]
 }
@@ -732,7 +726,7 @@ mojom("page_load_metrics_mojom") {
   ]
 
   public_deps = [
-    "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//third_party/WebKit/public:web_feature_mojo_bindings",
   ]
 }
@@ -743,7 +737,7 @@ mojom("client_hints_mojom") {
   ]
 
   public_deps = [
-    "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//third_party/WebKit/public:web_client_hints_types_mojo_bindings",
     "//url/mojom:url_mojom_origin",
   ]
@@ -759,4 +753,10 @@ if (enable_print_preview && !is_chromeos) {
       "//mojo/common:common_custom_types",
     ]
   }
+}
+
+mojom("supervised_user_commands_mojom") {
+  sources = [
+    "supervised_user_commands.mojom",
+  ]
 }

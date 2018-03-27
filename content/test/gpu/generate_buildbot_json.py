@@ -1015,7 +1015,6 @@ V8_FYI_WATERFALL = {
         "gfx_unittests",
         "gn_unittests",
         "google_apis_unittests",
-        "gpu_ipc_service_unittests",
         "gpu_unittests",
         "interactive_ui_tests",
         "ipc_tests",
@@ -1843,6 +1842,7 @@ COMMON_GTESTS = {
       '--test-launcher-bot-mode',
       '--test-launcher-jobs=1',
       '--gtest_filter=VrBrowserTest*',
+      '--enable-pixel-output-in-tests',
       '--gtest_also_run_disabled_tests',
     ],
     'test': 'browser_tests',
@@ -2435,7 +2435,7 @@ NON_TELEMETRY_ISOLATED_SCRIPT_TESTS = {
     'tester_configs': [
       {
         'predicate': Predicates.FYI_AND_OPTIONAL,
-        # Run on the Win/Linux Release NVIDIA bots and Nexus 5X and 6P
+        # Run on the Win/Linux Release NVIDIA bots and Android
         'build_configs': ['Release', 'android-chromium'],
         'swarming_dimension_sets': [
           {
@@ -2446,19 +2446,9 @@ NON_TELEMETRY_ISOLATED_SCRIPT_TESTS = {
             'gpu': LINUX_QUADRO_P400_STABLE_DRIVER,
             'os': 'Ubuntu'
           },
-          # Nexus 5X
           {
-            'device_type': 'bullhead',
-            'device_os': 'MMB29Q',
             'os': 'Android'
           },
-          # Nexus 6P
-          {
-            'device_type': 'angler',
-            'device_os': 'M',
-            'os': 'Android',
-            'pool': 'Chrome-GPU',
-          }
         ],
       },
     ],
@@ -2466,6 +2456,8 @@ NON_TELEMETRY_ISOLATED_SCRIPT_TESTS = {
       {
         'names': [
           'Linux FYI Ozone (Intel)',
+          # anglebug.com/2433
+          'Android FYI Release (Nexus 6)',
         ],
       },
     ],

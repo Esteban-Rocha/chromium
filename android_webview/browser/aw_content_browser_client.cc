@@ -198,13 +198,15 @@ AwBrowserContext* AwContentBrowserClient::GetAwBrowserContext() {
 }
 
 AwContentBrowserClient::AwContentBrowserClient() : net_log_(new net::NetLog()) {
-  frame_interfaces_.AddInterface(
-      base::Bind(&autofill::ContentAutofillDriverFactory::BindAutofillDriver));
+  frame_interfaces_.AddInterface(base::BindRepeating(
+      &autofill::ContentAutofillDriverFactory::BindAutofillDriver));
   // Although WebView does not support password manager feature, renderer code
   // could still request this interface, so we register a dummy binder which
   // just drops the incoming request, to avoid the 'Failed to locate a binder
   // for interface' error log..
-  frame_interfaces_.AddInterface(base::Bind(&DummyBindPasswordManagerDriver));
+  frame_interfaces_.AddInterface(
+      base::BindRepeating(&DummyBindPasswordManagerDriver));
+  sniff_file_urls_ = AwSettings::GetAllowSniffingFileUrls();
 }
 
 AwContentBrowserClient::~AwContentBrowserClient() {}
@@ -275,8 +277,7 @@ bool AwContentBrowserClient::IsHandledURL(const GURL& url) {
 }
 
 bool AwContentBrowserClient::ForceSniffingFileUrlsForHtml() {
-  // Needed to support legacy consumers.
-  return true;
+  return sniff_file_urls_;
 }
 
 void AwContentBrowserClient::AppendExtraCommandLineSwitches(
@@ -569,10 +570,10 @@ void AwContentBrowserClient::ExposeInterfacesToRenderer(
     content::ResourceContext* resource_context =
         render_process_host->GetBrowserContext()->GetResourceContext();
     registry->AddInterface(
-        base::Bind(
+        base::BindRepeating(
             &safe_browsing::MojoSafeBrowsingImpl::MaybeCreate,
             render_process_host->GetID(), resource_context,
-            base::Bind(
+            base::BindRepeating(
                 &AwContentBrowserClient::GetSafeBrowsingUrlCheckerDelegate,
                 base::Unretained(this))),
         BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
@@ -689,6 +690,20 @@ AwContentBrowserClient::CreateLoginDelegate(
   return base::MakeRefCounted<AwLoginDelegate>(auth_info, web_contents_getter,
                                                first_auth_attempt,
                                                auth_required_callback);
+}
+
+bool AwContentBrowserClient::HandleExternalProtocol(
+    const GURL& url,
+    content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+    int child_id,
+    content::NavigationUIData* navigation_data,
+    bool is_main_frame,
+    ui::PageTransition page_transition,
+    bool has_user_gesture) {
+  // The AwURLRequestJobFactory implementation should ensure this method never
+  // gets called.
+  NOTREACHED();
+  return false;
 }
 
 // static

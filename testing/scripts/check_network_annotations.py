@@ -21,8 +21,6 @@ def main_run(args):
       '--build-path',
       os.path.join(args.paths['checkout'], 'out', args.build_config_fs),
   ]
-  if '--end-to-end' in args:
-    command_line += ['--complete']
   rc = common.run_command(command_line)
 
   json.dump({

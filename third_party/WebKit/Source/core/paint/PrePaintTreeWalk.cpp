@@ -100,11 +100,9 @@ void PrePaintTreeWalk::Walk(LocalFrameView& frame_view) {
     FrameViewPaintPropertyTreeBuilder::Update(frame_view,
                                               *context().tree_builder_context);
   }
-  paint_invalidator_.InvalidatePaint(frame_view,
-                                     context().tree_builder_context
-                                         ? &*context().tree_builder_context
-                                         : nullptr,
-                                     context().paint_invalidator_context);
+  paint_invalidator_.InvalidatePaint(
+      frame_view, WTF::OptionalOrNullptr(context().tree_builder_context),
+      context().paint_invalidator_context);
 
   if (LayoutView* view = frame_view.GetLayoutView()) {
 #ifndef NDEBUG
@@ -182,13 +180,32 @@ bool PrePaintTreeWalk::NeedsTreeBuilderContextUpdate(
 bool PrePaintTreeWalk::NeedsTreeBuilderContextUpdate(
     const LayoutObject& object,
     const PrePaintTreeWalkContext& parent_context) {
-  return object.NeedsPaintPropertyUpdate() ||
-         object.DescendantNeedsPaintPropertyUpdate() ||
-         (parent_context.tree_builder_context &&
-          parent_context.tree_builder_context->force_subtree_update) ||
-         // If the object needs visual rect update, we should update tree
-         // builder context which is needed by visual rect update.
-         parent_context.paint_invalidator_context.NeedsVisualRectUpdate(object);
+  if (parent_context.tree_builder_context &&
+      parent_context.tree_builder_context->force_subtree_update) {
+    return true;
+  }
+  // The following CHECKs are for debugging crbug.com/816810.
+  if (object.NeedsPaintPropertyUpdate()) {
+    CHECK(parent_context.tree_builder_context) << "NeedsPaintPropertyUpdate";
+    return true;
+  }
+  if (object.DescendantNeedsPaintPropertyUpdate()) {
+    CHECK(parent_context.tree_builder_context)
+        << "DescendantNeedsPaintPropertyUpdate";
+    return true;
+  }
+  if (parent_context.paint_invalidator_context.NeedsVisualRectUpdate(object)) {
+    // If the object needs visual rect update, we should update tree
+    // builder context which is needed by visual rect update.
+    if (object.NeedsPaintOffsetAndVisualRectUpdate()) {
+      CHECK(parent_context.tree_builder_context)
+          << "NeedsPaintOffsetAndVisualRectUpdate";
+    } else {
+      CHECK(parent_context.tree_builder_context) << "kSubtreeVisualRectUpdate";
+    }
+    return true;
+  }
+  return false;
 }
 
 void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
@@ -210,8 +227,7 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
   }
 
   paint_invalidator_.InvalidatePaint(
-      object,
-      context.tree_builder_context ? &*context.tree_builder_context : nullptr,
+      object, WTF::OptionalOrNullptr(context.tree_builder_context),
       context.paint_invalidator_context);
 
   if (context.tree_builder_context) {

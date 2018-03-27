@@ -32,6 +32,7 @@ chrome.automation.EventType = {
   DOCUMENT_SELECTION_CHANGED: 'documentSelectionChanged',
   EXPANDED_CHANGED: 'expandedChanged',
   FOCUS: 'focus',
+  FOCUS_CONTEXT: 'focusContext',
   IMAGE_FRAME_UPDATED: 'imageFrameUpdated',
   HIDE: 'hide',
   HIT_TEST_RESULT: 'hitTestResult',
@@ -271,6 +272,22 @@ chrome.automation.NameFromType = {
 chrome.automation.Restriction = {
   DISABLED: 'disabled',
   READ_ONLY: 'readOnly',
+};
+
+/**
+ * @enum {string}
+ * @see https://developer.chrome.com/extensions/automation#type-DefaultActionVerb
+ */
+chrome.automation.DefaultActionVerb = {
+  ACTIVATE: 'activate',
+  CHECK: 'check',
+  CLICK: 'click',
+  CLICK_ANCESTOR: 'clickAncestor',
+  JUMP: 'jump',
+  OPEN: 'open',
+  PRESS: 'press',
+  SELECT: 'select',
+  UNCHECK: 'uncheck',
 };
 
 /**
@@ -616,6 +633,13 @@ chrome.automation.AutomationNode.prototype.labelFor;
  * @see https://developer.chrome.com/extensions/automation#type-customActions
  */
 chrome.automation.AutomationNode.prototype.customActions;
+
+/**
+ * The action taken by calling <code>doDefault</code>.
+ * @type {(!chrome.automation.DefaultActionVerb|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-defaultActionVerb
+ */
+chrome.automation.AutomationNode.prototype.defaultActionVerb;
 
 /**
  * The URL that this link will navigate to.

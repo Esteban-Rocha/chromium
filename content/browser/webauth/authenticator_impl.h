@@ -15,8 +15,9 @@
 #include "base/macros.h"
 #include "base/optional.h"
 #include "content/common/content_export.h"
-#include "device/fido/register_response_data.h"
-#include "device/fido/sign_response_data.h"
+#include "device/fido/authenticator_get_assertion_response.h"
+#include "device/fido/authenticator_make_credential_response.h"
+#include "device/fido/fido_constants.h"
 #include "device/fido/u2f_transport_protocol.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "third_party/WebKit/public/platform/modules/webauth/authenticator.mojom.h"
@@ -28,7 +29,7 @@ class OneShotTimer;
 
 namespace device {
 class U2fRequest;
-enum class U2fReturnCode : uint8_t;
+enum class FidoReturnCode : uint8_t;
 }  // namespace device
 
 namespace service_manager {
@@ -92,18 +93,20 @@ class CONTENT_EXPORT AuthenticatorImpl : public webauth::mojom::Authenticator {
 
   // Callback to handle the async response from a U2fDevice.
   void OnRegisterResponse(
-      device::U2fReturnCode status_code,
-      base::Optional<device::RegisterResponseData> response_data);
+      device::FidoReturnCode status_code,
+      base::Optional<device::AuthenticatorMakeCredentialResponse>
+          response_data);
 
   // Callback to complete the registration process once a decision about
   // whether or not to return attestation data has been made.
   void OnRegisterResponseAttestationDecided(
-      device::RegisterResponseData response_data,
+      device::AuthenticatorMakeCredentialResponse response_data,
       bool attestation_permitted);
 
   // Callback to handle the async response from a U2fDevice.
-  void OnSignResponse(device::U2fReturnCode status_code,
-                      base::Optional<device::SignResponseData> response_data);
+  void OnSignResponse(
+      device::FidoReturnCode status_code,
+      base::Optional<device::AuthenticatorGetAssertionResponse> response_data);
 
   // Runs when timer expires and cancels all issued requests to a U2fDevice.
   void OnTimeout();

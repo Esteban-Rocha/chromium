@@ -9,11 +9,11 @@
 #include "base/test/histogram_tester.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "components/viz/test/ordered_simple_task_runner.h"
-#include "platform/WebFrameScheduler.h"
+#include "platform/FrameScheduler.h"
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
-#include "platform/scheduler/test/create_task_queue_manager_for_test.h"
-#include "platform/scheduler/test/fake_web_frame_scheduler.h"
-#include "platform/scheduler/test/fake_web_view_scheduler.h"
+#include "platform/scheduler/test/fake_frame_scheduler.h"
+#include "platform/scheduler/test/fake_page_scheduler.h"
+#include "platform/scheduler/test/task_queue_manager_for_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/common/page/launching_process_state.h"
@@ -21,10 +21,23 @@
 namespace blink {
 namespace scheduler {
 
+namespace {
+class RendererSchedulerImplForTest : public RendererSchedulerImpl {
+ public:
+  RendererSchedulerImplForTest(
+      std::unique_ptr<TaskQueueManager> task_queue_manager,
+      base::Optional<base::Time> initial_virtual_time)
+      : RendererSchedulerImpl(std::move(task_queue_manager),
+                              initial_virtual_time){};
+
+  using RendererSchedulerImpl::SetCurrentUseCaseForTest;
+};
+}  // namespace
+
 using QueueType = MainThreadTaskQueue::QueueType;
+using base::Bucket;
 using testing::ElementsAre;
 using testing::UnorderedElementsAre;
-using base::Bucket;
 
 class RendererMetricsHelperTest : public ::testing::Test {
  public:
@@ -35,8 +48,8 @@ class RendererMetricsHelperTest : public ::testing::Test {
     histogram_tester_.reset(new base::HistogramTester());
     mock_task_runner_ =
         base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, true);
-    scheduler_ = std::make_unique<RendererSchedulerImpl>(
-        CreateTaskQueueManagerForTest(nullptr, mock_task_runner_, &clock_),
+    scheduler_ = std::make_unique<RendererSchedulerImplForTest>(
+        TaskQueueManagerForTest::Create(nullptr, mock_task_runner_, &clock_),
         base::nullopt);
     metrics_helper_ = &scheduler_->main_thread_only().metrics_helper;
   }
@@ -51,17 +64,20 @@ class RendererMetricsHelperTest : public ::testing::Test {
                base::TimeDelta duration) {
     DCHECK_LE(clock_.NowTicks(), start);
     clock_.SetNowTicks(start + duration);
-    scoped_refptr<MainThreadTaskQueueForTest> queue(
-        new MainThreadTaskQueueForTest(queue_type));
+    scoped_refptr<MainThreadTaskQueueForTest> queue;
+    if (queue_type != MainThreadTaskQueue::QueueType::kDetached) {
+      queue = scoped_refptr<MainThreadTaskQueueForTest>(
+          new MainThreadTaskQueueForTest(queue_type));
+    }
 
     // Pass an empty task for recording.
-    TaskQueue::PostedTask posted_task(base::Closure(), FROM_HERE);
+    TaskQueue::PostedTask posted_task(base::OnceClosure(), FROM_HERE);
     TaskQueue::Task task(std::move(posted_task), base::TimeTicks());
     metrics_helper_->RecordTaskMetrics(queue.get(), task, start,
                                        start + duration, base::nullopt);
   }
 
-  void RunTask(WebFrameScheduler* scheduler,
+  void RunTask(FrameScheduler* scheduler,
                base::TimeTicks start,
                base::TimeDelta duration) {
     DCHECK_LE(clock_.NowTicks(), start);
@@ -70,7 +86,22 @@ class RendererMetricsHelperTest : public ::testing::Test {
         new MainThreadTaskQueueForTest(QueueType::kDefault));
     queue->SetFrameScheduler(scheduler);
     // Pass an empty task for recording.
-    TaskQueue::PostedTask posted_task(base::Closure(), FROM_HERE);
+    TaskQueue::PostedTask posted_task(base::OnceClosure(), FROM_HERE);
+    TaskQueue::Task task(std::move(posted_task), base::TimeTicks());
+    metrics_helper_->RecordTaskMetrics(queue.get(), task, start,
+                                       start + duration, base::nullopt);
+  }
+
+  void RunTask(UseCase use_case,
+               base::TimeTicks start,
+               base::TimeDelta duration) {
+    DCHECK_LE(clock_.NowTicks(), start);
+    clock_.SetNowTicks(start + duration);
+    scoped_refptr<MainThreadTaskQueueForTest> queue(
+        new MainThreadTaskQueueForTest(QueueType::kDefault));
+    scheduler_->SetCurrentUseCaseForTest(use_case);
+    // Pass an empty task for recording.
+    TaskQueue::PostedTask posted_task(base::OnceClosure(), FROM_HERE);
     TaskQueue::Task task(std::move(posted_task), base::TimeTicks());
     metrics_helper_->RecordTaskMetrics(queue.get(), task, start,
                                        start + duration, base::nullopt);
@@ -82,106 +113,106 @@ class RendererMetricsHelperTest : public ::testing::Test {
 
   void ForceUpdatePolicy() { scheduler_->ForceUpdatePolicy(); }
 
-  std::unique_ptr<FakeWebFrameScheduler> CreateFakeWebFrameSchedulerWithType(
+  std::unique_ptr<FakeFrameScheduler> CreateFakeFrameSchedulerWithType(
       FrameStatus frame_status) {
-    FakeWebFrameScheduler::Builder builder;
+    FakeFrameScheduler::Builder builder;
     switch (frame_status) {
       case FrameStatus::kNone:
       case FrameStatus::kDetached:
         return nullptr;
       case FrameStatus::kMainFrameVisible:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kMainFrame)
+        builder.SetFrameType(FrameScheduler::FrameType::kMainFrame)
             .SetIsPageVisible(true)
             .SetIsFrameVisible(true);
         break;
       case FrameStatus::kMainFrameVisibleService:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kMainFrame)
-            .SetWebViewScheduler(playing_view_.get())
+        builder.SetFrameType(FrameScheduler::FrameType::kMainFrame)
+            .SetPageScheduler(playing_view_.get())
             .SetIsFrameVisible(true);
         break;
       case FrameStatus::kMainFrameHidden:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kMainFrame)
+        builder.SetFrameType(FrameScheduler::FrameType::kMainFrame)
             .SetIsPageVisible(true);
         break;
       case FrameStatus::kMainFrameHiddenService:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kMainFrame)
-            .SetWebViewScheduler(playing_view_.get());
+        builder.SetFrameType(FrameScheduler::FrameType::kMainFrame)
+            .SetPageScheduler(playing_view_.get());
         break;
       case FrameStatus::kMainFrameBackground:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kMainFrame);
+        builder.SetFrameType(FrameScheduler::FrameType::kMainFrame);
         break;
       case FrameStatus::kMainFrameBackgroundExemptSelf:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kMainFrame)
+        builder.SetFrameType(FrameScheduler::FrameType::kMainFrame)
             .SetIsExemptFromThrottling(true);
         break;
       case FrameStatus::kMainFrameBackgroundExemptOther:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kMainFrame)
-            .SetWebViewScheduler(throtting_exempt_view_.get());
+        builder.SetFrameType(FrameScheduler::FrameType::kMainFrame)
+            .SetPageScheduler(throtting_exempt_view_.get());
         break;
       case FrameStatus::kSameOriginVisible:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsPageVisible(true)
             .SetIsFrameVisible(true);
         break;
       case FrameStatus::kSameOriginVisibleService:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
-            .SetWebViewScheduler(playing_view_.get())
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
+            .SetPageScheduler(playing_view_.get())
             .SetIsFrameVisible(true);
         break;
       case FrameStatus::kSameOriginHidden:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsPageVisible(true);
         break;
       case FrameStatus::kSameOriginHiddenService:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
-            .SetWebViewScheduler(playing_view_.get());
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
+            .SetPageScheduler(playing_view_.get());
         break;
       case FrameStatus::kSameOriginBackground:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe);
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe);
         break;
       case FrameStatus::kSameOriginBackgroundExemptSelf:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsExemptFromThrottling(true);
         break;
       case FrameStatus::kSameOriginBackgroundExemptOther:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
-            .SetWebViewScheduler(throtting_exempt_view_.get());
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
+            .SetPageScheduler(throtting_exempt_view_.get());
         break;
       case FrameStatus::kCrossOriginVisible:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsCrossOrigin(true)
             .SetIsPageVisible(true)
             .SetIsFrameVisible(true);
         break;
       case FrameStatus::kCrossOriginVisibleService:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsCrossOrigin(true)
-            .SetWebViewScheduler(playing_view_.get())
+            .SetPageScheduler(playing_view_.get())
             .SetIsFrameVisible(true);
         break;
       case FrameStatus::kCrossOriginHidden:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsCrossOrigin(true)
             .SetIsPageVisible(true);
         break;
       case FrameStatus::kCrossOriginHiddenService:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsCrossOrigin(true)
-            .SetWebViewScheduler(playing_view_.get());
+            .SetPageScheduler(playing_view_.get());
         break;
       case FrameStatus::kCrossOriginBackground:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsCrossOrigin(true);
         break;
       case FrameStatus::kCrossOriginBackgroundExemptSelf:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsCrossOrigin(true)
             .SetIsExemptFromThrottling(true);
         break;
       case FrameStatus::kCrossOriginBackgroundExemptOther:
-        builder.SetFrameType(WebFrameScheduler::FrameType::kSubframe)
+        builder.SetFrameType(FrameScheduler::FrameType::kSubframe)
             .SetIsCrossOrigin(true)
-            .SetWebViewScheduler(throtting_exempt_view_.get());
+            .SetPageScheduler(throtting_exempt_view_.get());
         break;
       case FrameStatus::kCount:
         NOTREACHED();
@@ -192,18 +223,18 @@ class RendererMetricsHelperTest : public ::testing::Test {
 
   base::SimpleTestTickClock clock_;
   scoped_refptr<cc::OrderedSimpleTaskRunner> mock_task_runner_;
-  std::unique_ptr<RendererSchedulerImpl> scheduler_;
+  std::unique_ptr<RendererSchedulerImplForTest> scheduler_;
   RendererMetricsHelper* metrics_helper_;  // NOT OWNED
   std::unique_ptr<base::HistogramTester> histogram_tester_;
-  std::unique_ptr<FakeWebViewScheduler> playing_view_ =
-      FakeWebViewScheduler::Builder().SetIsPlayingAudio(true).Build();
-  std::unique_ptr<FakeWebViewScheduler> throtting_exempt_view_ =
-      FakeWebViewScheduler::Builder().SetIsThrottlingExempt(true).Build();
+  std::unique_ptr<FakePageScheduler> playing_view_ =
+      FakePageScheduler::Builder().SetIsPlayingAudio(true).Build();
+  std::unique_ptr<FakePageScheduler> throtting_exempt_view_ =
+      FakePageScheduler::Builder().SetIsThrottlingExempt(true).Build();
 
   DISALLOW_COPY_AND_ASSIGN(RendererMetricsHelperTest);
 };
 
-TEST_F(RendererMetricsHelperTest, Metrics) {
+TEST_F(RendererMetricsHelperTest, Metrics_PerQueueType) {
   // QueueType::kDefault is checking sub-millisecond task aggregation,
   // FRAME_* tasks are checking normal task aggregation and other
   // queue types have a single task.
@@ -257,6 +288,9 @@ TEST_F(RendererMetricsHelperTest, Metrics) {
   RunTask(QueueType::kIdle, Milliseconds(5000),
           base::TimeDelta::FromMilliseconds(1600));
 
+  RunTask(QueueType::kDetached, Milliseconds(8000),
+          base::TimeDelta::FromMilliseconds(150));
+
   std::vector<base::Bucket> expected_samples = {
       {static_cast<int>(QueueType::kControl), 75},
       {static_cast<int>(QueueType::kDefault), 2},
@@ -267,7 +301,9 @@ TEST_F(RendererMetricsHelperTest, Metrics) {
       {static_cast<int>(QueueType::kTest), 85},
       {static_cast<int>(QueueType::kFrameLoadingControl), 5},
       {static_cast<int>(QueueType::kFrameThrottleable), 295},
-      {static_cast<int>(QueueType::kFramePausable), 195}};
+      {static_cast<int>(QueueType::kFramePausable), 195},
+      {static_cast<int>(QueueType::kDetached), 150},
+  };
   EXPECT_THAT(histogram_tester_->GetAllSamples(
                   "RendererScheduler.TaskDurationPerQueueType2"),
               testing::ContainerEq(expected_samples));
@@ -282,18 +318,58 @@ TEST_F(RendererMetricsHelperTest, Metrics) {
                   Bucket(static_cast<int>(QueueType::kTest), 85),
                   Bucket(static_cast<int>(QueueType::kFramePausable), 20)));
 
+  EXPECT_THAT(histogram_tester_->GetAllSamples(
+                  "RendererScheduler.TaskDurationPerQueueType2.Background"),
+              UnorderedElementsAre(
+                  Bucket(static_cast<int>(QueueType::kControl), 45),
+                  Bucket(static_cast<int>(QueueType::kUnthrottled), 25),
+                  Bucket(static_cast<int>(QueueType::kFrameLoading), 35),
+                  Bucket(static_cast<int>(QueueType::kFrameThrottleable), 295),
+                  Bucket(static_cast<int>(QueueType::kFramePausable), 175),
+                  Bucket(static_cast<int>(QueueType::kCompositor), 20),
+                  Bucket(static_cast<int>(QueueType::kIdle), 1650),
+                  Bucket(static_cast<int>(QueueType::kFrameLoadingControl), 5),
+                  Bucket(static_cast<int>(QueueType::kDetached), 150)));
+}
+
+TEST_F(RendererMetricsHelperTest, Metrics_PerUseCase) {
+  RunTask(UseCase::kNone, Milliseconds(500),
+          base::TimeDelta::FromMilliseconds(4000));
+
+  RunTask(UseCase::kTouchstart, Milliseconds(7000),
+          base::TimeDelta::FromMilliseconds(25));
+  RunTask(UseCase::kTouchstart, Milliseconds(7050),
+          base::TimeDelta::FromMilliseconds(25));
+  RunTask(UseCase::kTouchstart, Milliseconds(7100),
+          base::TimeDelta::FromMilliseconds(25));
+
+  RunTask(UseCase::kCompositorGesture, Milliseconds(7150),
+          base::TimeDelta::FromMilliseconds(5));
+  RunTask(UseCase::kCompositorGesture, Milliseconds(7200),
+          base::TimeDelta::FromMilliseconds(30));
+
+  RunTask(UseCase::kMainThreadCustomInputHandling, Milliseconds(7300),
+          base::TimeDelta::FromMilliseconds(2));
+  RunTask(UseCase::kSynchronizedGesture, Milliseconds(7400),
+          base::TimeDelta::FromMilliseconds(250));
+  RunTask(UseCase::kMainThreadCustomInputHandling, Milliseconds(7700),
+          base::TimeDelta::FromMilliseconds(150));
+  RunTask(UseCase::kLoading, Milliseconds(7900),
+          base::TimeDelta::FromMilliseconds(50));
+  RunTask(UseCase::kMainThreadGesture, Milliseconds(8000),
+          base::TimeDelta::FromMilliseconds(60));
   EXPECT_THAT(
       histogram_tester_->GetAllSamples(
-          "RendererScheduler.TaskDurationPerQueueType2.Background"),
+          "RendererScheduler.TaskDurationPerUseCase"),
       UnorderedElementsAre(
-          Bucket(static_cast<int>(QueueType::kControl), 45),
-          Bucket(static_cast<int>(QueueType::kUnthrottled), 25),
-          Bucket(static_cast<int>(QueueType::kFrameLoading), 35),
-          Bucket(static_cast<int>(QueueType::kFrameThrottleable), 295),
-          Bucket(static_cast<int>(QueueType::kFramePausable), 175),
-          Bucket(static_cast<int>(QueueType::kCompositor), 20),
-          Bucket(static_cast<int>(QueueType::kIdle), 1650),
-          Bucket(static_cast<int>(QueueType::kFrameLoadingControl), 5)));
+          Bucket(static_cast<int>(UseCase::kNone), 4000),
+          Bucket(static_cast<int>(UseCase::kCompositorGesture), 35),
+          Bucket(static_cast<int>(UseCase::kMainThreadCustomInputHandling),
+                 152),
+          Bucket(static_cast<int>(UseCase::kSynchronizedGesture), 250),
+          Bucket(static_cast<int>(UseCase::kTouchstart), 75),
+          Bucket(static_cast<int>(UseCase::kLoading), 50),
+          Bucket(static_cast<int>(UseCase::kMainThreadGesture), 60)));
 }
 
 TEST_F(RendererMetricsHelperTest, GetFrameStatusTest) {
@@ -309,8 +385,8 @@ TEST_F(RendererMetricsHelperTest, GetFrameStatusTest) {
       FrameStatus::kCrossOriginHiddenService,
       FrameStatus::kMainFrameBackgroundExemptOther};
   for (FrameStatus frame_status : frame_statuses_tested) {
-    std::unique_ptr<FakeWebFrameScheduler> frame =
-        CreateFakeWebFrameSchedulerWithType(frame_status);
+    std::unique_ptr<FakeFrameScheduler> frame =
+        CreateFakeFrameSchedulerWithType(frame_status);
     EXPECT_EQ(GetFrameStatus(frame.get()), frame_status);
   }
 }
@@ -361,8 +437,8 @@ TEST_F(RendererMetricsHelperTest, BackgroundedRendererTransition) {
   // Waste 5+ minutes so that the delayed stop is triggered
   RunTask(QueueType::kDefault, Milliseconds(1),
           base::TimeDelta::FromSeconds(5 * 61));
-  // Firing ForceUpdatePolicy multiple times to make sure that the metric is
-  // only recorded upon an actual change.
+  // Firing ForceUpdatePolicy multiple times to make sure that the
+  // metric is only recorded upon an actual change.
   ForceUpdatePolicy();
   ForceUpdatePolicy();
   ForceUpdatePolicy();
@@ -409,8 +485,8 @@ TEST_F(RendererMetricsHelperTest, TaskCountPerFrameStatus) {
       {FrameStatus::kSameOriginVisibleService, 6}};
 
   for (const auto& data : test_data) {
-    std::unique_ptr<FakeWebFrameScheduler> frame =
-        CreateFakeWebFrameSchedulerWithType(data.frame_status);
+    std::unique_ptr<FakeFrameScheduler> frame =
+        CreateFakeFrameSchedulerWithType(data.frame_status);
     for (int i = 0; i < data.count; ++i) {
       RunTask(frame.get(), Milliseconds(++task_count),
               base::TimeDelta::FromMicroseconds(100));
@@ -452,8 +528,8 @@ TEST_F(RendererMetricsHelperTest, TaskCountPerFrameTypeLongerThan) {
   };
 
   for (const auto& data : test_data) {
-    std::unique_ptr<FakeWebFrameScheduler> frame =
-        CreateFakeWebFrameSchedulerWithType(data.frame_status);
+    std::unique_ptr<FakeFrameScheduler> frame =
+        CreateFakeFrameSchedulerWithType(data.frame_status);
     for (size_t i = 0; i < data.durations.size(); ++i) {
       RunTask(frame.get(), Milliseconds(++total_duration),
               base::TimeDelta::FromMilliseconds(data.durations[i]));
@@ -472,7 +548,8 @@ TEST_F(RendererMetricsHelperTest, TaskCountPerFrameTypeLongerThan) {
 
   EXPECT_THAT(
       histogram_tester_->GetAllSamples(
-          "RendererScheduler.TaskCountPerFrameType.LongerThan16ms"),
+          "RendererScheduler.TaskCountPerFrameType."
+          "LongerThan16ms"),
       UnorderedElementsAre(
           Bucket(static_cast<int>(FrameStatus::kMainFrameBackground), 10),
           Bucket(static_cast<int>(FrameStatus::kSameOriginHidden), 15),
@@ -481,7 +558,8 @@ TEST_F(RendererMetricsHelperTest, TaskCountPerFrameTypeLongerThan) {
 
   EXPECT_THAT(
       histogram_tester_->GetAllSamples(
-          "RendererScheduler.TaskCountPerFrameType.LongerThan50ms"),
+          "RendererScheduler.TaskCountPerFrameType."
+          "LongerThan50ms"),
       UnorderedElementsAre(
           Bucket(static_cast<int>(FrameStatus::kMainFrameBackground), 7),
           Bucket(static_cast<int>(FrameStatus::kSameOriginHidden), 10),
@@ -490,7 +568,8 @@ TEST_F(RendererMetricsHelperTest, TaskCountPerFrameTypeLongerThan) {
 
   EXPECT_THAT(
       histogram_tester_->GetAllSamples(
-          "RendererScheduler.TaskCountPerFrameType.LongerThan100ms"),
+          "RendererScheduler.TaskCountPerFrameType."
+          "LongerThan100ms"),
       UnorderedElementsAre(
           Bucket(static_cast<int>(FrameStatus::kMainFrameBackground), 2),
           Bucket(static_cast<int>(FrameStatus::kSameOriginHidden), 7),
@@ -499,7 +578,8 @@ TEST_F(RendererMetricsHelperTest, TaskCountPerFrameTypeLongerThan) {
 
   EXPECT_THAT(
       histogram_tester_->GetAllSamples(
-          "RendererScheduler.TaskCountPerFrameType.LongerThan150ms"),
+          "RendererScheduler.TaskCountPerFrameType."
+          "LongerThan150ms"),
       UnorderedElementsAre(
           Bucket(static_cast<int>(FrameStatus::kMainFrameBackground), 1),
           Bucket(static_cast<int>(FrameStatus::kSameOriginHidden), 4),
@@ -514,12 +594,14 @@ TEST_F(RendererMetricsHelperTest, TaskCountPerFrameTypeLongerThan) {
           Bucket(static_cast<int>(FrameStatus::kSameOriginHidden), 2)));
 }
 
-// TODO(crbug.com/754656): Add tests for NthMinute and AfterNthMinute
+// TODO(crbug.com/754656): Add tests for NthMinute and
+// AfterNthMinute histograms.
+
+// TODO(crbug.com/754656): Add tests for
+// TaskDuration.Hidden/Visible histograms.
+
+// TODO(crbug.com/754656): Add tests for non-TaskDuration
 // histograms.
-
-// TODO(crbug.com/754656): Add tests for TaskDuration.Hidden/Visible histograms.
-
-// TODO(crbug.com/754656): Add tests for non-TaskDuration histograms.
 
 }  // namespace scheduler
 }  // namespace blink

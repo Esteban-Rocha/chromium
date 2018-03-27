@@ -314,8 +314,8 @@
     <message name="IDS_SETTINGS_ACCESSIBILITY_MOUSE_SETTINGS_TITLE" desc="In the settings tab, the title of a link to open mouse and touchpad settings.">
       Open mouse and touchpad device settings
     </message>
-    <message name="IDS_SETTINGS_ACCESSIBILITY_MOUSE_SETTINGS_DESCRIPTION" desc="In the settings tab, an explanation that the mouse and touchpad settings allows you to turn the tap-to-click feature on and off.">
-      Allows you to enable/disable tap-to-click
+    <message name="IDS_SETTINGS_ACCESSIBILITY_MOUSE_SETTINGS_DESCRIPTION" desc="In the settings tab, an explanation that the mouse and touchpad settings allows you to turn the tap-to-click and tap dragging features on and off.">
+      Allows you to enable/disable tap-to-click and tap dragging
     </message>
     <message name="IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_TITLE" desc="In the settings tab, the text next to the checkbox to enable an option to hold a key and click to speak any on-screen text out loud.">
       Enable select-to-speak
@@ -518,6 +518,9 @@
   <message name="IDS_SETTINGS_GOOGLE_PAYMENTS" desc="Label used to differentiate when an address or credit card entry comes from Google Pay. This should follow the casing of the 'Google Pay' brand. 'Google Pay' should not be translated as it is the product name.">
     Google Pay
   </message>
+  <message name="IDS_SETTINGS_AUTOFILL_TOGGLE_LABEL" desc="Label for a toggle that allows users to control whether forms should be autofilled with data such as addresses and credit cards, but not passwords.">
+    Autofill forms
+  </message>
   <message name="IDS_SETTINGS_AUTOFILL_ADDRESSES_HEADING" desc="Title for the list of addresses that chrome has saved for use in filling in forms.">
     Addresses
   </message>
@@ -580,6 +583,9 @@
   </message>
   <message name="IDS_SETTINGS_PASSWORDS" desc="Name for the password section and toggle">
     Manage passwords
+  </message>
+  <message name="IDS_SETTINGS_PASSWORDS_SAVE_PASSWORDS_TOGGLE_LABEL" desc="Label for a toggle that allows users to be prompted if they want to save their passwords when logging into webpages.">
+    Offer to save passwords
   </message>
   <message name="IDS_SETTINGS_PASSWORDS_AUTOSIGNIN_CHECKBOX_LABEL" desc="Label for a checkbox that allows users to sign in automatically to websites when their credentials are already saved.">
     Auto Sign-in
@@ -2455,6 +2461,18 @@
   <message name="IDS_SETTINGS_SITE_SETTINGS_FLASH" desc="Label for the Flash site settings.">
     Flash
   </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_PAYMENT_HANDLER" desc="Label for the payment handler site settings.">
+    Payment Handlers
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_PAYMENT_HANDLER_ALLOW" desc="The allow label for payment handler installation in site settings.">
+    Allow sites to install payment handlers
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_PAYMENT_HANDLER_ALLOW_RECOMMENDED" desc="The allow label for payment handler installation in site settings (with the 'recommended' suffix).">
+    Allow sites to install payment handlers (recommended)
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_PAYMENT_HANDLER_BLOCK" desc="The block label for payment handler installation access in site settings.">
+    Do not allow any site to install payment handlers
+  </message>
   <message name="IDS_SETTINGS_SITE_SETTINGS_PDF_DOCUMENTS" desc="Label for the PDF documents site settings.">
     PDF documents
   </message>
@@ -3099,6 +3117,9 @@
     <message name="IDS_SETTINGS_PEOPLE_SYNC_TURN_OFF" desc="The label for the button that lets the user turn off profile syncing with their gaia account.">
       Turn off
     </message>
+    <message name="IDS_SETTINGS_PEOPLE_SYNC_NOT_WORKING" desc="The label informing the user that sync is currently not working.">
+      Sync isn't working
+    </message>
     <message name="IDS_SETTINGS_SYNC_DISCONNECT_MANAGED_PROFILE_EXPLANATION" desc="The text to display in the 'Sign out of Chrome' dialog to stop syncing for managed profiles.">
       Because this account is managed by <ph name="DOMAIN">$1<ex>example.com</ex></ph>, your bookmarks, history, passwords, and other settings will be cleared from this device. However, your data will remain stored in your Google Account and can be managed on <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
     </message>
@@ -3119,6 +3140,9 @@
     </message>
     <message name="IDS_SETTINGS_TURN_OFF_SYNC_DIALOG_CHECKBOX" desc="The text to display next to the checkbox of the dialog to turn off sync, asking users if they want to clear these data from the device.">
       Clear bookmarks, history, passwords, and more from this device
+    </message>
+    <message name="IDS_SETTINGS_SYNC_SETTINGS_SAVED_TOAST_LABEL" desc="The notification shown to user after they saved sync settings, and sync is now started.">
+      Settings saved. Sync started.
     </message>
   </if>
 
@@ -3144,12 +3168,23 @@
   <message name="IDS_SETTINGS_SYNC" desc="Name of the sync service.">
     Sync
   </message>
+  <message name="IDS_SETTINGS_SYNC_SYNC_AND_PERSONALIZATION" desc="The label of button that takes the user to manage their sync and personalization settings.">
+    Sync and personalization
+  </message>
   <message name="IDS_SETTINGS_SYNC_PAGE_TITLE" desc="Name of the settings page which manages syncing data between multiple browser instances with the same Google profile.">
     Advanced sync settings
   </message>
   <message name="IDS_SETTINGS_SYNC_LOADING" desc="The message shown when waiting for the sync backend to start up.">
     Please wait...
   </message>
+  <if expr="not chromeos">
+    <message name="IDS_SETTINGS_SYNC_WILL_START" desc="The message to tell users that sync will start once they leave the sync setup page.">
+      Sync will start once you leave this page
+    </message>
+    <message name="IDS_SETTINGS_SYNC_SETTINGS_CANCEL_SYNC" desc="The label of button that allows user to cancel sync.">
+      Cancel sync
+    </message>
+  </if>
   <message name="IDS_SETTINGS_SYNC_TIMEOUT" desc="Text explaining what to do if sync times out.">
     Check your internet connection. If the problem continues, try signing out and signing in again.
   </message>

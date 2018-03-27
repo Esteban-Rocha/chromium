@@ -243,8 +243,6 @@ class MediaControlsImpl::MediaControlsResizeObserverDelegate final
 };
 
 // Observes changes to the HTMLMediaElement attributes that affect controls.
-// Currently only observes the disableRemotePlayback and disablePictureInPicture
-// attributes.
 class MediaControlsImpl::MediaElementMutationCallback
     : public MutationObserver::Delegate {
  public:
@@ -253,9 +251,9 @@ class MediaControlsImpl::MediaElementMutationCallback
     MutationObserverInit init;
     init.setAttributeOldValue(true);
     init.setAttributes(true);
-    init.setAttributeFilter(
-        {HTMLNames::disableremoteplaybackAttr.ToString(),
-         HTMLNames::disablepictureinpictureAttr.ToString()});
+    init.setAttributeFilter({HTMLNames::disableremoteplaybackAttr.ToString(),
+                             HTMLNames::disablepictureinpictureAttr.ToString(),
+                             HTMLNames::posterAttr.ToString()});
     observer_->observe(&controls_->MediaElement(), init, ASSERT_NO_EXCEPTION);
   }
 
@@ -274,8 +272,9 @@ class MediaControlsImpl::MediaElementMutationCallback
         continue;
 
       if (record->attributeName() ==
-          HTMLNames::disableremoteplaybackAttr.ToString())
+          HTMLNames::disableremoteplaybackAttr.ToString()) {
         controls_->RefreshCastButtonVisibilityWithoutUpdate();
+      }
 
       if (record->attributeName() ==
               HTMLNames::disablepictureinpictureAttr.ToString() &&
@@ -283,6 +282,9 @@ class MediaControlsImpl::MediaElementMutationCallback
         controls_->picture_in_picture_button_->SetIsWanted(
             ShouldShowPictureInPictureButton(controls_->MediaElement()));
       }
+
+      if (record->attributeName() == HTMLNames::posterAttr.ToString())
+        controls_->UpdateCSSClassFromState();
 
       BatchedControlUpdate batch(controls_);
     }
@@ -304,6 +306,11 @@ class MediaControlsImpl::MediaElementMutationCallback
 // static
 bool MediaControlsImpl::IsModern() {
   return RuntimeEnabledFeatures::ModernMediaControlsEnabled();
+}
+
+bool MediaControlsImpl::IsTouchEvent(Event* event) {
+  return event->IsTouchEvent() || event->IsGestureEvent() ||
+         (event->IsMouseEvent() && ToMouseEvent(event)->FromTouch());
 }
 
 MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
@@ -742,13 +749,23 @@ void MediaControlsImpl::Reset() {
         ShouldShowPictureInPictureButton(MediaElement()));
   }
 
+  UpdateCSSClassFromState();
   OnControlsListUpdated();
 }
 
 void MediaControlsImpl::OnControlsListUpdated() {
   BatchedControlUpdate batch(this);
 
-  fullscreen_button_->SetIsWanted(ShouldShowFullscreenButton(MediaElement()));
+  if (ShouldShowDisabledControls()) {
+    fullscreen_button_->SetIsWanted(true);
+    fullscreen_button_->setAttribute(HTMLNames::disabledAttr,
+                                     ShouldShowFullscreenButton(MediaElement())
+                                         ? AtomicString()
+                                         : AtomicString(""));
+  } else {
+    fullscreen_button_->SetIsWanted(ShouldShowFullscreenButton(MediaElement()));
+    fullscreen_button_->removeAttribute(HTMLNames::disabledAttr);
+  }
 
   RefreshCastButtonVisibilityWithoutUpdate();
 
@@ -846,7 +863,7 @@ bool MediaControlsImpl::ShouldHideMediaControls(unsigned behavior_flags) const {
 
   // Don't hide if the mouse is over the controls.
   const bool ignore_controls_hover = behavior_flags & kIgnoreControlsHover;
-  if (!ignore_controls_hover && panel_->IsHovered())
+  if (!ignore_controls_hover && AreVideoControlsHovered())
     return false;
 
   // Don't hide if the mouse is over the video area.
@@ -872,6 +889,15 @@ bool MediaControlsImpl::ShouldHideMediaControls(unsigned behavior_flags) const {
     return false;
 
   return true;
+}
+
+bool MediaControlsImpl::AreVideoControlsHovered() const {
+  DCHECK(MediaElement().IsHTMLVideoElement());
+
+  if (IsModern())
+    return media_button_panel_->IsHovered() || timeline_->IsHovered();
+
+  return panel_->IsHovered();
 }
 
 void MediaControlsImpl::UpdatePlayState() {
@@ -1033,6 +1059,11 @@ void MediaControlsImpl::ExitFullscreen() {
   Fullscreen::ExitFullscreen(GetDocument());
 }
 
+bool MediaControlsImpl::IsFullscreenEnabled() const {
+  return fullscreen_button_->IsWanted() &&
+         !fullscreen_button_->hasAttribute(HTMLNames::disabledAttr);
+}
+
 void MediaControlsImpl::RemotePlaybackStateChanged() {
   cast_button_->UpdateDisplayType();
   overlay_cast_button_->UpdateDisplayType();
@@ -1189,16 +1220,14 @@ void MediaControlsImpl::DefaultEventHandler(Event* event) {
   // event, to allow the hide-timer to do the right thing when it fires.
   // FIXME: Preferably we would only do this when we're actually handling the
   // event here ourselves.
-  bool is_touch_event =
-      event->IsTouchEvent() || event->IsGestureEvent() ||
-      (event->IsMouseEvent() && ToMouseEvent(event)->FromTouch());
+  bool is_touch_event = IsTouchEvent(event);
   hide_timer_behavior_flags_ |=
       is_touch_event ? kIgnoreControlsHover : kIgnoreNone;
 
   // Touch events are treated differently to avoid fake mouse events to trigger
   // random behavior. The expect behaviour for touch is that a tap will show the
   // controls and they will hide when the timer to hide fires.
-  if (is_touch_event && !IsModern()) {
+  if (is_touch_event) {
     if (event->type() != EventTypeNames::gesturetap)
       return;
 
@@ -1239,11 +1268,6 @@ void MediaControlsImpl::DefaultEventHandler(Event* event) {
     return;
   }
 
-  if (event->type() == EventTypeNames::click) {
-    MaybeToggleControlsFromTap();
-    return;
-  }
-
   // The pointer event has finished so we should clear the bit.
   if (event->type() == EventTypeNames::mouseout) {
     pointer_event_did_show_controls_ = false;
@@ -1270,7 +1294,11 @@ void MediaControlsImpl::DefaultEventHandler(Event* event) {
       !IsSpatialNavigationEnabled(GetDocument().GetFrame())) {
     const String& key = ToKeyboardEvent(event)->key();
     if (key == "Enter" || ToKeyboardEvent(event)->keyCode() == ' ') {
-      play_button_->OnMediaKeyboardEvent(event);
+      if (IsModern()) {
+        overlay_play_button_->OnMediaKeyboardEvent(event);
+      } else {
+        play_button_->OnMediaKeyboardEvent(event);
+      }
       return;
     }
     if (key == "ArrowLeft" || key == "ArrowRight" || key == "Home" ||
@@ -1278,7 +1306,8 @@ void MediaControlsImpl::DefaultEventHandler(Event* event) {
       timeline_->OnMediaKeyboardEvent(event);
       return;
     }
-    if (key == "ArrowDown" || key == "ArrowUp") {
+    // We don't allow the user to change the volume on modern media controls.
+    if (!IsModern() && (key == "ArrowDown" || key == "ArrowUp")) {
       for (int i = 0; i < 5; i++)
         volume_slider_->OnMediaKeyboardEvent(event);
       return;
@@ -1346,7 +1375,15 @@ void MediaControlsImpl::OnVolumeChange() {
   BatchedControlUpdate batch(this);
   volume_slider_->SetIsWanted(MediaElement().HasAudio() &&
                               !PreferHiddenVolumeControls(GetDocument()));
-  mute_button_->SetIsWanted(MediaElement().HasAudio());
+  if (ShouldShowDisabledControls()) {
+    mute_button_->SetIsWanted(true);
+    mute_button_->setAttribute(
+        HTMLNames::disabledAttr,
+        MediaElement().HasAudio() ? AtomicString() : AtomicString(""));
+  } else {
+    mute_button_->SetIsWanted(MediaElement().HasAudio());
+    mute_button_->removeAttribute(HTMLNames::disabledAttr);
+  }
 }
 
 void MediaControlsImpl::OnFocusIn() {
@@ -1706,8 +1743,7 @@ void MediaControlsImpl::StartActingAsAudioControls() {
 
   is_acting_as_audio_controls_ = true;
   PopulatePanel();
-  UpdateCSSClassFromState();
-  UpdateOverflowMenuWanted();
+  Reset();
 }
 
 void MediaControlsImpl::StopActingAsAudioControls() {
@@ -1716,8 +1752,12 @@ void MediaControlsImpl::StopActingAsAudioControls() {
 
   is_acting_as_audio_controls_ = false;
   PopulatePanel();
-  UpdateCSSClassFromState();
-  UpdateOverflowMenuWanted();
+  Reset();
+}
+
+bool MediaControlsImpl::ShouldShowDisabledControls() const {
+  return IsModern() && MediaElement().IsHTMLVideoElement() &&
+         !is_acting_as_audio_controls_;
 }
 
 void MediaControlsImpl::Invalidate(Element* element) {

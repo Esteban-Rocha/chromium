@@ -31,10 +31,12 @@
 #include "core/exported/WebDocumentLoaderImpl.h"
 
 #include <memory>
+#include <utility>
+
+#include "base/memory/ptr_util.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/SubresourceFilter.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/WebDocumentSubresourceFilter.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
@@ -79,17 +81,18 @@ void WebDocumentLoaderImpl::AppendRedirect(const WebURL& url) {
   DocumentLoader::AppendRedirect(url);
 }
 
-void WebDocumentLoaderImpl::UpdateNavigation(double redirect_start_time,
-                                             double redirect_end_time,
-                                             double fetch_start_time,
-                                             bool has_redirect) {
+void WebDocumentLoaderImpl::UpdateNavigation(
+    base::TimeTicks redirect_start_time,
+    base::TimeTicks redirect_end_time,
+    base::TimeTicks fetch_start_time,
+    bool has_redirect) {
   // Updates the redirection timing if there is at least one redirection
   // (between two URLs).
   if (has_redirect) {
-    GetTiming().SetRedirectStart(TimeTicksFromSeconds(redirect_start_time));
-    GetTiming().SetRedirectEnd(TimeTicksFromSeconds(redirect_end_time));
+    GetTiming().SetRedirectStart(redirect_start_time);
+    GetTiming().SetRedirectEnd(redirect_end_time);
   }
-  GetTiming().SetFetchStart(TimeTicksFromSeconds(fetch_start_time));
+  GetTiming().SetFetchStart(fetch_start_time);
 }
 
 void WebDocumentLoaderImpl::RedirectChain(WebVector<WebURL>& result) const {
@@ -115,11 +118,12 @@ WebDocumentLoader::ExtraData* WebDocumentLoaderImpl::GetExtraData() const {
 void WebDocumentLoaderImpl::SetExtraData(ExtraData* extra_data) {
   // extraData can't be a std::unique_ptr because setExtraData is a WebKit API
   // function.
-  extra_data_ = WTF::WrapUnique(extra_data);
+  extra_data_ = base::WrapUnique(extra_data);
 }
 
-void WebDocumentLoaderImpl::SetNavigationStartTime(double navigation_start) {
-  GetTiming().SetNavigationStart(TimeTicksFromSeconds(navigation_start));
+void WebDocumentLoaderImpl::SetNavigationStartTime(
+    base::TimeTicks navigation_start) {
+  GetTiming().SetNavigationStart(navigation_start);
 }
 
 WebNavigationType WebDocumentLoaderImpl::ToWebNavigationType(
@@ -169,7 +173,7 @@ void WebDocumentLoaderImpl::DetachFromFrame() {
 void WebDocumentLoaderImpl::SetSubresourceFilter(
     WebDocumentSubresourceFilter* subresource_filter) {
   DocumentLoader::SetSubresourceFilter(SubresourceFilter::Create(
-      *GetFrame()->GetDocument(), WTF::WrapUnique(subresource_filter)));
+      *GetFrame()->GetDocument(), base::WrapUnique(subresource_filter)));
 }
 
 void WebDocumentLoaderImpl::SetServiceWorkerNetworkProvider(
@@ -198,12 +202,8 @@ void WebDocumentLoaderImpl::SetUserActivated() {
   DocumentLoader::SetUserActivated();
 }
 
-void WebDocumentLoaderImpl::SetIsAdSubframe(bool is_ad_subframe) {
-  GetSubresourceFilter()->SetIsAdSubframe(is_ad_subframe);
-}
-
 bool WebDocumentLoaderImpl::GetIsAdSubframe() const {
-  return GetSubresourceFilter()->GetIsAdSubframe();
+  return GetSubresourceFilter()->GetIsAssociatedWithAdSubframe();
 }
 
 void WebDocumentLoaderImpl::Trace(blink::Visitor* visitor) {

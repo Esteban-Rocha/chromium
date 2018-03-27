@@ -38,6 +38,7 @@
 <translation id="1540800554400757039">Anwani ya 1</translation>
 <translation id="1545749641540134597">Changanua Msimbo wa QR</translation>
 <translation id="1580783302095112590">Barua imetumwa.</translation>
+<translation id="1582732959743469162">Hatua hii itasimamisha upakuaji wako wote wa sasa.</translation>
 <translation id="1612730193129642006">Onyesha Gridi ya Kichupo</translation>
 <translation id="1644574205037202324">Historia</translation>
 <translation id="1646446875146297738">Kuwasha ‘Usifuatilie’ kunamaanisha kuwa ombi litajumuishwa kwenye rekodi yako ya shughuli za kuvinjari. Athari zozote zinategemea iwapo tovuti itajibu ombi, na namna ombi likatavyofasiriwa. 
@@ -190,6 +191,7 @@ Kwa mfano, tovuti nyingine zinaweza kujibu ombi hili kwa kukuonyesha matangazo y
 <translation id="4536418791685807335">Jaribu kuingia katika akaunti tena.</translation>
 <translation id="457386861538956877">Zaidi...</translation>
 <translation id="461440297010471931">Inatafuta kwa kutumia Google</translation>
+<translation id="4619615317237390068">Vichupo kutoka kwenye vifaa vingine</translation>
 <translation id="4620246317052452550">Kurasa Ulizosoma</translation>
 <translation id="4636930964841734540">Maelezo</translation>
 <translation id="4659667755519643272">Weka Kibadilishaji cha Kichupo</translation>
@@ -283,6 +285,7 @@ Lazima Handoff iwashwe pia katika sehemu ya Jumla ya Mipangilio, na lazima vifaa
 <translation id="633809752005859102">Kuna kitu kimefanyika vibaya sana. Tutakishughulikia.</translation>
 <translation id="6342069812937806050">Sasa hivi tu</translation>
 <translation id="6344783595350022745">Futa Matini</translation>
+<translation id="6346549652287021269">Ungependa Kuanza Kupakua?</translation>
 <translation id="6362362396625799311">Hakuna Vichupo Fiche</translation>
 <translation id="6374469231428023295">Jaribu Tena</translation>
 <translation id="6380866119319257197">Ukisahau kauli yako ya siri au ukitaka kubadilisha mipangilio hii, <ph name="BEGIN_LINK" />fanya usawazishaji upya<ph name="END_LINK" /></translation>
@@ -317,12 +320,14 @@ Data yako ilisimbwa kwa njia fiche kwa kauli yako ya siri ya kusawazisha mnamo <
 <translation id="6914783257214138813">Mtu yeyote anayeweza kuona faili uliyohamisha ataona manenosiri yako.</translation>
 <translation id="6945221475159498467">Chagua</translation>
 <translation id="6973630695168034713">Folda</translation>
+<translation id="6979158407327259162">Hifadhi ya Google</translation>
 <translation id="7004499039102548441">Vichupo vya Hivi Punde</translation>
 <translation id="7006788746334555276">Mipangilio ya Maudhui</translation>
 <translation id="7029809446516969842">Manenosiri</translation>
 <translation id="7031882061095297553">Sawazisha kwenye</translation>
 <translation id="7053983685419859001">Zuia</translation>
 <translation id="7062545763355031412">Kubali na ubadilishe akaunti</translation>
+<translation id="7102005569666697658">Inapakua… <ph name="FILE_SIZE" /></translation>
 <translation id="7108338896283013870">Ficha</translation>
 <translation id="7133798577887235672">Jina Kamili</translation>
 <translation id="7136892417564438900">Kamera haipatikani</translation>
@@ -358,6 +363,7 @@ Data yako ilisimbwa kwa njia fiche kwa kauli yako ya siri ya kusawazisha mnamo <
 <translation id="7769602470925380267">Kubali na uondoke kwenye akaunti</translation>
 <translation id="7772032839648071052">Thibitisha kaulisiri</translation>
 <translation id="780301667611848630">La, asante</translation>
+<translation id="7856733331829174190">Imeshindwa Kupakua</translation>
 <translation id="7859704718976024901">Historia ya Kuvinjari</translation>
 <translation id="7938254975914653459">FaceTime</translation>
 <translation id="7939128259257418052">Hamisha Manenosiri...</translation>
@@ -366,6 +372,7 @@ Data yako ilisimbwa kwa njia fiche kwa kauli yako ya siri ya kusawazisha mnamo <
 <translation id="7971521879845308059">Zuia Ibukizi</translation>
 <translation id="7982789257301363584">Mtandao</translation>
 <translation id="8019783059653722575">Hii hukuwezesha kuhifadhi na kupakia picha.</translation>
+<translation id="802154636333426148">Haikuweza kupakua</translation>
 <translation id="8023878949384262191">Hupanua sehemu.</translation>
 <translation id="8059533439631660104">Hukunja sehemu.</translation>
 <translation id="806745655614357130">Weka data yangu katika sehemu tofauti</translation>
@@ -418,6 +425,7 @@ Data yako ilisimbwa kwa njia fiche kwa kauli yako ya siri ya kusawazisha mnamo <
 <translation id="9083392325882095631">Kipengee 1</translation>
 <translation id="9100610230175265781">Kaulisiri inahitajika</translation>
 <translation id="9148126808321036104">Ingia tena</translation>
+<translation id="915371508759614899">Ungependa Kughairi Upakuaji?</translation>
 <translation id="9157836665414082580">Zima Vidirisha</translation>
 <translation id="9188680907066685419">Ondoka kwenye akaunti inayodhibitiwa</translation>
 <translation id="9203116392574189331">Handoff</translation>

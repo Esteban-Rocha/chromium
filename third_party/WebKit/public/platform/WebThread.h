@@ -30,6 +30,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/single_thread_task_runner.h"
+#include "base/threading/thread.h"
 
 #include <stdint.h>
 
@@ -38,6 +39,7 @@ namespace scheduler {
 class TaskTimeObserver;
 }
 
+class FrameScheduler;
 class WebScheduler;
 
 // Always an integer value.
@@ -46,10 +48,16 @@ typedef uintptr_t PlatformThreadId;
 struct BLINK_PLATFORM_EXPORT WebThreadCreationParams {
   explicit WebThreadCreationParams(WebThreadType);
 
-  WebThreadCreationParams& SetThreadName(const char* name);
+  WebThreadCreationParams& SetThreadNameForTest(const char* name);
+
+  // Sets a scheduler for the frame which was responsible for the creation
+  // of this thread.
+  WebThreadCreationParams& SetFrameScheduler(FrameScheduler*);
 
   WebThreadType thread_type;
   const char* name;
+  FrameScheduler* frame_scheduler;  // NOT OWNED
+  base::Thread::Options thread_options;
 };
 
 // Provides an interface to an embedder-defined thread implementation.
@@ -69,12 +77,12 @@ class BLINK_PLATFORM_EXPORT WebThread {
     virtual void DidProcessTask() = 0;
   };
 
-  // DEPRECATED: Returns a WebTaskRunner bound to the underlying scheduler's
+  // DEPRECATED: Returns a task runner bound to the underlying scheduler's
   // default task queue.
   //
   // Default scheduler task queue does not give scheduler enough freedom to
   // manage task priorities and should not be used.
-  // Use TaskRunnerHelper::Get instead (crbug.com/624696).
+  // Use ExecutionContext::GetTaskRunner instead (crbug.com/624696).
   virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() const {
     return nullptr;
   }

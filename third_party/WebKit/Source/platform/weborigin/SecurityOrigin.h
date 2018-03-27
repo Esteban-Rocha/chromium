@@ -110,10 +110,10 @@ class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
   // XMLHttpRequests.
   bool CanRequest(const KURL&) const;
 
-  // Returns true if drawing an image from this URL taints a canvas from
-  // this security origin. For example, call this function before
-  // drawing an image onto an HTML canvas element with the drawImage API.
-  bool TaintsCanvas(const KURL&) const;
+  // Returns true if content from this URL can be read without CORS from this
+  // security origin. For example, call this function before drawing an image
+  // onto an HTML canvas element with the drawImage API.
+  bool CanReadContent(const KURL&) const;
 
   // Returns true if |document| can display content from the given URL (e.g.,
   // in an iframe or as an image). For example, web sites generally cannot
@@ -123,7 +123,7 @@ class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
   // Returns true if the origin loads resources either from the local
   // machine or over the network from a
   // cryptographically-authenticated origin, as described in
-  // https://w3c.github.io/webappsec/specs/powerfulfeatures/#is-origin-trustworthy.
+  // https://w3c.github.io/webappsec-secure-contexts/#is-origin-trustworthy
   bool IsPotentiallyTrustworthy() const;
 
   // Returns a human-readable error message describing that a non-secure

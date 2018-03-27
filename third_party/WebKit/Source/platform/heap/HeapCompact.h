@@ -5,10 +5,11 @@
 #ifndef HeapCompact_h
 #define HeapCompact_h
 
+#include <memory>
+
+#include "base/memory/ptr_util.h"
 #include "platform/PlatformExport.h"
 #include "platform/heap/BlinkGC.h"
-#include "platform/wtf/DataLog.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/ThreadingPrimitives.h"
 
 #include <bitset>
@@ -42,7 +43,7 @@ class ThreadHeap;
 class PLATFORM_EXPORT HeapCompact final {
  public:
   static std::unique_ptr<HeapCompact> Create() {
-    return WTF::WrapUnique(new HeapCompact);
+    return base::WrapUnique(new HeapCompact);
   }
 
   ~HeapCompact();
@@ -52,7 +53,7 @@ class PLATFORM_EXPORT HeapCompact final {
   //
   bool ShouldCompact(ThreadHeap*,
                      BlinkGC::StackState,
-                     BlinkGC::GCType,
+                     BlinkGC::MarkingType,
                      BlinkGC::GCReason);
 
   // Compaction should be performed as part of the ongoing GC, initialize
@@ -175,33 +176,24 @@ class PLATFORM_EXPORT HeapCompact final {
 
 // Logging macros activated by debug switches.
 
-#define LOG_HEAP_COMPACTION_INTERNAL(msg, ...) DataLogF(msg, ##__VA_ARGS__)
+#define LOG_HEAP_COMPACTION_INTERNAL() DLOG(INFO)
 
 #if DEBUG_HEAP_COMPACTION
-#define LOG_HEAP_COMPACTION(msg, ...) \
-  LOG_HEAP_COMPACTION_INTERNAL(msg, ##__VA_ARGS__)
+#define LOG_HEAP_COMPACTION() LOG_HEAP_COMPACTION_INTERNAL()
 #else
-#define LOG_HEAP_COMPACTION(msg, ...) \
-  do {                                \
-  } while (0)
+#define LOG_HEAP_COMPACTION() EAT_STREAM_PARAMETERS
 #endif
 
 #if DEBUG_HEAP_FREELIST
-#define LOG_HEAP_FREELIST(msg, ...) \
-  LOG_HEAP_COMPACTION_INTERNAL(msg, ##__VA_ARGS__)
+#define LOG_HEAP_FREELIST() LOG_HEAP_COMPACTION_INTERNAL()
 #else
-#define LOG_HEAP_FREELIST(msg, ...) \
-  do {                              \
-  } while (0)
+#define LOG_HEAP_FREELIST() EAT_STREAM_PARAMETERS
 #endif
 
 #if DEBUG_HEAP_FREELIST == 2
-#define LOG_HEAP_FREELIST_VERBOSE(msg, ...) \
-  LOG_HEAP_COMPACTION_INTERNAL(msg, ##__VA_ARGS__)
+#define LOG_HEAP_FREELIST_VERBOSE() LOG_HEAP_COMPACTION_INTERNAL()
 #else
-#define LOG_HEAP_FREELIST_VERBOSE(msg, ...) \
-  do {                                      \
-  } while (0)
+#define LOG_HEAP_FREELIST_VERBOSE() EAT_STREAM_PARAMETERS
 #endif
 
 #endif  // HeapCompact_h

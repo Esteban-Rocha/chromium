@@ -12,7 +12,7 @@
 #include "ash/accelerators/accelerator_commands.h"
 #include "ash/accelerators/debug_commands.h"
 #include "ash/accessibility/accessibility_controller.h"
-#include "ash/app_list/presenter/app_list.h"
+#include "ash/app_list/app_list_controller_impl.h"
 #include "ash/debug.h"
 #include "ash/display/display_configuration_controller.h"
 #include "ash/display/display_move_window_util.h"
@@ -176,7 +176,6 @@ void ShowDeprecatedAcceleratorNotification(const char* const notification_id,
           message_center::RichNotificationData(),
           new DeprecatedAcceleratorNotificationDelegate,
           kNotificationKeyboardIcon, SystemNotificationWarningLevel::NORMAL);
-  notification->set_clickable(true);
   notification->set_priority(message_center::SYSTEM_PRIORITY);
   message_center::MessageCenter::Get()->AddNotification(
       std::move(notification));
@@ -504,11 +503,11 @@ void HandleToggleAppList(const ui::Accelerator& accelerator) {
   if (accelerator.key_code() == ui::VKEY_LWIN)
     base::RecordAction(UserMetricsAction("Accel_Search_LWin"));
 
-  Shell::Get()->app_list()->ToggleAppList(
+  Shell::Get()->app_list_controller()->ToggleAppList(
       display::Screen::GetScreen()
           ->GetDisplayNearestWindow(Shell::GetRootWindowForNewWindows())
           .id(),
-      app_list::kSearchKey);
+      app_list::kSearchKey, accelerator.time_stamp());
 }
 
 void HandleToggleFullscreen(const ui::Accelerator& accelerator) {
@@ -690,7 +689,7 @@ void HandleToggleVoiceInteraction(const ui::Accelerator& accelerator) {
       break;
   }
 
-  Shell::Get()->app_list()->ToggleVoiceInteractionSession();
+  Shell::Get()->app_list_controller()->ToggleVoiceInteractionSession();
 }
 
 void HandleSuspend() {
@@ -1452,13 +1451,13 @@ void AcceleratorController::PerformAction(AcceleratorAction action,
       HandleRotateActiveWindow();
       break;
     case SCALE_UI_DOWN:
-      accelerators::ZoomInternalDisplay(false /* down */);
+      accelerators::ZoomDisplay(false /* down */);
       break;
     case SCALE_UI_RESET:
-      accelerators::ResetInternalDisplayZoom();
+      accelerators::ResetDisplayZoom();
       break;
     case SCALE_UI_UP:
-      accelerators::ZoomInternalDisplay(true /* up */);
+      accelerators::ZoomDisplay(true /* up */);
       break;
     case SHOW_IME_MENU_BUBBLE:
       HandleShowImeMenuBubble();

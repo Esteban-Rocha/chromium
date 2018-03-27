@@ -11,7 +11,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "components/viz/test/ordered_simple_task_runner.h"
-#include "platform/scheduler/test/create_task_queue_manager_for_test.h"
+#include "platform/scheduler/test/task_queue_manager_for_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -55,7 +55,9 @@ class WorkerSchedulerImplForTest : public WorkerSchedulerImpl {
  public:
   WorkerSchedulerImplForTest(std::unique_ptr<TaskQueueManager> manager,
                              base::SimpleTestTickClock* clock_)
-      : WorkerSchedulerImpl(std::move(manager), nullptr),
+      : WorkerSchedulerImpl(WebThreadType::kTestThread,
+                            std::move(manager),
+                            nullptr),
         clock_(clock_),
         timeline_(nullptr) {}
 
@@ -92,7 +94,9 @@ class WorkerSchedulerImplTest : public ::testing::Test {
   WorkerSchedulerImplTest()
       : mock_task_runner_(new cc::OrderedSimpleTaskRunner(&clock_, true)),
         scheduler_(new WorkerSchedulerImplForTest(
-            CreateTaskQueueManagerForTest(nullptr, mock_task_runner_, &clock_),
+            TaskQueueManagerForTest::Create(nullptr,
+                                            mock_task_runner_,
+                                            &clock_),
             &clock_)),
         timeline_(nullptr) {
     clock_.Advance(base::TimeDelta::FromMicroseconds(5000));

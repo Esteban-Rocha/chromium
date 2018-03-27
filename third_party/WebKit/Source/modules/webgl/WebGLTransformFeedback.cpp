@@ -21,7 +21,9 @@ WebGLTransformFeedback::WebGLTransformFeedback(WebGL2RenderingContextBase* ctx,
       object_(0),
       type_(type),
       target_(0),
-      program_(nullptr) {
+      program_(nullptr),
+      active_(false),
+      paused_(false) {
   GLint max_attribs = ctx->GetMaxTransformFeedbackSeparateAttribs();
   DCHECK_GE(max_attribs, 0);
   bound_indexed_transform_feedback_buffers_.resize(max_attribs);
@@ -43,9 +45,6 @@ WebGLTransformFeedback::~WebGLTransformFeedback() {
 }
 
 void WebGLTransformFeedback::DispatchDetached(gpu::gles2::GLES2Interface* gl) {
-  if (bound_transform_feedback_buffer_)
-    bound_transform_feedback_buffer_->OnDetached(gl);
-
   for (size_t i = 0; i < bound_indexed_transform_feedback_buffers_.size();
        ++i) {
     if (bound_indexed_transform_feedback_buffers_[i])
@@ -80,19 +79,13 @@ void WebGLTransformFeedback::SetTarget(GLenum target) {
 
 void WebGLTransformFeedback::SetProgram(WebGLProgram* program) {
   program_ = program;
+  program_link_count_ = program->LinkCount();
 }
 
-void WebGLTransformFeedback::SetBoundTransformFeedbackBuffer(
-    WebGLBuffer* buffer) {
-  if (buffer)
-    buffer->OnAttached();
-  if (bound_transform_feedback_buffer_)
-    bound_transform_feedback_buffer_->OnDetached(Context()->ContextGL());
-  bound_transform_feedback_buffer_ = buffer;
-}
-
-WebGLBuffer* WebGLTransformFeedback::GetBoundTransformFeedbackBuffer() const {
-  return bound_transform_feedback_buffer_;
+bool WebGLTransformFeedback::ValidateProgramForResume(
+    WebGLProgram* program) const {
+  return program && program_ == program &&
+         program->LinkCount() == program_link_count_;
 }
 
 bool WebGLTransformFeedback::SetBoundIndexedTransformFeedbackBuffer(
@@ -107,8 +100,6 @@ bool WebGLTransformFeedback::SetBoundIndexedTransformFeedbackBuffer(
         Context()->ContextGL());
   }
   bound_indexed_transform_feedback_buffers_[index] = buffer;
-  // This also sets the generic binding point in the OpenGL state.
-  SetBoundTransformFeedbackBuffer(buffer);
   return true;
 }
 
@@ -121,11 +112,17 @@ bool WebGLTransformFeedback::GetBoundIndexedTransformFeedbackBuffer(
   return true;
 }
 
-bool WebGLTransformFeedback::IsBufferBoundToTransformFeedback(
-    WebGLBuffer* buffer) {
-  if (bound_transform_feedback_buffer_ == buffer)
-    return true;
+bool WebGLTransformFeedback::HasEnoughBuffers(GLuint num_required) const {
+  if (num_required > bound_indexed_transform_feedback_buffers_.size())
+    return false;
+  for (GLuint i = 0; i < num_required; i++) {
+    if (!bound_indexed_transform_feedback_buffers_[i])
+      return false;
+  }
+  return true;
+}
 
+bool WebGLTransformFeedback::UsesBuffer(WebGLBuffer* buffer) {
   for (size_t i = 0; i < bound_indexed_transform_feedback_buffers_.size();
        ++i) {
     if (bound_indexed_transform_feedback_buffers_[i] == buffer)
@@ -135,10 +132,6 @@ bool WebGLTransformFeedback::IsBufferBoundToTransformFeedback(
 }
 
 void WebGLTransformFeedback::UnbindBuffer(WebGLBuffer* buffer) {
-  if (bound_transform_feedback_buffer_ == buffer) {
-    bound_transform_feedback_buffer_->OnDetached(Context()->ContextGL());
-    bound_transform_feedback_buffer_ = nullptr;
-  }
   for (size_t i = 0; i < bound_indexed_transform_feedback_buffers_.size();
        ++i) {
     if (bound_indexed_transform_feedback_buffers_[i] == buffer) {
@@ -150,7 +143,6 @@ void WebGLTransformFeedback::UnbindBuffer(WebGLBuffer* buffer) {
 }
 
 void WebGLTransformFeedback::Trace(blink::Visitor* visitor) {
-  visitor->Trace(bound_transform_feedback_buffer_);
   visitor->Trace(bound_indexed_transform_feedback_buffers_);
   visitor->Trace(program_);
   WebGLContextObject::Trace(visitor);
@@ -158,7 +150,6 @@ void WebGLTransformFeedback::Trace(blink::Visitor* visitor) {
 
 void WebGLTransformFeedback::TraceWrappers(
     const ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(bound_transform_feedback_buffer_);
   for (auto& buf : bound_indexed_transform_feedback_buffers_) {
     visitor->TraceWrappers(buf);
   }

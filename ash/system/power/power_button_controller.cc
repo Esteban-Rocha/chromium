@@ -4,9 +4,12 @@
 
 #include "ash/system/power/power_button_controller.h"
 
+#include <limits>
+#include <string>
 #include <utility>
 
 #include "ash/accelerators/accelerator_controller.h"
+#include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/session/session_controller.h"
@@ -20,18 +23,23 @@
 #include "ash/wm/session_state_animator.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "base/command_line.h"
+#include "base/json/json_reader.h"
 #include "base/time/default_tick_clock.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/power_manager/backlight.pb.h"
 #include "ui/display/types/display_snapshot.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
 namespace {
 
-// Time that power button should be pressed before starting to show the power
-// button menu animation.
-constexpr base::TimeDelta kStartPowerButtonMenuAnimationTimeout =
+// Amount of time power button must be held to start the power menu animation
+// for convertible/slate/detachable devices. This differs depending on whether
+// the screen is on or off when the power button is initially pressed.
+constexpr base::TimeDelta kShowMenuWhenScreenOnTimeout =
     base::TimeDelta::FromMilliseconds(500);
+constexpr base::TimeDelta kShowMenuWhenScreenOffTimeout =
+    base::TimeDelta::FromMilliseconds(2000);
 
 // Time that power button should be pressed before starting to shutdown.
 constexpr base::TimeDelta kStartShutdownTimeout =
@@ -44,6 +52,8 @@ std::unique_ptr<views::Widget> CreateMenuWidget() {
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.keep_on_top = true;
+  params.accept_events = true;
+  params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.name = "PowerButtonMenuWindow";
   params.layer_type = ui::LAYER_SOLID_COLOR;
@@ -65,6 +75,14 @@ constexpr base::TimeDelta PowerButtonController::kIgnoreRepeatedButtonUpDelay;
 
 constexpr base::TimeDelta
     PowerButtonController::kIgnorePowerButtonAfterResumeDelay;
+
+constexpr const char* PowerButtonController::kPositionField;
+constexpr const char* PowerButtonController::kXField;
+constexpr const char* PowerButtonController::kYField;
+constexpr const char* PowerButtonController::kLeftPosition;
+constexpr const char* PowerButtonController::kRightPosition;
+constexpr const char* PowerButtonController::kTopPosition;
+constexpr const char* PowerButtonController::kBottomPosition;
 
 PowerButtonController::PowerButtonController(
     BacklightsForcedOffSetter* backlights_forced_off_setter)
@@ -132,7 +150,8 @@ void PowerButtonController::OnPowerButtonEvent(
   }
 
   if (down) {
-    if (turn_screen_off_for_tap_) {
+    show_menu_animation_done_ = false;
+    if (ShouldTurnScreenOffForTap()) {
       force_off_on_button_up_ = true;
 
       // When the system resumes in response to the power button being pressed,
@@ -156,9 +175,17 @@ void PowerButtonController::OnPowerButtonEvent(
     screen_off_when_power_button_down_ = !display_controller_->IsScreenOn();
     display_controller_->SetBacklightsForcedOff(false);
 
-    power_button_menu_timer_.Start(
-        FROM_HERE, kStartPowerButtonMenuAnimationTimeout, this,
-        &PowerButtonController::OnPowerButtonMenuTimeout);
+    if (!ShouldTurnScreenOffForTap()) {
+      StartPowerMenuAnimation();
+    } else {
+      base::TimeDelta timeout = screen_off_when_power_button_down_
+                                    ? kShowMenuWhenScreenOffTimeout
+                                    : kShowMenuWhenScreenOnTimeout;
+
+      power_button_menu_timer_.Start(
+          FROM_HERE, timeout, this,
+          &PowerButtonController::StartPowerMenuAnimation);
+    }
 
     shutdown_timer_.Start(FROM_HERE, kStartShutdownTimeout, this,
                           &PowerButtonController::OnShutdownTimeout);
@@ -178,6 +205,13 @@ void PowerButtonController::OnPowerButtonEvent(
         force_off_on_button_up_) {
       display_controller_->SetBacklightsForcedOff(true);
       LockScreenIfRequired();
+    }
+
+    // Cancel the menu animation if it's still ongoing when the button is
+    // released on a clamshell device.
+    if (!ShouldTurnScreenOffForTap() && !show_menu_animation_done_) {
+      static_cast<PowerButtonMenuScreenView*>(menu_widget_->GetContentsView())
+          ->ScheduleShowHideAnimation(false);
     }
   }
 }
@@ -237,8 +271,10 @@ void PowerButtonController::OnDisplayModeChanged(
       internal_display_off && external_display_on;
 }
 
-void PowerButtonController::BrightnessChanged(int level, bool user_initiated) {
-  brightness_is_zero_ = level == 0;
+void PowerButtonController::ScreenBrightnessChanged(
+    const power_manager::BacklightBrightnessChange& change) {
+  brightness_is_zero_ =
+      change.percent() <= std::numeric_limits<double>::epsilon();
 }
 
 void PowerButtonController::PowerButtonEventReceived(
@@ -299,14 +335,17 @@ void PowerButtonController::OnBacklightsForcedOffChanged(bool forced_off) {
 
 void PowerButtonController::OnScreenStateChanged(
     BacklightsForcedOffSetter::ScreenState screen_state) {
-  DismissMenu();
+  if (screen_state != BacklightsForcedOffSetter::ScreenState::ON)
+    DismissMenu();
 }
 
 void PowerButtonController::OnTabletModeStarted() {
+  in_tablet_mode_ = true;
   StopTimersAndDismissMenu();
 }
 
 void PowerButtonController::OnTabletModeEnded() {
+  in_tablet_mode_ = false;
   StopTimersAndDismissMenu();
 }
 
@@ -320,17 +359,31 @@ void PowerButtonController::OnLockStateEvent(
     lock_button_down_ = false;
 }
 
+bool PowerButtonController::ShouldTurnScreenOffForTap() const {
+  return features::IsModeSpecificPowerButtonEnabled()
+             ? in_tablet_mode_
+             : default_turn_screen_off_for_tap_;
+}
+
 void PowerButtonController::StopTimersAndDismissMenu() {
   shutdown_timer_.Stop();
   power_button_menu_timer_.Stop();
   DismissMenu();
 }
 
-void PowerButtonController::OnPowerButtonMenuTimeout() {
+void PowerButtonController::StartPowerMenuAnimation() {
   if (!menu_widget_)
     menu_widget_ = CreateMenuWidget();
-  menu_widget_->SetContentsView(new PowerButtonMenuScreenView());
+  menu_widget_->SetContentsView(new PowerButtonMenuScreenView(
+      power_button_position_, power_button_offset_percentage_,
+      base::BindRepeating(&PowerButtonController::SetShowMenuAnimationDone,
+                          base::Unretained(this))));
   menu_widget_->Show();
+
+  // Hide cursor, but let it reappear if the mouse moves.
+  Shell* shell = Shell::Get();
+  if (shell->cursor_manager())
+    shell->cursor_manager()->HideCursor();
 
   static_cast<PowerButtonMenuScreenView*>(menu_widget_->GetContentsView())
       ->ScheduleShowHideAnimation(true);
@@ -349,11 +402,13 @@ void PowerButtonController::ProcessCommandLine() {
   observe_accelerometer_events_ = cl->HasSwitch(switches::kAshEnableTabletMode);
   force_clamshell_power_button_ =
       cl->HasSwitch(switches::kForceClamshellPowerButton);
+
+  ParsePowerButtonPositionSwitch();
 }
 
 void PowerButtonController::InitTabletPowerButtonMembers() {
   if (!force_clamshell_power_button_)
-    turn_screen_off_for_tap_ = true;
+    default_turn_screen_off_for_tap_ = true;
 
   if (!screenshot_controller_) {
     screenshot_controller_ =
@@ -369,6 +424,62 @@ void PowerButtonController::LockScreenIfRequired() {
       !session_controller->IsUserSessionBlocked() &&
       !lock_state_controller_->LockRequested()) {
     lock_state_controller_->LockWithoutAnimation();
+  }
+}
+
+void PowerButtonController::SetShowMenuAnimationDone() {
+  show_menu_animation_done_ = true;
+}
+
+void PowerButtonController::ParsePowerButtonPositionSwitch() {
+  const base::CommandLine* cl = base::CommandLine::ForCurrentProcess();
+  if (!cl->HasSwitch(switches::kAshPowerButtonPosition))
+    return;
+
+  std::unique_ptr<base::DictionaryValue> position_info =
+      base::DictionaryValue::From(base::JSONReader::Read(
+          cl->GetSwitchValueASCII(switches::kAshPowerButtonPosition)));
+  if (!position_info) {
+    LOG(ERROR) << switches::kAshPowerButtonPosition << " flag has no value";
+    return;
+  }
+
+  std::string str_power_button_position;
+  if (!position_info->GetString(kPositionField, &str_power_button_position)) {
+    LOG(ERROR) << kPositionField << " field is always needed if "
+               << switches::kAshPowerButtonPosition << " is set";
+    return;
+  }
+
+  if (str_power_button_position == kLeftPosition) {
+    power_button_position_ = PowerButtonPosition::LEFT;
+  } else if (str_power_button_position == kRightPosition) {
+    power_button_position_ = PowerButtonPosition::RIGHT;
+  } else if (str_power_button_position == kTopPosition) {
+    power_button_position_ = PowerButtonPosition::TOP;
+  } else if (str_power_button_position == kBottomPosition) {
+    power_button_position_ = PowerButtonPosition::BOTTOM;
+  } else {
+    LOG(ERROR) << "Invalid " << kPositionField << " field in "
+               << switches::kAshPowerButtonPosition;
+    return;
+  }
+
+  if (power_button_position_ == PowerButtonPosition::LEFT ||
+      power_button_position_ == PowerButtonPosition::RIGHT) {
+    if (!position_info->GetDouble(kYField, &power_button_offset_percentage_)) {
+      LOG(ERROR) << kYField << " not set in "
+                 << switches::kAshPowerButtonPosition;
+      power_button_position_ = PowerButtonPosition::NONE;
+      return;
+    }
+  } else {
+    if (!position_info->GetDouble(kXField, &power_button_offset_percentage_)) {
+      LOG(ERROR) << kXField << " not set in "
+                 << switches::kAshPowerButtonPosition;
+      power_button_position_ = PowerButtonPosition::NONE;
+      return;
+    }
   }
 }
 

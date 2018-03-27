@@ -165,6 +165,12 @@ class ASH_EXPORT WindowSelectorItem : public views::ButtonListener,
 
   const gfx::Rect& target_bounds() const { return target_bounds_; }
 
+  // Stacks the |item_widget_| in the correct place. |item_widget_| may be
+  // initially stacked in the wrong place due to animation or if it is a
+  // minimized window, the overview minimized widget is not available on
+  // |item_widget_|'s creation.
+  void RestackItemWidget();
+
   // views::ButtonListener:
   void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
@@ -207,6 +213,7 @@ class ASH_EXPORT WindowSelectorItem : public views::ButtonListener,
 
   float GetCloseButtonOpacityForTesting();
   float GetTitlebarOpacityForTesting();
+  gfx::Rect GetShadowBoundsForTesting();
 
  private:
   class CaptionContainerView;
@@ -215,10 +222,19 @@ class ASH_EXPORT WindowSelectorItem : public views::ButtonListener,
   FRIEND_TEST_ALL_PREFIXES(SplitViewWindowSelectorTest,
                            OverviewUnsnappableIndicatorVisibility);
 
+  // The different ways the overview header can fade in and be laid out.
   enum class HeaderFadeInMode {
-    ENTER,
-    UPDATE,
-    EXIT,
+    // Used when entering overview mode, to fade in the header background color.
+    kEnter,
+    // Used when the overview header bounds change for the first time, to
+    // skip animating when in tablet mode.
+    kFirstUpdate,
+    // Used when the overview header bounds change, to animate or move the
+    // header
+    // to the desired bounds.
+    kUpdate,
+    // Used when exiting overview mode, to fade out the header background color.
+    kExit,
   };
 
   // Sets the bounds of this selector's items to |target_bounds| in

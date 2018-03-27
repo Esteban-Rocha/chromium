@@ -110,12 +110,6 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
-        "test": "gpu_ipc_service_unittests"
-      },
-      {
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
         "test": "gpu_unittests"
       },
       {
@@ -320,12 +314,6 @@
           "can_use_on_swarming_builders": true
         },
         "test": "crypto_unittests"
-      },
-      {
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
-        "test": "gpu_ipc_service_unittests"
       },
       {
         "swarming": {
@@ -906,8 +894,7 @@
       },
       {
         "args": [
-          "--enable-features=NetworkService",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_extensions_browsertests.filter"
+          "--enable-features=NetworkService"
         ],
         "name": "network_service_extensions_browsertests",
         "swarming": {
@@ -981,12 +968,6 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
-        "test": "gpu_ipc_service_unittests"
-      },
-      {
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
         "test": "gpu_unittests"
       },
       {
@@ -1009,8 +990,7 @@
       },
       {
         "args": [
-          "--enable-features=NetworkService",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_interactive_ui_tests.filter"
+          "--enable-features=NetworkService"
         ],
         "name": "network_service_interactive_ui_tests",
         "swarming": {
@@ -1707,8 +1687,7 @@
       },
       {
         "args": [
-          "--enable-features=NetworkService",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_extensions_browsertests.filter"
+          "--enable-features=NetworkService"
         ],
         "name": "network_service_extensions_browsertests",
         "swarming": {
@@ -1782,12 +1761,6 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
-        "test": "gpu_ipc_service_unittests"
-      },
-      {
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
         "test": "gpu_unittests"
       },
       {
@@ -1811,8 +1784,7 @@
       },
       {
         "args": [
-          "--enable-features=NetworkService",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_interactive_ui_tests.filter"
+          "--enable-features=NetworkService"
         ],
         "name": "network_service_interactive_ui_tests",
         "swarming": {
@@ -2348,8 +2320,7 @@
       },
       {
         "args": [
-          "--enable-features=NetworkService",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_extensions_browsertests.filter"
+          "--enable-features=NetworkService"
         ],
         "name": "network_service_extensions_browsertests",
         "swarming": {
@@ -2402,8 +2373,7 @@
       },
       {
         "args": [
-          "--enable-features=NetworkService",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_interactive_ui_tests.filter"
+          "--enable-features=NetworkService"
         ],
         "name": "network_service_interactive_ui_tests",
         "swarming": {
@@ -2654,6 +2624,11 @@
         },
         "test": "services_unittests"
       }
+    ]
+  },
+  "linux-gcc-rel": {
+    "additional_compile_targets": [
+      "empty_main"
     ]
   }
 }

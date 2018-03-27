@@ -119,7 +119,7 @@ target("jumbo_" + modules_target_type, "modules") {
     "//third_party/WebKit/Source/modules/indexeddb",
     "//third_party/WebKit/Source/modules/installation",
     "//third_party/WebKit/Source/modules/installedapp",
-    "//third_party/WebKit/Source/modules/keyboard_lock",
+    "//third_party/WebKit/Source/modules/keyboard",
     "//third_party/WebKit/Source/modules/locks",
     "//third_party/WebKit/Source/modules/media_capabilities",
     "//third_party/WebKit/Source/modules/media_controls",
@@ -235,6 +235,8 @@ jumbo_source_set("unit_tests") {
   sources = [
     "accessibility/AXObjectCacheTest.cpp",
     "accessibility/AXObjectTest.cpp",
+    "accessibility/AXPositionTest.cpp",
+    "accessibility/AXSelectionTest.cpp",
     "accessibility/AccessibilityObjectModelTest.cpp",
     "accessibility/testing/AccessibilityTest.cpp",
     "accessibility/testing/AccessibilityTest.h",

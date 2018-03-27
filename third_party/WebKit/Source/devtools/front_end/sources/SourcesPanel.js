@@ -110,8 +110,7 @@ Sources.SourcesPanel = class extends UI.Panel {
     this._liveLocationPool = new Bindings.LiveLocationPool();
 
     this._setTarget(UI.context.flavor(SDK.Target));
-    Bindings.breakpointManager.addEventListener(
-        Bindings.BreakpointManager.Events.BreakpointsActiveStateChanged, this._breakpointsActiveStateChanged, this);
+    Common.moduleSetting('breakpointsActive').addChangeListener(this._breakpointsActiveStateChanged, this);
     UI.context.addFlavorChangeListener(SDK.Target, this._onCurrentTargetChanged, this);
     UI.context.addFlavorChangeListener(SDK.DebuggerModel.CallFrame, this._callFrameChanged, this);
     SDK.targetManager.addModelListener(
@@ -676,11 +675,11 @@ Sources.SourcesPanel = class extends UI.Panel {
   }
 
   _toggleBreakpointsActive() {
-    Bindings.breakpointManager.setBreakpointsActive(!Bindings.breakpointManager.breakpointsActive());
+    Common.moduleSetting('breakpointsActive').set(!Common.moduleSetting('breakpointsActive').get());
   }
 
-  _breakpointsActiveStateChanged(event) {
-    const active = event.data;
+  _breakpointsActiveStateChanged() {
+    const active = Common.moduleSetting('breakpointsActive').get();
     this._toggleBreakpointsActiveAction.setToggled(!active);
     this._sourcesView.toggleBreakpointsActiveState(active);
   }
@@ -754,7 +753,7 @@ Sources.SourcesPanel = class extends UI.Panel {
     if (!uiSourceCode.project().isServiceProject() &&
         !event.target.isSelfOrDescendant(this._navigatorTabbedLocation.widget().element)) {
       contextMenu.revealSection().appendItem(
-          Common.UIString('Reveal in navigator'), this._handleContextMenuReveal.bind(this, uiSourceCode));
+          Common.UIString('Reveal in sidebar'), this._handleContextMenuReveal.bind(this, uiSourceCode));
     }
   }
 

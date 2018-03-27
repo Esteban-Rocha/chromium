@@ -21,7 +21,7 @@
 
 #if DUMP_HASHTABLE_STATS || DUMP_HASHTABLE_STATS_PER_TABLE
 
-#include "platform/wtf/DataLog.h"
+#include <iomanip>
 #include "platform/wtf/ThreadingPrimitives.h"
 
 namespace WTF {
@@ -49,43 +49,52 @@ void HashTableStats::copy(const HashTableStats* other) {
 
 void HashTableStats::recordCollisionAtCount(int count) {
   // The global hash table singleton needs to be atomically updated.
-  bool isGlobalSingleton = this == &instance();
-  if (isGlobalSingleton)
-    hashTableStatsMutex().lock();
+  if (this == &instance()) {
+    MutexLocker locker(hashTableStatsMutex());
+    RecordCollisionAtCountWithoutLock(count);
+  } else {
+    RecordCollisionAtCountWithoutLock(count);
+  }
+}
 
+void HashTableStats::RecordCollisionAtCountWithoutLock(int count) {
   if (count > maxCollisions)
     maxCollisions = count;
   numCollisions++;
   collisionGraph[count]++;
-
-  if (isGlobalSingleton)
-    hashTableStatsMutex().unlock();
 }
 
 void HashTableStats::DumpStats() {
   // Lock the global hash table singleton while dumping.
-  bool isGlobalSingleton = this == &instance();
-  if (isGlobalSingleton)
-    hashTableStatsMutex().lock();
-
-  DataLogF("\nWTF::HashTable statistics\n\n");
-  DataLogF("%d accesses\n", numAccesses);
-  DataLogF("%d total collisions, average %.2f probes per access\n",
-           numCollisions, 1.0 * (numAccesses + numCollisions) / numAccesses);
-  DataLogF("longest collision chain: %d\n", maxCollisions);
-  for (int i = 1; i <= maxCollisions; i++) {
-    DataLogF(
-        "  %d lookups with exactly %d collisions (%.2f%% , %.2f%% with this "
-        "many or more)\n",
-        collisionGraph[i], i,
-        100.0 * (collisionGraph[i] - collisionGraph[i + 1]) / numAccesses,
-        100.0 * collisionGraph[i] / numAccesses);
+  if (this == &instance()) {
+    MutexLocker locker(hashTableStatsMutex());
+    DumpStatsWithoutLock();
+  } else {
+    DumpStatsWithoutLock();
   }
-  DataLogF("%d rehashes\n", numRehashes);
-  DataLogF("%d reinserts\n", numReinserts);
+}
 
-  if (isGlobalSingleton)
-    hashTableStatsMutex().unlock();
+void HashTableStats::DumpStatsWithoutLock() {
+  std::stringstream collision_str;
+  collision_str << std::fixed << std::setprecision(2);
+  for (int i = 1; i <= maxCollisions; i++) {
+    collision_str << "      " << collisionGraph[i] << " lookups with exactly "
+                  << i << " collisions ("
+                  << (100.0 * (collisionGraph[i] - collisionGraph[i + 1]) /
+                      numAccesses)
+                  << "% , " << (100.0 * collisionGraph[i] / numAccesses)
+                  << "% with this many or more)\n";
+  }
+
+  DLOG(INFO) << std::fixed << std::setprecision(2)
+             << "WTF::HashTable statistics:\n"
+             << "    " << numAccesses << " accesses\n"
+             << "    " << numCollisions << " total collisions, average "
+             << (1.0 * (numAccesses + numCollisions) / numAccesses)
+             << " probes per access\n"
+             << "    longest collision chain: " << maxCollisions << "\n"
+             << collision_str.str() << "    " << numRehashes << " rehashes\n"
+             << "    " << numReinserts << " reinserts";
 }
 
 }  // namespace WTF

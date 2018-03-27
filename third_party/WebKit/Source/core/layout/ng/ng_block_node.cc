@@ -4,6 +4,8 @@
 
 #include "core/layout/ng/ng_block_node.h"
 
+#include <memory>
+
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutMultiColumnFlowThread.h"
 #include "core/layout/LayoutMultiColumnSet.h"
@@ -310,6 +312,7 @@ void NGBlockNode::CopyFragmentDataToLayoutBox(
       ToNGPhysicalBoxFragment(*layout_result.PhysicalFragment());
 
   NGBoxFragment fragment(constraint_space.GetWritingMode(), physical_fragment);
+  NGLogicalSize fragment_logical_size = fragment.Size();
   // For each fragment we process, we'll accumulate the logical height and
   // logical intrinsic content box height. We reset it at the first fragment,
   // and accumulate at each method call for fragments belonging to the same
@@ -319,14 +322,14 @@ void NGBlockNode::CopyFragmentDataToLayoutBox(
   LayoutUnit logical_height;
   LayoutUnit intrinsic_content_logical_height;
   if (IsFirstFragment(constraint_space, physical_fragment)) {
-    box_->SetLogicalWidth(fragment.InlineSize());
+    box_->SetLogicalWidth(fragment_logical_size.inline_size);
   } else {
-    DCHECK_EQ(box_->LogicalWidth(), fragment.InlineSize())
+    DCHECK_EQ(box_->LogicalWidth(), fragment_logical_size.inline_size)
         << "Variable fragment inline size not supported";
     logical_height = box_->LogicalHeight();
     intrinsic_content_logical_height = box_->IntrinsicContentLogicalHeight();
   }
-  logical_height += fragment.BlockSize();
+  logical_height += fragment_logical_size.block_size;
   intrinsic_content_logical_height += layout_result.IntrinsicBlockSize();
   NGBoxStrut border_scrollbar_padding =
       ComputeBorders(constraint_space, Style()) +
@@ -359,8 +362,6 @@ void NGBlockNode::CopyFragmentDataToLayoutBox(
 
   if (box_->IsLayoutBlock() && IsLastFragment(physical_fragment)) {
     LayoutBlock* block = ToLayoutBlock(box_);
-    WritingMode writing_mode = constraint_space.GetWritingMode();
-    NGBoxFragment fragment(writing_mode, physical_fragment);
     LayoutUnit intrinsic_block_size = layout_result.IntrinsicBlockSize();
     if (constraint_space.HasBlockFragmentation()) {
       intrinsic_block_size +=
@@ -444,21 +445,18 @@ void NGBlockNode::CopyChildFragmentPosition(
 
   DCHECK(layout_box->Parent()) << "Should be called on children only.";
 
-  // We should only be positioning children which are relative to ourselves.
-  // The flow thread, however, is invisible to LayoutNG, so we need to make
-  // an exception there.
-  DCHECK(
-      box_ == layout_box->ContainingBlock() ||
-      (layout_box->ContainingBlock()->IsLayoutFlowThread() &&
-       box_ == layout_box->ContainingBlock()->ContainingBlock()) ||
-      (layout_box->ContainingBlock()->IsInline() &&  // anonymous wrapper case
-       box_->Parent() == layout_box->ContainingBlock()) ||
-      (box_->IsLayoutNGListItem() && layout_box->IsLayoutNGListMarker()));
+  // The containing block of |layout_box| on the legacy layout side is normally
+  // |box_|, but this is not an invariant. Among other things, it does not apply
+  // to list item markers and multicol container children. Multicol containiner
+  // children typically have their flow thread (not the multicol container
+  // itself) as their containing block, and we need to use the right containing
+  // block for inserting floats, flipping for writing modes, etc.
+  LayoutBlock* containing_block = layout_box->ContainingBlock();
 
   // LegacyLayout flips vertical-rl horizontal coordinates before paint.
   // NGLayout flips X location for LegacyLayout compatibility.
-  if (box_->StyleRef().IsFlippedBlocksWritingMode()) {
-    LayoutUnit container_width = box_->Size().Width();
+  if (containing_block->StyleRef().IsFlippedBlocksWritingMode()) {
+    LayoutUnit container_width = containing_block->Size().Width();
     layout_box->SetX(container_width - fragment.Offset().left -
                      additional_offset.left - fragment.Size().width);
   } else {
@@ -467,9 +465,9 @@ void NGBlockNode::CopyChildFragmentPosition(
   layout_box->SetY(fragment.Offset().top + additional_offset.top);
 
   // Floats need an associated FloatingObject for painting.
-  if (IsFloatFragment(fragment) && box_->IsLayoutBlockFlow()) {
+  if (IsFloatFragment(fragment) && containing_block->IsLayoutBlockFlow()) {
     FloatingObject* floating_object =
-        ToLayoutBlockFlow(box_)->InsertFloatingObject(*layout_box);
+        ToLayoutBlockFlow(containing_block)->InsertFloatingObject(*layout_box);
     floating_object->SetIsInPlacedTree(false);
     floating_object->SetX(fragment.Offset().left + additional_offset.left -
                           layout_box->MarginLeft());
@@ -569,7 +567,7 @@ scoped_refptr<NGLayoutResult> NGBlockNode::RunOldLayout(
   // over to LayoutNG yet.
   // TODO(ikilpatrick): Remove this once the above isn't true.
   builder.SetExclusionSpace(
-      WTF::WrapUnique(new NGExclusionSpace(constraint_space.ExclusionSpace())));
+      std::make_unique<NGExclusionSpace>(constraint_space.ExclusionSpace()));
 
   CopyBaselinesFromOldLayout(constraint_space, &builder);
   return builder.ToBoxFragment();

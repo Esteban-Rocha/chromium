@@ -13,6 +13,7 @@
 #include "core/resize_observer/ResizeObserverEntry.h"
 #include "modules/EventTargetModules.h"
 #include "modules/xr/XR.h"
+#include "modules/xr/XRCanvasInputProvider.h"
 #include "modules/xr/XRDevice.h"
 #include "modules/xr/XRFrameOfReference.h"
 #include "modules/xr/XRFrameOfReferenceOptions.h"
@@ -96,6 +97,11 @@ XRSession::XRSession(XRDevice* device,
       resize_observer_ = ResizeObserver::Create(
           canvas->GetDocument(), new XRSessionResizeObserverDelegate(this));
       resize_observer_->observe(canvas);
+
+      // Begin processing input events on the output context's canvas.
+      if (!exclusive_) {
+        canvas_input_provider_ = new XRCanvasInputProvider(this, canvas);
+      }
 
       // Get the initial canvas dimensions
       UpdateCanvasDimensions(canvas);
@@ -198,6 +204,22 @@ void XRSession::cancelAnimationFrame(int id) {
   callback_collection_.CancelCallback(id);
 }
 
+HeapVector<Member<XRInputSource>> XRSession::getInputSources() const {
+  HeapVector<Member<XRInputSource>> source_array;
+  for (const auto& input_source : input_sources_.Values()) {
+    source_array.push_back(input_source);
+  }
+
+  if (canvas_input_provider_) {
+    XRInputSource* input_source = canvas_input_provider_->GetInputSource();
+    if (input_source) {
+      source_array.push_back(input_source);
+    }
+  }
+
+  return source_array;
+}
+
 ScriptPromise XRSession::end(ScriptState* script_state) {
   // Don't allow a session to end twice.
   if (ended_) {
@@ -222,6 +244,11 @@ void XRSession::ForceEnd() {
   ended_ = true;
   pending_frame_ = false;
 
+  if (canvas_input_provider_) {
+    canvas_input_provider_->Stop();
+    canvas_input_provider_ = nullptr;
+  }
+
   // If this session is the active exclusive session for the device, notify the
   // frameProvider that it's ended.
   if (device_->frameProvider()->exclusive_session() == this) {
@@ -233,7 +260,7 @@ void XRSession::ForceEnd() {
 
 DoubleSize XRSession::IdealFramebufferSize() const {
   if (!exclusive_) {
-    return DoubleSize(output_width_, output_height_);
+    return OutputCanvasSize();
   }
 
   double width = device_->xrDisplayInfoPtr()->leftEye->renderWidth +
@@ -241,6 +268,14 @@ DoubleSize XRSession::IdealFramebufferSize() const {
   double height = std::max(device_->xrDisplayInfoPtr()->leftEye->renderHeight,
                            device_->xrDisplayInfoPtr()->rightEye->renderHeight);
   return DoubleSize(width, height);
+}
+
+DoubleSize XRSession::OutputCanvasSize() const {
+  if (!output_context_) {
+    return DoubleSize();
+  }
+
+  return DoubleSize(output_width_, output_height_);
 }
 
 void XRSession::OnFocus() {
@@ -314,7 +349,7 @@ void XRSession::UpdateCanvasDimensions(Element* element) {
   output_width_ = element->OffsetWidth() * devicePixelRatio;
   output_height_ = element->OffsetHeight() * devicePixelRatio;
 
-  if (!exclusive_ && base_layer_) {
+  if (base_layer_) {
     base_layer_->OnResize();
   }
 }
@@ -435,7 +470,7 @@ void XRSession::UpdateInputSourceState(
 
     input_source->SetEmulatedPosition(desc->emulated_position);
 
-    if (desc->pointer_offset) {
+    if (desc->pointer_offset && desc->pointer_offset->matrix.has_value()) {
       const WTF::Vector<float>& m = desc->pointer_offset->matrix.value();
       std::unique_ptr<TransformationMatrix> pointer_matrix =
           TransformationMatrix::Create(m[0], m[1], m[2], m[3], m[4], m[5], m[6],
@@ -445,7 +480,7 @@ void XRSession::UpdateInputSourceState(
     }
   }
 
-  if (state->grip) {
+  if (state->grip && state->grip->matrix.has_value()) {
     const Vector<float>& m = state->grip->matrix.value();
     std::unique_ptr<TransformationMatrix> grip_matrix =
         TransformationMatrix::Create(m[0], m[1], m[2], m[3], m[4], m[5], m[6],
@@ -529,6 +564,7 @@ void XRSession::Trace(blink::Visitor* visitor) {
   visitor->Trace(views_);
   visitor->Trace(input_sources_);
   visitor->Trace(resize_observer_);
+  visitor->Trace(canvas_input_provider_);
   visitor->Trace(callback_collection_);
   EventTargetWithInlineData::Trace(visitor);
 }

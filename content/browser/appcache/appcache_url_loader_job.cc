@@ -138,14 +138,15 @@ void AppCacheURLLoaderJob::Start(network::mojom::URLLoaderRequest request,
 AppCacheURLLoaderJob::AppCacheURLLoaderJob(
     AppCacheURLLoaderRequest* appcache_request,
     AppCacheStorage* storage,
-    URLLoaderRequestHandler::LoaderCallback loader_callback)
+    NavigationLoaderInterceptor::LoaderCallback loader_callback)
     : storage_(storage->GetWeakPtr()),
       start_time_tick_(base::TimeTicks::Now()),
       cache_id_(kAppCacheNoCacheId),
       is_fallback_(false),
       binding_(this),
       writable_handle_watcher_(FROM_HERE,
-                               mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+                               mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                               base::SequencedTaskRunnerHandle::Get()),
       loader_callback_(std::move(loader_callback)),
       appcache_request_(appcache_request->GetWeakPtr()),
       is_main_resource_load_(IsResourceTypeFrame(static_cast<ResourceType>(
@@ -205,8 +206,8 @@ void AppCacheURLLoaderJob::OnResponseInfoLoaded(
     // See http://code.google.com/p/chromium/issues/detail?id=50657
     storage_->service()->CheckAppCacheResponse(manifest_url_, cache_id_,
                                                entry_.response_id());
-    AppCacheHistograms::CountResponseRetrieval(false, is_main_resource_load_,
-                                               manifest_url_.GetOrigin());
+    AppCacheHistograms::CountResponseRetrieval(
+        false, is_main_resource_load_, url::Origin::Create(manifest_url_));
   }
   cache_entry_not_found_ = true;
 
@@ -341,7 +342,8 @@ void AppCacheURLLoaderJob::NotifyCompleted(int error_code) {
 
   if (delivery_type_ == APPCACHED_DELIVERY) {
     AppCacheHistograms::CountResponseRetrieval(
-        error_code == 0, is_main_resource_load_, manifest_url_.GetOrigin());
+        error_code == 0, is_main_resource_load_,
+        url::Origin::Create(manifest_url_));
   }
 }
 

@@ -36,7 +36,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "services/resource_coordinator/public/mojom/coordination_unit.mojom.h"
 
@@ -153,14 +153,17 @@ void MockRenderProcessHost::ShutdownForBadMessage(
   ++bad_msg_count_;
 }
 
-void MockRenderProcessHost::WidgetRestored() {
-}
+void MockRenderProcessHost::UpdateClientPriority(PriorityClient* client) {}
 
-void MockRenderProcessHost::WidgetHidden() {
-}
-
-int MockRenderProcessHost::VisibleWidgetCount() const {
-  return 1;
+int MockRenderProcessHost::VisibleClientCount() const {
+  int count = 0;
+  for (auto* client : priority_clients_) {
+    const Priority priority = client->GetPriority();
+    if (!priority.is_hidden) {
+      count++;
+    }
+  }
+  return count;
 }
 
 bool MockRenderProcessHost::IsForGuestsOnly() const {
@@ -260,17 +263,15 @@ void MockRenderProcessHost::RemovePendingView() {
 }
 
 void MockRenderProcessHost::AddWidget(RenderWidgetHost* widget) {
+  priority_clients_.insert(static_cast<RenderWidgetHostImpl*>(widget));
 }
 
 void MockRenderProcessHost::RemoveWidget(RenderWidgetHost* widget) {
+  priority_clients_.erase(static_cast<RenderWidgetHostImpl*>(widget));
 }
 
 #if defined(OS_ANDROID)
-void MockRenderProcessHost::UpdateWidgetImportance(
-    ChildProcessImportance old_value,
-    ChildProcessImportance new_value) {}
-
-ChildProcessImportance MockRenderProcessHost::ComputeEffectiveImportance() {
+ChildProcessImportance MockRenderProcessHost::GetEffectiveImportance() {
   NOTIMPLEMENTED();
   return ChildProcessImportance::NORMAL;
 }
@@ -417,6 +418,9 @@ MockRenderProcessHost::StartRtpDump(
     const WebRtcRtpPacketCallback& packet_callback) {
   return WebRtcStopRtpDumpCallback();
 }
+
+void MockRenderProcessHost::SetWebRtcEventLogOutput(int lid, bool enabled) {}
+
 #endif
 
 void MockRenderProcessHost::ResumeDeferredNavigation(

@@ -111,13 +111,17 @@ public class VrShellImpl
     private AndroidUiGestureTarget mAndroidDialogGestureTarget;
 
     private OnDispatchTouchEventCallback mOnDispatchTouchEventForTesting;
+    private Runnable mOnVSyncPausedForTesting;
 
     private Surface mContentSurface;
     private VrViewContainer mNonVrViews;
     private VrViewContainer mVrUiViewContainer;
     private FrameLayout mUiView;
     private ModalDialogManager mNonVrModalDialogManager;
+    private ModalDialogManager mVrModalDialogManager;
     private VrModalPresenter mVrModalPresenter;
+
+    private VrInputMethodManagerWrapper mInputMethodManagerWrapper;
 
     public VrShellImpl(
             ChromeActivity activity, VrShellDelegate delegate, TabModelSelector tabModelSelector) {
@@ -280,8 +284,9 @@ public class VrShellImpl
         mNonVrModalDialogManager = mActivity.getModalDialogManager();
         mNonVrModalDialogManager.cancelAllDialogs();
         mVrModalPresenter = new VrModalPresenter(this);
-        mActivity.setModalDialogManager(
-                new ModalDialogManager(mVrModalPresenter, ModalDialogManager.APP_MODAL));
+        mVrModalDialogManager =
+                new ModalDialogManager(mVrModalPresenter, ModalDialogManager.APP_MODAL);
+        mActivity.setModalDialogManager(mVrModalDialogManager);
 
         ViewGroup decor = (ViewGroup) mActivity.getWindow().getDecorView();
         mUiView = new FrameLayout(decor.getContext());
@@ -419,8 +424,8 @@ public class VrShellImpl
         if (mTab.getWebContents() == null) return;
         ImeAdapter imeAdapter = ImeAdapter.fromWebContents(mTab.getWebContents());
         if (imeAdapter != null) {
-            imeAdapter.setInputMethodManagerWrapper(
-                    new VrInputMethodManagerWrapper(mActivity, this));
+            mInputMethodManagerWrapper = new VrInputMethodManagerWrapper(mActivity, this);
+            imeAdapter.setInputMethodManagerWrapper(mInputMethodManagerWrapper);
         }
     }
 
@@ -432,6 +437,7 @@ public class VrShellImpl
             imeAdapter.setInputMethodManagerWrapper(
                     ImeAdapter.createDefaultInputMethodManagerWrapper(mActivity));
         }
+        mInputMethodManagerWrapper = null;
     }
 
     private void restoreTabFromVR() {
@@ -655,6 +661,11 @@ public class VrShellImpl
     @Override
     public void shutdown() {
         if (mVrBrowsingEnabled) {
+            if (mVrModalDialogManager != null) {
+                mVrModalDialogManager.cancelAllDialogs();
+                mActivity.setModalDialogManager(mNonVrModalDialogManager);
+                mVrModalDialogManager = null;
+            }
             mNonVrViews.destroy();
             if (mVrUiViewContainer != null) mVrUiViewContainer.destroy();
             removeVrRootView();
@@ -690,10 +701,6 @@ public class VrShellImpl
         ChromeFullscreenManager manager = mActivity.getFullscreenManager();
         manager.getBrowserVisibilityDelegate().showControlsTransient();
 
-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.VR_BROWSING_NATIVE_ANDROID_UI)) {
-            mActivity.getModalDialogManager().cancelAllDialogs();
-            mActivity.setModalDialogManager(mNonVrModalDialogManager);
-        }
 
         FrameLayout decor = (FrameLayout) mActivity.getWindow().getDecorView();
         decor.removeView(mUiView);
@@ -789,6 +796,9 @@ public class VrShellImpl
             if (mPendingVSyncPause) {
                 mContentVrWindowAndroid.setVSyncPaused(true);
                 mPendingVSyncPause = false;
+                if (mOnVSyncPausedForTesting != null) {
+                    mOnVSyncPausedForTesting.run();
+                }
             }
         });
     }
@@ -803,6 +813,12 @@ public class VrShellImpl
     public boolean isDisplayingUrlForTesting() {
         assert mNativeVrShell != 0;
         return nativeIsDisplayingUrlForTesting(mNativeVrShell);
+    }
+
+    @VisibleForTesting
+    public VrInputConnection getVrInputConnectionForTesting() {
+        assert mNativeVrShell != 0;
+        return nativeGetVrInputConnectionForTesting(mNativeVrShell);
     }
 
     @Override
@@ -894,6 +910,7 @@ public class VrShellImpl
 
     @VisibleForTesting
     @Override
+    @CalledByNative
     public void navigateForward() {
         if (!mCanGoForward) return;
         mActivity.getToolbarManager().forward();
@@ -913,6 +930,24 @@ public class VrShellImpl
             mActivity.getToolbarManager().back();
         }
         updateHistoryButtonsVisibility();
+    }
+
+    @Override
+    @CalledByNative
+    public void reloadTab() {
+        mTab.reload();
+    }
+
+    @Override
+    @CalledByNative
+    public void openNewTab(boolean incognito) {
+        mActivity.getTabCreator(incognito).launchNTP();
+    }
+
+    @Override
+    @CalledByNative
+    public void closeAllIncognitoTabs() {
+        mTabModelSelector.getModel(true).closeAllTabs();
     }
 
     private void updateHistoryButtonsVisibility() {
@@ -966,6 +1001,16 @@ public class VrShellImpl
         mOnDispatchTouchEventForTesting = callback;
     }
 
+    /**
+     * Sets that callback that will be run when VrShellImpl has issued the request to pause the
+     * Android Window's VSyncs.
+     * @param callback The Runnable to be run.
+     */
+    @VisibleForTesting
+    public void setOnVSyncPausedForTesting(Runnable callback) {
+        mOnVSyncPausedForTesting = callback;
+    }
+
     @VisibleForTesting
     @Override
     public Boolean isBackButtonEnabled() {
@@ -993,6 +1038,11 @@ public class VrShellImpl
         return mPresentationView;
     }
 
+    @VisibleForTesting
+    public boolean isDisplayingDialogView() {
+        return mVrUiViewContainer.getChildCount() > 0;
+    }
+
     @Override
     public void showSoftInput(boolean show) {
         assert mNativeVrShell != 0;
@@ -1005,6 +1055,11 @@ public class VrShellImpl
         assert mNativeVrShell != 0;
         nativeUpdateWebInputIndices(
                 mNativeVrShell, selectionStart, selectionEnd, compositionStart, compositionEnd);
+    }
+
+    @VisibleForTesting
+    public VrInputMethodManagerWrapper getInputMethodManageWrapperForTesting() {
+        return mInputMethodManagerWrapper;
     }
 
     @Override
@@ -1049,6 +1104,7 @@ public class VrShellImpl
     private native void nativeShowSoftInput(long nativeVrShell, boolean show);
     private native void nativeUpdateWebInputIndices(long nativeVrShell, int selectionStart,
             int selectionEnd, int compositionStart, int compositionEnd);
+    private native VrInputConnection nativeGetVrInputConnectionForTesting(long nativeVrShell);
     private native void nativeAcceptDoffPromptForTesting(long nativeVrShell);
     private native void nativeResumeContentRendering(long nativeVrShell);
 }

@@ -86,10 +86,12 @@ class MockFrameSinkVideoCapturer : public viz::mojom::FrameSinkVideoCapturer {
                void(media::VideoPixelFormat format,
                     media::ColorSpace color_space));
   MOCK_METHOD1(SetMinCapturePeriod, void(base::TimeDelta min_period));
+  MOCK_METHOD1(SetMinSizeChangePeriod, void(base::TimeDelta));
   MOCK_METHOD3(SetResolutionConstraints,
                void(const gfx::Size& min_size,
                     const gfx::Size& max_size,
                     bool use_fixed_aspect_ratio));
+  MOCK_METHOD1(SetAutoThrottlingEnabled, void(bool));
   MOCK_METHOD1(ChangeTarget, void(const viz::FrameSinkId& frame_sink_id));
   void Start(viz::mojom::FrameSinkVideoConsumerPtr consumer) final {
     DCHECK_NOT_ON_DEVICE_THREAD();
@@ -300,7 +302,7 @@ class FrameSinkVideoCaptureDeviceTest : public testing::Test {
     EXPECT_CALL(capturer_, MockStart(NotNull()));
 
     EXPECT_FALSE(capturer_.is_bound());
-    POST_DEVICE_METHOD_CALL(OnTargetChanged, frame_sink_id, gfx::NativeView());
+    POST_DEVICE_METHOD_CALL(OnTargetChanged, frame_sink_id);
     POST_DEVICE_METHOD_CALL(AllocateAndStartWithReceiver, GetCaptureParams(),
                             std::move(receiver));
     WAIT_FOR_DEVICE_TASKS();

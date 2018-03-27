@@ -8,8 +8,11 @@
 #include "base/json/string_escape.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/common/media_router/media_source.h"
+
+#if !defined(OS_ANDROID)
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "url/gurl.h"
+#endif
 
 namespace media_router {
 
@@ -72,7 +75,6 @@ void TestDialURLFetcher::StartDownload() {
       base::BindOnce(&DialURLFetcher::ProcessResponse, base::Unretained(this)),
       256 * 1024);
 }
-#endif  // !defined(OS_ANDROID)
 
 net::IPEndPoint CreateIPEndPoint(int num) {
   net::IPAddress ip_address;
@@ -87,7 +89,8 @@ MediaSinkInternal CreateDialSink(int num) {
   net::IPEndPoint ip_endpoint = CreateIPEndPoint(num);
 
   media_router::MediaSink sink(unique_id, friendly_name,
-                               media_router::SinkIconType::GENERIC);
+                               media_router::SinkIconType::GENERIC,
+                               MediaRouteProviderId::EXTENSION);
   media_router::DialSinkExtraData extra_data;
   extra_data.ip_address = ip_endpoint.address();
   extra_data.model_name = base::StringPrintf("model name %d", num);
@@ -111,5 +114,7 @@ MediaSinkInternal CreateCastSink(int num) {
                             cast_channel::CastDeviceCapability::VIDEO_OUT;
   return MediaSinkInternal(sink, extra_data);
 }
+
+#endif  // !defined(OS_ANDROID)
 
 }  // namespace media_router

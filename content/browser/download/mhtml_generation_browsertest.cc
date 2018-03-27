@@ -18,6 +18,7 @@
 #include "components/download/public/common/download_task_runner.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/mhtml_extra_parts.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -119,9 +120,8 @@ class MHTMLGenerationTest : public ContentBrowserTest {
     histogram_tester_.reset(new base::HistogramTester());
 
     shell()->web_contents()->GenerateMHTML(
-        params, base::Bind(&MHTMLGenerationTest::MHTMLGenerated,
-                           base::Unretained(this),
-                           run_loop.QuitClosure()));
+        params, base::BindOnce(&MHTMLGenerationTest::MHTMLGenerated,
+                               base::Unretained(this), run_loop.QuitClosure()));
 
     // Block until the MHTML is generated.
     run_loop.Run();
@@ -226,7 +226,7 @@ class MHTMLGenerationTest : public ContentBrowserTest {
   void MHTMLGenerated(base::Closure quit_closure, int64_t size) {
     has_mhtml_callback_run_ = true;
     file_size_ = size;
-    quit_closure.Run();
+    std::move(quit_closure).Run();
   }
 
   bool has_mhtml_callback_run_;

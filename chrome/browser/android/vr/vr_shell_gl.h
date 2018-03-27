@@ -82,7 +82,7 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   void Initialize();
   void InitializeGl(gfx::AcceleratedWidget window);
 
-  void OnTriggerEvent();
+  void OnTriggerEvent(bool pressed);
   void OnPause();
   void OnResume();
   void OnExitPresent();
@@ -143,6 +143,7 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   void DrawFrameSubmitNow(int16_t frame_index, const gfx::Transform& head_pose);
   bool ShouldDrawWebVr();
   void DrawWebVr();
+  bool ShouldSendGesturesToWebVr();
   bool WebVrPoseByteIsValid(int pose_index_byte);
 
   void UpdateController(const RenderInfo& render_info,
@@ -187,6 +188,8 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   void SendVSync(base::TimeTicks time, GetVSyncCallback callback);
 
   void ClosePresentationBindings();
+
+  device::mojom::XRInputSourceStatePtr GetGazeInputSourceState();
 
   // samplerExternalOES texture data for WebVR content image.
   int webvr_texture_id_ = 0;
@@ -256,6 +259,9 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   bool daydream_support_;
   bool is_exiting_ = false;
   bool content_paused_;
+  bool report_webxr_input_ = false;
+  bool cardboard_trigger_pressed_ = false;
+  bool cardboard_trigger_clicked_ = false;
 
   std::unique_ptr<VrController> controller_;
 
@@ -286,6 +292,8 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
 
   // Attributes for gesture detection while holding app button.
   gfx::Vector3dF controller_start_direction_;
+  base::TimeTicks app_button_down_time_;
+  bool app_button_long_pressed_ = false;
 
   FPSMeter vr_ui_fps_meter_;
   FPSMeter webvr_fps_meter_;

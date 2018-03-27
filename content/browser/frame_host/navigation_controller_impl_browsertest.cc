@@ -35,6 +35,7 @@
 #include "content/common/frame_messages.h"
 #include "content/common/page_state_serialization.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -4056,9 +4057,6 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // replaced data.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        ReplacedNavigationEntryData_ClientSideRedirect) {
-  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
-                            ->GetFrameTree()
-                            ->root();
   const NavigationControllerImpl& controller =
       static_cast<const NavigationControllerImpl&>(
           shell()->web_contents()->GetController());
@@ -4068,11 +4066,13 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "/navigation_controller/simple_page_1.html"));
 
   {
-    // Load the redirecting page.
-    FrameNavigateParamsCapturer capturer(root);
-    capturer.set_navigations_remaining(2);
-    ASSERT_TRUE(NavigateToURL(shell(), url1));
-    capturer.Wait();
+    TestNavigationManager navigation_manager_1(shell()->web_contents(), url1);
+    TestNavigationManager navigation_manager_2(shell()->web_contents(), url2);
+
+    shell()->LoadURL(url1);
+
+    navigation_manager_1.WaitForNavigationFinished();  // Initial navigation.
+    navigation_manager_2.WaitForNavigationFinished();  // Client-side redirect.
 
     ASSERT_EQ(1, controller.GetEntryCount());
     NavigationEntry* entry1 = controller.GetEntryAtIndex(0);
@@ -6858,7 +6858,7 @@ class AllowDialogIPCOnCommitFilter : public BrowserMessageFilter,
 
     using WebContentsObserver::Observe;
 
-    void SetCallback(Callback callback) { callback_ = callback; }
+    void SetCallback(Callback callback) { callback_ = std::move(callback); }
 
    private:
     void DidFinishNavigation(NavigationHandle* navigation_handle) override {

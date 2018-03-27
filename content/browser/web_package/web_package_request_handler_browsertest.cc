@@ -7,7 +7,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/time/time.h"
 #include "content/browser/web_package/signed_exchange_handler.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
@@ -25,15 +27,19 @@
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/test/cert_test_util.h"
+#include "net/test/embedded_test_server/http_request.h"
 #include "net/test/test_data_directory.h"
 #include "net/test/url_request/url_request_mock_http_job.h"
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_interceptor.h"
 #include "services/network/public/cpp/features.h"
+#include "testing/gmock/include/gmock/gmock-matchers.h"
 
 namespace content {
 
 namespace {
+
+const uint64_t kSignatureHeaderDate = 1520834000;  // 2018-03-12T05:53:20Z
 
 const char* kMockHeaderFileSuffix = ".mock-http-headers";
 
@@ -75,6 +81,10 @@ class WebPackageRequestHandlerBrowserTest
 
   void SetUp() override {
     SignedExchangeHandler::SetCertVerifierForTesting(mock_cert_verifier_.get());
+    SignedExchangeHandler::SetVerificationTimeForTesting(
+        base::Time::UnixEpoch() +
+        base::TimeDelta::FromSeconds(kSignatureHeaderDate));
+
     if (is_network_service_enabled()) {
       feature_list_.InitWithFeatures(
           {features::kSignedHTTPExchange, network::features::kNetworkService},
@@ -88,6 +98,8 @@ class WebPackageRequestHandlerBrowserTest
   void TearDownOnMainThread() override {
     interceptor_.reset();
     SignedExchangeHandler::SetCertVerifierForTesting(nullptr);
+    SignedExchangeHandler::SetVerificationTimeForTesting(
+        base::Optional<base::Time>());
   }
 
  protected:
@@ -183,6 +195,14 @@ IN_PROC_BROWSER_TEST_P(WebPackageRequestHandlerBrowserTest, Simple) {
   mock_cert_verifier_->AddResultForCertAndHost(original_cert, "*.example.org",
                                                dummy_result, net::OK);
 
+  embedded_test_server()->RegisterRequestMonitor(
+      base::BindRepeating([](const net::test_server::HttpRequest& request) {
+        if (request.relative_url == "/htxg/test.example.org_test.htxg") {
+          const auto& accept_value = request.headers.find("accept")->second;
+          EXPECT_THAT(accept_value,
+                      ::testing::HasSubstr("application/signed-exchange;v=b0"));
+        }
+      }));
   embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL url = embedded_test_server()->GetURL("/htxg/test.example.org_test.htxg");
@@ -209,50 +229,8 @@ IN_PROC_BROWSER_TEST_P(WebPackageRequestHandlerBrowserTest, Simple) {
   EXPECT_EQ(original_fingerprint, fingerprint);
 }
 
-IN_PROC_BROWSER_TEST_P(WebPackageRequestHandlerBrowserTest, CertNotFound) {
-  InstallUrlInterceptor(GURL("https://cert.example.org/cert.msg"),
-                        "content/test/data/htxg/404.msg");
-
-  embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
-  ASSERT_TRUE(embedded_test_server()->Start());
-  GURL url = embedded_test_server()->GetURL("/htxg/test.example.org_test.htxg");
-
-  NavigationFailureObserver failure_observer(shell()->web_contents());
-  NavigateToURL(shell(), url);
-  EXPECT_TRUE(failure_observer.did_fail());
-  NavigationEntry* entry =
-      shell()->web_contents()->GetController().GetVisibleEntry();
-  EXPECT_EQ(content::PAGE_TYPE_ERROR, entry->GetPageType());
-}
-
 IN_PROC_BROWSER_TEST_P(WebPackageRequestHandlerBrowserTest,
-                       CertSha256Mismatch) {
-  // The certificate is for "127.0.0.1". And the SHA 256 hash of the certificate
-  // is different from the certSha256 of the signature in the htxg file. So the
-  // certification verification must fail.
-  InstallUrlInterceptor(GURL("https://cert.example.org/cert.msg"),
-                        "content/test/data/htxg/127.0.0.1.public.pem.msg");
-
-  // Set the default result of MockCertVerifier to OK, to check that the
-  // verification of SignedExchange must fail even if the certificate is valid.
-  mock_cert_verifier_->set_default_result(net::OK);
-
-  embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
-  ASSERT_TRUE(embedded_test_server()->Start());
-  GURL url = embedded_test_server()->GetURL("/htxg/test.example.org_test.htxg");
-
-  NavigationFailureObserver failure_observer(shell()->web_contents());
-  NavigateToURL(shell(), url);
-  EXPECT_TRUE(failure_observer.did_fail());
-  NavigationEntry* entry =
-      shell()->web_contents()->GetController().GetVisibleEntry();
-  EXPECT_EQ(content::PAGE_TYPE_ERROR, entry->GetPageType());
-}
-
-IN_PROC_BROWSER_TEST_P(WebPackageRequestHandlerBrowserTest, VerifyCertFailure) {
-  // The certificate is for "*.example.com". But the request URL of the htxg
-  // file is "https://test.example.com/test/". So the certification verification
-  // must fail.
+                       InvalidContentType) {
   InstallUrlInterceptor(
       GURL("https://cert.example.org/cert.msg"),
       "content/test/data/htxg/wildcard_example.org.public.pem.msg");
@@ -270,7 +248,24 @@ IN_PROC_BROWSER_TEST_P(WebPackageRequestHandlerBrowserTest, VerifyCertFailure) {
   embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL url = embedded_test_server()->GetURL(
-      "/htxg/test.example.com_invalid_test.htxg");
+      "/htxg/test.example.org_test_invalid_content_type.htxg");
+
+  NavigationFailureObserver failure_observer(shell()->web_contents());
+  NavigateToURL(shell(), url);
+  EXPECT_TRUE(failure_observer.did_fail());
+  NavigationEntry* entry =
+      shell()->web_contents()->GetController().GetVisibleEntry();
+  EXPECT_EQ(content::PAGE_TYPE_ERROR, entry->GetPageType());
+}
+
+IN_PROC_BROWSER_TEST_P(WebPackageRequestHandlerBrowserTest, CertNotFound) {
+  InstallUrlInterceptor(GURL("https://cert.example.org/cert.msg"),
+                        "content/test/data/htxg/404.msg");
+
+  embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url = embedded_test_server()->GetURL("/htxg/test.example.org_test.htxg");
+
   NavigationFailureObserver failure_observer(shell()->web_contents());
   NavigateToURL(shell(), url);
   EXPECT_TRUE(failure_observer.did_fail());

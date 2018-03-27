@@ -39,10 +39,7 @@
 namespace subresource_filter {
 
 SubresourceFilterBrowserTest::SubresourceFilterBrowserTest() {
-  scoped_feature_list_.InitWithFeatures(
-      {kSafeBrowsingSubresourceFilter,
-       kSafeBrowsingSubresourceFilterExperimentalUI, kAbusiveExperienceEnforce},
-      {});
+  scoped_feature_list_.InitAndEnableFeature(kAdTagging);
 }
 
 SubresourceFilterBrowserTest::~SubresourceFilterBrowserTest() {}
@@ -80,7 +77,6 @@ void SubresourceFilterBrowserTest::SetUpOnMainThread() {
   embedded_test_server()->ServeFilesFromDirectory(test_data_dir);
 
   ASSERT_TRUE(embedded_test_server()->Start());
-  ResetConfigurationToEnableOnPhishingSites();
 
   auto* factory = SubresourceFilterProfileContextFactory::GetForProfile(
       browser()->profile());

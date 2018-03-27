@@ -43,6 +43,7 @@
 #include "platform/geometry/LayoutRect.h"
 #include "platform/geometry/Region.h"
 #include "platform/heap/Handle.h"
+#include "platform/scheduler/renderer/page_scheduler.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/text/WTFString.h"
@@ -85,7 +86,8 @@ float DeviceScaleFactorDeprecated(LocalFrame*);
 class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
                                public Supplementable<Page>,
                                public PageVisibilityNotifier,
-                               public SettingsDelegate {
+                               public SettingsDelegate,
+                               public PageScheduler::Delegate {
   USING_GARBAGE_COLLECTED_MIXIN(Page);
   friend class Settings;
 
@@ -304,6 +306,17 @@ class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
 
   ScrollbarTheme& GetScrollbarTheme() const;
 
+  PageScheduler* GetPageScheduler() const;
+
+  // PageScheduler::Delegate implementation.
+  void ReportIntervention(const String& message) override;
+  void RequestBeginMainFrameNotExpected(bool new_state) override;
+  void SetPageFrozen(bool frozen) override;
+
+  void SetHasHighMediaEngagement(bool value);
+
+  bool HasHighMediaEngagement() const;
+
  private:
   friend class ScopedPagePauser;
 
@@ -319,6 +332,8 @@ class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
 
   // Notify |plugins_changed_observers_| that plugins have changed.
   void NotifyPluginsChanged() const;
+
+  void SetPageScheduler(std::unique_ptr<PageScheduler>);
 
   Member<PageAnimator> animator_;
   const Member<AutoscrollController> autoscroll_controller_;
@@ -393,6 +408,10 @@ class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
   // browsing context.  See also RelatedPages method.
   Member<Page> next_related_page_;
   Member<Page> prev_related_page_;
+
+  std::unique_ptr<PageScheduler> page_scheduler_;
+
+  bool has_high_media_engagement_;
 
   DISALLOW_COPY_AND_ASSIGN(Page);
 };

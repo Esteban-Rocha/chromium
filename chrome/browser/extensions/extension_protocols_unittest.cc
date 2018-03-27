@@ -97,19 +97,24 @@ scoped_refptr<Extension> CreateTestExtension(const std::string& name,
 }
 
 scoped_refptr<Extension> CreateWebStoreExtension() {
-  base::DictionaryValue manifest;
-  manifest.SetString("name", "WebStore");
-  manifest.SetString("version", "1");
-  manifest.SetString("icons.16", "webstore_icon_16.png");
+  std::unique_ptr<base::DictionaryValue> manifest =
+      DictionaryBuilder()
+          .Set("name", "WebStore")
+          .Set("version", "1")
+          .Set("manifest_version", 2)
+          .Set("icons",
+               DictionaryBuilder().Set("16", "webstore_icon_16.png").Build())
+          .Set("web_accessible_resources",
+               ListBuilder().Append("webstore_icon_16.png").Build())
+          .Build();
 
   base::FilePath path;
   EXPECT_TRUE(PathService::Get(chrome::DIR_RESOURCES, &path));
   path = path.AppendASCII("web_store");
 
   std::string error;
-  scoped_refptr<Extension> extension(
-      Extension::Create(path, Manifest::COMPONENT, manifest,
-                        Extension::NO_FLAGS, &error));
+  scoped_refptr<Extension> extension(Extension::Create(
+      path, Manifest::COMPONENT, *manifest, Extension::NO_FLAGS, &error));
   EXPECT_TRUE(extension.get()) << error;
   return extension;
 }
@@ -562,7 +567,7 @@ TEST_P(ExtensionProtocolsTest, VerificationSeenForFileAccessErrors) {
 
   // Valid and readable 1024.js.
   {
-    TestContentVerifyJobObserver observer(extension_id, kRelativePath);
+    TestContentVerifySingleJobObserver observer(extension_id, kRelativePath);
 
     content_verifier_->OnExtensionLoaded(browser_context(), extension.get());
     // Wait for PostTask to ContentVerifierIOData::AddData() to finish.
@@ -574,7 +579,7 @@ TEST_P(ExtensionProtocolsTest, VerificationSeenForFileAccessErrors) {
 
   // chmod -r 1024.js.
   {
-    TestContentVerifyJobObserver observer(extension->id(), kRelativePath);
+    TestContentVerifySingleJobObserver observer(extension->id(), kRelativePath);
     base::FilePath file_path = unzipped_path.AppendASCII(kJs);
     ASSERT_TRUE(base::MakeFileUnreadable(file_path));
     EXPECT_EQ(net::ERR_ACCESS_DENIED, DoRequestOrLoad(extension, kJs).result());
@@ -588,7 +593,7 @@ TEST_P(ExtensionProtocolsTest, VerificationSeenForFileAccessErrors) {
 
   // Delete 1024.js.
   {
-    TestContentVerifyJobObserver observer(extension_id, kRelativePath);
+    TestContentVerifySingleJobObserver observer(extension_id, kRelativePath);
     base::FilePath file_path = unzipped_path.AppendASCII(kJs);
     ASSERT_TRUE(base::DieFileDie(file_path, false));
     EXPECT_EQ(net::ERR_FILE_NOT_FOUND,
@@ -623,7 +628,7 @@ TEST_P(ExtensionProtocolsTest, VerificationSeenForZeroByteFile) {
 
   // Request empty.js.
   {
-    TestContentVerifyJobObserver observer(extension_id, kRelativePath);
+    TestContentVerifySingleJobObserver observer(extension_id, kRelativePath);
 
     content_verifier_->OnExtensionLoaded(browser_context(), extension.get());
     // Wait for PostTask to ContentVerifierIOData::AddData() to finish.
@@ -638,7 +643,7 @@ TEST_P(ExtensionProtocolsTest, VerificationSeenForZeroByteFile) {
   // current behavior of ContentVerifyJob.
   // TODO(lazyboy): The behavior is probably incorrect.
   {
-    TestContentVerifyJobObserver observer(extension->id(), kRelativePath);
+    TestContentVerifySingleJobObserver observer(extension->id(), kRelativePath);
     base::FilePath file_path = unzipped_path.AppendASCII(kEmptyJs);
     ASSERT_TRUE(base::MakeFileUnreadable(file_path));
     EXPECT_EQ(net::ERR_ACCESS_DENIED,
@@ -651,7 +656,7 @@ TEST_P(ExtensionProtocolsTest, VerificationSeenForZeroByteFile) {
   // current behavior of ContentVerifyJob.
   // TODO(lazyboy): The behavior is probably incorrect.
   {
-    TestContentVerifyJobObserver observer(extension_id, kRelativePath);
+    TestContentVerifySingleJobObserver observer(extension_id, kRelativePath);
     base::FilePath file_path = unzipped_path.AppendASCII(kEmptyJs);
     ASSERT_TRUE(base::DieFileDie(file_path, false));
     EXPECT_EQ(net::ERR_FILE_NOT_FOUND,

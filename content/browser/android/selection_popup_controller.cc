@@ -10,6 +10,7 @@
 #include "content/browser/android/composited_touch_handle_drawable.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_contents/web_contents_view_android.h"
 #include "content/public/common/context_menu_params.h"
 #include "jni/SelectionPopupControllerImpl_jni.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
@@ -24,7 +25,7 @@ using blink::WebContextMenuData;
 
 namespace content {
 
-void JNI_SelectionPopupControllerImpl_Init(
+jlong JNI_SelectionPopupControllerImpl_Init(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj,
     const JavaParamRef<jobject>& jweb_contents) {
@@ -32,7 +33,9 @@ void JNI_SelectionPopupControllerImpl_Init(
   DCHECK(web_contents);
 
   // Owns itself and gets destroyed when |WebContentsDestroyed| is called.
-  (new SelectionPopupController(env, obj, web_contents))->Initialize();
+  auto* controller = new SelectionPopupController(env, obj, web_contents);
+  controller->Initialize();
+  return reinterpret_cast<intptr_t>(controller);
 }
 
 SelectionPopupController::SelectionPopupController(
@@ -41,6 +44,9 @@ SelectionPopupController::SelectionPopupController(
     WebContents* web_contents)
     : RenderWidgetHostConnector(web_contents) {
   java_obj_ = JavaObjectWeakGlobalRef(env, obj);
+  auto* wcva = static_cast<WebContentsViewAndroid*>(
+      static_cast<WebContentsImpl*>(web_contents)->GetView());
+  wcva->set_selection_popup_controller(this);
 }
 
 ScopedJavaLocalRef<jobject> SelectionPopupController::GetContext() const {
@@ -51,6 +57,14 @@ ScopedJavaLocalRef<jobject> SelectionPopupController::GetContext() const {
     return nullptr;
 
   return Java_SelectionPopupControllerImpl_getContext(env, obj);
+}
+
+void SelectionPopupController::SetTextHandlesTemporarilyHidden(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj,
+    jboolean hidden) {
+  if (rwhva_)
+    rwhva_->SetTextHandlesTemporarilyHidden(hidden);
 }
 
 std::unique_ptr<ui::TouchHandleDrawable>
@@ -95,6 +109,7 @@ void SelectionPopupController::UpdateRenderProcessConnection(
     old_rwhva->set_selection_popup_controller(nullptr);
   if (new_rwhva)
     new_rwhva->set_selection_popup_controller(this);
+  rwhva_ = new_rwhva;
 }
 
 void SelectionPopupController::OnSelectionEvent(
@@ -184,6 +199,15 @@ void SelectionPopupController::OnSelectWordAroundCaretAck(bool did_select,
     return;
   Java_SelectionPopupControllerImpl_onSelectWordAroundCaretAck(
       env, obj, did_select, start_adjust, end_adjust);
+}
+
+void SelectionPopupController::HidePopupsAndPreserveSelection() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_obj_.get(env);
+  if (obj.is_null())
+    return;
+
+  Java_SelectionPopupControllerImpl_hidePopupsAndPreserveSelection(env, obj);
 }
 
 }  // namespace content

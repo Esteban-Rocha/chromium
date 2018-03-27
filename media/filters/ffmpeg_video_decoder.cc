@@ -28,7 +28,6 @@
 #include "media/base/video_util.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/ffmpeg/ffmpeg_decoding_loop.h"
-#include "media/filters/ffmpeg_glue.h"
 
 namespace media {
 
@@ -111,7 +110,6 @@ static void ReleaseVideoBufferImpl(void* opaque, uint8_t* data) {
 
 // static
 bool FFmpegVideoDecoder::IsCodecSupported(VideoCodec codec) {
-  FFmpegGlue::InitializeFFmpeg();
   return avcodec_find_decoder(VideoCodecToCodecID(codec)) != nullptr;
 }
 
@@ -186,9 +184,20 @@ int FFmpegVideoDecoder::GetVideoBuffer(struct AVCodecContext* codec_context,
   video_frame->metadata()->SetInteger(VideoFrameMetadata::COLOR_SPACE,
                                       color_space);
 
-  if (codec_context->color_primaries != AVCOL_PRI_UNSPECIFIED ||
-      codec_context->color_trc != AVCOL_TRC_UNSPECIFIED ||
-      codec_context->colorspace != AVCOL_SPC_UNSPECIFIED) {
+  if (codec_context->codec_id == AV_CODEC_ID_VP8 &&
+      codec_context->color_primaries == AVCOL_PRI_UNSPECIFIED &&
+      codec_context->color_trc == AVCOL_TRC_UNSPECIFIED &&
+      codec_context->colorspace == AVCOL_SPC_BT470BG) {
+    // vp8 has no colorspace information, except for the color range.
+    // However, because of a comment in the vp8 spec, ffmpeg sets the
+    // colorspace to BT470BG. We detect this and treat it as unset.
+    // If the color range is set to full range, we use the jpeg color space.
+    if (codec_context->color_range == AVCOL_RANGE_JPEG) {
+      video_frame->set_color_space(gfx::ColorSpace::CreateJpeg());
+    }
+  } else if (codec_context->color_primaries != AVCOL_PRI_UNSPECIFIED ||
+             codec_context->color_trc != AVCOL_TRC_UNSPECIFIED ||
+             codec_context->colorspace != AVCOL_SPC_UNSPECIFIED) {
     media::VideoColorSpace video_color_space = media::VideoColorSpace(
         codec_context->color_primaries, codec_context->color_trc,
         codec_context->colorspace,
@@ -225,11 +234,13 @@ std::string FFmpegVideoDecoder::GetDisplayName() const {
   return "FFmpegVideoDecoder";
 }
 
-void FFmpegVideoDecoder::Initialize(const VideoDecoderConfig& config,
-                                    bool low_delay,
-                                    CdmContext* /* cdm_context */,
-                                    const InitCB& init_cb,
-                                    const OutputCB& output_cb) {
+void FFmpegVideoDecoder::Initialize(
+    const VideoDecoderConfig& config,
+    bool low_delay,
+    CdmContext* /* cdm_context */,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& /* waiting_for_decryption_key_cb */) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(config.IsValidConfig());
   DCHECK(!output_cb.is_null());
@@ -240,8 +251,6 @@ void FFmpegVideoDecoder::Initialize(const VideoDecoderConfig& config,
     bound_init_cb.Run(false);
     return;
   }
-
-  FFmpegGlue::InitializeFFmpeg();
 
   if (!ConfigureDecoder(config, low_delay)) {
     bound_init_cb.Run(false);
@@ -337,12 +346,8 @@ bool FFmpegVideoDecoder::FFmpegDecode(
     packet.data = const_cast<uint8_t*>(buffer->data());
     packet.size = buffer->data_size();
 
-    // Starting in M60, the decoder generates an error if an empty buffer is
-    // provided. Since we're not at EOS and there is no data available in the
-    // current buffer, simply return and let the caller provide more data.
-    // crbug.com/663438 has more context on 0-byte buffers.
-    if (!packet.size)
-      return true;
+    DCHECK(packet.data);
+    DCHECK_GT(packet.size, 0);
 
     // Let FFmpeg handle presentation timestamp reordering.
     codec_context_->reordered_opaque = buffer->timestamp().InMicroseconds();

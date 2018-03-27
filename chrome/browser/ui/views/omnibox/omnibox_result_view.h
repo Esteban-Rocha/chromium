@@ -22,44 +22,28 @@
 #include "ui/views/view.h"
 
 class OmniboxPopupContentsView;
-enum class OmniboxState;
+enum class OmniboxPart;
+enum class OmniboxPartState;
 enum class OmniboxTint;
 
 namespace gfx {
-class Canvas;
 class Image;
 }
 
+class OmniboxImageView;
 class OmniboxTabSwitchButton;
 class OmniboxTextView;
 
 class OmniboxResultView : public views::View,
                           private gfx::AnimationDelegate {
  public:
-  // Keep these ordered from least dominant (normal) to most dominant
-  // (selected).
-  // TODO(tapted): Remove these: replace with OmniboxState.
-  enum ResultViewState {
-    NORMAL = 0,
-    HOVERED,
-    SELECTED,
-    NUM_STATES
-  };
-
-  enum ColorKind {
-    TEXT,
-    DIMMED_TEXT,
-    URL,
-    INVISIBLE_TEXT,
-    NUM_KINDS
-  };
-
   OmniboxResultView(OmniboxPopupContentsView* model,
                     int model_index,
                     const gfx::FontList& font_list);
   ~OmniboxResultView() override;
 
-  SkColor GetColor(ResultViewState state, ColorKind kind) const;
+  // Helper to get the color for |part| using the current state and tint.
+  SkColor GetColor(OmniboxPart part) const;
 
   // Updates the match used to paint the contents of this result view. We copy
   // the match so that we can continue to paint the last result even after the
@@ -73,8 +57,7 @@ class OmniboxResultView : public views::View,
   // Invoked when this result view has been selected.
   void OnSelected();
 
-  ResultViewState GetState() const;
-  OmniboxState GetThemeState() const;
+  OmniboxPartState GetThemeState() const;
   OmniboxTint GetTint() const;
 
   // Notification that the match icon has changed and schedules a repaint.
@@ -97,17 +80,14 @@ class OmniboxResultView : public views::View,
   void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
  private:
+  // Create instance and add it as a child.
+  OmniboxImageView* AddOmniboxImageView();
+  OmniboxTextView* AddOmniboxTextView(const gfx::FontList& font_list);
+
   // Returns the height of the text portion of the result view.
   int GetTextHeight() const;
 
   gfx::Image GetIcon() const;
-
-  SkColor GetVectorIconColor() const;
-
-  // Whether to render only the keyword match.  Returns true if |match_| has an
-  // associated keyword match that has been animated so close to the start that
-  // the keyword match will hide even the icon of the regular match.
-  bool ShowOnlyKeywordMatch() const;
 
   // Returns the height of the the description section of answer suggestions.
   int GetAnswerHeight() const;
@@ -118,11 +98,13 @@ class OmniboxResultView : public views::View,
   // Sets the hovered state of this result.
   void SetHovered(bool hovered);
 
+  // Whether |this| matches the model's selected index.
+  bool IsSelected() const;
+
   // views::View:
   void Layout() override;
   const char* GetClassName() const override;
   void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
-  void OnPaint(gfx::Canvas* canvas) override;
 
   // gfx::AnimationDelegate:
   void AnimationProgressed(const gfx::Animation* animation) override;
@@ -137,25 +119,22 @@ class OmniboxResultView : public views::View,
   // Cache the font height as a minor optimization.
   int font_height_;
 
+  // The data this class is built to display (the "Omnibox Result").
   AutocompleteMatch match_;
 
-  gfx::Rect answer_icon_bounds_;
-  gfx::Rect icon_bounds_;
-
-  std::unique_ptr<views::ImageView> keyword_icon_;
-  std::unique_ptr<OmniboxTabSwitchButton> tab_switch_button_;
-
+  // For sliding in the keyword search.
   std::unique_ptr<gfx::SlideAnimation> animation_;
 
-  // If the answer has an icon, cache the image.
-  gfx::ImageSkia answer_image_;
-
   // Weak pointers for easy reference.
+  views::ImageView* icon_view_;          // Small icon. e.g. favicon.
+  views::ImageView* image_view_;         // Larger image for rich suggestions.
+  views::ImageView* keyword_icon_view_;  // An icon resembling a '>'.
+  std::unique_ptr<OmniboxTabSwitchButton> tab_switch_button_;
   OmniboxTextView* content_view_;
   OmniboxTextView* description_view_;
   OmniboxTextView* keyword_content_view_;
   OmniboxTextView* keyword_description_view_;
-  OmniboxTextView* separator_view_;
+  OmniboxTextView* separator_view_;  // e.g. A hyphen.
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxResultView);
 };

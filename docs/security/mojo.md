@@ -314,17 +314,17 @@ maliciously passed around.
 Where possible, use structured types: this allows the type system to help
 enforce that the input data is valid. Common ones to watch out for:
 
-*   Files: use `mojo.common.mojom.File`, not raw descriptor types like `HANDLE`
+*   Files: use `mojo_base.mojom.File`, not raw descriptor types like `HANDLE`
     and `int`.
-*   File paths: use `mojo.common.mojom.FilePath`, not `string`.
+*   File paths: use `mojo_base.mojom.FilePath`, not `string`.
 *   JSON: use `mojo.common.mojom.Value`, not `string`.
 *   Mojo interfaces: use `Interface` or `Interface&`, not `handle` or
     `handle<message_pipe>`.
-*   Nonces: use `mojo.common.mojom.UnguessableToken`, not `string`.
+*   Nonces: use `mojo_base.mojom.UnguessableToken`, not `string`.
 *   Origins: use `url.mojom.Origin`, not `url.mojom.Url` and certainly not
     `string`.
-*   Time types: use `mojo.common.mojom.TimeDelta` /
-    `mojo.common.mojom.TimeTicks` / `mojo.common.mojom.Time`, not `int64` /
+*   Time types: use `mojo_base.mojom.TimeDelta` /
+    `mojo_base.mojom.TimeTicks` / `mojo_base.mojom.Time`, not `int64` /
     `uint64` / `double` / et cetera.
 *   URLs: use `url.mojom.Url`, not `string`.
 
@@ -332,7 +332,7 @@ enforce that the input data is valid. Common ones to watch out for:
 
 ```c++
 interface ReportingService {
-  ReportDeprecation(mojo.common.mojom.TimeTicks time,
+  ReportDeprecation(mojo_base.mojom.TimeTicks time,
                     url.mojom.Url resource,
                     uint32 line_number);
 };

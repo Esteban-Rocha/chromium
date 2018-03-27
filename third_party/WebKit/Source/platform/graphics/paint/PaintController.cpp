@@ -6,14 +6,11 @@
 
 #include <memory>
 #include "platform/graphics/GraphicsLayer.h"
+#include "platform/graphics/LoggingCanvas.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/wtf/AutoReset.h"
 #include "platform/wtf/text/StringBuilder.h"
-
-#ifndef NDEBUG
-#include "platform/graphics/LoggingCanvas.h"
-#endif
 
 namespace blink {
 
@@ -513,8 +510,8 @@ void PaintController::CopyCachedSubsequence(size_t begin_index,
     properties_before_subsequence =
         new_paint_chunks_.CurrentPaintChunkProperties();
     new_paint_chunks_.ForceNewChunk();
-    UpdateCurrentPaintChunkProperties(cached_chunk->id,
-                                      cached_chunk->properties);
+    UpdateCurrentPaintChunkPropertiesUsingIdWithFragment(
+        cached_chunk->id, cached_chunk->properties);
   } else {
     // Avoid uninitialized variable error on Windows.
     cached_chunk = current_paint_artifact_.PaintChunks().begin();
@@ -533,8 +530,8 @@ void PaintController::CopyCachedSubsequence(size_t begin_index,
       ++cached_chunk;
       DCHECK(cached_chunk != current_paint_artifact_.PaintChunks().end());
       new_paint_chunks_.ForceNewChunk();
-      UpdateCurrentPaintChunkProperties(cached_chunk->id,
-                                        cached_chunk->properties);
+      UpdateCurrentPaintChunkPropertiesUsingIdWithFragment(
+          cached_chunk->id, cached_chunk->properties);
     }
 
 #if DCHECK_IS_ON()
@@ -1019,12 +1016,8 @@ void PaintController::ShowUnderInvalidationError(
   LOG(ERROR) << "New display item: " << new_item.AsDebugString();
   LOG(ERROR) << "Old display item: "
              << (old_item ? old_item->AsDebugString() : "None");
-#else
-  LOG(ERROR) << "Run a build with DCHECK on to get more details.";
-#endif
   LOG(ERROR) << "See http://crbug.com/619103.";
 
-#ifndef NDEBUG
   const PaintRecord* new_record = nullptr;
   if (new_item.IsDrawing()) {
     new_record =
@@ -1044,7 +1037,10 @@ void PaintController::ShowUnderInvalidationError(
                            : "None");
 
   ShowDebugData();
-#endif  // NDEBUG
+#else
+  LOG(ERROR) << "Run a build with DCHECK on to get more details.";
+  LOG(ERROR) << "See http://crbug.com/619103.";
+#endif
 }
 
 void PaintController::ShowSequenceUnderInvalidationError(

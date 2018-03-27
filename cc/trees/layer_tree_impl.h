@@ -44,6 +44,7 @@ class HeadsUpDisplayLayerImpl;
 class ImageDecodeCache;
 class LayerTreeDebugState;
 class LayerTreeImpl;
+class LayerTreeFrameSink;
 class LayerTreeResourceProvider;
 class LayerTreeSettings;
 class MemoryHistory;
@@ -105,6 +106,7 @@ class CC_EXPORT LayerTreeImpl {
 
   // Methods called by the layer tree that pass-through or access LTHI.
   // ---------------------------------------------------------------------------
+  LayerTreeFrameSink* layer_tree_frame_sink();
   const LayerTreeSettings& settings() const;
   const LayerTreeDebugState& debug_state() const;
   viz::ContextProvider* context_provider() const;
@@ -116,6 +118,7 @@ class CC_EXPORT LayerTreeImpl {
   FrameRateCounter* frame_rate_counter() const;
   MemoryHistory* memory_history() const;
   gfx::Size device_viewport_size() const;
+  gfx::Rect viewport_visible_rect() const;
   DebugRectHistory* debug_rect_history() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
@@ -185,6 +188,8 @@ class CC_EXPORT LayerTreeImpl {
 
   LayerImplList::const_iterator begin() const;
   LayerImplList::const_iterator end() const;
+  LayerImplList::const_reverse_iterator rbegin() const;
+  LayerImplList::const_reverse_iterator rend() const;
   LayerImplList::reverse_iterator rbegin();
   LayerImplList::reverse_iterator rend();
 
@@ -551,6 +556,8 @@ class CC_EXPORT LayerTreeImpl {
   void ClearLayerList();
 
   void BuildLayerListForTesting();
+
+  void HandleTickmarksVisibilityChange();
   void HandleScrollbarShowRequestsFromMain();
 
   void InvalidateRegionForImages(

@@ -260,7 +260,8 @@ void SystemTray::CreateItems() {
   AddTrayItem(base::WrapUnique(tray_enterprise_));
   tray_supervised_user_ = new TraySupervisedUser(this);
   AddTrayItem(base::WrapUnique(tray_supervised_user_));
-  AddTrayItem(std::make_unique<TrayIME>(this));
+  tray_ime_ = new TrayIME(this);
+  AddTrayItem(base::WrapUnique(tray_ime_));
   tray_accessibility_ = new TrayAccessibility(this);
   AddTrayItem(base::WrapUnique(tray_accessibility_));
   tray_tracing_ = new TrayTracing(this);
@@ -269,8 +270,10 @@ void SystemTray::CreateItems() {
       std::make_unique<TrayPower>(this, message_center::MessageCenter::Get()));
   tray_network_ = new TrayNetwork(this);
   AddTrayItem(base::WrapUnique(tray_network_));
-  AddTrayItem(std::make_unique<TrayVPN>(this));
-  AddTrayItem(std::make_unique<TrayBluetooth>(this));
+  tray_vpn_ = new TrayVPN(this);
+  AddTrayItem(base::WrapUnique(tray_vpn_));
+  tray_bluetooth_ = new TrayBluetooth(this);
+  AddTrayItem(base::WrapUnique(tray_bluetooth_));
   tray_cast_ = new TrayCast(this);
   AddTrayItem(base::WrapUnique(tray_cast_));
   screen_capture_tray_item_ = new ScreenCaptureTrayItem(this);
@@ -399,6 +402,26 @@ views::View* SystemTray::GetHelpButtonView() const {
 
 TrayAudio* SystemTray::GetTrayAudio() const {
   return tray_audio_;
+}
+
+TrayNetwork* SystemTray::GetTrayNetwork() const {
+  return tray_network_;
+}
+
+TrayBluetooth* SystemTray::GetTrayBluetooth() const {
+  return tray_bluetooth_;
+}
+
+TrayAccessibility* SystemTray::GetTrayAccessibility() const {
+  return tray_accessibility_;
+}
+
+TrayVPN* SystemTray::GetTrayVPN() const {
+  return tray_vpn_;
+}
+
+TrayIME* SystemTray::GetTrayIME() const {
+  return tray_ime_;
 }
 
 void SystemTray::CanSwitchAwayFromActiveUser(

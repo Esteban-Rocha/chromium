@@ -1908,11 +1908,11 @@ are declared in build/common.gypi.
 
       <!-- Ambient badge -->
       <if expr="is_android">
-        <message name="IDS_AMBIENT_BADGE_INSTALL" desc="String for the ambient badge promoting an app installation" formatter_data="android_java">
-          Add to Home screen
+        <message name="IDS_AMBIENT_BADGE_INSTALL" desc="String for the ambient badge promoting an app installation">
+          Add <ph name="APP_NAME">$1<ex>Google Maps</ex></ph> to Home screen
         </message>
-        <message name="IDS_AMBIENT_BADGE_OPEN" desc="String for the ambient badge promoting opening an installed app" formatter_data="android_java">
-          Open in app
+        <message name="IDS_AMBIENT_BADGE_OPEN" desc="String for the ambient badge promoting opening an installed app">
+          Open <ph name="APP_NAME">$1<ex>Google Maps</ex></ph>
         </message>
       </if>
       <!-- Bookmark app bubble -->
@@ -3006,17 +3006,8 @@ are declared in build/common.gypi.
           <message name="IDS_TASK_MANAGER_CPU_TIME_COLUMN" desc="The text of the CPU time usage column">
             CPU Time
           </message>
-          <message name="IDS_TASK_MANAGER_PHYSICAL_MEM_COLUMN" desc="Task manager process memory column. This is the similar to the process 'working set' reported by the Windows Task Manager">
-            Memory
-          </message>
           <message name="IDS_TASK_MANAGER_MEM_FOOTPRINT_COLUMN" desc="Task manager process memory footprint column. This is the amount of memory used by the process.">
             Memory footprint
-          </message>
-          <message name="IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN" desc="Task manager process private memory column. This is the allocated size that cannot be shared with other processes">
-            Private memory
-          </message>
-          <message name="IDS_TASK_MANAGER_SHARED_MEM_COLUMN" desc="Task manager process shared memory column. Shows the size of the memory used by the process which is shared with other processes">
-            Shared memory
           </message>
           <message name="IDS_TASK_MANAGER_SWAPPED_MEM_COLUMN" desc="Task manager process swapped memory column. Shows the size of the memory that lives in the swap space.">
             Swapped memory
@@ -3094,15 +3085,6 @@ are declared in build/common.gypi.
           </message>
           <message name="IDS_TASK_MANAGER_MEM_FOOTPRINT_COLUMN" desc="Task manager process memory footprint column. This is the amount of memory used by the process.">
             Memory Footprint
-          </message>
-          <message name="IDS_TASK_MANAGER_PHYSICAL_MEM_COLUMN" desc="Task manager process memory column. This is the similar to the process 'working set' reported by the Windows Task Manager">
-            Memory
-          </message>
-          <message name="IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN" desc="Task manager process private memory column. This is the allocated size that cannot be shared with other processes">
-            Private Memory
-          </message>
-          <message name="IDS_TASK_MANAGER_SHARED_MEM_COLUMN" desc="Task manager process shared memory column. Shows the size of the memory used by the process which is shared with other processes">
-            Shared Memory
           </message>
           <message name="IDS_TASK_MANAGER_SWAPPED_MEM_COLUMN" desc="Task manager process swapped memory column. Shows the size of the memory that lives in the swap space.">
             Swapped Memory
@@ -4896,14 +4878,14 @@ Keep your key file in a safe place. You will need it to create new versions of y
         usage statistics
       </message>
 
-      <!-- Unimplemented Flags Infobar-->
-      <message name="IDS_UNIMPLEMENTED_FLAGS_WARNING_MESSAGE" desc="Message shown when a command-line flag is used that is not implemented by this build. [Keep it short so it fits in the infobar.]">
-        <ph name="BAD_FLAG">$1<ex>--enable-heap-profiling</ex></ph> is not implemented in this build
-      </message>
-
       <!-- Bad Flags Infobar-->
       <message name="IDS_BAD_FLAGS_WARNING_MESSAGE" desc="Message shown when an unsupported command-line flag is used. [Keep it short so it fits in the infobar.]">
         You are using an unsupported command-line flag: <ph name="BAD_FLAG">$1<ex>--no-sandbox</ex></ph>. Stability and security will suffer.
+      </message>
+
+      <!-- Bad Feature Flags Infobar-->
+      <message name="IDS_BAD_FEATURES_WARNING_MESSAGE" desc="Message shown when an unsupported feature flag is used. [Keep it short so it fits in the infobar.]">
+        You are using an unsupported feature flag: <ph name="BAD_FLAG">$1<ex>SignedHTTPExchange</ex></ph>. Stability and security will suffer.
       </message>
 
       <!-- Pepper Broker Infobar -->
@@ -7345,9 +7327,6 @@ I don't think this site should be blocked!
         </message>
         <message name="IDS_PROFILES_BUBBLE_ACCESSIBLE_DESCRIPTION" desc="The help text for the avatar bubble.">
           Switch to a different user.
-        </message>
-        <message name="IDS_PROFILES_NEW_AVATAR_MENU_ACCESSIBLE_NAME" desc="Title of the new avatar bubble menu for accessibility">
-          Switch Person
         </message>
         <message name="IDS_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title.">
           Add Person...
@@ -10851,14 +10830,14 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
     </message>
 
     <!-- Security Key permission -->
-    <message name="IDS_SECURITY_KEY_ATTESTATION_PERMISSION_FRAGMENT" desc="A permission prompt shown to a user when a website wants to see information that uniquely identifies the user's Security Key, such as make and model number. The text '[website URL] wants to:' precedes this string. The word 'identifying' modifies 'information'.">
-      See identifying information about your Security Key
+    <message name="IDS_SECURITY_KEY_ATTESTATION_PERMISSION_FRAGMENT" desc="A permission prompt shown to a user when a website wants to see information that identifies the user's Security Key, such as make and model number. The text '[website URL] wants to:' precedes this string. The 'make' of a device is the brand name of the manufacturer, e.g. Yubikey is a make of Security Key. The 'model' of a device is the specific product, e.g. Yubikey Neo is a model of Security Key.">
+      See the make and model of your Security Key
     </message>
     <if expr="is_android">
-      <message name="IDS_SECURITY_KEY_ATTESTATION_INFOBAR_QUESTION" desc="An infobar prompt shown to a user when a website wants to see information that uniquely identifies the user's Security Key, such as make and model number. The word 'identifying' modifies 'information'.">
+      <message name="IDS_SECURITY_KEY_ATTESTATION_INFOBAR_QUESTION" desc="An infobar prompt shown to a user when a website wants to see information that identifies the user's Security Key, such as make and model number. The 'make' of a device is the brand name of the manufacturer, e.g. Yubikey is a make of Security Key. The 'model' of a device is the specific product, e.g. Yubikey Neo is a model of Security Key.">
         <ph name="URL">
           $1<ex>maps.google.com</ex>
-        </ph> wants to see identifying information about your Security Key
+        </ph> wants to see the make and model of your Security Key
       </message>
     </if>
 
@@ -10879,10 +10858,44 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
     </if>
 
     <!-- Strings that are only used when VR devices are supported -->
-      <!-- TODO(ddorwin): Use consistent naming schemes for VR strings. -->
+    <!-- TODO(ddorwin): Use consistent naming schemes for VR strings. -->
     <if expr="enable_vr">
-      <message name="IDS_PRESS_APP_TO_EXIT" desc="Text displayed in a transient bubble to tell users how to return from cinema mode (where the page displayed in a cinema like environment) or presentation mode (where the WebVR page occupies the entire screen) to normal mode.">
+      <message name="IDS_PRESS_APP_TO_EXIT" desc="Text displayed in a transient bubble to tell users how to return from presentation mode (where the WebVR page occupies the entire screen) to normal mode.">
         Press App button to exit
+      </message>
+      <message name="IDS_PRESS_APP_TO_EXIT_FULLSCREEN" desc="Text displayed in a transient bubble to tell users how to return from cinema mode (where the page displayed in a cinema like environment).">
+        Press App button to exit fullscreen
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_TRACKING_LOCATION" desc="Text displayed in a transient bubble to inform the user that the page is tracking location.">
+        Site is tracking your location
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_USING_MICROPHONE" desc="Text displayed in a transient bubble to inform the user that the page is using the microphone.">
+        Site is using your microphone
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_USING_BLUETOOTH" desc="Text displayed in a transient bubble to inform the user that the page is using bluetooth.">
+        Site is using bluetooth
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_USING_CAMERA" desc="Text displayed in a transient bubble to inform the user that the page is using the camera.">
+        Site is using your camera
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_SHARING_SCREEN" desc="Text displayed in a transient bubble to inform the user that the page is sharing the screen.">
+        Site is sharing your screen
+      </message>
+
+      <message name="IDS_VR_SHELL_SITE_CAN_TRACK_LOCATION" desc="Text displayed in a transient bubble to inform the user that the page may track location, but isn't doing so yet.">
+        Site can track your location
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_USE_MICROPHONE" desc="Text displayed in a transient bubble to inform the user that the page may use the microphone, but isn't doing so yet.">
+        Site can use your microphone
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_USE_BLUETOOTH" desc="Text displayed in a transient bubble to inform the user that the page may use bluetooth, but isn't doing so yet.">
+        Site can use bluetooth
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_USE_CAMERA" desc="Text displayed in a transient bubble to inform the user that the page may use the camera, but isn't doing so yet.">
+        Site can use your camera
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_SHARE_SCREEN" desc="Text displayed in a transient bubble to inform the user that the page may share your screen, but isn't doing so yet.">
+        Site can share your screen
       </message>
 
       <!-- VR browser -->
@@ -10940,12 +10953,18 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
       <message name="IDS_VR_BUTTON_BACK" desc="The label for the back button on the VR controller -- shown when the keyboard is visible, we are in voice search, or we are repositioning.">
         Back
       </message>
-      <message name="IDS_VR_BUTTON_TRACKPAD_REPOSITION" desc="The label for the trackpad while in window repositioning mode.">
-        Finish repositioning
+      <message name="IDS_VR_BUTTON_TRACKPAD_REPOSITION" desc="The label for the trackpad while in window repositioning/resizing mode.">
+        Touch to resize
       </message>
-      <message name="IDS_VR_REPOSITION_LABEL" desc="This text appears over a window to explain to the user how to manipulate the window.">
-        Move the controller to reposition. Click to finish.
+      <message name="IDS_VR_BUTTON_APP_REPOSITION" desc="This is the label for the app button while in reposition mode">
+        Finish
       </message>
+      <message name="IDS_VR_MENU_NEW_INCOGNITO_TAB" desc="Menu item for opening a new incognito tab that facilitates pseudononymous browsing. [CHAR-LIMIT=27]">
+        New incognito tab
+      </message>
+      <message name="IDS_VR_MENU_CLOSE_INCOGNITO_TABS" desc="Menu item for closing all open incognito tabs. [CHAR-LIMIT=27]">
+        Close incognito tabs
+     </message>
     </if>
 
     <message name="IDS_CONFIRM_FILE_UPLOAD_TITLE" desc="Title of dialog for confirming that many files are about to be uploaded / given to the site. [ICU Syntax]">

@@ -54,6 +54,7 @@ class InterfaceProvider;
 
 namespace blink {
 
+class AdTracker;
 class AssociatedInterfaceProvider;
 class Color;
 class ComputedAccessibleNode;
@@ -66,6 +67,7 @@ class FetchParameters;
 class FloatSize;
 class FrameConsole;
 class FrameResourceCoordinator;
+class FrameScheduler;
 class FrameSelection;
 class InputMethodController;
 class InspectorTraceEvents;
@@ -87,7 +89,6 @@ class ScriptController;
 class SpellChecker;
 class TextSuggestionController;
 class WebComputedAXTree;
-class WebFrameScheduler;
 class WebPluginContainerImpl;
 class WebURLLoaderFactory;
 
@@ -161,12 +162,10 @@ class CORE_EXPORT LocalFrame final : public Frame,
   SpellChecker& GetSpellChecker() const;
   FrameConsole& Console() const;
 
-  void IntrinsicSizingInfoChanged(const IntrinsicSizingInfo&);
-
-  // This method is used to get the highest level LocalFrame in this
-  // frame's in-process subtree.
-  // FIXME: This is a temporary hack to support RemoteFrames, and callers
-  // should be updated to avoid storing things on the main frame.
+  // A local root is the root of a connected subtree that contains only
+  // LocalFrames. The local root is responsible for coordinating input, layout,
+  // et cetera for that subtree of frames.
+  bool IsLocalRoot() const;
   LocalFrame& LocalFrameRoot() const;
 
   // Note that the result of this function should not be cached: a frame is
@@ -228,7 +227,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
   bool ShouldThrottleRendering() const;
 
   // Returns the frame scheduler, creating one if needed.
-  WebFrameScheduler* FrameScheduler();
+  FrameScheduler* GetFrameScheduler();
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType);
   void ScheduleVisualUpdateUnlessThrottled();
 
@@ -267,6 +266,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
 
   PerformanceMonitor* GetPerformanceMonitor() { return performance_monitor_; }
   IdlenessDetector* GetIdlenessDetector() { return idleness_detector_; }
+  AdTracker* GetAdTracker() { return ad_tracker_; }
 
   // Convenience function to allow loading image placeholders for the request if
   // either the flag in Settings() for using image placeholders is set, or if
@@ -312,10 +312,9 @@ class CORE_EXPORT LocalFrame final : public Frame,
     should_send_resource_timing_info_to_parent_ = false;
   }
 
-  void SetIsProvisional(bool is_provisional) {
-    is_provisional_ = is_provisional;
-  }
-  bool IsProvisional() const { return is_provisional_; }
+  // TODO(https://crbug.com/578349): provisional frames are a hack that should
+  // be removed.
+  bool IsProvisional() const;
 
   // Returns whether the frame is trying to save network data by showing a
   // preview.
@@ -358,7 +357,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
                    const FloatSize& original_page_size,
                    float maximum_shrink_ratio);
 
-  std::unique_ptr<WebFrameScheduler> frame_scheduler_;
+  std::unique_ptr<FrameScheduler> frame_scheduler_;
 
   mutable FrameLoader loader_;
   Member<NavigationScheduler> navigation_scheduler_;
@@ -378,8 +377,6 @@ class CORE_EXPORT LocalFrame final : public Frame,
   const Member<InputMethodController> input_method_controller_;
   const Member<TextSuggestionController> text_suggestion_controller_;
 
-  bool is_provisional_ = false;
-
   int navigation_disable_count_;
   // TODO(dcheng): In theory, this could be replaced by checking the
   // FrameLoaderStateMachine if a real load has committed. Unfortunately, the
@@ -395,6 +392,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
   Member<CoreProbeSink> probe_sink_;
   scoped_refptr<InspectorTaskRunner> inspector_task_runner_;
   Member<PerformanceMonitor> performance_monitor_;
+  Member<AdTracker> ad_tracker_;
   Member<IdlenessDetector> idleness_detector_;
   Member<InspectorTraceEvents> inspector_trace_events_;
 

@@ -37,8 +37,8 @@
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
 #include "net/proxy_resolution/proxy_config_service_fixed.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/proxy_resolution/proxy_resolver.h"
-#include "net/proxy_resolution/proxy_service.h"
 #include "net/quic/chromium/crypto/proof_verifier_chromium.h"
 #include "net/quic/chromium/mock_crypto_client_stream_factory.h"
 #include "net/quic/chromium/mock_quic_data.h"
@@ -53,7 +53,7 @@
 #include "net/quic/core/quic_framer.h"
 #include "net/quic/platform/api/quic_str_cat.h"
 #include "net/quic/platform/api/quic_string_piece.h"
-#include "net/quic/platform/impl/quic_test_impl.h"
+#include "net/quic/platform/api/quic_test.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/mock_random.h"
@@ -856,7 +856,7 @@ class QuicNetworkTransactionTest : public PlatformTest,
     session_context_.proxy_delegate = &test_proxy_delegate;
     proxy_resolution_service_ =
         ProxyResolutionService::CreateFixedFromPacResult(
-            "HTTPS myproxy.org:443");
+            "HTTPS myproxy.org:443", TRAFFIC_ANNOTATION_FOR_TESTS);
 
     CreateSession();
     EXPECT_TRUE(test_proxy_delegate.alternative_proxy_server().is_valid());
@@ -947,6 +947,7 @@ INSTANTIATE_TEST_CASE_P(
                        ::testing::Bool()));
 
 TEST_P(QuicNetworkTransactionTest, WriteErrorHandshakeConfirmed) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   base::HistogramTester histograms;
   session_params_.origins_to_force_quic_on.insert(
       HostPortPair::FromString("mail.example.org:443"));
@@ -978,6 +979,7 @@ TEST_P(QuicNetworkTransactionTest, WriteErrorHandshakeConfirmed) {
 }
 
 TEST_P(QuicNetworkTransactionTest, WriteErrorHandshakeConfirmedAsync) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   base::HistogramTester histograms;
   session_params_.origins_to_force_quic_on.insert(
       HostPortPair::FromString("mail.example.org:443"));
@@ -1185,6 +1187,7 @@ TEST_P(QuicNetworkTransactionTest, LargeResponseHeaders) {
 }
 
 TEST_P(QuicNetworkTransactionTest, TooLargeResponseHeaders) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   session_params_.origins_to_force_quic_on.insert(
       HostPortPair::FromString("mail.example.org:443"));
 
@@ -1272,7 +1275,7 @@ TEST_P(QuicNetworkTransactionTest, ForceQuicForAll) {
 TEST_P(QuicNetworkTransactionTest, QuicProxy) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC mail.example.org:70");
+      "QUIC mail.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -1314,7 +1317,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyWithCert) {
 
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC " + proxy_host + ":70");
+      "QUIC " + proxy_host + ":70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   client_maker_.set_hostname(origin_host);
   MockQuicData mock_quic_data;
@@ -2069,6 +2072,7 @@ TEST_P(QuicNetworkTransactionTest, GoAwayWithConnectionMigrationOnPortsOnly) {
 // Verify that if a QUIC connection times out, the QuicHttpStream will
 // return QUIC_PROTOCOL_ERROR.
 TEST_P(QuicNetworkTransactionTest, TimeoutAfterHandshakeConfirmed) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   session_params_.quic_idle_connection_timeout_seconds = 5;
 
   // The request will initially go out over QUIC.
@@ -2162,6 +2166,7 @@ TEST_P(QuicNetworkTransactionTest, TimeoutAfterHandshakeConfirmed) {
 // Verify that if a QUIC connection RTOs, the QuicHttpStream will
 // return QUIC_PROTOCOL_ERROR.
 TEST_P(QuicNetworkTransactionTest, TooManyRtosAfterHandshakeConfirmed) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   session_params_.quic_connection_options.push_back(k5RTO);
 
   // The request will initially go out over QUIC.
@@ -2364,6 +2369,7 @@ TEST_P(QuicNetworkTransactionTest,
 // Verify that if a QUIC protocol error occurs after the handshake is confirmed
 // the request fails with QUIC_PROTOCOL_ERROR.
 TEST_P(QuicNetworkTransactionTest, ProtocolErrorAfterHandshakeConfirmed) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   // The request will initially go out over QUIC.
   MockQuicData quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -2546,7 +2552,6 @@ TEST_P(QuicNetworkTransactionTest, TimeoutAfterHandshakeConfirmedThenBroken) {
 // connection times out, then QUIC will be marked as broken and the request
 // retried over TCP.
 TEST_P(QuicNetworkTransactionTest, TimeoutAfterHandshakeConfirmedThenBroken2) {
-  session_params_.retry_without_alt_svc_on_quic_errors = true;
   session_params_.quic_idle_connection_timeout_seconds = 5;
 
   // The request will initially go out over QUIC.
@@ -3016,7 +3021,6 @@ TEST_P(QuicNetworkTransactionTest,
 // retried over TCP and the QUIC will be marked as broken.
 TEST_P(QuicNetworkTransactionTest,
        ProtocolErrorAfterHandshakeConfirmedThenBroken) {
-  session_params_.retry_without_alt_svc_on_quic_errors = true;
   session_params_.quic_idle_connection_timeout_seconds = 5;
 
   // The request will initially go out over QUIC.
@@ -3104,8 +3108,6 @@ TEST_P(QuicNetworkTransactionTest,
 // request is reset from, then QUIC will be marked as broken and the request
 // retried over TCP.
 TEST_P(QuicNetworkTransactionTest, ResetAfterHandshakeConfirmedThenBroken) {
-  session_params_.retry_without_alt_svc_on_quic_errors = true;
-
   // The request will initially go out over QUIC.
   MockQuicData quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -3266,7 +3268,6 @@ TEST_P(QuicNetworkTransactionTest, RemoteAltSvcWorkingWhileLocalAltSvcBroken) {
 TEST_P(QuicNetworkTransactionTest,
        ResetPooledAfterHandshakeConfirmedThenBroken) {
   session_params_.quic_allow_remote_alt_svc = true;
-  session_params_.retry_without_alt_svc_on_quic_errors = true;
 
   GURL origin1 = request_.url;
   GURL origin2("https://www.example.org/");
@@ -3511,7 +3512,7 @@ TEST_P(QuicNetworkTransactionTest, UseExistingQUICAlternativeProxy) {
   TestProxyDelegate test_proxy_delegate;
 
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "HTTPS mail.example.org:443");
+      "HTTPS mail.example.org:443", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   test_proxy_delegate.set_alternative_proxy_server(
       ProxyServer::FromPacString("QUIC mail.example.org:443"));
@@ -3908,7 +3909,7 @@ TEST_P(QuicNetworkTransactionTest, UseAlternativeServiceForQuicForHttps) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyWithRacing) {
   base::HistogramTester histogram_tester;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "HTTPS mail.example.org:443");
+      "HTTPS mail.example.org:443", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -4073,8 +4074,8 @@ TEST_P(QuicNetworkTransactionTest, ZeroRTTWithNoHttpRace) {
 }
 
 TEST_P(QuicNetworkTransactionTest, ZeroRTTWithProxy) {
-  proxy_resolution_service_ =
-      ProxyResolutionService::CreateFixedFromPacResult("PROXY myproxy:70");
+  proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
+      "PROXY myproxy:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   // Since we are using a proxy, the QUIC job will not succeed.
   MockWrite http_writes[] = {
@@ -4163,6 +4164,7 @@ TEST_P(QuicNetworkTransactionTest, ZeroRTTWithConfirmationRequired) {
 
 TEST_P(QuicNetworkTransactionTest,
        LogGranularQuicErrorCodeOnQuicProtocolErrorLocal) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
   mock_quic_data.AddWrite(
@@ -4216,6 +4218,7 @@ TEST_P(QuicNetworkTransactionTest,
 
 TEST_P(QuicNetworkTransactionTest,
        LogGranularQuicErrorCodeOnQuicProtocolErrorRemote) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
   mock_quic_data.AddWrite(
@@ -4334,6 +4337,7 @@ TEST_P(QuicNetworkTransactionTest, RstSteamErrorHandling) {
 }
 
 TEST_P(QuicNetworkTransactionTest, RstSteamBeforeHeaders) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
   mock_quic_data.AddWrite(
@@ -4800,8 +4804,8 @@ TEST_P(QuicNetworkTransactionTest, ConnectionCloseDuringConnectProxy) {
   EXPECT_TRUE(test_proxy_delegate.alternative_proxy_server().is_quic());
 
   session_context_.proxy_delegate = &test_proxy_delegate;
-  proxy_resolution_service_ =
-      ProxyResolutionService::CreateFixedFromPacResult("HTTPS myproxy.org:443");
+  proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
+      "HTTPS myproxy.org:443", TRAFFIC_ANNOTATION_FOR_TESTS);
   request_.url = GURL("http://mail.example.org/");
 
   // In order for a new QUIC session to be established via alternate-protocol
@@ -4856,7 +4860,7 @@ TEST_P(QuicNetworkTransactionTest,
        DISABLED_QuicUploadToAlternativeProxyServer) {
   base::HistogramTester histogram_tester;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "HTTPS mail.example.org:443");
+      "HTTPS mail.example.org:443", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   TestProxyDelegate test_proxy_delegate;
 
@@ -4929,6 +4933,7 @@ TEST_P(QuicNetworkTransactionTest, QuicUpload) {
 }
 
 TEST_P(QuicNetworkTransactionTest, QuicUploadWriteError) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   ScopedMockNetworkChangeNotifier network_change_notifier;
   MockNetworkChangeNotifier* mock_ncn =
       network_change_notifier.mock_network_change_notifier();
@@ -5034,6 +5039,7 @@ TEST_P(QuicNetworkTransactionTest, RetryAfterSynchronousNoBufferSpace) {
 }
 
 TEST_P(QuicNetworkTransactionTest, MaxRetriesAfterAsyncNoBufferSpace) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   session_params_.origins_to_force_quic_on.insert(
       HostPortPair::FromString("mail.example.org:443"));
 
@@ -5071,6 +5077,7 @@ TEST_P(QuicNetworkTransactionTest, MaxRetriesAfterAsyncNoBufferSpace) {
 }
 
 TEST_P(QuicNetworkTransactionTest, MaxRetriesAfterSynchronousNoBufferSpace) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   session_params_.origins_to_force_quic_on.insert(
       HostPortPair::FromString("mail.example.org:443"));
 
@@ -5108,6 +5115,7 @@ TEST_P(QuicNetworkTransactionTest, MaxRetriesAfterSynchronousNoBufferSpace) {
 }
 
 TEST_P(QuicNetworkTransactionTest, NoMigrationForMsgTooBig) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   session_params_.origins_to_force_quic_on.insert(
       HostPortPair::FromString("mail.example.org:443"));
   const QuicString error_details =
@@ -5211,6 +5219,7 @@ TEST_P(QuicNetworkTransactionTest, QuicServerPush) {
 // is closed before the pushed headers arrive, but after the connection
 // is closed and before the callbacks are executed.
 TEST_P(QuicNetworkTransactionTest, CancelServerPushAfterConnectionClose) {
+  session_params_.retry_without_alt_svc_on_quic_errors = false;
   session_params_.origins_to_force_quic_on.insert(
       HostPortPair::FromString("mail.example.org:443"));
 
@@ -6181,7 +6190,7 @@ TEST_P(QuicNetworkTransactionTest, QuicServerPushWithEmptyHostname) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyConnectHttpsServer) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -6250,7 +6259,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyConnectHttpsServer) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyConnectSpdyServer) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -6323,7 +6332,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyConnectSpdyServer) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyConnectReuseTransportSocket) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -6438,7 +6447,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyConnectReuseTransportSocket) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyConnectReuseQuicSession) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset client_header_stream_offset = 0;
@@ -6562,7 +6571,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyConnectReuseQuicSession) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyConnectFailure) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -6604,7 +6613,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyConnectFailure) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyQuicConnectionError) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -6639,7 +6648,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyQuicConnectionError) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyConnectBadCertificate) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset client_header_stream_offset = 0;
@@ -6733,7 +6742,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyConnectBadCertificate) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyUserAgent) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockQuicData mock_quic_data;
   QuicStreamOffset header_stream_offset = 0;
@@ -6775,7 +6784,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyUserAgent) {
 TEST_P(QuicNetworkTransactionTest, QuicProxyRequestPriority) {
   session_params_.enable_quic = true;
   proxy_resolution_service_ = ProxyResolutionService::CreateFixedFromPacResult(
-      "QUIC proxy.example.org:70");
+      "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   const RequestPriority request_priority = MEDIUM;
 
@@ -6830,7 +6839,7 @@ TEST_P(QuicNetworkTransactionTest, QuicProxyAuth) {
     session_params_.enable_quic = true;
     proxy_resolution_service_ =
         ProxyResolutionService::CreateFixedFromPacResult(
-            "QUIC proxy.example.org:70");
+            "QUIC proxy.example.org:70", TRAFFIC_ANNOTATION_FOR_TESTS);
 
     MockQuicData mock_quic_data;
     QuicStreamOffset client_header_stream_offset = 0;

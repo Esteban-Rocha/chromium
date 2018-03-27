@@ -53,7 +53,9 @@ class LayoutSVGBlock : public LayoutBlockFlow {
 
   AffineTransform LocalSVGTransform() const final { return local_transform_; }
 
-  PaintLayerType LayerTypeRequired() const final { return kNoPaintLayer; }
+  PaintLayerType LayerTypeRequired() const override { return kNoPaintLayer; }
+
+  SVGElement* GetElement() const;
 
  protected:
   void WillBeDestroyed() override;
@@ -71,9 +73,10 @@ class LayoutSVGBlock : public LayoutBlockFlow {
   void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
 
  private:
-  LayoutRect AbsoluteVisualRect() const final;
+  // LayoutSVGBlock subclasses should use GetElement() instead.
+  void GetNode() const = delete;
 
-  bool AllowsOverflowClip() const final;
+  LayoutRect AbsoluteVisualRect() const final;
 
   void AbsoluteRects(Vector<IntRect>&,
                      const LayoutPoint& accumulated_offset) const final;

@@ -36,6 +36,7 @@
 #include <utility>
 #include <vector>
 
+#include "ash/ime/ime_controller.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/public/interfaces/window_pin_type.mojom.h"
@@ -92,7 +93,6 @@
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_features.h"
 #include "ui/compositor/compositor_vsync_manager.h"
-#include "ui/display/display_observer.h"
 #include "ui/display/manager/managed_display_info.h"
 #include "ui/display/screen.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
@@ -109,8 +109,6 @@
 #include <drm_fourcc.h>
 #include <linux-dmabuf-unstable-v1-server-protocol.h>
 #if defined(OS_CHROMEOS)
-#include "ui/base/ime/chromeos/ime_keyboard.h"
-#include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.h"
 #endif
 #endif
@@ -1235,7 +1233,7 @@ wl_output_transform OutputTransform(display::Display::Rotation rotation) {
   return WL_OUTPUT_TRANSFORM_NORMAL;
 }
 
-class WaylandPrimaryDisplayObserver : public display::DisplayObserver {
+class WaylandDisplayObserver : public display::DisplayObserver {
  public:
   class ScaleObserver : public base::SupportsWeakPtr<ScaleObserver> {
    public:
@@ -1247,12 +1245,12 @@ class WaylandPrimaryDisplayObserver : public display::DisplayObserver {
     virtual ~ScaleObserver() {}
   };
 
-  explicit WaylandPrimaryDisplayObserver(wl_resource* output_resource)
-      : output_resource_(output_resource) {
+  WaylandDisplayObserver(int64_t id, wl_resource* output_resource)
+      : id_(id), output_resource_(output_resource) {
     display::Screen::GetScreen()->AddObserver(this);
     SendDisplayMetrics();
   }
-  ~WaylandPrimaryDisplayObserver() override {
+  ~WaylandDisplayObserver() override {
     display::Screen::GetScreen()->RemoveObserver(this);
   }
 
@@ -1266,7 +1264,7 @@ class WaylandPrimaryDisplayObserver : public display::DisplayObserver {
   // Overridden from display::DisplayObserver:
   void OnDisplayMetricsChanged(const display::Display& display,
                                uint32_t changed_metrics) override {
-    if (display::Screen::GetScreen()->GetPrimaryDisplay().id() != display.id())
+    if (id_ != display.id())
       return;
 
     // There is no need to check DISPLAY_METRIC_PRIMARY because when primary
@@ -1286,22 +1284,27 @@ class WaylandPrimaryDisplayObserver : public display::DisplayObserver {
 
  private:
   void SendDisplayMetrics() {
-    display::Display display =
-        display::Screen::GetScreen()->GetPrimaryDisplay();
+    display::Display display;
+    bool rv =
+        display::Screen::GetScreen()->GetDisplayWithDisplayId(id_, &display);
+    DCHECK(rv);
 
     const display::ManagedDisplayInfo& info =
         WMHelper::GetInstance()->GetDisplayInfo(display.id());
 
     const float kInchInMm = 25.4f;
-    const char* kUnknownMake = "unknown";
-    const char* kUnknownModel = "unknown";
+    const char* kUnknown = "unknown";
+
+    const std::string& make = info.manufacturer_id();
+    const std::string& model = info.product_id();
 
     gfx::Rect bounds = info.bounds_in_native();
     wl_output_send_geometry(
         output_resource_, bounds.x(), bounds.y(),
         static_cast<int>(kInchInMm * bounds.width() / info.device_dpi()),
         static_cast<int>(kInchInMm * bounds.height() / info.device_dpi()),
-        WL_OUTPUT_SUBPIXEL_UNKNOWN, kUnknownMake, kUnknownModel,
+        WL_OUTPUT_SUBPIXEL_UNKNOWN, make.empty() ? kUnknown : make.c_str(),
+        model.empty() ? kUnknown : model.c_str(),
         OutputTransform(display.rotation()));
 
     if (wl_resource_get_version(output_resource_) >=
@@ -1323,22 +1326,28 @@ class WaylandPrimaryDisplayObserver : public display::DisplayObserver {
     }
   }
 
+  // The ID of the display being observed.
+  const int64_t id_;
+
   // The output resource associated with the display.
   wl_resource* const output_resource_;
 
   base::WeakPtr<ScaleObserver> scale_observer_;
 
-  DISALLOW_COPY_AND_ASSIGN(WaylandPrimaryDisplayObserver);
+  DISALLOW_COPY_AND_ASSIGN(WaylandDisplayObserver);
 };
 
 const uint32_t output_version = 2;
 
 void bind_output(wl_client* client, void* data, uint32_t version, uint32_t id) {
+  Server::Output* output = static_cast<Server::Output*>(data);
+
   wl_resource* resource = wl_resource_create(
       client, &wl_output_interface, std::min(version, output_version), id);
 
-  SetImplementation(resource, nullptr,
-                    std::make_unique<WaylandPrimaryDisplayObserver>(resource));
+  SetImplementation(
+      resource, nullptr,
+      std::make_unique<WaylandDisplayObserver>(output->id(), resource));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2126,9 +2135,7 @@ void remote_surface_set_window_type(wl_client* client,
   }
 }
 
-void remote_surface_resize(wl_client* client,
-                           wl_resource* resource,
-                           uint32_t direction) {
+void remote_surface_resize(wl_client* client, wl_resource* resource) {
   // DEPRECATED
 }
 
@@ -2143,8 +2150,8 @@ void remote_surface_start_move(wl_client* client,
                                wl_resource* resource,
                                int32_t x,
                                int32_t y) {
-  GetUserDataAs<ClientControlledShellSurface>(resource)->StartMove(
-      gfx::Point(x, y));
+  GetUserDataAs<ClientControlledShellSurface>(resource)->StartDrag(
+      HTCAPTION, gfx::Point(x, y));
 }
 
 void remote_surface_set_can_maximize(wl_client* client, wl_resource* resource) {
@@ -2184,9 +2191,11 @@ void remote_surface_set_snapped_to_right(wl_client* client,
 
 void remote_surface_start_resize(wl_client* client,
                                  wl_resource* resource,
-                                 uint32_t direction) {
-  GetUserDataAs<ClientControlledShellSurface>(resource)->StartResize(
-      Component(direction));
+                                 uint32_t direction,
+                                 int32_t x,
+                                 int32_t y) {
+  GetUserDataAs<ClientControlledShellSurface>(resource)->StartDrag(
+      Component(direction), gfx::Point(x, y));
 }
 
 const struct zcr_remote_surface_v1_interface remote_surface_implementation = {
@@ -2309,7 +2318,7 @@ class WaylandRemoteShell : public ash::TabletModeObserver,
   void OnDisplayMetricsChanged(const display::Display& display,
                                uint32_t changed_metrics) override {
     // No need to update when a primary display has changed without bounds
-    // change. See WaylandPrimaryDisplayObserver::OnDisplayMetricsChanged
+    // change. See WaylandDisplayObserver::OnDisplayMetricsChanged
     // for more details.
     if (changed_metrics &
         (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_DEVICE_SCALE_FACTOR |
@@ -2755,11 +2764,11 @@ const struct zaura_surface_interface aura_surface_implementation = {
 ////////////////////////////////////////////////////////////////////////////////
 // aura_output_interface:
 
-class AuraOutput : public WaylandPrimaryDisplayObserver::ScaleObserver {
+class AuraOutput : public WaylandDisplayObserver::ScaleObserver {
  public:
   explicit AuraOutput(wl_resource* resource) : resource_(resource) {}
 
-  // Overridden from WaylandPrimaryDisplayObserver::ScaleObserver:
+  // Overridden from WaylandDisplayObserver::ScaleObserver:
   void OnDisplayScalesChanged(const display::Display& display) override {
     display::DisplayManager* display_manager =
         ash::Shell::Get()->display_manager();
@@ -2820,8 +2829,8 @@ void aura_shell_get_aura_output(wl_client* client,
                                 wl_resource* resource,
                                 uint32_t id,
                                 wl_resource* output_resource) {
-  WaylandPrimaryDisplayObserver* display_observer =
-      GetUserDataAs<WaylandPrimaryDisplayObserver>(output_resource);
+  WaylandDisplayObserver* display_observer =
+      GetUserDataAs<WaylandDisplayObserver>(output_resource);
   if (display_observer->HasScaleObserver()) {
     wl_resource_post_error(
         resource, ZAURA_SHELL_ERROR_AURA_OUTPUT_EXISTS,
@@ -3374,13 +3383,12 @@ const struct wl_pointer_interface pointer_implementation = {pointer_set_cursor,
 
 // Keyboard delegate class that accepts events for surfaces owned by the same
 // client as a keyboard resource.
-class WaylandKeyboardDelegate
-    : public WaylandInputDelegate,
-      public KeyboardDelegate,
-      public KeyboardObserver
+class WaylandKeyboardDelegate : public WaylandInputDelegate,
+                                public KeyboardDelegate,
+                                public KeyboardObserver
 #if defined(OS_CHROMEOS)
     ,
-      public chromeos::input_method::ImeKeyboard::Observer
+                                public ash::ImeController::Observer
 #endif
 {
 #if BUILDFLAG(USE_XKBCOMMON)
@@ -3389,22 +3397,16 @@ class WaylandKeyboardDelegate
       : keyboard_resource_(keyboard_resource),
         xkb_context_(xkb_context_new(XKB_CONTEXT_NO_FLAGS)) {
 #if defined(OS_CHROMEOS)
-    chromeos::input_method::ImeKeyboard* keyboard =
-        chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
-    if (keyboard) {
-      keyboard->AddObserver(this);
-      SendNamedLayout(keyboard->GetCurrentKeyboardLayoutName());
-    }
+    ash::ImeController* ime_controller = ash::Shell::Get()->ime_controller();
+    ime_controller->AddObserver(this);
+    SendNamedLayout(ime_controller->keyboard_layout_name());
 #else
     SendLayout(nullptr);
 #endif
   }
 #if defined(OS_CHROMEOS)
   ~WaylandKeyboardDelegate() override {
-    chromeos::input_method::ImeKeyboard* keyboard =
-        chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
-    if (keyboard)
-      keyboard->RemoveObserver(this);
+    ash::Shell::Get()->ime_controller()->RemoveObserver(this);
   }
 #endif
 
@@ -3468,9 +3470,9 @@ class WaylandKeyboardDelegate
   }
 
 #if defined(OS_CHROMEOS)
-  // Overridden from input_method::ImeKeyboard::Observer:
+  // Overridden from ImeController::Observer:
   void OnCapsLockChanged(bool enabled) override {}
-  void OnLayoutChanging(const std::string& layout_name) override {
+  void OnKeyboardLayoutNameChanged(const std::string& layout_name) override {
     SendNamedLayout(layout_name);
   }
 #endif
@@ -4838,6 +4840,16 @@ void bind_input_timestamps_manager(wl_client* client,
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
+// Server::Output, public:
+
+Server::Output::Output(int64_t id) : id_(id) {}
+
+Server::Output::~Output() {
+  if (global_)
+    wl_global_destroy(global_);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Server, public:
 
 Server::Server(Display* display)
@@ -4853,8 +4865,9 @@ Server::Server(Display* display)
                    bind_subcompositor);
   wl_global_create(wl_display_.get(), &wl_shell_interface, 1, display_,
                    bind_shell);
-  wl_global_create(wl_display_.get(), &wl_output_interface, output_version,
-                   display_, bind_output);
+  display::Screen::GetScreen()->AddObserver(this);
+  for (const auto& display : display::Screen::GetScreen()->GetAllDisplays())
+    OnDisplayAdded(display);
   wl_global_create(wl_display_.get(), &zxdg_shell_v6_interface, 1, display_,
                    bind_xdg_shell_v6);
   wl_global_create(wl_display_.get(), &zcr_vsync_feedback_v1_interface, 1,
@@ -4894,7 +4907,9 @@ Server::Server(Display* display)
                    bind_input_timestamps_manager);
 }
 
-Server::~Server() {}
+Server::~Server() {
+  display::Screen::GetScreen()->RemoveObserver(this);
+}
 
 // static
 std::unique_ptr<Server> Server::Create(Display* display) {
@@ -4966,6 +4981,20 @@ void Server::Dispatch(base::TimeDelta timeout) {
 
 void Server::Flush() {
   wl_display_flush_clients(wl_display_.get());
+}
+
+void Server::OnDisplayAdded(const display::Display& new_display) {
+  auto output = std::make_unique<Output>(new_display.id());
+  output->set_global(wl_global_create(wl_display_.get(), &wl_output_interface,
+                                      output_version, output.get(),
+                                      bind_output));
+  DCHECK_EQ(outputs_.count(new_display.id()), 0u);
+  outputs_.insert(std::make_pair(new_display.id(), std::move(output)));
+}
+
+void Server::OnDisplayRemoved(const display::Display& old_display) {
+  DCHECK_EQ(outputs_.count(old_display.id()), 1u);
+  outputs_.erase(old_display.id());
 }
 
 }  // namespace wayland

@@ -167,6 +167,25 @@
     "isolated_scripts": [
       {
         "args": [
+          "-v",
+          "--one-frame-only"
+        ],
+        "isolate_name": "angle_perftests",
+        "name": "angle_perftests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "device_os": "O",
+              "device_type": "bullhead",
+              "os": "Android",
+              "pool": "Chrome-GPU"
+            }
+          ]
+        }
+      },
+      {
+        "args": [
           "context_lost",
           "--show-stdout",
           "--browser=android-chromium",
@@ -620,6 +639,25 @@
       }
     ],
     "isolated_scripts": [
+      {
+        "args": [
+          "-v",
+          "--one-frame-only"
+        ],
+        "isolate_name": "angle_perftests",
+        "name": "angle_perftests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "device_os": "O",
+              "device_type": "bullhead",
+              "os": "Android",
+              "pool": "Chrome-GPU"
+            }
+          ]
+        }
+      },
       {
         "args": [
           "context_lost",
@@ -1077,6 +1115,25 @@
     "isolated_scripts": [
       {
         "args": [
+          "-v",
+          "--one-frame-only"
+        ],
+        "isolate_name": "angle_perftests",
+        "name": "angle_perftests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "device_os": "N",
+              "device_type": "foster",
+              "os": "Android",
+              "pool": "Chrome-GPU"
+            }
+          ]
+        }
+      },
+      {
+        "args": [
           "context_lost",
           "--show-stdout",
           "--browser=android-chromium",
@@ -1498,6 +1555,25 @@
       }
     ],
     "isolated_scripts": [
+      {
+        "args": [
+          "-v",
+          "--one-frame-only"
+        ],
+        "isolate_name": "angle_perftests",
+        "name": "angle_perftests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "device_os": "L",
+              "device_type": "hammerhead",
+              "os": "Android",
+              "pool": "Chrome-GPU"
+            }
+          ]
+        }
+      },
       {
         "args": [
           "context_lost",
@@ -3214,6 +3290,25 @@
       }
     ],
     "isolated_scripts": [
+      {
+        "args": [
+          "-v",
+          "--one-frame-only"
+        ],
+        "isolate_name": "angle_perftests",
+        "name": "angle_perftests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "device_os": "M",
+              "device_type": "flounder",
+              "os": "Android",
+              "pool": "Chrome-GPU"
+            }
+          ]
+        }
+      },
       {
         "args": [
           "context_lost",
@@ -11722,6 +11817,7 @@
           "--test-launcher-bot-mode",
           "--test-launcher-jobs=1",
           "--gtest_filter=VrBrowserTest*",
+          "--enable-pixel-output-in-tests",
           "--gtest_also_run_disabled_tests"
         ],
         "name": "vr_browser_tests",
@@ -12048,6 +12144,7 @@
           "--test-launcher-bot-mode",
           "--test-launcher-jobs=1",
           "--gtest_filter=VrBrowserTest*",
+          "--enable-pixel-output-in-tests",
           "--gtest_also_run_disabled_tests"
         ],
         "name": "vr_browser_tests",
@@ -12588,6 +12685,7 @@
           "--test-launcher-bot-mode",
           "--test-launcher-jobs=1",
           "--gtest_filter=VrBrowserTest*",
+          "--enable-pixel-output-in-tests",
           "--gtest_also_run_disabled_tests"
         ],
         "name": "vr_browser_tests",
@@ -13317,6 +13415,7 @@
           "--test-launcher-bot-mode",
           "--test-launcher-jobs=1",
           "--gtest_filter=VrBrowserTest*",
+          "--enable-pixel-output-in-tests",
           "--gtest_also_run_disabled_tests"
         ],
         "name": "vr_browser_tests",
@@ -14069,6 +14168,7 @@
           "--test-launcher-bot-mode",
           "--test-launcher-jobs=1",
           "--gtest_filter=VrBrowserTest*",
+          "--enable-pixel-output-in-tests",
           "--gtest_also_run_disabled_tests"
         ],
         "name": "vr_browser_tests",

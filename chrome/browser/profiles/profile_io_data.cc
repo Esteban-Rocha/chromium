@@ -33,7 +33,6 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/io_thread.h"
-#include "chrome/browser/net/chrome_http_user_agent_settings.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/chrome_url_request_context_getter.h"
 #include "chrome/browser/net/loading_predictor_observer.h"
@@ -79,7 +78,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/common/content_switches.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/cert/caching_cert_verifier.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_proc.h"
@@ -92,7 +91,7 @@
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
 #include "net/http/transport_security_persister.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/client_cert_store.h"
@@ -398,7 +397,6 @@ void NotifyContextGettersOfShutdownOnIO(
     std::unique_ptr<ProfileIOData::ChromeURLRequestContextGetterVector>
         getters) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  ProfileIOData::ChromeURLRequestContextGetterVector::iterator iter;
   for (auto& chrome_context_getter : *getters)
     chrome_context_getter->NotifyContextShuttingDown();
 }
@@ -513,9 +511,6 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
       BrowserThread::GetTaskRunnerForThread(BrowserThread::IO);
-
-  chrome_http_user_agent_settings_.reset(
-      new ChromeHttpUserAgentSettings(pref_service));
 
   // These members are used only for sign in, which is not enabled
   // in incognito mode.  So no need to initialize them.
@@ -1063,8 +1058,6 @@ void ProfileIOData::Init(
   std::unique_ptr<network::URLRequestContextBuilderMojo> builder =
       std::make_unique<network::URLRequestContextBuilderMojo>();
 
-  builder->set_shared_http_user_agent_settings(
-      chrome_http_user_agent_settings_.get());
   builder->set_ssl_config_service(profile_params_->ssl_config_service);
 
   std::unique_ptr<ChromeNetworkDelegate> chrome_network_delegate(
@@ -1212,7 +1205,8 @@ void ProfileIOData::Init(
   if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     main_request_context_owner_ = std::move(builder)->Create(
         std::move(profile_params_->main_network_context_params).get(),
-        io_thread_globals->quic_disabled, io_thread->net_log());
+        io_thread_globals->quic_disabled, io_thread->net_log(),
+        io_thread_globals->deprecated_network_quality_estimator.get());
     main_request_context_ =
         main_request_context_owner_.url_request_context_getter
             ->GetURLRequestContext();
@@ -1438,8 +1432,6 @@ void ProfileIOData::ShutdownOnUIThread(
   network_prediction_options_.Destroy();
   if (ct_policy_manager_)
     ct_policy_manager_->Shutdown();
-  if (chrome_http_user_agent_settings_)
-    chrome_http_user_agent_settings_->CleanupOnUIThread();
   incognito_availibility_pref_.Destroy();
 #if BUILDFLAG(ENABLE_PLUGINS)
   always_open_pdf_externally_.Destroy();
@@ -1489,10 +1481,4 @@ std::unique_ptr<net::NetworkDelegate> ProfileIOData::ConfigureNetworkDelegate(
     std::unique_ptr<ChromeNetworkDelegate> chrome_network_delegate) const {
   return base::WrapUnique<net::NetworkDelegate>(
       chrome_network_delegate.release());
-}
-
-void ProfileIOData::SetCookieSettingsForTesting(
-    content_settings::CookieSettings* cookie_settings) {
-  DCHECK(!cookie_settings_.get());
-  cookie_settings_ = cookie_settings;
 }

@@ -6,6 +6,7 @@ import("features.gni")
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
+import("//ipc/features.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//ppapi/features/features.gni")
@@ -36,7 +37,6 @@ source_set("common") {
   sources = [
     "accessibility_messages.h",
     "all_messages.h",
-    "android/browser_side_navigation_policy_android.cc",
     "android/gin_java_bridge_errors.cc",
     "android/gin_java_bridge_errors.h",
     "android/gin_java_bridge_value.cc",
@@ -65,7 +65,6 @@ source_set("common") {
     "browser_plugin/browser_plugin_constants.cc",
     "browser_plugin/browser_plugin_constants.h",
     "browser_plugin/browser_plugin_messages.h",
-    "cache_storage/cache_storage_messages.h",
     "cache_storage/cache_storage_types.cc",
     "cache_storage/cache_storage_types.h",
     "child_process_host_impl.cc",
@@ -128,6 +127,8 @@ source_set("common") {
     "font_list_fontconfig.cc",
     "font_list_mac.mm",
     "font_list_win.cc",
+    "font_loader_dispatcher_mac.cc",
+    "font_loader_dispatcher_mac.h",
     "frame_message_enums.h",
     "frame_message_structs.cc",
     "frame_message_structs.h",
@@ -351,13 +352,13 @@ source_set("common") {
     "//media/base/ipc",
     "//media/capture",
     "//media/capture/ipc",
-    "//media/gpu:features",
+    "//media/gpu:buildflags",
     "//media/gpu/ipc/client",
     "//media/gpu/ipc/common",
     "//media/midi",
     "//media/midi:mojo",
     "//mojo/common:common_base",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//net",
     "//ppapi/features",
     "//sandbox",
@@ -528,6 +529,11 @@ mojom("mojo_bindings") {
   # indexed_db.mojom uses a native typemap that is not available in Java.
   cpp_only = true
 
+  # imports vs deps check is disabled for this target to work around
+  # windows multiple definitions linker error caused by having
+  # both a direct and an indirect dependency on the same target
+  skip_deps_check = true
+
   sources = [
     "appcache.mojom",
     "associated_interfaces.mojom",
@@ -585,25 +591,43 @@ mojom("mojo_bindings") {
     sources += [ "dwrite_font_proxy.mojom" ]
   }
 
+  if (is_mac) {
+    sources += [ "font_loader_mac.mojom" ]
+  }
+
+  enabled_features = []
+  if (enable_ipc_logging) {
+    enabled_features += [ "ipc_logging" ]
+  }
+  if (is_linux || is_chromeos) {
+    enabled_features += [ "supports_thread_priorities" ]
+  }
+
   import_dirs = [ "//mojo/services" ]
 
   public_deps = [
-    "//components/leveldb/public/interfaces",
+    "//components/services/leveldb/public/interfaces",
     "//content/public/common:interfaces",
+    "//content/public/common:resource_type_bindings",
     "//ipc:mojom_constants",
     "//media/mojo/interfaces",
-    "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//services/network/public/mojom",
     "//services/service_manager/public/mojom",
     "//services/ui/public/interfaces",
+    "//services/ui/public/interfaces/ime",
     "//services/video_capture/public/mojom",
     "//services/viz/public/interfaces",
     "//skia/public/interfaces",
     "//third_party/WebKit/public:mojo_bindings",
+    "//third_party/WebKit/public:web_feature_mojo_bindings",
     "//third_party/WebKit/public/mojom:mojom_core",
     "//ui/base/mojo:mojo_bindings",
+    "//ui/events/mojo:interfaces",
     "//ui/gfx/geometry/mojo",
     "//ui/gfx/mojo",
+    "//ui/gfx/range/mojo",
+    "//ui/latency/mojo:interfaces",
     "//url/mojom:url_mojom_gurl",
     "//url/mojom:url_mojom_origin",
   ]

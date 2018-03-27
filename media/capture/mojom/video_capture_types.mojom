@@ -5,7 +5,7 @@
 module media.mojom;
 
 import "media/mojo/interfaces/media_types.mojom";
-import "mojo/common/time.mojom";
+import "mojo/public/mojom/base/time.mojom";
 import "mojo/common/values.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 
@@ -29,6 +29,7 @@ enum VideoPixelStorage {
 enum VideoCaptureApi {
   LINUX_V4L2_SINGLE_PLANE,
   WIN_MEDIA_FOUNDATION,
+  WIN_MEDIA_FOUNDATION_SENSOR,
   WIN_DIRECT_SHOW,
   MACOSX_AVFOUNDATION,
   MACOSX_DECKLINK,
@@ -59,7 +60,7 @@ struct VideoCaptureParams {
 };
 
 struct VideoFrameInfo{
-  mojo.common.mojom.TimeDelta timestamp;
+  mojo_base.mojom.TimeDelta timestamp;
   mojo.common.mojom.DictionaryValue metadata;
   VideoPixelFormat pixel_format;
   VideoPixelStorage storage_type;

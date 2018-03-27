@@ -45,8 +45,8 @@ fast/harness/results.html [ WontFix ]
 [ Win Linux ] fast/dom/partial-layout-overlay-scrollbars.html [ WontFix ]
 
 # Tests trak table support / letter spacing specific to Mac system font
-# Only maintain this for latest Mac OS
-[ Win Linux Android Mac10.10 Mac10.11 Mac10.12 ] fast/text/mac-system-ui-trak.html [ WontFix ]
+# Only maintain this for the latest macOS (and Retina is currently 10.12).
+[ Win Linux Android Mac10.10 Mac10.11 Mac10.12 Retina ] fast/text/mac-system-ui-trak.html [ WontFix ]
 
  # Mac's popup behavior is different.
 [ Mac ] fast/forms/select/menulist-onchange-fired-with-key-up-down.html [ WontFix ]
@@ -237,7 +237,7 @@ crbug.com/753080 external/wpt/css/css-transforms/ttwf-css-3d-polygon-cycle.html 
 
 # We could fix this test for us and upstream it if the test shell user agent
 # would let us differentiate test_shell and WebKit DumpTreeNode.
-crbug.com/7482 [ Win Mac ] http/tests/misc/timer-vs-loading.html [ WontFix ]
+crbug.com/7482 [ Linux Win Mac ] http/tests/misc/timer-vs-loading.html [ WontFix ]
 
 # On Linux bold emoji are already supported.
 crbug.com/551843 [ Linux ] fast/text/fallback-traits-fixup.html [ WontFix ]
@@ -275,8 +275,7 @@ crbug.com/627953 [ Android Linux Mac ] fast/text/symbol-cmap.html [ WontFix ]
 crbug.com/642912 http/tests/wasm/ [ WontFix ]
 
 # These tests require audio codecs which are generally not available;
-# these tests can still be run manually with --skiped=ignore.
-webaudio/codec-tests/mp3 [ WontFix ]
+# these tests can still be run manually with --skipped=ignore.
 webaudio/codec-tests/aac [ WontFix ]
 
 # WPT for CSS cascade
@@ -751,8 +750,6 @@ external/wpt/css/css-writing-modes/first-page-vlr-003.xht [ WontFix ]
 external/wpt/css/css-writing-modes/first-page-vrl-002.xht [ WontFix ]
 external/wpt/css/css-writing-modes/page-flow-direction-002.xht [ WontFix ]
 external/wpt/css/css-writing-modes/page-flow-direction-003.xht [ WontFix ]
-external/wpt/css/css-writing-modes/page-flow-direction-slr-005.xht [ WontFix ]
-external/wpt/css/css-writing-modes/page-flow-direction-srl-004.xht [ WontFix ]
 external/wpt/css/selectors/hover-001-manual.html [ WontFix ]
 external/wpt/entries-api/errors-manual.html [ WontFix ]
 external/wpt/entries-api/filesystemdirectoryentry-attributes-manual.html [ WontFix ]

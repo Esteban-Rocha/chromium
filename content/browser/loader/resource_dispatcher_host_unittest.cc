@@ -23,7 +23,6 @@
 #include "base/task_scheduler/task_traits.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_resource_handler.h"
@@ -105,7 +104,6 @@ static network::ResourceRequest CreateResourceRequest(const char* method,
   request.load_flags = 0;
   request.plugin_child_id = -1;
   request.resource_type = type;
-  request.request_context = 0;
   request.appcache_host_id = kAppCacheNoHostId;
   request.download_to_file = false;
   request.should_reset_appcache = false;
@@ -1068,60 +1066,41 @@ TEST_F(ResourceDispatcherHostTest, DetachedResourceTimesOut) {
 
 // If the filter has disappeared then detachable resources should continue to
 // load.
-// RESOURCE_TYPE_PING requests Handling is affected by
-// "KeepAliveRendererForKeepaliveRequests" feature. We keep this test so that
-// we can unship the feature easily if needed.
-// TODO(yhirano): Add a corresponding test case with the feature.
 TEST_F(ResourceDispatcherHostTest, DeletedFilterDetached) {
-  network::mojom::URLLoaderPtr loader1, loader2;
-  network::TestURLLoaderClient client1, client2;
+  network::mojom::URLLoaderPtr loader1;
+  network::TestURLLoaderClient client1;
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(
-      features::kKeepAliveRendererForKeepaliveRequests);
   // test_url_1's data is available synchronously, so use 2 and 3.
   network::ResourceRequest request_prefetch = CreateResourceRequest(
       "GET", RESOURCE_TYPE_PREFETCH, net::URLRequestTestJob::test_url_2());
-  network::ResourceRequest request_ping = CreateResourceRequest(
-      "GET", RESOURCE_TYPE_PING, net::URLRequestTestJob::test_url_3());
 
   filter_->CreateLoaderAndStart(
       mojo::MakeRequest(&loader1), 0, 1, network::mojom::kURLLoadOptionNone,
       request_prefetch, client1.CreateInterfacePtr(),
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
 
-  filter_->CreateLoaderAndStart(
-      mojo::MakeRequest(&loader2), 0, 2, network::mojom::kURLLoadOptionNone,
-      request_ping, client2.CreateInterfacePtr(),
-      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
-
   // Remove the filter before processing the requests by simulating channel
   // closure.
   ResourceRequestInfoImpl* info_prefetch = ResourceRequestInfoImpl::ForRequest(
       host_.GetURLRequest(GlobalRequestID(filter_->child_id(), 1)));
-  ResourceRequestInfoImpl* info_ping = ResourceRequestInfoImpl::ForRequest(
-      host_.GetURLRequest(GlobalRequestID(filter_->child_id(), 2)));
   DCHECK_EQ(filter_.get(), info_prefetch->requester_info()->filter());
-  DCHECK_EQ(filter_.get(), info_ping->requester_info()->filter());
   filter_->OnChannelClosing();
 
   client1.RunUntilComplete();
-  client2.RunUntilComplete();
   EXPECT_EQ(net::ERR_ABORTED, client1.completion_status().error_code);
-  EXPECT_EQ(net::ERR_ABORTED, client2.completion_status().error_code);
 
   // But it continues detached.
-  EXPECT_EQ(2, host_.pending_requests());
+  EXPECT_EQ(1, host_.pending_requests());
   EXPECT_TRUE(info_prefetch->detachable_handler()->is_detached());
-  EXPECT_TRUE(info_ping->detachable_handler()->is_detached());
 
   // Make sure the requests weren't canceled early.
-  EXPECT_EQ(2, host_.pending_requests());
+  EXPECT_EQ(1, host_.pending_requests());
 
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
   content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(0, host_.pending_requests());
-  EXPECT_EQ(2, network_delegate()->completed_requests());
+  EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->canceled_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
 }
@@ -1348,16 +1327,10 @@ TEST_F(ResourceDispatcherHostTest, CancelInDelegate) {
   EXPECT_EQ(net::ERR_ACCESS_DENIED, client.completion_status().error_code);
 }
 
-// RESOURCE_TYPE_PING requests Handling is affected by
-// "KeepAliveRendererForKeepaliveRequests" feature. We keep this test so that
-// we can unship the feature easily if needed.
-// TODO(yhirano): Add a corresponding test case with the feature.
 TEST_F(ResourceDispatcherHostTest, CancelRequestsForRoute) {
   network::mojom::URLLoaderPtr loader1, loader2, loader3, loader4;
   network::TestURLLoaderClient client1, client2, client3, client4;
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(
-      features::kKeepAliveRendererForKeepaliveRequests);
   job_factory_->SetDelayedStartJobGeneration(true);
   MakeTestRequestWithRenderFrame(0, 11, 1, net::URLRequestTestJob::test_url_1(),
                                  RESOURCE_TYPE_XHR, mojo::MakeRequest(&loader1),
@@ -1370,12 +1343,12 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForRoute) {
   EXPECT_EQ(2, host_.pending_requests());
 
   MakeTestRequestWithRenderFrame(
-      0, 11, 3, net::URLRequestTestJob::test_url_3(), RESOURCE_TYPE_PING,
+      0, 11, 3, net::URLRequestTestJob::test_url_3(), RESOURCE_TYPE_PREFETCH,
       mojo::MakeRequest(&loader3), client3.CreateInterfacePtr());
   EXPECT_EQ(3, host_.pending_requests());
 
   MakeTestRequestWithRenderFrame(
-      0, 12, 4, net::URLRequestTestJob::test_url_4(), RESOURCE_TYPE_PING,
+      0, 12, 4, net::URLRequestTestJob::test_url_4(), RESOURCE_TYPE_PREFETCH,
       mojo::MakeRequest(&loader4), client4.CreateInterfacePtr());
   EXPECT_EQ(4, host_.pending_requests());
 
@@ -2145,15 +2118,47 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContextDetached) {
   EXPECT_EQ(0, host_.pending_requests());
 }
 
+namespace {
+
+class ExternalProtocolBrowserClient : public TestContentBrowserClient {
+ public:
+  ExternalProtocolBrowserClient() {}
+
+  bool HandleExternalProtocol(
+      const GURL& url,
+      ResourceRequestInfo::WebContentsGetter web_contents_getter,
+      int child_id,
+      NavigationUIData* navigation_data,
+      bool is_main_frame,
+      ui::PageTransition page_transition,
+      bool has_user_gesture) override {
+    return false;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ExternalProtocolBrowserClient);
+};
+
+}  // namespace
+
+// Verifies that if the embedder says that it didn't handle an unkonown protocol
+// the request is cancelled and net::ERR_ABORTED is returned. Otherwise it is
+// not aborted and net/ layer cancels it with net::ERR_UNKNOWN_URL_SCHEME.
 TEST_F(ResourceDispatcherHostTest, UnknownURLScheme) {
   EXPECT_EQ(0, host_.pending_requests());
 
   HandleScheme("http");
 
-  const GURL invalid_sheme_url = GURL("foo://bar");
-  const int expected_error_code = net::ERR_UNKNOWN_URL_SCHEME;
+  ExternalProtocolBrowserClient test_client;
+  ContentBrowserClient* old_client = SetBrowserClientForTesting(&test_client);
 
-  CompleteFailingMainResourceRequest(invalid_sheme_url, expected_error_code);
+  const GURL invalid_scheme_url = GURL("foo://bar");
+  int expected_error_code = net::ERR_UNKNOWN_URL_SCHEME;
+  CompleteFailingMainResourceRequest(invalid_scheme_url, expected_error_code);
+  SetBrowserClientForTesting(old_client);
+
+  expected_error_code = net::ERR_ABORTED;
+  CompleteFailingMainResourceRequest(invalid_scheme_url, expected_error_code);
 }
 
 // Request a very large detachable resource and cancel part way. Some of the

@@ -91,6 +91,7 @@
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_plugin_guest_manager.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/focused_node_details.h"
@@ -176,8 +177,9 @@ const char kDotGoogleDotCom[] = ".google.com";
 const void* const kWebContentsAndroidKey = &kWebContentsAndroidKey;
 #endif
 
-base::LazyInstance<std::vector<WebContentsImpl::CreatedCallback>>::
-    DestructorAtExit g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<std::vector<
+    WebContentsImpl::FriendWrapper::CreatedCallback>>::DestructorAtExit
+    g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 
 void NotifyCacheOnIO(
     scoped_refptr<net::URLRequestContextGetter> request_context,
@@ -218,41 +220,6 @@ void UpdateAccessibilityModeOnFrame(RenderFrameHost* frame_host) {
 void ResetAccessibility(RenderFrameHost* rfh) {
   static_cast<RenderFrameHostImpl*>(rfh)->AccessibilityReset();
 }
-
-using AXTreeSnapshotCallback = WebContents::AXTreeSnapshotCallback;
-
-// Helper class used by WebContentsImpl::RequestAXTreeSnapshot.
-// Handles the callbacks from parallel snapshot requests to each frame,
-// and feeds the results to an AXTreeCombiner, which converts them into a
-// single combined accessibility tree.
-class AXTreeSnapshotCombiner : public base::RefCounted<AXTreeSnapshotCombiner> {
- public:
-  explicit AXTreeSnapshotCombiner(AXTreeSnapshotCallback callback)
-      : callback_(std::move(callback)) {}
-
-  AXTreeSnapshotCallback AddFrame(bool is_root) {
-    // Adds a reference to |this|.
-    return base::BindOnce(&AXTreeSnapshotCombiner::ReceiveSnapshot, this,
-                          is_root);
-  }
-
-  void ReceiveSnapshot(bool is_root, const ui::AXTreeUpdate& snapshot) {
-    combiner_.AddTree(snapshot, is_root);
-  }
-
- private:
-  friend class base::RefCounted<AXTreeSnapshotCombiner>;
-
-  // This is called automatically after the last call to ReceiveSnapshot
-  // when there are no more references to this object.
-  ~AXTreeSnapshotCombiner() {
-    combiner_.Combine();
-    std::move(callback_).Run(combiner_.combined());
-  }
-
-  ui::AXTreeCombiner combiner_;
-  AXTreeSnapshotCallback callback_;
-};
 
 // Helper for GetInnerWebContents().
 bool GetInnerWebContentsHelper(
@@ -554,7 +521,6 @@ WebContentsImpl::WebContentsImpl(BrowserContext* browser_context)
 #if !defined(OS_ANDROID)
       page_scale_factor_is_one_(true),
 #endif  // !defined(OS_ANDROID)
-      mouse_lock_widget_(nullptr),
       is_overlay_content_(false),
       showing_context_menu_(false),
       loading_weak_factory_(this),
@@ -604,6 +570,9 @@ WebContentsImpl::~WebContentsImpl() {
     // If the current WebContents is in focus, unset it.
     outermost->SetAsFocusedWebContentsIfNecessary();
   }
+
+  if (mouse_lock_widget_)
+    mouse_lock_widget_->RejectMouseLockOrUnlockIfNecessary();
 
   for (FrameTreeNode* node : frame_tree_.Nodes()) {
     // Delete all RFHs pending shutdown, which will lead the corresponding RVHs
@@ -1069,17 +1038,68 @@ void WebContentsImpl::AddAccessibilityMode(ui::AXMode mode) {
   SetAccessibilityMode(new_mode);
 }
 
-void WebContentsImpl::RequestAXTreeSnapshot(AXTreeSnapshotCallback callback) {
+// Helper class used by WebContentsImpl::RequestAXTreeSnapshot.
+// Handles the callbacks from parallel snapshot requests to each frame,
+// and feeds the results to an AXTreeCombiner, which converts them into a
+// single combined accessibility tree.
+class WebContentsImpl::AXTreeSnapshotCombiner
+    : public base::RefCounted<AXTreeSnapshotCombiner> {
+ public:
+  explicit AXTreeSnapshotCombiner(AXTreeSnapshotCallback callback)
+      : callback_(std::move(callback)) {}
+
+  AXTreeSnapshotCallback AddFrame(bool is_root) {
+    // Adds a reference to |this|.
+    return base::BindOnce(&AXTreeSnapshotCombiner::ReceiveSnapshot, this,
+                          is_root);
+  }
+
+  void ReceiveSnapshot(bool is_root, const ui::AXTreeUpdate& snapshot) {
+    combiner_.AddTree(snapshot, is_root);
+  }
+
+ private:
+  friend class base::RefCounted<AXTreeSnapshotCombiner>;
+
+  // This is called automatically after the last call to ReceiveSnapshot
+  // when there are no more references to this object.
+  ~AXTreeSnapshotCombiner() {
+    combiner_.Combine();
+    std::move(callback_).Run(combiner_.combined());
+  }
+
+  ui::AXTreeCombiner combiner_;
+  AXTreeSnapshotCallback callback_;
+};
+
+void WebContentsImpl::RequestAXTreeSnapshot(AXTreeSnapshotCallback callback,
+                                            ui::AXMode ax_mode) {
   // Send a request to each of the frames in parallel. Each one will return
   // an accessibility tree snapshot, and AXTreeSnapshotCombiner will combine
   // them into a single tree and call |callback| with that result, then
   // delete |combiner|.
+  FrameTreeNode* root_node = frame_tree_.root();
   AXTreeSnapshotCombiner* combiner =
       new AXTreeSnapshotCombiner(std::move(callback));
+
+  RecursiveRequestAXTreeSnapshotOnFrame(root_node, combiner, ax_mode);
+}
+
+void WebContentsImpl::RecursiveRequestAXTreeSnapshotOnFrame(
+    FrameTreeNode* root_node,
+    AXTreeSnapshotCombiner* combiner,
+    ui::AXMode ax_mode) {
   for (FrameTreeNode* frame_tree_node : frame_tree_.Nodes()) {
-    bool is_root = frame_tree_node->parent() == nullptr;
-    frame_tree_node->current_frame_host()->RequestAXTreeSnapshot(
-        combiner->AddFrame(is_root));
+    WebContentsImpl* inner_contents =
+        node_.GetInnerWebContentsInFrame(frame_tree_node);
+    if (inner_contents) {
+      inner_contents->RecursiveRequestAXTreeSnapshotOnFrame(root_node, combiner,
+                                                            ax_mode);
+    } else {
+      bool is_root = frame_tree_node == root_node;
+      frame_tree_node->current_frame_host()->RequestAXTreeSnapshot(
+          combiner->AddFrame(is_root), ax_mode);
+    }
   }
 }
 
@@ -1140,7 +1160,7 @@ std::vector<WebContentsImpl*> WebContentsImpl::GetInnerWebContents() {
   if (browser_plugin_embedder_) {
     std::vector<WebContentsImpl*> inner_contents;
     GetBrowserContext()->GetGuestManager()->ForEachGuest(
-        this, base::Bind(&GetInnerWebContentsHelper, &inner_contents));
+        this, base::BindRepeating(&GetInnerWebContentsHelper, &inner_contents));
     return inner_contents;
   }
 
@@ -1677,6 +1697,10 @@ void WebContentsImpl::Stop() {
     observer.NavigationStopped();
 }
 
+void WebContentsImpl::FreezePage() {
+  SendPageMessage(new PageMsg_FreezePage(MSG_ROUTING_NONE));
+}
+
 WebContents* WebContentsImpl::Clone() {
   // We use our current SiteInstance since the cloned entry will use it anyway.
   // We pass our own opener so that the cloned page can access it if it was set
@@ -1933,6 +1957,8 @@ void WebContentsImpl::RenderWidgetDeleted(
 
   if (render_widget_host == mouse_lock_widget_)
     LostMouseLock(mouse_lock_widget_);
+
+  CancelKeyboardLock(keyboard_lock_widget_);
 }
 
 void WebContentsImpl::RenderWidgetGotFocus(
@@ -2100,6 +2126,9 @@ void WebContentsImpl::EnterFullscreenMode(const GURL& origin) {
         ->ShutdownAndDestroyWidget(true);
   }
 
+  if (keyboard_lock_widget_)
+    keyboard_lock_widget_->GotResponseToKeyboardLockRequest(true);
+
   if (delegate_)
     delegate_->EnterFullscreenModeForTab(this, origin);
 
@@ -2121,6 +2150,9 @@ void WebContentsImpl::ExitFullscreenMode(bool will_cause_resize) {
   if (video_view != NULL)
     video_view->ExitFullscreen();
 #endif
+
+  if (keyboard_lock_widget_)
+    keyboard_lock_widget_->GotResponseToKeyboardLockRequest(false);
 
   if (delegate_)
     delegate_->ExitFullscreenModeForTab(this);
@@ -2235,6 +2267,45 @@ RenderWidgetHostImpl* WebContentsImpl::GetMouseLockWidget() {
     return mouse_lock_widget_;
 
   return nullptr;
+}
+
+bool WebContentsImpl::RequestKeyboardLock(
+    RenderWidgetHostImpl* render_widget_host) {
+  DCHECK(render_widget_host);
+  if (render_widget_host == keyboard_lock_widget_)
+    return true;
+
+  if (render_widget_host->delegate()->GetAsWebContents() != this) {
+    NOTREACHED();
+    return false;
+  }
+
+  // KeyboardLock is only supported when called by the top-level browsing
+  // context and is not supported in embedded content scenarios.
+  if (GetOuterWebContents())
+    return false;
+
+  keyboard_lock_widget_ = render_widget_host;
+
+  if (IsFullscreen())
+    render_widget_host->GotResponseToKeyboardLockRequest(true);
+
+  return true;
+}
+
+void WebContentsImpl::CancelKeyboardLock(
+    RenderWidgetHostImpl* render_widget_host) {
+  if (!keyboard_lock_widget_ || render_widget_host != keyboard_lock_widget_)
+    return;
+
+  RenderWidgetHostImpl* old_keyboard_lock_widget = keyboard_lock_widget_;
+  keyboard_lock_widget_ = nullptr;
+
+  old_keyboard_lock_widget->CancelKeyboardLock();
+}
+
+RenderWidgetHostImpl* WebContentsImpl::GetKeyboardLockWidget() {
+  return keyboard_lock_widget_;
 }
 
 void WebContentsImpl::OnRenderFrameProxyVisibilityChanged(bool visible) {
@@ -2555,8 +2626,7 @@ void WebContentsImpl::ShowCreatedWidget(int process_id,
     widget_host_view->InitAsPopup(view, initial_rect);
   }
 
-  RenderWidgetHostImpl* render_widget_host_impl =
-      widget_host_view->GetRenderWidgetHostImpl();
+  RenderWidgetHostImpl* render_widget_host_impl = widget_host_view->host();
   render_widget_host_impl->Init();
   // Only allow privileged mouse lock for fullscreen render widget, which is
   // used to implement Pepper Flash fullscreen.
@@ -3311,12 +3381,14 @@ bool WebContentsImpl::SavePage(const base::FilePath& main_file,
 
 void WebContentsImpl::SaveFrame(const GURL& url,
                                 const Referrer& referrer) {
-  SaveFrameWithHeaders(url, referrer, std::string());
+  SaveFrameWithHeaders(url, referrer, std::string(), base::string16());
 }
 
-void WebContentsImpl::SaveFrameWithHeaders(const GURL& url,
-                                           const Referrer& referrer,
-                                           const std::string& headers) {
+void WebContentsImpl::SaveFrameWithHeaders(
+    const GURL& url,
+    const Referrer& referrer,
+    const std::string& headers,
+    const base::string16& suggested_filename) {
   if (!GetLastCommittedURL().is_valid())
     return;
   if (delegate_ && delegate_->SaveFrame(url, referrer))
@@ -3378,6 +3450,7 @@ void WebContentsImpl::SaveFrameWithHeaders(const GURL& url,
       params->add_request_header(key_value.first, key_value.second);
     }
   }
+  params->set_suggested_name(suggested_filename);
   params->set_download_source(download::DownloadSource::WEB_CONTENTS_API);
   BrowserContext::GetDownloadManager(GetBrowserContext())
       ->DownloadUrl(std::move(params));
@@ -3385,8 +3458,9 @@ void WebContentsImpl::SaveFrameWithHeaders(const GURL& url,
 
 void WebContentsImpl::GenerateMHTML(
     const MHTMLGenerationParams& params,
-    const base::Callback<void(int64_t)>& callback) {
-  MHTMLGenerationManager::GetInstance()->SaveMHTML(this, params, callback);
+    base::OnceCallback<void(int64_t)> callback) {
+  MHTMLGenerationManager::GetInstance()->SaveMHTML(this, params,
+                                                   std::move(callback));
 }
 
 const std::string& WebContentsImpl::GetContentsMimeType() const {
@@ -3560,7 +3634,7 @@ int WebContentsImpl::DownloadImage(
     bool is_favicon,
     uint32_t max_bitmap_size,
     bool bypass_cache,
-    const WebContents::ImageDownloadCallback& callback) {
+    WebContents::ImageDownloadCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   static int next_image_download_id = 0;
   const content::mojom::ImageDownloaderPtr& mojo_image_downloader =
@@ -3569,20 +3643,22 @@ int WebContentsImpl::DownloadImage(
   if (!mojo_image_downloader) {
     // If the renderer process is dead (i.e. crash, or memory pressure on
     // Android), the downloader service will be invalid. Pre-Mojo, this would
-    // hang the callback indefinetly since the IPC would be dropped. Now,
+    // hang the callback indefinitely since the IPC would be dropped. Now,
     // respond with a 400 HTTP error code to indicate that something went wrong.
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         base::BindOnce(&WebContentsImpl::OnDidDownloadImage,
-                       weak_factory_.GetWeakPtr(), callback, download_id, url,
-                       400, std::vector<SkBitmap>(), std::vector<gfx::Size>()));
+                       weak_factory_.GetWeakPtr(), std::move(callback),
+                       download_id, url, 400, std::vector<SkBitmap>(),
+                       std::vector<gfx::Size>()));
     return download_id;
   }
 
   mojo_image_downloader->DownloadImage(
       url, is_favicon, max_bitmap_size, bypass_cache,
       base::BindOnce(&WebContentsImpl::OnDidDownloadImage,
-                     weak_factory_.GetWeakPtr(), callback, download_id, url));
+                     weak_factory_.GetWeakPtr(), std::move(callback),
+                     download_id, url));
   return download_id;
 }
 
@@ -3617,8 +3693,8 @@ bool WebContentsImpl::WasEverAudible() {
   return was_ever_audible_;
 }
 
-void WebContentsImpl::GetManifest(const GetManifestCallback& callback) {
-  manifest_manager_host_->GetManifest(callback);
+void WebContentsImpl::GetManifest(GetManifestCallback callback) {
+  manifest_manager_host_->GetManifest(std::move(callback));
 }
 
 void WebContentsImpl::ExitFullscreen(bool will_cause_resize) {
@@ -4028,24 +4104,32 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
 }
 
 void WebContentsImpl::SubresourceResponseStarted(const GURL& url,
-                                                 const GURL& referrer,
-                                                 const std::string& method,
-                                                 ResourceType resource_type,
-                                                 const std::string& ip,
                                                  net::CertStatus cert_status) {
-  for (auto& observer : observers_) {
-    observer.SubresourceResponseStarted(url, referrer, method, resource_type,
-                                        ip);
-  }
-
   controller_.ssl_manager()->DidStartResourceResponse(url, cert_status);
   SetNotWaitingForResponse();
+}
+
+void WebContentsImpl::SubresourceLoadComplete(
+    mojom::SubresourceLoadInfoPtr subresource_load_info) {
+  for (auto& observer : observers_) {
+    observer.SubresourceLoadComplete(*subresource_load_info);
+  }
 }
 
 void WebContentsImpl::PrintCrossProcessSubframe(
     const gfx::Rect& rect,
     int document_cookie,
     RenderFrameHost* subframe_host) {
+  auto* outer_contents = GetOuterWebContents();
+  if (outer_contents) {
+    // When an extension or app page is printed, the content should be
+    // composited with outer content, so the outer contents should handle the
+    // print request.
+    outer_contents->PrintCrossProcessSubframe(rect, document_cookie,
+                                              subframe_host);
+    return;
+  }
+
   // If there is no delegate such as in tests or during deletion, do nothing.
   if (!delegate_)
     return;
@@ -4331,14 +4415,14 @@ void WebContentsImpl::OnRequestPpapiBrokerPermission(
       &WebContentsImpl::SendPpapiBrokerPermissionResult, base::Unretained(this),
       source->GetProcess()->GetID(), ppb_broker_route_id);
   if (!delegate_) {
-    permission_result_callback.Run(false);
+    std::move(permission_result_callback).Run(false);
     return;
   }
 
   if (!delegate_->RequestPpapiBrokerPermission(this, url, plugin_path,
                                                permission_result_callback)) {
     NOTIMPLEMENTED();
-    permission_result_callback.Run(false);
+    std::move(permission_result_callback).Run(false);
   }
 }
 
@@ -4665,6 +4749,16 @@ void WebContentsImpl::RunJavaScriptDialog(RenderFrameHost* render_frame_host,
                                           const base::string16& default_prompt,
                                           JavaScriptDialogType dialog_type,
                                           IPC::Message* reply_msg) {
+  // Ensure that if showing a dialog is the first thing that a page does, that
+  // the contents of the previous page aren't shown behind it. This is required
+  // because showing a dialog freezes the renderer, so no frames will be coming
+  // from it. https://crbug.com/823353
+  auto* render_widget_host_impl =
+      static_cast<RenderFrameHostImpl*>(render_frame_host)
+          ->GetRenderWidgetHost();
+  if (render_widget_host_impl)
+    render_widget_host_impl->ForceFirstFrameAfterNavigationTimeout();
+
   // Running a dialog causes an exit to webpage-initiated fullscreen.
   // http://crbug.com/728276
   if (IsFullscreenForCurrentTab())
@@ -4724,6 +4818,16 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
     RenderFrameHost* render_frame_host,
     bool is_reload,
     IPC::Message* reply_msg) {
+  // Ensure that if showing a dialog is the first thing that a page does, that
+  // the contents of the previous page aren't shown behind it. This is required
+  // because showing a dialog freezes the renderer, so no frames will be coming
+  // from it. https://crbug.com/823353
+  auto* render_widget_host_impl =
+      static_cast<RenderFrameHostImpl*>(render_frame_host)
+          ->GetRenderWidgetHost();
+  if (render_widget_host_impl)
+    render_widget_host_impl->ForceFirstFrameAfterNavigationTimeout();
+
   // Running a dialog causes an exit to webpage-initiated fullscreen.
   // http://crbug.com/728276
   if (IsFullscreenForCurrentTab())
@@ -4942,11 +5046,6 @@ void WebContentsImpl::RenderViewReady(RenderViewHost* rvh) {
     rwhv->SetMainFrameAXTreeID(GetMainFrame()->GetAXTreeID());
 
   notify_disconnection_ = true;
-  // TODO(avi): Remove. http://crbug.com/170921
-  NotificationService::current()->Notify(
-      NOTIFICATION_WEB_CONTENTS_CONNECTED,
-      Source<WebContents>(this),
-      NotificationService::NoDetails());
 
   bool was_crashed = IsCrashed();
   SetIsCrashed(base::TERMINATION_STATUS_STILL_RUNNING, 0);
@@ -5730,13 +5829,14 @@ bool WebContentsImpl::CompletedFirstVisuallyNonEmptyPaint() const {
 #endif
 
 void WebContentsImpl::OnDidDownloadImage(
-    const ImageDownloadCallback& callback,
+    ImageDownloadCallback callback,
     int id,
     const GURL& image_url,
     int32_t http_status_code,
     const std::vector<SkBitmap>& images,
     const std::vector<gfx::Size>& original_image_sizes) {
-  callback.Run(id, http_status_code, image_url, images, original_image_sizes);
+  std::move(callback).Run(id, http_status_code, image_url, images,
+                          original_image_sizes);
 }
 
 void WebContentsImpl::OnDialogClosed(int render_process_id,

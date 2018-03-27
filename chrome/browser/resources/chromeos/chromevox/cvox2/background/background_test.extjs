@@ -1416,7 +1416,8 @@ TEST_F('BackgroundTest', 'TableColumnHeaders', function() {
   });
 });
 
-TEST_F('BackgroundTest', 'ActiveDescendantUpdates', function() {
+// Flaky, see http://crbug.com/825429.
+TEST_F('BackgroundTest', 'DISABLED_ActiveDescendantUpdates', function() {
   var mockFeedback = this.createMockFeedback();
   this.runWithLoadedTree(function(root) {/*!
     <div aria-label="container" tabindex=0 role="group" id="active"
@@ -1518,6 +1519,23 @@ TEST_F('BackgroundTest', 'NavigationEscapesEdit', function() {
         .call(assertBeginning.bind(this, false))
         .call(assertEnd.bind(this, true))
 
+        .replay();
+  });
+});
+
+TEST_F('BackgroundTest', 'NavigationSyncsSelect', function() {
+  var mockFeedback = this.createMockFeedback();
+  this.runWithLoadedTree(function() {/*!
+    <select>
+      <option>apple</option>
+      <option>grape</option>
+    </select>
+  */}, function(root) {
+    var select = root.find({role: RoleType.POP_UP_BUTTON});
+    mockFeedback.call(select.doDefault.bind(select))
+        .expectSpeech('apple', 'Selected')
+        .call(doCmd('nextObject'))
+        .expectSpeech('grape', 'Selected')
         .replay();
   });
 });

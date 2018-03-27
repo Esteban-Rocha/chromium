@@ -14,6 +14,12 @@
 #include "platform/scroll/ScrollSnapData.h"
 
 namespace blink {
+namespace {
+// This is experimentally determined and corresponds to the UA decided
+// parameter as mentioned in spec.
+constexpr float kProximityRaio = 1.0 / 3.0;
+}  // namespace
+// TODO(sunyunjia): Move the static functions to an anonymous namespace.
 
 SnapCoordinator::SnapCoordinator() : snap_container_map_() {}
 
@@ -46,8 +52,8 @@ static LayoutBox* FindSnapContainer(const LayoutBox& snap_area) {
 void SnapCoordinator::SnapAreaDidChange(LayoutBox& snap_area,
                                         ScrollSnapAlign scroll_snap_align) {
   LayoutBox* old_container = snap_area.SnapContainer();
-  if (scroll_snap_align.alignmentX == SnapAlignment::kNone &&
-      scroll_snap_align.alignmentY == SnapAlignment::kNone) {
+  if (scroll_snap_align.alignment_inline == SnapAlignment::kNone &&
+      scroll_snap_align.alignment_block == SnapAlignment::kNone) {
     snap_area.SetSnapContainer(nullptr);
     if (old_container)
       UpdateSnapContainerData(*old_container);
@@ -81,12 +87,29 @@ static ScrollableArea* ScrollableAreaForSnapping(const LayoutBox& layout_box) {
              : layout_box.GetScrollableArea();
 }
 
+static ScrollSnapType GetPhysicalSnapType(const LayoutBox& snap_container) {
+  ScrollSnapType scroll_snap_type = snap_container.Style()->GetScrollSnapType();
+  if (scroll_snap_type.axis == SnapAxis::kInline) {
+    if (snap_container.Style()->IsHorizontalWritingMode())
+      scroll_snap_type.axis = SnapAxis::kX;
+    else
+      scroll_snap_type.axis = SnapAxis::kY;
+  }
+  if (scroll_snap_type.axis == SnapAxis::kBlock) {
+    if (snap_container.Style()->IsHorizontalWritingMode())
+      scroll_snap_type.axis = SnapAxis::kY;
+    else
+      scroll_snap_type.axis = SnapAxis::kX;
+  }
+  // Writing mode does not affect the cases where axis kX, kY or kBoth.
+  return scroll_snap_type;
+}
+
 void SnapCoordinator::UpdateSnapContainerData(const LayoutBox& snap_container) {
   if (snap_container.Style()->GetScrollSnapType().is_none)
     return;
 
-  SnapContainerData snap_container_data(
-      snap_container.Style()->GetScrollSnapType());
+  SnapContainerData snap_container_data(GetPhysicalSnapType(snap_container));
 
   ScrollableArea* scrollable_area = ScrollableAreaForSnapping(snap_container);
   if (!scrollable_area)
@@ -96,10 +119,51 @@ void SnapCoordinator::UpdateSnapContainerData(const LayoutBox& snap_container) {
   snap_container_data.set_max_position(
       gfx::ScrollOffset(max_position.X(), max_position.Y()));
 
+  // Scroll-padding represents inward offsets from the corresponding edge of the
+  // scrollport. https://drafts.csswg.org/css-scroll-snap-1/#scroll-padding
+  // Scrollport is the visual viewport of the scroll container (through which
+  // the scrollable overflow region can be viewed) coincides with its padding
+  // box. https://drafts.csswg.org/css-overflow-3/#scrollport. So we use the
+  // LayoutRect of the padding box here. The coordinate is relative to the
+  // container's border box.
+  LayoutRect container_rect(snap_container.PaddingBoxRect());
+
+  const ComputedStyle* container_style = snap_container.Style();
+  LayoutRectOutsets container_padding(
+      // The percentage of scroll-padding is different from that of normal
+      // padding, as scroll-padding resolves the percentage against
+      // corresponding dimension of the scrollport[1], while the normal padding
+      // resolves that against "width".[2,3]
+      // We use MinimumValueForLength here to ensure kAuto is resolved to
+      // LayoutUnit() which is the correct behavior for padding.
+      // [1] https://drafts.csswg.org/css-scroll-snap-1/#scroll-padding
+      //     "relative to the corresponding dimension of the scroll container’s
+      //      scrollport"
+      // [2] https://drafts.csswg.org/css-box/#padding-props
+      // [3] See for example LayoutBoxModelObject::ComputedCSSPadding where it
+      //     uses |MinimumValueForLength| but against the "width".
+      MinimumValueForLength(container_style->ScrollPaddingTop(),
+                            container_rect.Height()),
+      MinimumValueForLength(container_style->ScrollPaddingRight(),
+                            container_rect.Width()),
+      MinimumValueForLength(container_style->ScrollPaddingBottom(),
+                            container_rect.Height()),
+      MinimumValueForLength(container_style->ScrollPaddingLeft(),
+                            container_rect.Width()));
+  container_rect.Contract(container_padding);
+
+  if (snap_container_data.scroll_snap_type().strictness ==
+      SnapStrictness::kProximity) {
+    LayoutSize size = container_rect.Size();
+    size.Scale(kProximityRaio);
+    gfx::ScrollOffset range(size.Width().ToFloat(), size.Height().ToFloat());
+    snap_container_data.set_proximity_range(range);
+  }
+
   if (SnapAreaSet* snap_areas = snap_container.SnapAreas()) {
     for (const LayoutBox* snap_area : *snap_areas) {
-      snap_container_data.AddSnapAreaData(
-          CalculateSnapAreaData(*snap_area, snap_container, max_position));
+      snap_container_data.AddSnapAreaData(CalculateSnapAreaData(
+          *snap_area, snap_container, container_rect, max_position));
     }
   }
   snap_container_map_.Set(&snap_container, snap_container_data);
@@ -127,11 +191,12 @@ static float ClipInContainer(LayoutUnit unit, float max) {
 //    that this rect is represented by the dotted box below, which is expanded
 //    by the scroll-margin from the element's original boundary.
 static float CalculateSnapPosition(SnapAlignment alignment,
-                                   SnapAxis axis,
+                                   SearchAxis axis,
                                    const LayoutRect& container,
                                    const FloatPoint& max_position,
                                    const LayoutRect& area) {
-  DCHECK(axis == SnapAxis::kX || axis == SnapAxis::kY);
+  if (alignment == SnapAlignment::kNone)
+    return SnapAreaData::kInvalidScrollPosition;
   switch (alignment) {
     /* Start alignment aligns the area's start edge with container's start edge.
        https://www.w3.org/TR/css-scroll-snap-1/#valdef-scroll-snap-align-start
@@ -164,7 +229,7 @@ static float CalculateSnapPosition(SnapAlignment alignment,
 
     */
     case SnapAlignment::kStart:
-      if (axis == SnapAxis::kX) {
+      if (axis == SearchAxis::kX) {
         return ClipInContainer(area.X() - container.X(), max_position.X());
       }
       return ClipInContainer(area.Y() - container.Y(), max_position.Y());
@@ -201,7 +266,7 @@ static float CalculateSnapPosition(SnapAlignment alignment,
 
     */
     case SnapAlignment::kCenter:
-      if (axis == SnapAxis::kX) {
+      if (axis == SearchAxis::kX) {
         return ClipInContainer(area.Center().X() - container.Center().X(),
                                max_position.X());
       }
@@ -239,7 +304,7 @@ static float CalculateSnapPosition(SnapAlignment alignment,
 
     */
     case SnapAlignment::kEnd:
-      if (axis == SnapAxis::kX) {
+      if (axis == SearchAxis::kX) {
         return ClipInContainer(area.MaxX() - container.MaxX(),
                                max_position.X());
       }
@@ -253,32 +318,52 @@ static ScrollSnapAlign GetPhysicalAlignment(
     const ComputedStyle& area_style,
     const ComputedStyle& container_style) {
   ScrollSnapAlign align = area_style.GetScrollSnapAlign();
+  if (container_style.IsHorizontalWritingMode())
+    return align;
+
+  SnapAlignment tmp = align.alignment_inline;
+  align.alignment_inline = align.alignment_block;
+  align.alignment_block = tmp;
+
   if (container_style.IsFlippedBlocksWritingMode()) {
-    if (align.alignmentX == SnapAlignment::kStart) {
-      align.alignmentX = SnapAlignment::kEnd;
-    } else if (align.alignmentX == SnapAlignment::kEnd) {
-      align.alignmentX = SnapAlignment::kStart;
+    if (align.alignment_inline == SnapAlignment::kStart) {
+      align.alignment_inline = SnapAlignment::kEnd;
+    } else if (align.alignment_inline == SnapAlignment::kEnd) {
+      align.alignment_inline = SnapAlignment::kStart;
     }
   }
   return align;
 }
 
+static FloatRect GetVisibleRegion(const LayoutRect& container,
+                                  const LayoutRect& area) {
+  float left = area.X() - container.MaxX();
+  float right = area.MaxX() - container.X();
+  float top = area.Y() - container.MaxY();
+  float bottom = area.MaxY() - container.Y();
+  return FloatRect(left, top, right - left, bottom - top);
+}
+
+static SnapAxis ToSnapAxis(ScrollSnapAlign align) {
+  if (align.alignment_inline != SnapAlignment::kNone &&
+      align.alignment_block != SnapAlignment::kNone)
+    return SnapAxis::kBoth;
+
+  if (align.alignment_inline != SnapAlignment::kNone &&
+      align.alignment_block == SnapAlignment::kNone)
+    return SnapAxis::kX;
+
+  return SnapAxis::kY;
+}
+
 SnapAreaData SnapCoordinator::CalculateSnapAreaData(
     const LayoutBox& snap_area,
     const LayoutBox& snap_container,
+    const LayoutRect& container_rect,
     const FloatPoint& max_position) {
   const ComputedStyle* container_style = snap_container.Style();
   const ComputedStyle* area_style = snap_area.Style();
   SnapAreaData snap_area_data;
-
-  // Scroll-padding represents inward offsets from the corresponding edge of the
-  // scrollport. https://drafts.csswg.org/css-scroll-snap-1/#scroll-padding
-  // Scrollport is the visual vieport of the scroll container (through which the
-  // scrollable overflow region can be viewed) coincides with its padding box.
-  // https://drafts.csswg.org/css-overflow-3/#scrollport
-  // So we use the LayoutRect of the padding box here. The coordinate is based
-  // on the container's border box.
-  LayoutRect container(snap_container.PaddingBoxRect());
 
   // We assume that the snap_container is the snap_area's ancestor in layout
   // tree, as the snap_container is found by walking up the layout tree in
@@ -286,65 +371,38 @@ SnapAreaData SnapCoordinator::CalculateSnapAreaData(
   // snap_area.LocalToAncestorQuad() returns the snap_area's position relative
   // to its container's border box. And the |area| below represents the
   // snap_area rect in respect to the snap_container.
-  LayoutRect area(LayoutPoint(), LayoutSize(snap_area.OffsetWidth(),
-                                            snap_area.OffsetHeight()));
-  area = EnclosingLayoutRect(
+  LayoutRect area_rect(LayoutPoint(), LayoutSize(snap_area.OffsetWidth(),
+                                                 snap_area.OffsetHeight()));
+  area_rect = EnclosingLayoutRect(
       snap_area
-          .LocalToAncestorQuad(FloatRect(area), &snap_container,
+          .LocalToAncestorQuad(FloatRect(area_rect), &snap_container,
                                kUseTransforms | kTraverseDocumentBoundaries)
           .BoundingBox());
   ScrollableArea* scrollable_area = ScrollableAreaForSnapping(snap_container);
   if (scrollable_area) {
     if (snap_container.IsLayoutView())
-      area = snap_container.GetFrameView()->AbsoluteToDocument(area);
+      area_rect = snap_container.GetFrameView()->AbsoluteToDocument(area_rect);
     else
-      area.MoveBy(LayoutPoint(scrollable_area->ScrollPosition()));
+      area_rect.MoveBy(LayoutPoint(scrollable_area->ScrollPosition()));
   }
 
-  LayoutRectOutsets container_padding(
-      // The percentage of scroll-padding is different from that of normal
-      // padding, as scroll-padding resolves the percentage against
-      // corresponding dimension of the scrollport[1], while the normal padding
-      // resolves that against "width".[2,3]
-      // We use MinimumValueForLength here to ensure kAuto is resolved to
-      // LayoutUnit() which is the correct behavior for padding.
-      // [1] https://drafts.csswg.org/css-scroll-snap-1/#scroll-padding
-      //     "relative to the corresponding dimension of the scroll container’s
-      //      scrollport"
-      // [2] https://drafts.csswg.org/css-box/#padding-props
-      // [3] See for example LayoutBoxModelObject::ComputedCSSPadding where it
-      //     uses |MinimumValueForLength| but against the "width".
-      MinimumValueForLength(container_style->ScrollPaddingTop(),
-                            container.Height()),
-      MinimumValueForLength(container_style->ScrollPaddingRight(),
-                            container.Width()),
-      MinimumValueForLength(container_style->ScrollPaddingBottom(),
-                            container.Height()),
-      MinimumValueForLength(container_style->ScrollPaddingLeft(),
-                            container.Width()));
   LayoutRectOutsets area_margin(
       area_style->ScrollMarginTop(), area_style->ScrollMarginRight(),
       area_style->ScrollMarginBottom(), area_style->ScrollMarginLeft());
-  container.Contract(container_padding);
-  area.Expand(area_margin);
+  area_rect.Expand(area_margin);
 
   ScrollSnapAlign align = GetPhysicalAlignment(*area_style, *container_style);
 
-  snap_area_data.snap_position.set_x(CalculateSnapPosition(
-      align.alignmentX, SnapAxis::kX, container, max_position, area));
-  snap_area_data.snap_position.set_y(CalculateSnapPosition(
-      align.alignmentY, SnapAxis::kY, container, max_position, area));
+  snap_area_data.snap_position.set_x(
+      CalculateSnapPosition(align.alignment_inline, SearchAxis::kX,
+                            container_rect, max_position, area_rect));
+  snap_area_data.snap_position.set_y(
+      CalculateSnapPosition(align.alignment_block, SearchAxis::kY,
+                            container_rect, max_position, area_rect));
 
-  if (align.alignmentX != SnapAlignment::kNone &&
-      align.alignmentY != SnapAlignment::kNone) {
-    snap_area_data.snap_axis = SnapAxis::kBoth;
-  } else if (align.alignmentX != SnapAlignment::kNone &&
-             align.alignmentY == SnapAlignment::kNone) {
-    snap_area_data.snap_axis = SnapAxis::kX;
-  } else {
-    snap_area_data.snap_axis = SnapAxis::kY;
-  }
+  snap_area_data.snap_axis = ToSnapAxis(align);
 
+  snap_area_data.visible_region = GetVisibleRegion(container_rect, area_rect);
   snap_area_data.must_snap =
       (area_style->ScrollSnapStop() == EScrollSnapStop::kAlways);
 
@@ -364,10 +422,12 @@ FloatPoint SnapCoordinator::GetSnapPositionForPoint(
   if (!data.size())
     return point;
 
-  gfx::ScrollOffset position = data.FindSnapPosition(
-      gfx::ScrollOffset(point.X(), point.Y()), did_scroll_x, did_scroll_y);
-
-  return FloatPoint(position.x(), position.y());
+  gfx::ScrollOffset snap_position;
+  if (data.FindSnapPosition(gfx::ScrollOffset(point.X(), point.Y()),
+                            did_scroll_x, did_scroll_y, &snap_position)) {
+    return FloatPoint(snap_position.x(), snap_position.y());
+  }
+  return point;
 }
 
 void SnapCoordinator::PerformSnapping(const LayoutBox& snap_container,
@@ -393,22 +453,11 @@ void SnapCoordinator::SnapContainerDidChange(LayoutBox& snap_container,
   if (scroll_snap_type.is_none) {
     snap_container_map_.erase(&snap_container);
     snap_container.ClearSnapAreas();
-  } else {
-    if (scroll_snap_type.axis == SnapAxis::kInline) {
-      if (snap_container.Style()->IsHorizontalWritingMode())
-        scroll_snap_type.axis = SnapAxis::kX;
-      else
-        scroll_snap_type.axis = SnapAxis::kY;
-    }
-    if (scroll_snap_type.axis == SnapAxis::kBlock) {
-      if (snap_container.Style()->IsHorizontalWritingMode())
-        scroll_snap_type.axis = SnapAxis::kY;
-      else
-        scroll_snap_type.axis = SnapAxis::kX;
-    }
-    // TODO(sunyunjia): Only update when the localframe doesn't need layout.
-    UpdateSnapContainerData(snap_container);
+    return;
   }
+
+  // TODO(sunyunjia): Only update when the localframe doesn't need layout.
+  UpdateSnapContainerData(snap_container);
 
   // TODO(majidvp): Add logic to correctly handle orphaned snap areas here.
   // 1. Removing container: find a new snap container for its orphan snap

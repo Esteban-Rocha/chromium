@@ -22,8 +22,8 @@
 #include "base/sys_info.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
-#include "components/leveldb/public/cpp/util.h"
-#include "components/leveldb/public/interfaces/leveldb.mojom.h"
+#include "components/services/leveldb/public/cpp/util.h"
+#include "components/services/leveldb/public/interfaces/leveldb.mojom.h"
 #include "content/browser/dom_storage/dom_storage_area.h"
 #include "content/browser/dom_storage/dom_storage_database.h"
 #include "content/browser/dom_storage/dom_storage_task_runner.h"
@@ -109,8 +109,8 @@ void MigrateStorageHelper(
     (*values)[LocalStorageContextMojo::MigrateString(it.first)] =
         LocalStorageContextMojo::MigrateString(it.second.string());
   }
-  reply_task_runner->PostTask(FROM_HERE,
-                              base::BindOnce(callback, std::move(values)));
+  reply_task_runner->PostTask(
+      FROM_HERE, base::BindOnce(std::move(callback), std::move(values)));
 }
 
 // Helper to convert from OnceCallback to Callback.
@@ -570,7 +570,7 @@ bool LocalStorageContextMojo::OnMemoryDump(
     return true;
 
   std::string context_name =
-      base::StringPrintf("site_storage/localstorage_0x%" PRIXPTR,
+      base::StringPrintf("site_storage/localstorage/0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(this));
 
   // Account for leveldb memory usage, which actually lives in the file service.

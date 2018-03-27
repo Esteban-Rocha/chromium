@@ -332,6 +332,7 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD0(OnAckNeedsRetransmittableFrame, void());
   MOCK_METHOD0(SendPing, void());
   MOCK_CONST_METHOD0(AllowSelfAddressChange, bool());
+  MOCK_METHOD0(OnForwardProgressConfirmed, void());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockQuicConnectionVisitor);
@@ -469,11 +470,6 @@ class MockQuicConnection : public QuicConnection {
 
   bool ReallySendControlFrame(const QuicFrame& frame) {
     return QuicConnection::SendControlFrame(frame);
-  }
-  void ReallySendGoAway(QuicErrorCode error,
-                        QuicStreamId last_good_stream_id,
-                        const std::string& reason) {
-    QuicConnection::SendGoAway(error, last_good_stream_id, reason);
   }
 
   bool ReallySendConnectivityProbingPacket(
@@ -858,6 +854,8 @@ class MockNetworkChangeVisitor
   ~MockNetworkChangeVisitor() override;
 
   MOCK_METHOD0(OnCongestionChange, void());
+  // TODO(wangyix): remove OnPathDegrading() once
+  // FLAGS_quic_reloadable_flag_quic_path_degrading_alarm is deprecated.
   MOCK_METHOD0(OnPathDegrading, void());
   MOCK_METHOD1(OnPathMtuIncreased, void(QuicPacketLength));
 
@@ -891,8 +889,7 @@ class MockQuicConnectionDebugVisitor : public QuicConnectionDebugVisitor {
 
   MOCK_METHOD1(OnPacketHeader, void(const QuicPacketHeader& header));
 
-  MOCK_METHOD1(OnSuccessfulVersionNegotiation,
-               void(const QuicTransportVersion&));
+  MOCK_METHOD1(OnSuccessfulVersionNegotiation, void(const ParsedQuicVersion&));
 
   MOCK_METHOD1(OnStreamFrame, void(const QuicStreamFrame&));
 

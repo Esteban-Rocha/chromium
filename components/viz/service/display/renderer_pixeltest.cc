@@ -1100,13 +1100,17 @@ class IntersectingQuadGLPixelTest
  public:
   void SetUp() override {
     IntersectingQuadPixelTest<TypeParam>::SetUp();
-    bool use_stream_video_draw_quad = false;
+    constexpr bool kUseStreamVideoDrawQuad = false;
+    constexpr bool kUseGpuMemoryBufferResources = false;
+
     video_resource_updater_ = std::make_unique<cc::VideoResourceUpdater>(
-        this->child_context_provider_.get(),
-        this->child_resource_provider_.get(), use_stream_video_draw_quad);
+        this->child_context_provider_.get(), nullptr,
+        this->child_resource_provider_.get(), kUseStreamVideoDrawQuad,
+        kUseGpuMemoryBufferResources);
     video_resource_updater2_ = std::make_unique<cc::VideoResourceUpdater>(
-        this->child_context_provider_.get(),
-        this->child_resource_provider_.get(), use_stream_video_draw_quad);
+        this->child_context_provider_.get(), nullptr,
+        this->child_resource_provider_.get(), kUseStreamVideoDrawQuad,
+        kUseGpuMemoryBufferResources);
   }
 
  protected:
@@ -1429,43 +1433,20 @@ class VideoGLRendererPixelTest : public cc::GLRendererPixelTest {
 
   void SetUp() override {
     GLRendererPixelTest::SetUp();
-    bool use_stream_video_draw_quad = false;
+    constexpr bool kUseStreamVideoDrawQuad = false;
+    constexpr bool kUseGpuMemoryBufferResources = false;
     video_resource_updater_ = std::make_unique<cc::VideoResourceUpdater>(
-        child_context_provider_.get(), child_resource_provider_.get(),
-        use_stream_video_draw_quad);
+        child_context_provider_.get(), nullptr, child_resource_provider_.get(),
+        kUseStreamVideoDrawQuad, kUseGpuMemoryBufferResources);
   }
 
   std::unique_ptr<cc::VideoResourceUpdater> video_resource_updater_;
 };
 
-enum class HighbitTexture {
-  Y8,
-  R16_EXT,
-};
-
-class VideoGLRendererPixelHiLoTest
-    : public VideoGLRendererPixelTest,
-      public ::testing::WithParamInterface<
-          ::testing::tuple<bool, HighbitTexture>> {
+class VideoGLRendererPixelHiLoTest : public VideoGLRendererPixelTest,
+                                     public testing::WithParamInterface<bool> {
  public:
-  void SetSupportHighbitTexture(HighbitTexture texture) {
-    cc::TestInProcessContextProvider* context_provider =
-        GetTestInProcessContextProvider();
-    switch (texture) {
-      case HighbitTexture::Y8:
-        break;
-      case HighbitTexture::R16_EXT:
-        context_provider->SetSupportTextureNorm16(true);
-        video_resource_updater_->SetUseR16ForTesting(true);
-        break;
-    }
-  }
-
- private:
-  cc::TestInProcessContextProvider* GetTestInProcessContextProvider() {
-    return static_cast<cc::TestInProcessContextProvider*>(
-        output_surface_->context_provider());
-  }
+  bool IsHighbit() const { return GetParam(); }
 };
 
 TEST_P(VideoGLRendererPixelHiLoTest, SimpleYUVRect) {
@@ -1480,13 +1461,9 @@ TEST_P(VideoGLRendererPixelHiLoTest, SimpleYUVRect) {
   SharedQuadState* shared_state =
       CreateTestSharedQuadState(gfx::Transform(), rect, pass.get());
 
-  const bool highbit = testing::get<0>(GetParam());
-  const HighbitTexture format = testing::get<1>(GetParam());
-  SetSupportHighbitTexture(format);
-
   CreateTestYUVVideoDrawQuad_Striped(
       shared_state, media::PIXEL_FORMAT_I420, media::COLOR_SPACE_SD_REC601,
-      false, highbit, gfx::RectF(0.0f, 0.0f, 1.0f, 1.0f), pass.get(),
+      false, IsHighbit(), gfx::RectF(0.0f, 0.0f, 1.0f, 1.0f), pass.get(),
       video_resource_updater_.get(), rect, rect, resource_provider_.get(),
       child_resource_provider_.get());
 
@@ -1512,13 +1489,9 @@ TEST_P(VideoGLRendererPixelHiLoTest, ClippedYUVRect) {
   SharedQuadState* shared_state =
       CreateTestSharedQuadState(gfx::Transform(), viewport, pass.get());
 
-  const bool highbit = testing::get<0>(GetParam());
-  const HighbitTexture format = testing::get<1>(GetParam());
-  SetSupportHighbitTexture(format);
-
   CreateTestYUVVideoDrawQuad_Striped(
       shared_state, media::PIXEL_FORMAT_I420, media::COLOR_SPACE_SD_REC601,
-      false, highbit, gfx::RectF(0.0f, 0.0f, 1.0f, 1.0f), pass.get(),
+      false, IsHighbit(), gfx::RectF(0.0f, 0.0f, 1.0f, 1.0f), pass.get(),
       video_resource_updater_.get(), draw_rect, viewport,
       resource_provider_.get(), child_resource_provider_.get());
   RenderPassList pass_list;
@@ -1586,12 +1559,7 @@ TEST_F(VideoGLRendererPixelTest, SimpleYUVRectBlack) {
 }
 
 // First argument (test case prefix) is intentionally left empty.
-INSTANTIATE_TEST_CASE_P(
-    ,
-    VideoGLRendererPixelHiLoTest,
-    testing::Combine(testing::Bool(),
-                     testing::Values(HighbitTexture::Y8,
-                                     HighbitTexture::R16_EXT)));
+INSTANTIATE_TEST_CASE_P(, VideoGLRendererPixelHiLoTest, testing::Bool());
 
 TEST_F(VideoGLRendererPixelTest, SimpleYUVJRect) {
   gfx::Rect rect(this->device_viewport_size_);
@@ -2804,6 +2772,7 @@ TEST_F(GLRendererPixelTest, TileDrawQuadForceAntiAliasingOff) {
       CreateTestRenderPass(id, rect, transform_to_root);
 
   bool swizzle_contents = true;
+  bool contents_premultiplied = true;
   bool needs_blending = false;
   bool nearest_neighbor = true;
   bool force_anti_aliasing_off = true;
@@ -2816,7 +2785,8 @@ TEST_F(GLRendererPixelTest, TileDrawQuadForceAntiAliasingOff) {
   TileDrawQuad* hole = pass->CreateAndAppendDrawQuad<TileDrawQuad>();
   hole->SetNew(hole_shared_state, rect, rect, needs_blending, mapped_resource,
                gfx::RectF(gfx::Rect(tile_size)), tile_size, swizzle_contents,
-               nearest_neighbor, force_anti_aliasing_off);
+               contents_premultiplied, nearest_neighbor,
+               force_anti_aliasing_off);
 
   gfx::Transform green_quad_to_target_transform;
   SharedQuadState* green_shared_state = CreateTestSharedQuadState(
@@ -3199,6 +3169,7 @@ TYPED_TEST(SoftwareRendererPixelTest, PictureDrawQuadNearestNeighbor) {
 TYPED_TEST(RendererPixelTest, TileDrawQuadNearestNeighbor) {
   gfx::Rect viewport(this->device_viewport_size_);
   bool swizzle_contents = true;
+  bool contents_premultiplied = true;
   bool needs_blending = true;
   bool nearest_neighbor = true;
   bool force_anti_aliasing_off = false;
@@ -3241,7 +3212,8 @@ TYPED_TEST(RendererPixelTest, TileDrawQuadNearestNeighbor) {
   auto* quad = pass->CreateAndAppendDrawQuad<TileDrawQuad>();
   quad->SetNew(shared_state, viewport, viewport, needs_blending,
                mapped_resource, gfx::RectF(gfx::Rect(tile_size)), tile_size,
-               swizzle_contents, nearest_neighbor, force_anti_aliasing_off);
+               swizzle_contents, contents_premultiplied, nearest_neighbor,
+               force_anti_aliasing_off);
 
   RenderPassList pass_list;
   pass_list.push_back(std::move(pass));
@@ -3729,6 +3701,7 @@ TEST_F(GLRendererPixelTest, TextureQuadBatching) {
 TEST_F(GLRendererPixelTest, TileQuadClamping) {
   gfx::Rect viewport(this->device_viewport_size_);
   bool swizzle_contents = true;
+  bool contents_premultiplied = true;
   bool needs_blending = true;
   bool nearest_neighbor = false;
   bool use_aa = false;
@@ -3782,7 +3755,8 @@ TEST_F(GLRendererPixelTest, TileQuadClamping) {
   auto* quad = pass->CreateAndAppendDrawQuad<TileDrawQuad>();
   quad->SetNew(quad_shared, gfx::Rect(layer_size), gfx::Rect(layer_size),
                needs_blending, mapped_resource, tex_coord_rect, tile_size,
-               swizzle_contents, nearest_neighbor, use_aa);
+               swizzle_contents, contents_premultiplied, nearest_neighbor,
+               use_aa);
 
   // Green background.
   SharedQuadState* background_shared =

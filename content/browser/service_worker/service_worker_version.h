@@ -30,6 +30,7 @@
 #include "base/timer/timer.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
+#include "content/browser/service_worker/service_worker_client_utils.h"
 #include "content/browser/service_worker/service_worker_context_request_handler.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_script_cache_map.h"
@@ -46,7 +47,6 @@
 #include "third_party/WebKit/public/mojom/service_worker/service_worker_client.mojom.h"
 #include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
 #include "third_party/WebKit/public/platform/web_feature.mojom.h"
-#include "ui/base/mojo/window_open_disposition.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -620,7 +620,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
                               const base::string16& message,
                               int line_number,
                               const GURL& source_url) override;
-  bool OnMessageReceived(const IPC::Message& message) override;
 
   void OnStartSentAndScriptEvaluated(ServiceWorkerStatusCode status);
 
@@ -637,6 +636,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void OpenPaymentHandlerWindow(
       const GURL& url,
       OpenPaymentHandlerWindowCallback callback) override;
+  void PostMessageToClient(const std::string& client_uuid,
+                           blink::TransferableMessage message) override;
   void FocusClient(const std::string& client_uuid,
                    FocusClientCallback callback) override;
   void NavigateClient(const std::string& client_uuid,
@@ -649,15 +650,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
                                    int result);
   void OnClearCachedMetadataFinished(int64_t callback_id, int result);
   void OpenWindow(GURL url,
-                  WindowOpenDisposition disposition,
+                  service_worker_client_utils::WindowType type,
                   OpenNewTabCallback callback);
-
-  // Message handlers.
-
-  void OnPostMessageToClient(
-      const std::string& client_uuid,
-      const scoped_refptr<base::RefCountedData<blink::TransferableMessage>>&
-          message);
 
   void OnPongFromWorker();
 

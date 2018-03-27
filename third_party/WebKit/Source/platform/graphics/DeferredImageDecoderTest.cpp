@@ -39,7 +39,6 @@
 #include "platform/graphics/paint/PaintRecord.h"
 #include "platform/graphics/paint/PaintRecorder.h"
 #include "platform/graphics/test/MockImageDecoder.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -227,7 +226,7 @@ TEST_F(DeferredImageDecoderTest, MAYBE_decodeOnOtherThread) {
   // Create a thread to rasterize PaintRecord.
   std::unique_ptr<WebThread> thread = Platform::Current()->CreateThread(
       WebThreadCreationParams(WebThreadType::kTestThread)
-          .SetThreadName("RasterThread"));
+          .SetThreadNameForTest("RasterThread"));
   PostCrossThreadTask(
       *thread->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(&RasterizeMain, CrossThreadUnretained(canvas_.get()),

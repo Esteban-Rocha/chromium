@@ -152,6 +152,10 @@
       status: "experimental",
     },
     {
+      name: "Canvas2dContextLostRestored",
+      status: "experimental",
+    },
+    {
       name: "Canvas2dFixedRenderingMode",
       status: "test",
     },
@@ -159,12 +163,32 @@
       name: "Canvas2dImageChromium",
     },
     {
+      name: "Canvas2dScrollPathIntoView",
+      status: "experimental",
+    },
+    {
+      name: "CanvasColorManagement",
+      status: "experimental",
+    },
+    {
+      name: "CanvasHitRegion",
+      status: "experimental",
+    },
+    {
+      name: "CanvasImageSmoothing",
+      status: "experimental",
+    },
+    {
+      name: "CanvasTransformations",
+      status: "experimental",
+    },
+    {
       name: "ClickRetargetting",
       status: "experimental",
     },
     {
       name: "ClientHintsPersistent",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "ClientPlaceholdersForServerLoFi",
@@ -317,7 +341,7 @@
     },
     {
       name: "CustomElementsBuiltin",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "CustomUserTiming",
@@ -387,20 +411,28 @@
       status: "stable",
     },
     {
-      name: "ExperimentalCanvasFeatures",
-      status: "test",
-    },
-    {
       name: "ExperimentalContentSecurityPolicyFeatures",
       status: "experimental",
     },
     {
       name: "ExperimentalHardwareEchoCancellation",
-      origin_trial_feature_name: "DisableHardwareNoiseSuppression",
+      origin_trial_feature_name: "ExperimentalHardwareEchoCancellation",
       status: "experimental",
     },
     {
       name: "ExperimentalV8Extras",
+      status: "experimental",
+    },
+    {
+      name: "ExtendedImageBitmapOptions",
+      status: "experimental",
+    },
+    {
+      name: "ExtendedTextMetrics",
+      status: "experimental",
+    },
+    {
+      name: "ExtraWebGLVideoTextureMetadata",
       status: "experimental",
     },
     {
@@ -558,6 +590,10 @@
     },
     {
       name: "LayoutNG",
+      implied_by: ["LayoutNGBlockFragmentation"],
+    },
+    {
+      name: "LayoutNGBlockFragmentation",
     },
     {
       name: "LayoutNGFragmentCaching",
@@ -590,6 +626,10 @@
       name: "MediaCapabilities",
       origin_trial_feature_name: "MediaCapabilities",
       status: "stable",
+    },
+    {
+      name: "MediaCapabilitiesEncodingInfo",
+      status: "experimental",
     },
     {
       name: "MediaCapture",
@@ -654,6 +694,10 @@
     },
     {
       name: "ModernMediaControls",
+    },
+    {
+      name: "ModuleDedicatedWorker",
+      status: "experimental",
     },
     {
       name: "ModulePreload",
@@ -941,6 +985,10 @@
     {
       name: "RtcPeerConnectionId",
       origin_trial_feature_name: "RtcPeerConnectionId",
+      status: "experimental",
+    },
+    {
+      name: "RTCRtpSenderParameters",
       status: "experimental",
     },
     {

@@ -261,8 +261,9 @@ class URLLoaderTest : public testing::Test {
 
     URLLoader loader_impl(context(), nullptr, mojo::MakeRequest(&loader),
                           options, request, false, client_.CreateInterfacePtr(),
-                          TRAFFIC_ANNOTATION_FOR_TESTS, 0,
-                          resource_scheduler_client(), nullptr);
+                          TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
+                          0 /* request_id */, resource_scheduler_client(),
+                          nullptr);
 
     ran_ = true;
 
@@ -436,7 +437,8 @@ class URLLoaderTest : public testing::Test {
       // If no data has been received yet, spin the message loop until it has.
       if (rv == MOJO_RESULT_SHOULD_WAIT) {
         mojo::SimpleWatcher watcher(
-            FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC);
+            FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC,
+            base::SequencedTaskRunnerHandle::Get());
         base::RunLoop run_loop;
 
         watcher.Watch(
@@ -626,8 +628,8 @@ TEST_F(URLLoaderTest, DestroyContextWithLiveRequest) {
   base::WeakPtr<URLLoader> loader_impl =
       (new URLLoader(context(), nullptr, mojo::MakeRequest(&loader), 0, request,
                      false, client()->CreateInterfacePtr(),
-                     TRAFFIC_ANNOTATION_FOR_TESTS, 0,
-                     resource_scheduler_client(), nullptr))
+                     TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
+                     0 /* request_id */, resource_scheduler_client(), nullptr))
           ->GetWeakPtrForTests();
 
   client()->RunUntilResponseReceived();
@@ -784,8 +786,8 @@ TEST_F(URLLoaderTest, CloseResponseBodyConsumerBeforeProducer) {
   // The loader is implicitly owned by the client and the NetworkContext.
   new URLLoader(context(), nullptr, mojo::MakeRequest(&loader), 0, request,
                 false, client()->CreateInterfacePtr(),
-                TRAFFIC_ANNOTATION_FOR_TESTS, 0, resource_scheduler_client(),
-                nullptr);
+                TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
+                0 /* request_id */, resource_scheduler_client(), nullptr);
 
   client()->RunUntilResponseBodyArrived();
   EXPECT_TRUE(client()->has_received_response());
@@ -831,8 +833,8 @@ TEST_F(URLLoaderTest, PauseReadingBodyFromNetBeforeRespnoseHeaders) {
   // The loader is implicitly owned by the client and the NetworkContext.
   new URLLoader(context(), nullptr, mojo::MakeRequest(&loader), 0, request,
                 false, client()->CreateInterfacePtr(),
-                TRAFFIC_ANNOTATION_FOR_TESTS, 0, resource_scheduler_client(),
-                nullptr);
+                TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
+                0 /* request_id */, resource_scheduler_client(), nullptr);
 
   // Pausing reading response body from network stops future reads from the
   // underlying URLRequest. So no data should be sent using the response body
@@ -900,8 +902,8 @@ TEST_F(URLLoaderTest, PauseReadingBodyFromNetWhenReadIsPending) {
   // The loader is implicitly owned by the client and the NetworkContext.
   new URLLoader(context(), nullptr, mojo::MakeRequest(&loader), 0, request,
                 false, client()->CreateInterfacePtr(),
-                TRAFFIC_ANNOTATION_FOR_TESTS, 0, resource_scheduler_client(),
-                nullptr);
+                TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
+                0 /* request_id */, resource_scheduler_client(), nullptr);
 
   response_controller.WaitForRequest();
   response_controller.Send(
@@ -958,8 +960,8 @@ TEST_F(URLLoaderTest, ResumeReadingBodyFromNetAfterClosingConsumer) {
   // The loader is implicitly owned by the client and the NetworkContext.
   new URLLoader(context(), nullptr, mojo::MakeRequest(&loader), 0, request,
                 false, client()->CreateInterfacePtr(),
-                TRAFFIC_ANNOTATION_FOR_TESTS, 0, resource_scheduler_client(),
-                nullptr);
+                TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
+                0 /* request_id */, resource_scheduler_client(), nullptr);
 
   loader->PauseReadingBodyFromNet();
   loader.FlushForTesting();
@@ -1010,8 +1012,8 @@ TEST_F(URLLoaderTest, MultiplePauseResumeReadingBodyFromNet) {
   // The loader is implicitly owned by the client and the NetworkContext.
   new URLLoader(context(), nullptr, mojo::MakeRequest(&loader), 0, request,
                 false, client()->CreateInterfacePtr(),
-                TRAFFIC_ANNOTATION_FOR_TESTS, 0, resource_scheduler_client(),
-                nullptr);
+                TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
+                0 /* request_id */, resource_scheduler_client(), nullptr);
 
   // It is okay to call ResumeReadingBodyFromNet() even if there is no prior
   // PauseReadingBodyFromNet().
@@ -1267,7 +1269,7 @@ TEST_F(URLLoaderTest, UploadChunkedDataPipe) {
                 mojo::MakeRequest(&loader), 0, request,
                 false /* report_raw_headers */, client()->CreateInterfacePtr(),
                 TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
-                nullptr /* resource_scheduler_client */,
+                0 /* request_id */, nullptr /* resource_scheduler_client */,
                 nullptr /* keepalive_statistics_reporter */);
 
   mojom::ChunkedDataPipeGetter::GetSizeCallback get_size_callback =
@@ -1404,7 +1406,7 @@ TEST_F(URLLoaderTest, ResourceSchedulerIntegration) {
     auto* loader = new URLLoader(
         context(), nullptr, mojo::MakeRequest(&loaderInterfacePtr), 0, request,
         false, client.CreateInterfacePtr(), TRAFFIC_ANNOTATION_FOR_TESTS,
-        kProcessId, resource_scheduler_client(), nullptr);
+        kProcessId, 0 /* request_id */, resource_scheduler_client(), nullptr);
 
     loaders.push_back(std::make_pair(loader->GetWeakPtrForTests(),
                                      std::move(loaderInterfacePtr)));
@@ -1423,7 +1425,7 @@ TEST_F(URLLoaderTest, ResourceSchedulerIntegration) {
       (new URLLoader(context(), nullptr, mojo::MakeRequest(&loaderInterfacePtr),
                      0, request, false, client()->CreateInterfacePtr(),
                      TRAFFIC_ANNOTATION_FOR_TESTS, kProcessId,
-                     resource_scheduler_client(), nullptr))
+                     0 /* request_id */, resource_scheduler_client(), nullptr))
           ->GetWeakPtrForTests();
   base::RunLoop().RunUntilIdle();
 

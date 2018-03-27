@@ -77,6 +77,7 @@ class VIZ_CLIENT_EXPORT ClientLayerTreeFrameSink
   // cc::LayerTreeFrameSink implementation.
   bool BindToClient(cc::LayerTreeFrameSinkClient* client) override;
   void DetachFromClient() override;
+  void UpdateHitTestData(const cc::LayerTreeHostImpl* host_impl) override;
   void SetLocalSurfaceId(const LocalSurfaceId& local_surface_id) override;
   void SubmitCompositorFrame(CompositorFrame frame) override;
   void DidNotProduceFrame(const BeginFrameAck& ack) override;
@@ -126,6 +127,10 @@ class VIZ_CLIENT_EXPORT ClientLayerTreeFrameSink
   THREAD_CHECKER(thread_checker_);
   const bool enable_surface_synchronization_;
   const bool wants_animate_only_begin_frames_;
+
+  LocalSurfaceId last_submitted_local_surface_id_;
+  float last_submitted_device_scale_factor_ = 1.f;
+  gfx::Size last_submitted_size_in_pixels_;
 
   base::WeakPtrFactory<ClientLayerTreeFrameSink> weak_factory_;
 

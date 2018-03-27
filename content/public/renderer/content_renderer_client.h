@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "base/task_scheduler/task_scheduler.h"
@@ -236,12 +237,18 @@ class CONTENT_EXPORT ContentRendererClient {
                           bool* send_referrer);
 
   // Notifies the embedder that the given frame is requesting the resource at
-  // |url|. If the function returns true, the url is changed to |new_url|.
-  virtual bool WillSendRequest(
-      blink::WebLocalFrame* frame,
-      ui::PageTransition transition_type,
-      const blink::WebURL& url,
-      GURL* new_url);
+  // |url|. If the function returns a valid |new_url|, the request must be
+  // updated to use it. The |attach_same_site_cookies| output parameter
+  // determines whether SameSite cookies should be attached to the request.
+  // TODO(nasko): When moved over to Network Service, find a way to perform
+  // this check on the browser side, so untrusted renderer processes cannot
+  // influence whether SameSite cookies are attached.
+  virtual void WillSendRequest(blink::WebLocalFrame* frame,
+                               ui::PageTransition transition_type,
+                               const blink::WebURL& url,
+                               const url::Origin* initiator_origin,
+                               GURL* new_url,
+                               bool* attach_same_site_cookies);
 
   // Returns true if the request is associated with a document that is in
   // ""prefetch only" mode, and will not be rendered.
@@ -260,6 +267,12 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if the given Pepper plugin is external (requiring special
   // startup steps).
   virtual bool IsExternalPepperPlugin(const std::string& module_name);
+
+  // Returns true if the given Pepper plugin should process content from
+  // different origins in different PPAPI processes. This is generally a
+  // worthwhile precaution when the plugin provides an active scripting
+  // language.
+  virtual bool IsOriginIsolatedPepperPlugin(const base::FilePath& plugin_path);
 
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
   virtual bool AllowPepperMediaStreamAPI(const GURL& url);
@@ -293,11 +306,6 @@ class CONTENT_EXPORT ContentRendererClient {
   // and can be external or internal.
   virtual bool ShouldReportDetailedMessageForSource(
       const base::string16& source) const;
-
-  // Returns true if we should gather stats during resource loads as if the
-  // cross-site document blocking policy were enabled. Does not actually block
-  // any pages.
-  virtual bool ShouldGatherSiteIsolationStats() const;
 
   // Creates a permission client for in-renderer worker.
   virtual std::unique_ptr<blink::WebContentSettingsClient>

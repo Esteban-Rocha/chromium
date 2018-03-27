@@ -60,15 +60,15 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extension_protocols.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
-#include "extensions/features/features.h"
 #include "net/base/cache_type.h"
 #include "net/cookies/cookie_store.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_server_properties_manager.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_intercepting_job_factory.h"
@@ -434,9 +434,6 @@ void ProfileImplIOData::InitializeInternal(
     content::URLRequestInterceptorScopedVector request_interceptors) const {
   IOThread* const io_thread = profile_params->io_thread;
   IOThread::Globals* const io_thread_globals = io_thread->globals();
-
-  builder->set_network_quality_estimator(
-      io_thread_globals->network_quality_estimator.get());
 
   // This check is needed because with the network service the cookies are used
   // in a different process. See the bottom of

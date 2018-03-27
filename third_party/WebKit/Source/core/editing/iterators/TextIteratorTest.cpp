@@ -36,7 +36,7 @@
 #include "core/editing/testing/EditingTestBase.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/html/forms/TextControlElement.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 namespace text_iterator_test {
@@ -1065,6 +1065,24 @@ TEST_F(TextIteratorTest, BasicIterationInputiWithBr) {
   const Position end = Position::LastPositionInNode(*shadow_root);
   GetDocument().UpdateStyleAndLayout();
   EXPECT_EQ("[b]", IteratePartial<DOMTree>(start, end));
+}
+
+TEST_P(ParameterizedTextIteratorTest, FloatLeft) {
+  SetBodyContent("abc<span style='float:left'>DEF</span>ghi");
+  EXPECT_EQ("[abc][DEF][ghi]", Iterate<DOMTree>())
+      << "float doesn't affect text iteration";
+}
+
+TEST_P(ParameterizedTextIteratorTest, FloatRight) {
+  SetBodyContent("abc<span style='float:right'>DEF</span>ghi");
+  EXPECT_EQ("[abc][DEF][ghi]", Iterate<DOMTree>())
+      << "float doesn't affect text iteration";
+}
+
+TEST_P(ParameterizedTextIteratorTest, InlineBlock) {
+  SetBodyContent("abc<span style='display:inline-block'>DEF<br>GHI</span>jkl");
+  EXPECT_EQ("[abc][DEF][\n][GHI][jkl]", Iterate<DOMTree>())
+      << "inline-block doesn't insert newline around itself.";
 }
 
 TEST_P(ParameterizedTextIteratorTest, NoZWSForSpaceAfterNoWrapSpace) {

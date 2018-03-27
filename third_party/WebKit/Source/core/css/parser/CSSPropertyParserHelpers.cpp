@@ -4,7 +4,6 @@
 
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 
-#include "core/StylePropertyShorthand.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSColorValue.h"
 #include "core/css/CSSCrossfadeValue.h"
@@ -24,9 +23,10 @@
 #include "core/css/parser/CSSParserFastPaths.h"
 #include "core/css/parser/CSSParserLocalContext.h"
 #include "core/css/properties/CSSParsingUtils.h"
-#include "core/css/properties/CSSProperty.h"
 #include "core/css/properties/Longhand.h"
+#include "core/css/properties/css_property.h"
 #include "core/frame/UseCounter.h"
+#include "core/style_property_shorthand.h"
 #include "platform/runtime_enabled_features.h"
 
 namespace blink {
@@ -566,8 +566,7 @@ static bool ParseRGBParameters(CSSParserTokenRange& range, RGBA32& result) {
       if (i != 1 && !requires_commas)
         return false;
       requires_commas = true;
-    } else if (requires_commas || args.AtEnd() ||
-               (&args.Peek() - 1)->GetType() != kWhitespaceToken) {
+    } else if (requires_commas || args.AtEnd()) {
       return false;
     }
     color_parameter = is_percent ? ConsumePercent(args, kValueRangeAll)
@@ -624,8 +623,7 @@ static bool ParseHSLParameters(CSSParserTokenRange& range, RGBA32& result) {
       if (i != 1 && !requires_commas)
         return false;
       requires_commas = true;
-    } else if (requires_commas || args.AtEnd() ||
-               (&args.Peek() - 1)->GetType() != kWhitespaceToken) {
+    } else if (requires_commas || args.AtEnd()) {
       return false;
     }
     hsl_value = ConsumePercent(args, kValueRangeAll);

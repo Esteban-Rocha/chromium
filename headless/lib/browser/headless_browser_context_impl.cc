@@ -91,6 +91,7 @@ HeadlessBrowserContextImpl::HeadlessBrowserContextImpl(
 
 HeadlessBrowserContextImpl::~HeadlessBrowserContextImpl() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  NotifyWillBeDestroyed(this);
 
   // Inform observers that we're going away.
   {
@@ -396,10 +397,10 @@ void HeadlessBrowserContextImpl::NotifyChildContentsCreated(
 void HeadlessBrowserContextImpl::NotifyUrlRequestFailed(
     net::URLRequest* request,
     int net_error,
-    bool canceled_by_devtools) {
+    DevToolsStatus devtools_status) {
   base::AutoLock lock(observers_lock_);
   for (auto& observer : observers_)
-    observer.UrlRequestFailed(request, net_error, canceled_by_devtools);
+    observer.UrlRequestFailed(request, net_error, devtools_status);
 }
 
 void HeadlessBrowserContextImpl::SetNetworkConditions(
@@ -525,7 +526,7 @@ HeadlessBrowserContext::Builder::EnableUnsafeNetworkAccessWithMojoBindings(
 
 HeadlessBrowserContext::Builder&
 HeadlessBrowserContext::Builder::SetOverrideWebPreferencesCallback(
-    base::Callback<void(WebPreferences*)> callback) {
+    base::RepeatingCallback<void(WebPreferences*)> callback) {
   options_->override_web_preferences_callback_ = std::move(callback);
   return *this;
 }

@@ -18,7 +18,7 @@
 #include "media/base/test_data_util.h"
 #include "media/filters/file_data_source.h"
 #include "media/filters/memory_data_source.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/renderers/audio_renderer_impl.h"
 #include "media/renderers/renderer_impl.h"
 #include "media/test/fake_encrypted_media.h"
@@ -462,7 +462,7 @@ std::unique_ptr<Renderer> PipelineIntegrationTestBase::CreateRenderer(
       scoped_task_environment_.GetMainThreadTaskRunner(), video_sink_.get(),
       base::Bind(&CreateVideoDecodersForTest, &media_log_,
                  prepend_video_decoders_cb),
-      false, &media_log_));
+      false, &media_log_, nullptr));
 
   if (!clockless_playback_) {
     audio_sink_ =
@@ -680,7 +680,7 @@ void PipelineIntegrationTestBase::RunUntilIdleEndedOrErrorInternal(
   scoped_task_environment_.RunUntilIdle();
 }
 
-base::TimeTicks DummyTickClock::NowTicks() {
+base::TimeTicks DummyTickClock::NowTicks() const {
   now_ += base::TimeDelta::FromSeconds(60);
   return now_;
 }

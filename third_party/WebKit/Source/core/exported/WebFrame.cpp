@@ -116,9 +116,9 @@ bool WebFrame::Swap(WebFrame* frame) {
       // This trace event is needed to detect the main frame of the
       // renderer in telemetry metrics. See crbug.com/692112#c11.
       TRACE_EVENT_INSTANT1("loading", "markAsMainFrame",
-                           TRACE_EVENT_SCOPE_THREAD, "frame", &local_frame);
+                           TRACE_EVENT_SCOPE_THREAD, "frame",
+                           ToTraceValue(&local_frame));
     }
-    local_frame.SetIsProvisional(false);
   } else {
     ToWebRemoteFrameImpl(frame)->InitializeCoreFrame(*page, owner, name);
   }
@@ -126,7 +126,7 @@ bool WebFrame::Swap(WebFrame* frame) {
   Frame* new_frame = ToCoreFrame(*frame);
 
   if (parent_ && old_frame->HasBeenActivated())
-    new_frame->UpdateUserActivationInFrameTree();
+    new_frame->NotifyUserActivationInLocalTree();
 
   new_frame->GetWindowProxyManager()->SetGlobalProxies(global_proxies);
 
@@ -364,12 +364,16 @@ void WebFrame::Close() {
 }
 
 void WebFrame::DetachFromParent() {
+  if (!Parent())
+    return;
+
   // TODO(dcheng): This should really just check if there's a parent, and call
   // RemoveChild() if so. Once provisional frames are removed, this check can be
   // simplified to just check Parent(). See https://crbug.com/578349.
-  const blink::Frame* frame = ToCoreFrame(*this);
-  if (frame->Owner() && frame->Owner()->ContentFrame() == frame)
-    Parent()->RemoveChild(this);
+  if (IsWebLocalFrame() && ToWebLocalFrame()->IsProvisional())
+    return;
+
+  Parent()->RemoveChild(this);
 }
 
 Frame* WebFrame::ToCoreFrame(const WebFrame& frame) {

@@ -12,8 +12,8 @@
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "chrome/common/buildflags.h"
-#include "device/vr/features/features.h"
-#include "extensions/features/features.h"
+#include "device/vr/buildflags/buildflags.h"
+#include "extensions/buildflags/buildflags.h"
 #include "ppapi/features/features.h"
 #include "printing/features/features.h"
 #include "ui/base/ui_features.h"
@@ -32,7 +32,6 @@ extern const base::Feature kAllowAutoplayUnmutedInWebappManifestScope;
 #if defined(OS_MACOSX)
 extern const base::Feature kAppleScriptExecuteJavaScriptMenuItem;
 extern const base::Feature kShow10_9ObsoleteInfobar;
-extern const base::Feature kViewsProfileChooser;
 extern const base::Feature kViewsTaskManager;
 #endif  // defined(OS_MACOSX)
 
@@ -172,6 +171,10 @@ extern const base::Feature kImportantSitesInCbd;
 
 extern const base::Feature kImprovedRecoveryComponent;
 
+#if defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)
+extern const base::Feature kIncompatibleApplicationsWarning;
+#endif
+
 #if !defined(OS_ANDROID)
 extern const base::Feature kLocalScreenCasting;
 #endif
@@ -234,8 +237,6 @@ extern const base::Feature kOneGoogleBarOnLocalNtp;
 
 extern const base::Feature kUseNewAcceptLanguageHeader;
 
-extern const base::Feature kPermissionsBlacklist;
-
 extern const base::Feature kPermissionDelegation;
 
 #if defined(OS_WIN)
@@ -282,6 +283,8 @@ extern const base::Feature kSimplifiedFullscreenUI;
 #if defined(OS_ANDROID)
 extern const base::Feature kSiteNotificationChannels;
 #endif
+
+extern const base::Feature kSitePerProcess;
 
 #if defined(OS_CHROMEOS)
 extern const base::Feature kNativeSmb;

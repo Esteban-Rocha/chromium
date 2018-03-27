@@ -19,10 +19,15 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.MethodRule;
 import org.junit.rules.TestRule;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.test.params.MethodParamAnnotationRule;
+import org.chromium.base.test.params.ParameterAnnotations;
+import org.chromium.base.test.params.ParameterSet;
+import org.chromium.base.test.params.ParameterizedRunner;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisableIf;
@@ -45,12 +50,13 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
-import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
+import org.chromium.chrome.test.ChromeJUnit4RunnerDelegate;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.NewTabPageTestUtils;
 import org.chromium.chrome.test.util.OmniboxTestUtils;
 import org.chromium.chrome.test.util.RenderTestRule;
+import org.chromium.chrome.test.util.browser.ChromeModernDesign;
 import org.chromium.chrome.test.util.browser.Features;
 import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
 import org.chromium.chrome.test.util.browser.RecyclerViewTestUtils;
@@ -69,9 +75,11 @@ import org.chromium.ui.base.PageTransition;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -79,7 +87,8 @@ import java.util.concurrent.TimeoutException;
 /**
  * Tests for the native android New Tab Page.
  */
-@RunWith(ChromeJUnit4ClassRunner.class)
+@RunWith(ParameterizedRunner.class)
+@ParameterAnnotations.UseRunnerDelegate(ChromeJUnit4RunnerDelegate.class)
 @CommandLineFlags.Add(ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE)
 @DisableFeatures("NetworkPrediction")
 @RetryOnFailure
@@ -94,7 +103,18 @@ public class NewTabPageTest {
             new RenderTestRule("chrome/test/data/android/render_tests");
 
     @Rule
+    public MethodRule mMethodParamAnnotationProcessor = new MethodParamAnnotationRule();
+
+    @Rule
+    public ChromeModernDesign.Processor mChromeModernProcessor = new ChromeModernDesign.Processor();
+
+    @Rule
     public TestRule mFeatureRule = new Features.InstrumentationProcessor();
+
+    @ParameterAnnotations.MethodParameter("Modern")
+    private static List<ParameterSet> sMethodParamModern =
+            Arrays.asList(new ParameterSet().value(false).name("DisableChromeModern"),
+                    new ParameterSet().value(true).name("EnableChromeModern"));
 
     private static final String TEST_PAGE = "/chrome/test/data/android/navigate/simple.html";
 
@@ -105,6 +125,18 @@ public class NewTabPageTest {
     private FakeMostVisitedSites mMostVisitedSites;
     private EmbeddedTestServer mTestServer;
     private List<SiteSuggestion> mSiteSuggestions;
+
+    @ParameterAnnotations.UseMethodParameterBefore("Modern")
+    public void setupModernDesign(boolean enabled) {
+        mChromeModernProcessor.setPrefs(enabled);
+
+        if (enabled) mRenderTestRule.setVariantPrefix("modern");
+    }
+
+    @ParameterAnnotations.UseMethodParameterAfter("Modern")
+    public void teardownModernDesign(boolean enabled) {
+        mChromeModernProcessor.clearTestState();
+    }
 
     @Before
     public void setUp() throws Exception {
@@ -162,7 +194,8 @@ public class NewTabPageTest {
     @Test
     @MediumTest
     @Feature({"NewTabPage", "RenderTest"})
-    public void testRender() throws IOException {
+    @ParameterAnnotations.UseMethodParameter("Modern")
+    public void testRender(boolean modern) throws IOException {
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
         RenderTestRule.sanitize(mNtp.getView());
         mRenderTestRule.render(mTileGridLayout, "most_visited");
@@ -284,10 +317,10 @@ public class NewTabPageTest {
      * Tests opening a most visited item in a new tab.
      */
     @Test
-    @DisabledTest(message = "Flaked on the try bot. http://crbug.com/543138")
+    @DisabledTest // Flaked on the try bot. http://crbug.com/543138
     @SmallTest
     @Feature({"NewTabPage"})
-    public void testOpenMostVisitedItemInNewTab() throws InterruptedException {
+    public void testOpenMostVisitedItemInNewTab() throws InterruptedException, ExecutionException {
         invokeContextMenuAndOpenInANewTab(mTileGridLayout.getChildAt(0),
                 ContextMenuManager.ID_OPEN_IN_NEW_TAB, false, mSiteSuggestions.get(0).url);
     }
@@ -296,11 +329,10 @@ public class NewTabPageTest {
      * Tests opening a most visited item in a new incognito tab.
      */
     @Test
-    @DisabledTest(
-            message = "Suspected to be causing #testRender to flake. https://crbug.com/813589.")
     @SmallTest
     @Feature({"NewTabPage"})
-    public void testOpenMostVisitedItemInIncognitoTab() throws InterruptedException {
+    public void testOpenMostVisitedItemInIncognitoTab()
+            throws InterruptedException, ExecutionException {
         invokeContextMenuAndOpenInANewTab(mTileGridLayout.getChildAt(0),
                 ContextMenuManager.ID_OPEN_IN_INCOGNITO_TAB, true, mSiteSuggestions.get(0).url);
     }
@@ -311,14 +343,15 @@ public class NewTabPageTest {
     @Test
     @SmallTest
     @Feature({"NewTabPage"})
-    public void testRemoveMostVisitedItem() {
+    public void testRemoveMostVisitedItem() throws ExecutionException {
         SiteSuggestion testSite = mSiteSuggestions.get(0);
         View mostVisitedItem = mTileGridLayout.getChildAt(0);
         ArrayList<View> views = new ArrayList<>();
         mTileGridLayout.findViewsWithText(views, testSite.title, View.FIND_VIEWS_WITH_TEXT);
         Assert.assertEquals(1, views.size());
 
-        TestTouchUtils.longClickView(InstrumentationRegistry.getInstrumentation(), mostVisitedItem);
+        TestTouchUtils.performLongClickOnMainSync(
+                InstrumentationRegistry.getInstrumentation(), mostVisitedItem);
         Assert.assertTrue(InstrumentationRegistry.getInstrumentation().invokeContextMenuAction(
                 mActivityTestRule.getActivity(), ContextMenuManager.ID_REMOVE, 0));
 
@@ -626,8 +659,9 @@ public class NewTabPageTest {
      * @param expectIncognito Whether the opened tab is expected to be incognito.
      * @param expectedUrl The expected url for the new tab.
      */
-    private void invokeContextMenuAndOpenInANewTab(View view, int contextMenuItemId,
-            boolean expectIncognito, final String expectedUrl) throws InterruptedException {
+    private void invokeContextMenuAndOpenInANewTab(
+            View view, int contextMenuItemId, boolean expectIncognito, final String expectedUrl)
+            throws InterruptedException, ExecutionException {
         final CallbackHelper createdCallback = new CallbackHelper();
         final TabModel tabModel =
                 mActivityTestRule.getActivity().getTabModelSelector().getModel(expectIncognito);
@@ -641,7 +675,8 @@ public class NewTabPageTest {
             }
         });
 
-        TestTouchUtils.longClickView(InstrumentationRegistry.getInstrumentation(), view);
+        TestTouchUtils.performLongClickOnMainSync(
+                InstrumentationRegistry.getInstrumentation(), view);
         Assert.assertTrue(InstrumentationRegistry.getInstrumentation().invokeContextMenuAction(
                 mActivityTestRule.getActivity(), contextMenuItemId, 0));
 

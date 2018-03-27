@@ -226,13 +226,43 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         'blitframebuffer-srgb-and-linear-drawbuffers.html',
         ['win', 'nvidia', 'opengl'], bug=2355) # ANGLE bug ID
 
+    self.Flaky('deqp/functional/gles3/transformfeedback/*',
+        ['win', ('nvidia', 0x1cb3), 'opengl'], bug=822733)
+
     # Win / AMD
     self.Fail('conformance2/rendering/blitframebuffer-stencil-only.html',
         ['win', 'amd', 'd3d11'], bug=483282) # owner:jmadill
 
-    # Keep a separate set of failures for the R7 240, since it can use a new
-    # and updated driver. The older drivers won't ever get fixes from AMD.
-    # Use ['win', ('amd', 0x6613)] for the R7 240 devices.
+    # Recent AMD drivers seem to have a regression with 3D textures.
+    self.Fail('conformance2/textures/canvas_sub_rectangle/tex-3d-*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('conformance2/textures/image/tex-3d-*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('conformance2/textures/image_data/tex-3d-*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('conformance2/textures/misc/tex-unpack-params.html',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('conformance2/textures/video/tex-3d-*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('deqp/functional/gles3/shadertexturefunction/*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('deqp/functional/gles3/texturefiltering/3d_*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('deqp/functional/gles3/texturespecification/' +
+        'basic_teximage3d_3d_*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('deqp/functional/gles3/texturespecification/' +
+        'basic_texsubimage3d_*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('deqp/functional/gles3/texturespecification/' +
+        'teximage3d_pbo_3d*',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('deqp/functional/gles3/texturespecification/' +
+        'teximage3d_unpack_params.html',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
+    self.Fail('deqp/functional/gles3/texturespecification/' +
+        'texsubimage3d_unpack_params.html',
+        ['win', 'amd', 'd3d11'], bug=2424) # ANGLE bug ID
 
     # Have seen this time out. Think it may be because it's currently
     # the first test that runs in the shard, and the browser might not
@@ -412,6 +442,9 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['mac', 'nvidia', 'intel'], bug=630800)
     self.Fail('deqp/functional/gles3/fbocompleteness.html',
         ['mac', 'nvidia', 'intel'], bug=630800)
+    self.Fail('deqp/functional/gles3/negativeshaderapi.html',
+        ['mac', 'amd', 'intel'], bug=811614)
+
 
     # Mac Retina NVIDIA
     self.Fail('deqp/functional/gles3/shaderindexing/mat_01.html',
@@ -689,6 +722,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['mac', 'no_passthrough', 'intel'], bug=679692)
     self.Fail('deqp/functional/gles3/fbomultisample*',
         ['mac', 'intel'], bug=641209)
+    self.Flaky('deqp/functional/gles3/shaderoperator/common_functions.html',
+        ['mac', 'intel'], bug=820225)
     self.Fail('deqp/functional/gles3/texturefiltering/2d_combinations_01.html',
         ['mac', 'intel'], bug=606074)
     self.Fail('deqp/functional/gles3/texturefiltering/' +

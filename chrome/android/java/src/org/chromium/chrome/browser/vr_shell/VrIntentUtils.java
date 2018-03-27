@@ -4,6 +4,7 @@
 
 package org.chromium.chrome.browser.vr_shell;
 
+import android.app.Activity;
 import android.app.ActivityOptions;
 import android.content.Context;
 import android.content.Intent;
@@ -12,8 +13,8 @@ import android.os.Bundle;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.IntentHandler;
-import org.chromium.chrome.browser.document.ChromeLauncherActivity;
 import org.chromium.chrome.browser.util.IntentUtils;
+import org.chromium.chrome.browser.vr.VrMainActivity;
 
 /**
  * Utilities dealing with extracting information about VR intents.
@@ -22,8 +23,11 @@ public class VrIntentUtils {
     private static final String DAYDREAM_HOME_PACKAGE = "com.google.android.vr.home";
     // The Daydream Home app adds this extra to auto-present intents.
     public static final String AUTOPRESENT_WEVBVR_EXTRA = "browser.vr.AUTOPRESENT_WEBVR";
-    public static final String DAYDREAM_VR_EXTRA = "android.intent.extra.VR_LAUNCH";
     public static final String DAYDREAM_CATEGORY = "com.google.intent.category.DAYDREAM";
+    // Tells Chrome not to relaunch itself when receiving a VR intent. This is used by tests since
+    // the relaunch logic does not work properly with the DON flow skipped.
+    public static final String AVOID_RELAUNCH_EXTRA =
+            "org.chromium.chrome.browser.vr_shell.AVOID_RELAUNCH";
 
     static final String VR_FRE_INTENT_EXTRA = "org.chromium.chrome.browser.vr_shell.VR_FRE";
     static final String VR_FRE_CALLER_INTENT_EXTRA =
@@ -117,9 +121,7 @@ public class VrIntentUtils {
         // Note that Daydream removes the Daydream category for deep-links (for no real reason). In
         // addition to the category, DAYDREAM_VR_EXTRA tells us that this intent is coming directly
         // from VR.
-        return intent != null
-                && (intent.hasCategory(DAYDREAM_CATEGORY)
-                           || IntentUtils.safeGetBooleanExtra(intent, DAYDREAM_VR_EXTRA, false))
+        return intent != null && intent.hasCategory(DAYDREAM_CATEGORY)
                 && !launchedFromRecentApps(intent) && VrShellDelegate.isVrEnabled();
     }
 
@@ -143,10 +145,9 @@ public class VrIntentUtils {
 
     /**
      * This function returns an intent that will launch a VR activity that will prompt the
-     * user to take off their headset and foward the freIntent to the standard
+     * user to take off their headset and forward the freIntent to the standard
      * 2D FRE activity.
      *
-     * @param caller          Activity instance that is checking if first run is necessary.
      * @param freCallerIntent The intent that is used to launch the caller.
      * @param freIntent       The intent that will be used to start the first run in 2D mode.
      * @return The intermediate VR activity intent.
@@ -156,20 +157,20 @@ public class VrIntentUtils {
         if (!VrShellDelegate.isVrEnabled()) return freIntent;
         Intent intent = new Intent();
         intent.setClassName(context, VrFirstRunActivity.class.getName());
+        intent.addCategory(DAYDREAM_CATEGORY);
         intent.putExtra(VR_FRE_CALLER_INTENT_EXTRA, new Intent(freCallerIntent));
         intent.putExtra(VR_FRE_INTENT_EXTRA, new Intent(freIntent));
-        intent.putExtra(DAYDREAM_VR_EXTRA, true);
         return intent;
     }
 
     /*
-     * Remove VR-specific extras from the given intent so that we don't auto-present
+     * Remove deeplink-specific extras from the given intent so that we don't auto-present
      * WebVR content after FRE completion.
      */
     public static void updateFreCallerIntent(Context context, Intent intent) {
-        // Let the caller intent be handeled by the standard laucher.
-        intent.setClassName(context, ChromeLauncherActivity.class.getName());
-        intent.removeExtra(DAYDREAM_VR_EXTRA);
+        intent.setClassName(context, VrMainActivity.class.getName());
+        IntentHandler.removeTrustedIntentExtras(intent);
+        intent.removeExtra(AUTOPRESENT_WEVBVR_EXTRA);
     }
 
     /**
@@ -177,12 +178,26 @@ public class VrIntentUtils {
      */
     public static Bundle getVrIntentOptions(Context context) {
         // These options are used to start the Activity with a custom animation to keep it hidden
-        // for a few hundread milliseconds - enough time for us to draw the first black view.
+        // for a few hundred milliseconds - enough time for us to draw the first black view.
         // The animation is sufficient to hide the 2D screenshot but not to the 2D UI while the
         // WebVR page is being loaded because the animation is somehow cancelled when we try to
-        // enter VR (I don't know what's cancelling it). To hide the 2D UI, we resort to the black
+        // enter VR (I don't know what's canceling it). To hide the 2D UI, we resort to the black
         // overlay view added in {@link startWithVrIntentPreNative}.
-        return ActivityOptions.makeCustomAnimation(context, R.anim.stay_hidden, 0).toBundle();
+        int animation = VrShellDelegate.USE_HIDE_ANIMATION ? R.anim.stay_hidden : 0;
+        return ActivityOptions.makeCustomAnimation(context, animation, 0).toBundle();
+    }
+
+    /**
+     * @param intent The intent to launch in VR after going through the DON (Device On) flow.
+     * @param activity The activity context to launch the intent from.
+     */
+    public static void launchInVr(Intent intent, Activity activity) {
+        VrClassesWrapper wrapper = VrShellDelegate.getVrClassesWrapper();
+        if (wrapper == null) return;
+        VrDaydreamApi api = wrapper.createVrDaydreamApi(activity);
+        if (api == null) return;
+        api.launchInVr(intent);
+        api.close();
     }
 
     /**
@@ -197,7 +212,6 @@ public class VrIntentUtils {
      */
     /* package */ static void removeVrExtras(Intent intent) {
         if (intent == null) return;
-        intent.removeExtra(DAYDREAM_VR_EXTRA);
         intent.removeCategory(DAYDREAM_CATEGORY);
         assert !isVrIntent(intent);
     }

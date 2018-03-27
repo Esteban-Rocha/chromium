@@ -24,6 +24,7 @@
 #define LayoutBox_h
 
 #include <memory>
+
 #include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/layout/LayoutBoxModelObject.h"
@@ -31,7 +32,6 @@
 #include "core/layout/custom/CustomLayoutChild.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/wtf/Compiler.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -101,7 +101,7 @@ struct LayoutBoxRareData {
 
   SnapAreaSet& EnsureSnapAreas() {
     if (!snap_areas_)
-      snap_areas_ = WTF::WrapUnique(new SnapAreaSet);
+      snap_areas_ = std::make_unique<SnapAreaSet>();
 
     return *snap_areas_;
   }
@@ -1242,7 +1242,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   // See README.md for an explanation of scroll origin.
   virtual IntSize OriginAdjustmentForScrollbars() const;
-  IntSize ScrolledContentOffset() const;
+  virtual IntSize ScrolledContentOffset() const;
 
   // Maps from scrolling contents space to box space and apply overflow
   // clip if needed. Returns true if no clipping applied or the flattened quad

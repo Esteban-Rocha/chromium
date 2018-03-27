@@ -9,12 +9,7 @@
 
 #import "ios/chrome/browser/ui/download/download_manager_consumer.h"
 
-// Image names for different download states.
-extern NSString* const kDownloadManagerNotStartedImage;
-extern NSString* const kDownloadManagerInProgressImage;
-extern NSString* const kDownloadManagerSucceededImage;
-extern NSString* const kDownloadManagerFailedImage;
-
+@class DownloadManagerStateView;
 @class DownloadManagerViewController;
 @class RadialProgressView;
 
@@ -55,7 +50,7 @@ extern NSString* const kDownloadManagerFailedImage;
 @property(nonatomic, readonly) UIButton* closeButton;
 
 // Icon that represents the current download status.
-@property(nonatomic, readonly) UIImageView* statusIcon;
+@property(nonatomic, readonly) DownloadManagerStateView* stateIcon;
 
 // Label that describes the current download status.
 @property(nonatomic, readonly) UILabel* statusLabel;
@@ -67,6 +62,14 @@ extern NSString* const kDownloadManagerFailedImage;
 // Install Google Drive button. Only visible if
 // setInstallGoogleDriveButtonVisible:animated: was called with YES.
 @property(nonatomic, readonly) UIButton* installDriveButton;
+
+// Install Google Drive app icon. Only visible if
+// setInstallGoogleDriveButtonVisible:animated: was called with YES.
+@property(nonatomic, readonly) UIImageView* installDriveIcon;
+
+// Install Google Drive label. Only visible if
+// setInstallGoogleDriveButtonVisible:animated: was called with YES.
+@property(nonatomic, readonly) UILabel* installDriveLabel;
 
 // View that represents download progress.
 @property(nonatomic, readonly) RadialProgressView* progressView;

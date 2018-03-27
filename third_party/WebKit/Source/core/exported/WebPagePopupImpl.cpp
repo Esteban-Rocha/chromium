@@ -42,6 +42,7 @@
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
 #include "core/frame/VisualViewport.h"
+#include "core/frame/WebFrameWidgetBase.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
@@ -58,7 +59,6 @@
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/heap/Handle.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/WebCompositeAndReadbackAsyncCallback.h"
 #include "public/platform/WebCursorInfo.h"
 #include "public/platform/WebFloatRect.h"
@@ -126,8 +126,11 @@ class PagePopupChromeClient final : public EmptyChromeClient {
   void ScheduleAnimation(const PlatformFrameView*) override {
     // Calling scheduleAnimation on m_webView so WebViewTestProxy will call
     // beginFrame.
-    if (LayoutTestSupport::IsRunningLayoutTest())
-      popup_->web_view_->MainFrameImpl()->FrameWidget()->ScheduleAnimation();
+    if (LayoutTestSupport::IsRunningLayoutTest()) {
+      popup_->web_view_->MainFrameImpl()
+          ->FrameWidgetImpl()
+          ->ScheduleAnimation();
+    }
 
     if (popup_->layer_tree_view_) {
       popup_->layer_tree_view_->SetNeedsBeginFrame();
@@ -470,7 +473,8 @@ WebInputEventResult WebPagePopupImpl::HandleGestureEvent(
     return WebInputEventResult::kNotHandled;
   if ((event.GetType() == WebInputEvent::kGestureTap ||
        event.GetType() == WebInputEvent::kGestureTapDown) &&
-      !IsViewportPointInWindow(event.x, event.y)) {
+      !IsViewportPointInWindow(event.PositionInWidget().x,
+                               event.PositionInWidget().y)) {
     Cancel();
     return WebInputEventResult::kNotHandled;
   }

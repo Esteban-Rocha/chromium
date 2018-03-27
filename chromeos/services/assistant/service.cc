@@ -20,6 +20,7 @@
 #include "services/service_manager/public/cpp/service_context.h"
 
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
+#include "chromeos/assistant/internal/internal_constants.h"
 #include "chromeos/services/assistant/assistant_manager_service_impl.h"
 #else
 #include "chromeos/services/assistant/fake_assistant_manager_service_impl.h"
@@ -37,8 +38,12 @@ constexpr char kScopeAssistant[] =
 }  // namespace
 
 Service::Service()
-    : session_observer_binding_(this),
-      token_refresh_timer_(std::make_unique<base::OneShotTimer>()) {}
+    : platform_binding_(this),
+      session_observer_binding_(this),
+      token_refresh_timer_(std::make_unique<base::OneShotTimer>()) {
+  registry_.AddInterface<mojom::AssistantPlatform>(base::BindRepeating(
+      &Service::BindAssistantPlatformConnection, base::Unretained(this)));
+}
 
 Service::~Service() = default;
 
@@ -56,9 +61,7 @@ void Service::SetTimerForTesting(std::unique_ptr<base::OneShotTimer> timer) {
   token_refresh_timer_ = std::move(timer);
 }
 
-void Service::OnStart() {
-  RequestAccessToken();
-}
+void Service::OnStart() {}
 
 void Service::OnBindInterface(
     const service_manager::BindSourceInfo& source_info,
@@ -74,7 +77,14 @@ void Service::BindAssistantConnection(mojom::AssistantRequest request) {
   bindings_.AddBinding(assistant_manager_service_.get(), std::move(request));
 }
 
+void Service::BindAssistantPlatformConnection(
+    mojom::AssistantPlatformRequest request) {
+  platform_binding_.Bind(std::move(request));
+}
+
 void Service::OnSessionActivated(bool activated) {
+  DCHECK(client_);
+  client_->OnAssistantStatusChanged(activated);
   assistant_manager_service_->EnableListening(activated);
 }
 
@@ -89,6 +99,18 @@ identity::mojom::IdentityManager* Service::GetIdentityManager() {
         identity::mojom::kServiceName, mojo::MakeRequest(&identity_manager_));
   }
   return identity_manager_.get();
+}
+
+void Service::Init(mojom::ClientPtr client, mojom::AudioInputPtr audio_input) {
+  client_ = std::move(client);
+#if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
+  assistant_manager_service_ =
+      std::make_unique<AssistantManagerServiceImpl>(std::move(audio_input));
+#else
+  assistant_manager_service_ =
+      std::make_unique<FakeAssistantManagerServiceImpl>();
+#endif
+  RequestAccessToken();
 }
 
 void Service::GetPrimaryAccountInfoCallback(
@@ -116,18 +138,14 @@ void Service::GetAccessTokenCallback(const base::Optional<std::string>& token,
     return;
   }
 
-  if (!assistant_manager_service_) {
-#if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
-    assistant_manager_service_ =
-        std::make_unique<AssistantManagerServiceImpl>();
-#else
-    assistant_manager_service_ =
-        std::make_unique<FakeAssistantManagerServiceImpl>();
-#endif
+  DCHECK(assistant_manager_service_);
+  if (!assistant_manager_service_->IsRunning()) {
     assistant_manager_service_->Start(token.value());
     AddAshSessionObserver();
     registry_.AddInterface<mojom::Assistant>(base::BindRepeating(
         &Service::BindAssistantConnection, base::Unretained(this)));
+    client_->OnAssistantStatusChanged(true);
+    DVLOG(1) << "Assistant started";
   } else {
     assistant_manager_service_->SetAccessToken(token.value());
   }

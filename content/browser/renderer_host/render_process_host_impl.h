@@ -13,7 +13,10 @@
 #include <queue>
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "base/containers/flat_set.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
@@ -22,6 +25,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "build/build_config.h"
 #include "components/viz/service/display_embedder/shared_bitmap_allocation_notifier_impl.h"
+#include "content/browser/cache_storage/cache_storage_dispatcher_host.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/renderer_host/frame_sink_provider_impl.h"
@@ -37,11 +41,12 @@
 #include "content/common/renderer.mojom.h"
 #include "content/common/renderer_host.mojom.h"
 #include "content/common/storage_partition_service.mojom.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/service_manager_connection.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "mojo/edk/embedder/outgoing_broker_client_invitation.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/associated_binding_set.h"
@@ -154,9 +159,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void AddObserver(RenderProcessHostObserver* observer) override;
   void RemoveObserver(RenderProcessHostObserver* observer) override;
   void ShutdownForBadMessage(CrashReportMode crash_report_mode) override;
-  void WidgetRestored() override;
-  void WidgetHidden() override;
-  int VisibleWidgetCount() const override;
+  void UpdateClientPriority(PriorityClient* client) override;
+  int VisibleClientCount() const override;
   bool IsForGuestsOnly() const override;
   StoragePartition* GetStoragePartition() const override;
   bool Shutdown(int exit_code) override;
@@ -176,9 +180,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void AddWidget(RenderWidgetHost* widget) override;
   void RemoveWidget(RenderWidgetHost* widget) override;
 #if defined(OS_ANDROID)
-  void UpdateWidgetImportance(ChildProcessImportance old_value,
-                              ChildProcessImportance new_value) override;
-  ChildProcessImportance ComputeEffectiveImportance() override;
+  ChildProcessImportance GetEffectiveImportance() override;
 #endif
   void SetSuddenTerminationAllowed(bool enabled) override;
   bool SuddenTerminationAllowed() const override;
@@ -197,6 +199,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
       bool incoming,
       bool outgoing,
       const WebRtcRtpPacketCallback& packet_callback) override;
+  void SetWebRtcEventLogOutput(int lid, bool enabled) override;
 #endif
   void ResumeDeferredNavigation(const GlobalRequestID& request_id) override;
   void BindInterface(const std::string& interface_name,
@@ -389,6 +392,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
     return *permission_service_context_;
   }
 
+  bool is_initialized() const { return is_initialized_; }
+
+  // Binds Mojo request to Mojo implementation CacheStorageDispatcherHost
+  // instance, binding is sent to IO thread.
+  void BindCacheStorage(blink::mojom::CacheStorageRequest request,
+                        const url::Origin& origin);
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread.
   std::unique_ptr<IPC::ChannelProxy> channel_;
@@ -485,6 +495,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void PropagateBrowserCommandLineToRenderer(
       const base::CommandLine& browser_cmd,
       base::CommandLine* renderer_cmd);
+
+  // Recompute |visible_clients_| and |effective_importance_| from
+  // |priority_clients_|.
+  void UpdateProcessPriorityInputs();
 
   // Inspects the current object state and sets/removes background priority if
   // appropriate. Should be called after any of the involved data members
@@ -605,18 +619,18 @@ class CONTENT_EXPORT RenderProcessHostImpl
   mojo::AssociatedBindingSet<mojom::AssociatedInterfaceProvider, int32_t>
       associated_interface_provider_bindings_;
 
-  // The count of currently visible widgets.  Since the host can be a container
-  // for multiple widgets, it uses this count to determine when it should be
-  // backgrounded.
-  int32_t visible_widgets_;
-
+  // These fields are cached values that are updated in
+  // UpdateProcessPriorityInputs, and are used to compute priority sent to
+  // ChildProcessLauncher.
+  // |visible_clients_|is the count of currently visible clients.
+  int32_t visible_clients_;
 #if defined(OS_ANDROID)
-  // Track count of number of widgets with each possible ChildProcessImportance
-  // value.
-  int32_t widget_importance_counts_[static_cast<size_t>(
-      ChildProcessImportance::COUNT)] = {0};
-
+  // Highest importance of all clients that contribute priority.
+  ChildProcessImportance effective_importance_ = ChildProcessImportance::NORMAL;
 #endif
+
+  // Clients that contribute priority to this proces.
+  base::flat_set<PriorityClient*> priority_clients_;
 
   // The set of widgets in this RenderProcessHostImpl.
   std::set<RenderWidgetHostImpl*> widgets_;
@@ -745,6 +759,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   std::unique_ptr<IndexedDBDispatcherHost, BrowserThread::DeleteOnIOThread>
       indexed_db_factory_;
+
+  scoped_refptr<CacheStorageDispatcherHost> cache_storage_dispatcher_host_;
 
   bool channel_connected_;
   bool sent_render_process_ready_;

@@ -40,11 +40,17 @@
 #include "media/gpu/ipc/service/gpu_video_decode_accelerator.h"
 #include "media/gpu/ipc/service/media_gpu_channel_manager.h"
 #include "media/mojo/services/mojo_jpeg_decode_accelerator_service.h"
+#include "media/mojo/services/mojo_jpeg_encode_accelerator_service.h"
 #include "media/mojo/services/mojo_video_encode_accelerator_provider.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "third_party/skia/include/gpu/GrContext.h"
+#include "third_party/skia/include/gpu/gl/GrGLAssembleInterface.h"
+#include "third_party/skia/include/gpu/gl/GrGLInterface.h"
+#include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gpu_switching_manager.h"
+#include "ui/gl/init/create_gr_gl_interface.h"
 #include "ui/gl/init/gl_factory.h"
 #include "url/gurl.h"
 
@@ -121,7 +127,7 @@ GpuServiceImpl::GpuServiceImpl(
       weak_ptr_factory_(this) {
   DCHECK(!io_runner_->BelongsToCurrentThread());
 #if defined(OS_CHROMEOS)
-  protected_buffer_manager_ = std::make_unique<arc::ProtectedBufferManager>();
+  protected_buffer_manager_ = new arc::ProtectedBufferManager();
 #endif  // defined(OS_CHROMEOS)
   weak_ptr_ = weak_ptr_factory_.GetWeakPtr();
 }
@@ -138,6 +144,15 @@ GpuServiceImpl::~GpuServiceImpl() {
           FROM_HERE, base::Bind(&DestroyBinding, bindings_.get(), &wait))) {
     wait.Wait();
   }
+
+  // The sequence id and scheduler_ could be null for unit tests.
+  if (!skia_output_surface_sequence_id_.is_null()) {
+    DCHECK(scheduler_);
+    scheduler_->DestroySequence(skia_output_surface_sequence_id_);
+  }
+
+  gr_context_ = nullptr;
+  context_for_skia_ = nullptr;
   media_gpu_channel_manager_.reset();
   gpu_channel_manager_.reset();
   owned_sync_point_manager_.reset();
@@ -204,6 +219,9 @@ void GpuServiceImpl::InitializeWithHost(
   scheduler_ = std::make_unique<gpu::Scheduler>(
       base::ThreadTaskRunnerHandle::Get(), sync_point_manager_);
 
+  skia_output_surface_sequence_id_ =
+      scheduler_->CreateSequence(gpu::SchedulingPriority::kHigh);
+
   // Defer creation of the render thread. This is to prevent it from handling
   // IPC messages before the sandbox has been enabled and all other necessary
   // initialization has succeeded.
@@ -227,6 +245,37 @@ void GpuServiceImpl::Bind(mojom::GpuServiceRequest request) {
     return;
   }
   bindings_->AddBinding(this, std::move(request));
+}
+
+bool GpuServiceImpl::CreateGrContextIfNecessary(gl::GLSurface* surface) {
+  DCHECK(main_runner_->BelongsToCurrentThread());
+  DCHECK(surface);
+
+  if (!gr_context_) {
+    DCHECK(!context_for_skia_);
+    gl::GLContextAttribs attribs;
+    // TODO(penghuang) set attribs.
+    context_for_skia_ = gl::init::CreateGLContext(
+        gpu_channel_manager_->share_group(), surface, attribs);
+    DCHECK(context_for_skia_);
+    gpu_feature_info_.ApplyToGLContext(context_for_skia_.get());
+    if (!context_for_skia_->MakeCurrent(surface)) {
+      LOG(FATAL) << "Failed to make current.";
+      // TODO(penghuang): handle the failure.
+    }
+    auto native_interface =
+        GrGLMakeAssembledInterface(nullptr, [](void* ctx, const char name[]) {
+          return gl::GetGLProcAddress(name);
+        });
+    DCHECK(native_interface);
+
+    GrContextOptions options;
+    options.fExplicitlyAllocateGPUResources = GrContextOptions::Enable::kYes;
+    options.fUseGLBufferDataNullHint = GrContextOptions::Enable::kYes;
+    gr_context_ = GrContext::MakeGL(std::move(native_interface), options);
+    DCHECK(gr_context_);
+  }
+  return !!gr_context_;
 }
 
 gpu::ImageFactory* GpuServiceImpl::gpu_image_factory() {
@@ -290,10 +339,9 @@ void GpuServiceImpl::CreateArcProtectedBufferManager(
 void GpuServiceImpl::CreateArcVideoDecodeAcceleratorOnMainThread(
     arc::mojom::VideoDecodeAcceleratorRequest vda_request) {
   DCHECK(main_runner_->BelongsToCurrentThread());
-  mojo::MakeStrongBinding(
-      std::make_unique<arc::GpuArcVideoDecodeAccelerator>(
-          gpu_preferences_, protected_buffer_manager_.get()),
-      std::move(vda_request));
+  mojo::MakeStrongBinding(std::make_unique<arc::GpuArcVideoDecodeAccelerator>(
+                              gpu_preferences_, protected_buffer_manager_),
+                          std::move(vda_request));
 }
 
 void GpuServiceImpl::CreateArcVideoEncodeAcceleratorOnMainThread(
@@ -309,7 +357,7 @@ void GpuServiceImpl::CreateArcProtectedBufferManagerOnMainThread(
   DCHECK(main_runner_->BelongsToCurrentThread());
   mojo::MakeStrongBinding(
       std::make_unique<arc::GpuArcProtectedBufferManagerProxy>(
-          protected_buffer_manager_.get()),
+          protected_buffer_manager_),
       std::move(pbm_request));
 }
 #endif  // defined(OS_CHROMEOS)
@@ -318,6 +366,12 @@ void GpuServiceImpl::CreateJpegDecodeAccelerator(
     media::mojom::JpegDecodeAcceleratorRequest jda_request) {
   DCHECK(io_runner_->BelongsToCurrentThread());
   media::MojoJpegDecodeAcceleratorService::Create(std::move(jda_request));
+}
+
+void GpuServiceImpl::CreateJpegEncodeAccelerator(
+    media::mojom::JpegEncodeAcceleratorRequest jea_request) {
+  DCHECK(io_runner_->BelongsToCurrentThread());
+  media::MojoJpegEncodeAcceleratorService::Create(std::move(jea_request));
 }
 
 void GpuServiceImpl::CreateVideoEncodeAcceleratorProvider(
@@ -618,6 +672,21 @@ void GpuServiceImpl::DestroyAllChannels() {
   }
   DVLOG(1) << "GPU: Removing all contexts";
   gpu_channel_manager_->DestroyAllChannels();
+}
+
+void GpuServiceImpl::OnBackgrounded() {
+// Currently only called on Android.
+#if defined(OS_ANDROID)
+  if (io_runner_->BelongsToCurrentThread()) {
+    main_runner_->PostTask(
+        FROM_HERE, base::BindOnce(&GpuServiceImpl::OnBackgrounded, weak_ptr_));
+    return;
+  }
+  DVLOG(1) << "GPU: Performing background cleanup";
+  gpu_channel_manager_->OnApplicationBackgrounded();
+#else
+  NOTREACHED();
+#endif
 }
 
 void GpuServiceImpl::Crash() {

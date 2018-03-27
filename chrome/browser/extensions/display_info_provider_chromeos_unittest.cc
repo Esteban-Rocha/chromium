@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 
-#include "ash/display/screen_orientation_controller_chromeos.h"
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/display/screen_orientation_controller_test_api.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/shell.h"
@@ -77,6 +77,10 @@ class DisplayInfoProviderChromeosTest : public ash::AshTestBase {
     // value to be set, as the TabletModeController sends an initial message on
     // startup when it observes the PowerManagerClient.
     tablet_mode_client_->FlushForTesting();
+  }
+
+  float GetDisplayZoom(int64_t display_id) {
+    return display_manager()->GetDisplayInfo(display_id).zoom_factor();
   }
 
  protected:
@@ -1656,10 +1660,8 @@ TEST_F(DisplayInfoProviderChromeosTest, SetDisplayZoomFactor) {
   display_manager()->UpdateZoomFactor(display_id_list[0], zoom_factor_2);
   display_manager()->UpdateZoomFactor(display_id_list[1], zoom_factor_1);
 
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(display_id_list[0]),
-            zoom_factor_2);
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(display_id_list[1]),
-            zoom_factor_1);
+  EXPECT_EQ(GetDisplayZoom(display_id_list[0]), zoom_factor_2);
+  EXPECT_EQ(GetDisplayZoom(display_id_list[1]), zoom_factor_1);
 
   // After update, display 1 should have |final_zoom_factor_1| as its zoom
   // factor and display 2 should have |final_zoom_factor_2| as its zoom factor.
@@ -1675,12 +1677,10 @@ TEST_F(DisplayInfoProviderChromeosTest, SetDisplayZoomFactor) {
                          &success, &error);
   ASSERT_TRUE(success);
 
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(display_id_list[0]),
-            final_zoom_factor_1);
+  EXPECT_EQ(GetDisplayZoom(display_id_list[0]), final_zoom_factor_1);
   // Display 2 has not been updated yet, so it will still have the old zoom
   // factor.
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(display_id_list[1]),
-            zoom_factor_1);
+  EXPECT_EQ(GetDisplayZoom(display_id_list[1]), zoom_factor_1);
 
   info.display_zoom_factor = std::make_unique<double>(zoom_factor_2);
   CallSetDisplayUnitInfo(base::Int64ToString(display_id_list[1]), info,
@@ -1688,10 +1688,8 @@ TEST_F(DisplayInfoProviderChromeosTest, SetDisplayZoomFactor) {
   ASSERT_TRUE(success);
 
   // Both displays should now have the correct zoom factor set.
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(display_id_list[0]),
-            final_zoom_factor_1);
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(display_id_list[1]),
-            final_zoom_factor_2);
+  EXPECT_EQ(GetDisplayZoom(display_id_list[0]), final_zoom_factor_1);
+  EXPECT_EQ(GetDisplayZoom(display_id_list[1]), final_zoom_factor_2);
 
   std::string expected_err =
       "Zoom value is out of range for display with id: " +
@@ -1946,6 +1944,29 @@ TEST_F(DisplayInfoProviderChromeosTest, SetMIXEDMode) {
     EXPECT_TRUE(error.empty());
     EXPECT_FALSE(display_manager()->IsInMirrorMode());
   }
+}
+
+TEST_F(DisplayInfoProviderChromeosTest, GetEdid) {
+  UpdateDisplay("500x600, 400x200");
+  const char* kManufacturerId = "GOO";
+  const char* kProductId = "GL";
+  constexpr int32_t kYearOfManufacture = 2018;
+
+  display::ManagedDisplayInfo info(
+      GetDisplayManager()->active_display_list()[0].id(), "",
+      false /* has_overscan */);
+  info.SetBounds(gfx::Rect(0, 0, 500, 600));
+  info.set_manufacturer_id(kManufacturerId);
+  info.set_product_id(kProductId);
+  info.set_year_of_manufacture(kYearOfManufacture);
+  GetDisplayManager()->OnNativeDisplaysChanged({info});
+
+  DisplayUnitInfoList result = GetAllDisplaysInfo();
+  ASSERT_EQ(1u, result.size());
+  ASSERT_TRUE(result[0].edid);
+  EXPECT_EQ(kManufacturerId, result[0].edid->manufacturer_id);
+  EXPECT_EQ(kProductId, result[0].edid->product_id);
+  EXPECT_EQ(kYearOfManufacture, result[0].edid->year_of_manufacture);
 }
 
 }  // namespace

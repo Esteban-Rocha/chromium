@@ -69,7 +69,7 @@ MS_TRUETYPE_FONTS_DIR = '/usr/share/fonts/truetype/msttcorefonts/'
 MS_TRUETYPE_FONTS_PACKAGE = 'ttf-mscorefonts-installer'
 
 # Path relative to the build directory.
-CONTENT_SHELL_FONTS_DIR = "content_shell_test_fonts"
+CONTENT_SHELL_FONTS_DIR = "test_fonts"
 
 FONT_FILES = [
     [[MS_TRUETYPE_FONTS_DIR], 'Arial.ttf', MS_TRUETYPE_FONTS_PACKAGE],
@@ -78,14 +78,6 @@ FONT_FILES = [
     [[MS_TRUETYPE_FONTS_DIR], 'Arial_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Comic_Sans_MS.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Comic_Sans_MS_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Georgia.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Impact.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
@@ -103,14 +95,30 @@ FONT_FILES = [
     [['/usr/share/doc/ttf-mscorefonts-installer/'], 'READ_ME!.gz', MS_TRUETYPE_FONTS_PACKAGE],
 
     # Other fonts: Arabic, CJK, Indic, Thai, etc.
+    [[CONTENT_SHELL_FONTS_DIR], 'Arimo-Bold.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Arimo-BoldItalic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Arimo-Italic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Arimo-Regular.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Cousine-Bold.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Cousine-BoldItalic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Cousine-Italic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Cousine-Regular.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'DejaVuSans.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'Garuda.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Gelasio-Bold.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Gelasio-BoldItalic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Gelasio-Italic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Gelasio-Regular.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'Lohit-Devanagari.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'Lohit-Gurmukhi.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'Lohit-Tamil.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'MuktiNarrow.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'NotoSansKhmer-Regular.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'NotoSansCJKjp-Regular.otf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Tinos-Bold.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Tinos-BoldItalic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Tinos-Italic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Tinos-Regular.ttf', None],
 ]
 
 
@@ -419,6 +427,10 @@ class Port(object):
             An exit status code.
         """
         cmd = [self._path_to_driver(), '--check-layout-test-sys-deps']
+
+        additional_flags = self.get_option('additional_driver_flag', [])
+        if additional_flags:
+            cmd.append(additional_flags[0])
 
         local_error = ScriptError()
 
@@ -1301,8 +1313,22 @@ class Port(object):
         """Whether a test is considered a web-platform-tests test."""
         return re.match(r'(virtual/[^/]+/)?external/wpt/', test)
 
-    def should_use_wptserve(self, test):
-        return self.is_wpt_test(test)
+    @staticmethod
+    def should_use_wptserve(test):
+        return Port.is_wpt_test(test)
+
+    @staticmethod
+    def should_run_in_wpt_mode(test):
+        """Whether content_shell should run a test in the WPT mode.
+
+        Some tests outside external/wpt should also be run in the WPT mode in
+        content_shell, namely: harness-tests/wpt/ (tests for console log
+        filtering).
+        """
+        # Note: match rules in TestInterfaces::ConfigureForTestWithURL in
+        # //src/content/shell/test_runner/test_interfaces.cc.
+        return (Port.is_wpt_test(test) or
+                re.match(r'harness-tests/wpt/', test))
 
     def start_wptserve(self):
         """Starts a WPT web server.
@@ -1732,6 +1758,10 @@ class Port(object):
 
     def _wpt_test_urls_matching_paths(self, paths):
         tests = []
+        # '/' is used throughout this function instead of filesystem.sep as the WPT manifest always
+        # uses '/' for paths (it is not OS dependent).
+        if self._filesystem.sep != '/':
+            paths = [path.replace(self._filesystem.sep, '/') for path in paths]
 
         for test_url_path in self._wpt_manifest().all_urls():
             if test_url_path[0] == '/':
@@ -1752,8 +1782,8 @@ class Port(object):
                 )
 
                 # Get a list of directories for both paths, filter empty strings
-                full_test_url_directories = filter(None, full_test_url_path.split(self._filesystem.sep))
-                path_directories = filter(None, path.split(self._filesystem.sep))
+                full_test_url_directories = filter(None, full_test_url_path.split('/'))
+                path_directories = filter(None, path.split('/'))
 
                 # For all other path matches within WPT
                 if matches_any_js_test or path_directories == full_test_url_directories[0:len(path_directories)]:
@@ -1810,12 +1840,19 @@ class Port(object):
         return []
 
     def should_run_as_pixel_test(self, test_input):
+        """Whether a test should run as pixel test (when there is no reference).
+
+        This provides the *default* value for whether a test should run as
+        pixel test. When reference files exist (checked by layout_test_runner
+        before calling this method), the test always runs as pixel test.
+        """
         if not self._options.pixel_tests:
             return False
         if self._options.pixel_test_directories:
             return any(test_input.test_name.startswith(directory) for directory in self._options.pixel_test_directories)
-        # TODO(burnik): Make sure this is the right way to do it.
-        if self.should_use_wptserve(test_input.test_name):
+        if self.should_run_in_wpt_mode(test_input.test_name):
+            # WPT should not run as pixel test by default, except reftests
+            # (for which reference files would exist).
             return False
         return True
 

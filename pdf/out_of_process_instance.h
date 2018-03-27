@@ -98,7 +98,7 @@ class OutOfProcessInstance : public pp::Instance,
   // PDFEngine::Client implementation.
   void DocumentSizeUpdated(const pp::Size& size) override;
   void Invalidate(const pp::Rect& rect) override;
-  void Scroll(const pp::Point& point) override;
+  void DidScroll(const pp::Point& point) override;
   void ScrollToX(int x_in_screen_coords) override;
   void ScrollToY(int y_in_screen_coords, bool compensate_for_toolbar) override;
   void ScrollToPage(int page) override;
@@ -147,6 +147,7 @@ class OutOfProcessInstance : public pp::Instance,
   void IsSelectingChanged(bool is_selecting) override;
   void SelectionChanged(const pp::Rect& left, const pp::Rect& right) override;
   void IsEditModeChanged(bool is_edit_mode) override;
+  float GetToolbarHeightInScreenCoords() override;
 
   // PreviewModeClient::Client implementation.
   void PreviewDocumentLoadComplete() override;

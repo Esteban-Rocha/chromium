@@ -58,7 +58,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
-#include "ui/base/win/osk_display_manager.h"
+#include "ui/base/ime/win/osk_display_manager.h"
 #endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
@@ -73,6 +73,10 @@
 
 #if defined(OS_CHROMEOS)
 #include "ui/wm/core/ime_util_chromeos.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "ui/base/cocoa/secure_password_input.h"
 #endif
 
 namespace views {
@@ -262,6 +266,7 @@ Textfield::Textfield()
       scheduled_text_edit_command_(ui::TextEditCommand::INVALID_COMMAND),
       read_only_(false),
       default_width_in_chars_(0),
+      minimum_width_in_chars_(-1),
       use_default_text_color_(true),
       use_default_background_color_(true),
       use_default_selection_text_color_(true),
@@ -509,6 +514,16 @@ void Textfield::SetFontList(const gfx::FontList& font_list) {
   PreferredSizeChanged();
 }
 
+void Textfield::SetDefaultWidthInChars(int default_width) {
+  DCHECK_GE(default_width, 0);
+  default_width_in_chars_ = default_width;
+}
+
+void Textfield::SetMinimumWidthInChars(int minimum_width) {
+  DCHECK_GE(minimum_width, -1);
+  minimum_width_in_chars_ = minimum_width;
+}
+
 base::string16 Textfield::GetPlaceholderText() const {
   return placeholder_text_;
 }
@@ -608,12 +623,22 @@ int Textfield::GetBaseline() const {
 }
 
 gfx::Size Textfield::CalculatePreferredSize() const {
-  const gfx::Insets& insets = GetInsets();
+  DCHECK_GE(default_width_in_chars_, minimum_width_in_chars_);
   return gfx::Size(
       GetFontList().GetExpectedTextWidth(default_width_in_chars_) +
-          insets.width(),
+          GetInsets().width(),
       LayoutProvider::GetControlHeightForFont(style::CONTEXT_TEXTFIELD,
                                               GetTextStyle(), GetFontList()));
+}
+
+gfx::Size Textfield::GetMinimumSize() const {
+  DCHECK_LE(minimum_width_in_chars_, default_width_in_chars_);
+  gfx::Size minimum_size = View::GetMinimumSize();
+  if (minimum_width_in_chars_ >= 0)
+    minimum_size.set_width(
+        GetFontList().GetExpectedTextWidth(minimum_width_in_chars_) +
+        GetInsets().width());
+  return minimum_size;
 }
 
 const char* Textfield::GetClassName() const {
@@ -1049,6 +1074,11 @@ void Textfield::OnPaint(gfx::Canvas* canvas) {
 }
 
 void Textfield::OnFocus() {
+#if defined(OS_MACOSX)
+  if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD)
+    password_input_enabler_.reset(new ui::ScopedPasswordInputEnabler());
+#endif  // defined(OS_MACOSX)
+
   GetRenderText()->set_focused(true);
   if (ShouldShowCursor()) {
     UpdateCursorViewPosition();
@@ -1092,6 +1122,10 @@ void Textfield::OnBlur() {
     FocusRing::Uninstall(this);
   SchedulePaint();
   View::OnBlur();
+
+#if defined(OS_MACOSX)
+  password_input_enabler_.reset();
+#endif  // defined(OS_MACOSX)
 }
 
 gfx::Point Textfield::GetKeyboardContextMenuLocation() {
@@ -1190,11 +1224,18 @@ bool Textfield::CanStartDragForView(View* sender,
 ////////////////////////////////////////////////////////////////////////////////
 // Textfield, WordLookupClient overrides:
 
-bool Textfield::GetDecoratedWordAtPoint(const gfx::Point& point,
-                                        gfx::DecoratedText* decorated_word,
-                                        gfx::Point* baseline_point) {
-  return GetRenderText()->GetDecoratedWordAtPoint(point, decorated_word,
-                                                  baseline_point);
+bool Textfield::GetWordLookupDataAtPoint(const gfx::Point& point,
+                                         gfx::DecoratedText* decorated_word,
+                                         gfx::Point* baseline_point) {
+  return GetRenderText()->GetWordLookupDataAtPoint(point, decorated_word,
+                                                   baseline_point);
+}
+
+bool Textfield::GetWordLookupDataFromSelection(
+    gfx::DecoratedText* decorated_text,
+    gfx::Point* baseline_point) {
+  return GetRenderText()->GetLookupDataForRange(GetRenderText()->selection(),
+                                                decorated_text, baseline_point);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1291,10 +1332,20 @@ void Textfield::DestroyTouchSelection() {
 // Textfield, ui::SimpleMenuModel::Delegate overrides:
 
 bool Textfield::IsCommandIdChecked(int command_id) const {
+  if (text_services_context_menu_ &&
+      text_services_context_menu_->SupportsCommand(command_id)) {
+    return text_services_context_menu_->IsCommandIdChecked(command_id);
+  }
+
   return true;
 }
 
 bool Textfield::IsCommandIdEnabled(int command_id) const {
+  if (text_services_context_menu_ &&
+      text_services_context_menu_->SupportsCommand(command_id)) {
+    return text_services_context_menu_->IsCommandIdEnabled(command_id);
+  }
+
   return Textfield::IsTextEditCommandEnabled(
       GetTextEditCommandFromMenuCommand(command_id, HasSelection()));
 }
@@ -1328,6 +1379,12 @@ bool Textfield::GetAcceleratorForCommandId(int command_id,
 }
 
 void Textfield::ExecuteCommand(int command_id, int event_flags) {
+  if (text_services_context_menu_ &&
+      text_services_context_menu_->SupportsCommand(command_id)) {
+    text_services_context_menu_->ExecuteCommand(command_id);
+    return;
+  }
+
   Textfield::ExecuteTextEditCommand(
       GetTextEditCommandFromMenuCommand(command_id, HasSelection()));
 }
@@ -2087,6 +2144,14 @@ void Textfield::OnCaretBoundsChanged() {
     GetInputMethod()->OnCaretBoundsChanged(this);
   if (touch_selection_controller_)
     touch_selection_controller_->SelectionChanged();
+
+#if defined(OS_MACOSX)
+  // On Mac, the context menu contains a look up item which displays the
+  // selected text. As such, the menu needs to be updated if the selection has
+  // changed.
+  context_menu_contents_.reset();
+#endif
+
   // Screen reader users don't expect notifications about unfocused textfields.
   if (HasFocus())
     NotifyAccessibilityEvent(ax::mojom::Event::kTextSelectionChanged, true);

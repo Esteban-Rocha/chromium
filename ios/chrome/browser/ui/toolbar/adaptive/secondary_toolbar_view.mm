@@ -23,6 +23,9 @@
 // Redefined as readwrite
 @property(nonatomic, strong, readwrite) NSArray<ToolbarButton*>* allButtons;
 
+// The blur visual effect view, redefined as readwrite.
+@property(nonatomic, strong, readwrite) UIVisualEffectView* blur;
+
 // The stack view containing the buttons.
 @property(nonatomic, strong) UIStackView* stackView;
 
@@ -36,6 +39,10 @@
 @property(nonatomic, strong, readwrite) ToolbarTabGridButton* tabGridButton;
 // Button to focus the omnibox, redefined as readwrite.
 @property(nonatomic, strong, readwrite) ToolbarButton* omniboxButton;
+// Button to display the share menu, redefined as readwrite.
+@property(nonatomic, strong, readwrite) ToolbarButton* shareButton;
+// Button to manage the bookmarks of this page, redefined as readwrite.
+@property(nonatomic, strong, readwrite) ToolbarButton* bookmarkButton;
 
 @end
 
@@ -49,6 +56,9 @@
 @synthesize toolsMenuButton = _toolsMenuButton;
 @synthesize omniboxButton = _omniboxButton;
 @synthesize tabGridButton = _tabGridButton;
+@synthesize shareButton = _shareButton;
+@synthesize bookmarkButton = _bookmarkButton;
+@synthesize blur = _blur;
 
 #pragma mark - Public
 
@@ -80,14 +90,10 @@
   self.translatesAutoresizingMaskIntoConstraints = NO;
 
   UIBlurEffect* blurEffect = self.buttonFactory.toolbarConfiguration.blurEffect;
-  UIVisualEffectView* blur =
-      [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-  blur.contentView.backgroundColor =
-      self.buttonFactory.toolbarConfiguration.blurEffectBackgroundColor;
-
-  [self addSubview:blur];
-  blur.translatesAutoresizingMaskIntoConstraints = NO;
-  AddSameConstraints(blur, self);
+  self.blur = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+  [self addSubview:self.blur];
+  self.blur.translatesAutoresizingMaskIntoConstraints = NO;
+  AddSameConstraints(self.blur, self);
 
   UIView* contentView = self;
   if (UIVisualEffect* vibrancy = [self.buttonFactory.toolbarConfiguration
@@ -106,10 +112,12 @@
   self.omniboxButton = [self.buttonFactory omniboxButton];
   self.tabGridButton = [self.buttonFactory tabGridButton];
   self.toolsMenuButton = [self.buttonFactory toolsMenuButton];
+  self.shareButton = [self.buttonFactory shareButton];
+  self.bookmarkButton = [self.buttonFactory bookmarkButton];
 
   self.allButtons = @[
-    self.backButton, self.forwardButton, self.omniboxButton, self.tabGridButton,
-    self.toolsMenuButton
+    self.backButton, self.forwardButton, self.bookmarkButton, self.shareButton,
+    self.omniboxButton, self.tabGridButton, self.toolsMenuButton
   ];
 
   self.stackView =
@@ -135,6 +143,10 @@
 
 #pragma mark - AdaptiveToolbarView
 
+- (ToolbarButton*)forwardButtonTrailingPosition {
+  return nil;
+}
+
 - (ToolbarButton*)stopButton {
   return nil;
 }
@@ -144,14 +156,6 @@
 }
 
 - (MDCProgressView*)progressBar {
-  return nil;
-}
-
-- (ToolbarButton*)bookmarkButton {
-  return nil;
-}
-
-- (ToolbarButton*)shareButton {
   return nil;
 }
 

@@ -22,9 +22,8 @@ class PLATFORM_EXPORT RendererWebSchedulerImpl : public WebSchedulerImpl {
   base::SingleThreadTaskRunner* CompositorTaskRunner() override;
   std::unique_ptr<RendererPauseHandle> PauseScheduler() override
       WARN_UNUSED_RESULT;
-  std::unique_ptr<WebViewScheduler> CreateWebViewScheduler(
-      InterventionReporter* intervention_reporter,
-      WebViewScheduler::WebViewSchedulerDelegate* delegate) override;
+  std::unique_ptr<PageScheduler> CreatePageScheduler(
+      PageScheduler::Delegate*) override;
 
   base::TimeTicks MonotonicallyIncreasingVirtualTime() const override;
 

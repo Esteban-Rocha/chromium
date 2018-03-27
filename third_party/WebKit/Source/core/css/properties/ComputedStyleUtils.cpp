@@ -4,7 +4,6 @@
 
 #include "core/css/properties/ComputedStyleUtils.h"
 
-#include "core/StylePropertyShorthand.h"
 #include "core/css/BasicShapeFunctions.h"
 #include "core/css/CSSBorderImage.h"
 #include "core/css/CSSBorderImageSliceValue.h"
@@ -30,6 +29,7 @@
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutGrid.h"
 #include "core/style/ComputedStyleConstants.h"
+#include "core/style_property_shorthand.h"
 
 namespace blink {
 
@@ -50,10 +50,10 @@ CSSValue* ComputedStyleUtils::ValueForPosition(const LengthPoint& position,
   if (position.X().IsAuto())
     return CSSIdentifierValue::Create(CSSValueAuto);
 
-  CSSValueList* list = CSSValueList::CreateSpaceSeparated();
-  list->Append(*ZoomAdjustedPixelValueForLength(position.X(), style));
-  list->Append(*ZoomAdjustedPixelValueForLength(position.Y(), style));
-  return list;
+  return CSSValuePair::Create(
+      ZoomAdjustedPixelValueForLength(position.X(), style),
+      ZoomAdjustedPixelValueForLength(position.Y(), style),
+      CSSValuePair::kKeepIdenticalValues);
 }
 
 CSSValue* ComputedStyleUtils::ValueForOffset(const ComputedStyle& style,
@@ -1866,27 +1866,25 @@ CSSValue* ComputedStyleUtils::PaintOrderToCSSValueList(
 }
 
 CSSValue* ComputedStyleUtils::AdjustSVGPaintForCurrentColor(
-    SVGPaintType paint_type,
-    const String& url,
-    const Color& color,
+    const SVGPaint& paint,
     const Color& current_color) {
-  if (paint_type >= SVG_PAINTTYPE_URI_NONE) {
+  if (paint.type >= SVG_PAINTTYPE_URI_NONE) {
     CSSValueList* values = CSSValueList::CreateSpaceSeparated();
-    values->Append(*CSSURIValue::Create(AtomicString(url)));
-    if (paint_type == SVG_PAINTTYPE_URI_NONE)
+    values->Append(*CSSURIValue::Create(AtomicString(paint.GetUrl())));
+    if (paint.type == SVG_PAINTTYPE_URI_NONE)
       values->Append(*CSSIdentifierValue::Create(CSSValueNone));
-    else if (paint_type == SVG_PAINTTYPE_URI_CURRENTCOLOR)
+    else if (paint.type == SVG_PAINTTYPE_URI_CURRENTCOLOR)
       values->Append(*CSSColorValue::Create(current_color.Rgb()));
-    else if (paint_type == SVG_PAINTTYPE_URI_RGBCOLOR)
-      values->Append(*CSSColorValue::Create(color.Rgb()));
+    else if (paint.type == SVG_PAINTTYPE_URI_RGBCOLOR)
+      values->Append(*CSSColorValue::Create(paint.GetColor().Rgb()));
     return values;
   }
-  if (paint_type == SVG_PAINTTYPE_NONE)
+  if (paint.type == SVG_PAINTTYPE_NONE)
     return CSSIdentifierValue::Create(CSSValueNone);
-  if (paint_type == SVG_PAINTTYPE_CURRENTCOLOR)
+  if (paint.type == SVG_PAINTTYPE_CURRENTCOLOR)
     return CSSColorValue::Create(current_color.Rgb());
 
-  return CSSColorValue::Create(color.Rgb());
+  return CSSColorValue::Create(paint.GetColor().Rgb());
 }
 
 CSSValue* ComputedStyleUtils::ValueForShadowData(const ShadowData& shadow,
@@ -2025,9 +2023,10 @@ CSSValue* ComputedStyleUtils::ValueForScrollSnapType(
 CSSValue* ComputedStyleUtils::ValueForScrollSnapAlign(
     const ScrollSnapAlign& align,
     const ComputedStyle& style) {
-  return CSSValuePair::Create(CSSIdentifierValue::Create(align.alignmentX),
-                              CSSIdentifierValue::Create(align.alignmentY),
-                              CSSValuePair::kDropIdenticalValues);
+  return CSSValuePair::Create(
+      CSSIdentifierValue::Create(align.alignment_inline),
+      CSSIdentifierValue::Create(align.alignment_block),
+      CSSValuePair::kDropIdenticalValues);
 }
 
 // Returns a suitable value for the page-break-(before|after) property, given

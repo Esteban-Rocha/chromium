@@ -104,9 +104,15 @@ Elements.ElementsTreeElement = class extends UI.TreeElement {
   /**
    * @param {!UI.ContextMenu} contextMenu
    * @param {!SDK.DOMNode} node
+   * @suppressGlobalPropertiesCheck
    */
   static populateForcedPseudoStateItems(contextMenu, node) {
     const pseudoClasses = ['active', 'hover', 'focus', 'visited', 'focus-within'];
+    try {
+      document.querySelector(':focus-visible');  // Will throw if not supported
+      pseudoClasses.push('focus-visible');
+    } catch (e) {
+    }
     const forcedPseudoState = node.domModel().cssModel().pseudoState(node);
     const stateMenu = contextMenu.debugSection().appendSubMenuItem(Common.UIString('Force state'));
     for (let i = 0; i < pseudoClasses.length; ++i) {
@@ -710,12 +716,23 @@ Elements.ElementsTreeElement = class extends UI.TreeElement {
     }
 
     /**
+     * @param {!Event} event
+     */
+    const keydownListener = event => {
+      if (event.key !== ' ')
+        return;
+      this._editing.commit();
+      event.consume(true);
+    };
+
+    /**
      * @param {!Element} element
      * @param {string} newTagName
      * @this {Elements.ElementsTreeElement}
      */
     function editingComitted(element, newTagName) {
       tagNameElement.removeEventListener('keyup', keyupListener, false);
+      tagNameElement.removeEventListener('keydown', keydownListener, false);
       this._tagNameEditingCommitted.apply(this, arguments);
     }
 
@@ -724,10 +741,12 @@ Elements.ElementsTreeElement = class extends UI.TreeElement {
      */
     function editingCancelled() {
       tagNameElement.removeEventListener('keyup', keyupListener, false);
+      tagNameElement.removeEventListener('keydown', keydownListener, false);
       this._editingCancelled.apply(this, arguments);
     }
 
     tagNameElement.addEventListener('keyup', keyupListener, false);
+    tagNameElement.addEventListener('keydown', keydownListener, false);
 
     const config = new UI.InplaceEditor.Config(editingComitted.bind(this), editingCancelled.bind(this), tagName);
     this._editing = UI.InplaceEditor.startEditing(tagNameElement, config);
@@ -1510,7 +1529,7 @@ Elements.ElementsTreeElement = class extends UI.TreeElement {
 
       case Node.DOCUMENT_TYPE_NODE:
         const docTypeElement = titleDOM.createChild('span', 'webkit-html-doctype');
-        docTypeElement.createTextChild('<!DOCTYPE ' + node.nodeName());
+        docTypeElement.createTextChild('<!doctype ' + node.nodeName());
         if (node.publicId) {
           docTypeElement.createTextChild(' PUBLIC "' + node.publicId + '"');
           if (node.systemId)

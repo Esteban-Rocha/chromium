@@ -31,7 +31,7 @@
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "ppapi/features/features.h"
 #include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
 #include "third_party/skia/include/core/SkGraphics.h"
@@ -94,6 +94,7 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   const base::CommandLine& command_line = parameters.command_line;
 
+  base::SamplingHeapProfiler::InitTLSSlot();
   if (command_line.HasSwitch(switches::kSamplingHeapProfiler)) {
     base::SamplingHeapProfiler* profiler =
         base::SamplingHeapProfiler::GetInstance();
@@ -122,26 +123,45 @@ int RendererMain(const MainFunctionParams& parameters) {
   }
 #endif
 
+  const base::CommandLine& process_command_line =
+      *base::CommandLine::ForCurrentProcess();
+
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
     !defined(OS_FUCHSIA)
   // This call could already have been made from zygote_main_linux.cc. However
   // we need to do it here if Zygote is disabled.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoZygote)) {
+  if (process_command_line.HasSwitch(switches::kNoZygote)) {
     SkFontConfigInterface::SetGlobal(new FontConfigIPC(GetSandboxFD()))
         ->unref();
   }
 #endif
 
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableSkiaRuntimeOpts)) {
+  if (!process_command_line.HasSwitch(switches::kDisableSkiaRuntimeOpts)) {
     SkGraphics::Init();
   }
 
-#if defined(OS_ANDROID)
   const int kMB = 1024 * 1024;
-  size_t font_cache_limit =
-      base::SysInfo::IsLowEndDevice() ? kMB : 8 * kMB;
+  size_t font_cache_limit;
+#if defined(OS_ANDROID)
+  font_cache_limit = base::SysInfo::IsLowEndDevice() ? kMB : 8 * kMB;
   SkGraphics::SetFontCacheLimit(font_cache_limit);
+#else
+  if (process_command_line.HasSwitch(switches::kSkiaFontCacheLimitMb)) {
+    if (base::StringToSizeT(process_command_line.GetSwitchValueASCII(
+                                switches::kSkiaFontCacheLimitMb),
+                            &font_cache_limit)) {
+      SkGraphics::SetFontCacheLimit(font_cache_limit * kMB);
+    }
+  }
+
+  size_t resource_cache_limit;
+  if (process_command_line.HasSwitch(switches::kSkiaResourceCacheLimitMb)) {
+    if (base::StringToSizeT(process_command_line.GetSwitchValueASCII(
+                                switches::kSkiaResourceCacheLimitMb),
+                            &resource_cache_limit)) {
+      SkGraphics::SetResourceCacheTotalByteLimit(resource_cache_limit * kMB);
+    }
+  }
 #endif
 
   // This function allows pausing execution using the --renderer-startup-dialog

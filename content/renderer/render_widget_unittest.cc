@@ -13,6 +13,8 @@
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
+#include "components/viz/common/features.h"
+#include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "content/common/input/input_handler.mojom.h"
 #include "content/common/input/synthetic_web_input_event_builders.h"
 #include "content/common/input_messages.h"
@@ -81,6 +83,8 @@ class MockWidgetInputHandlerHost : public mojom::WidgetInputHandlerHost {
   MOCK_METHOD1(DidOverscroll, void(const ui::DidOverscrollParams&));
 
   MOCK_METHOD0(DidStopFlinging, void());
+
+  MOCK_METHOD0(DidStartScrollingViewport, void());
 
   MOCK_METHOD0(ImeCancelComposition, void());
 
@@ -171,6 +175,12 @@ class InteractiveRenderWidget : public RenderWidget {
     return mock_input_handler_host_.get();
   }
 
+  const viz::LocalSurfaceId& local_surface_id() const {
+    return local_surface_id_;
+  }
+
+  void SetAutoResizeMode(bool enable) { auto_resize_mode_ = enable; }
+
  protected:
   ~InteractiveRenderWidget() override { webwidget_internal_ = nullptr; }
 
@@ -182,7 +192,7 @@ class InteractiveRenderWidget : public RenderWidget {
                                         event.data.scroll_update.delta_y),
                     blink::WebFloatSize(event.data.scroll_update.delta_x,
                                         event.data.scroll_update.delta_y),
-                    blink::WebFloatPoint(event.x, event.y),
+                    event.PositionInWidget(),
                     blink::WebFloatSize(event.data.scroll_update.velocity_x,
                                         event.data.scroll_update.velocity_y),
                     blink::WebOverscrollBehavior());
@@ -255,7 +265,7 @@ TEST_F(RenderWidgetUnittest, EventOverscroll) {
       blink::WebInputEvent::kGestureScrollUpdate,
       blink::WebInputEvent::kNoModifiers,
       ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
-  scroll.x = -10;
+  scroll.SetPositionInWidget(gfx::PointF(-10, 0));
   scroll.data.scroll_update.delta_y = 10;
   MockHandledEventCallback handled_event;
 
@@ -392,7 +402,7 @@ TEST_F(RenderWidgetUnittest, AckResizeOnHide) {
   ResizeParams resize_params;
   resize_params.screen_info = ScreenInfo();
   resize_params.new_size = size;
-  resize_params.physical_backing_size = size;
+  resize_params.compositor_viewport_pixel_size = size;
   resize_params.visible_viewport_size = size;
   resize_params.content_source_id = widget()->GetContentSourceId();
   resize_params.needs_resize_ack = true;
@@ -404,6 +414,45 @@ TEST_F(RenderWidgetUnittest, AckResizeOnHide) {
   widget()->OnMessageReceived(ViewMsg_WasHidden(widget()->routing_id()));
   EXPECT_TRUE(widget()->sink()->GetUniqueMessageMatching(
       ViewHostMsg_ResizeOrRepaint_ACK::ID));
+}
+
+// Tests that if a RenderWidget auto-resizes multiple times and receives an IPC
+// with a LocalSurfaceId, it will drop that LocalSurfaceId if it does not
+// correspond to the latest auto-resize request.
+TEST_F(RenderWidgetUnittest, SurfaceSynchronizationAutoResizeThrottling) {
+  if (!features::IsSurfaceSynchronizationEnabled())
+    return;
+
+  constexpr gfx::Size auto_size(100, 100);
+  widget()->InitializeLayerTreeView();
+  widget()->SetAutoResizeMode(true);
+
+  // Issue an auto-resize.
+  widget()->DidAutoResize(auto_size);
+  widget()->sink()->ClearMessages();
+  base::RunLoop().RunUntilIdle();
+  const IPC::Message* message = widget()->sink()->GetUniqueMessageMatching(
+      ViewHostMsg_ResizeOrRepaint_ACK::ID);
+  ASSERT_TRUE(message);
+  ViewHostMsg_ResizeOrRepaint_ACK::Param params;
+  ViewHostMsg_ResizeOrRepaint_ACK::Read(message, &params);
+  EXPECT_EQ(auto_size, std::get<0>(params).view_size);
+  uint64_t auto_resize_sequence_number = std::get<0>(params).sequence_number;
+  EXPECT_GT(auto_resize_sequence_number, 0lu);
+
+  // Issue another auto-resize but keep it in-flight.
+  constexpr gfx::Size auto_size2(200, 200);
+  widget()->DidAutoResize(auto_size2);
+
+  // Send the LocalSurfaceId for the first Auto-Resize.
+  viz::ParentLocalSurfaceIdAllocator allocator;
+  widget()->OnMessageReceived(ViewMsg_SetLocalSurfaceIdForAutoResize(
+      widget()->routing_id(), auto_resize_sequence_number, auto_size,
+      auto_size2, ScreenInfo(), 0u, allocator.GenerateId()));
+
+  // The LocalSurfaceId should not take because there's another in-flight auto-
+  // resize operation.
+  EXPECT_FALSE(widget()->local_surface_id().is_valid());
 }
 
 class PopupRenderWidget : public RenderWidget {

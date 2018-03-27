@@ -28,9 +28,9 @@
 #include "platform/scheduler/base/virtual_time_domain.h"
 #include "platform/scheduler/child/features.h"
 #include "platform/scheduler/child/process_state.h"
+#include "platform/scheduler/common/throttling/task_queue_throttler.h"
 #include "platform/scheduler/renderer/auto_advancing_virtual_time_domain.h"
-#include "platform/scheduler/renderer/task_queue_throttler.h"
-#include "platform/scheduler/renderer/web_view_scheduler_impl.h"
+#include "platform/scheduler/renderer/page_scheduler_impl.h"
 #include "platform/scheduler/renderer/webthread_impl_for_renderer_scheduler.h"
 #include "public/platform/Platform.h"
 #include "public/platform/scheduler/renderer_process_type.h"
@@ -97,14 +97,6 @@ const char* AudioPlayingStateToString(bool is_audio_playing) {
   }
 }
 
-const char* YesNoStateToString(bool is_yes) {
-  if (is_yes) {
-    return "yes";
-  } else {
-    return "no";
-  }
-}
-
 const char* RendererProcessTypeToString(RendererProcessType process_type) {
   switch (process_type) {
     case RendererProcessType::kRenderer:
@@ -114,10 +106,6 @@ const char* RendererProcessTypeToString(RendererProcessType process_type) {
   }
   NOTREACHED();
   return "";  // MSVC needs that.
-}
-
-bool StopLoadingInBackgroundEnabled() {
-  return RuntimeEnabledFeatures::StopLoadingInBackgroundEnabled();
 }
 
 const char* TaskTypeToString(TaskType task_type) {
@@ -194,12 +182,14 @@ const char* TaskTypeToString(TaskType task_type) {
 }
 
 const char* OptionalTaskDescriptionToString(
-    base::Optional<RendererSchedulerImpl::TaskDescriptionForTracing> opt_desc) {
-  if (!opt_desc)
+    base::Optional<RendererSchedulerImpl::TaskDescriptionForTracing> desc) {
+  if (!desc)
     return nullptr;
-  if (opt_desc->task_type != TaskType::kDeprecatedNone)
-    return TaskTypeToString(opt_desc->task_type);
-  return MainThreadTaskQueue::NameForQueueType(opt_desc->queue_type);
+  if (desc->task_type != TaskType::kDeprecatedNone)
+    return TaskTypeToString(desc->task_type);
+  if (!desc->queue_type)
+    return "detached_tq";
+  return MainThreadTaskQueue::NameForQueueType(desc->queue_type.value());
 }
 
 bool IsUnconditionalHighPriorityInputEnabled() {
@@ -539,12 +529,11 @@ RendererSchedulerImpl::AnyThread::AnyThread(
           renderer_scheduler_impl,
           &renderer_scheduler_impl->tracing_controller_,
           YesNoStateToString),
-      in_idle_period(
-          false,
-          "RendererScheduler.InIdlePeriod",
-          renderer_scheduler_impl,
-          &renderer_scheduler_impl->tracing_controller_,
-          YesNoStateToString),
+      in_idle_period(false,
+                     "RendererScheduler.InIdlePeriod",
+                     renderer_scheduler_impl,
+                     &renderer_scheduler_impl->tracing_controller_,
+                     YesNoStateToString),
       begin_main_frame_on_critical_path(
           false,
           "RendererScheduler.BeginMainFrameOnCriticalPath",
@@ -557,12 +546,11 @@ RendererSchedulerImpl::AnyThread::AnyThread(
           renderer_scheduler_impl,
           &renderer_scheduler_impl->tracing_controller_,
           YesNoStateToString),
-      default_gesture_prevented(
-          true,
-          "RendererScheduler.DefaultGesturePrevented",
-          renderer_scheduler_impl,
-          &renderer_scheduler_impl->tracing_controller_,
-          YesNoStateToString),
+      default_gesture_prevented(true,
+                                "RendererScheduler.DefaultGesturePrevented",
+                                renderer_scheduler_impl,
+                                &renderer_scheduler_impl->tracing_controller_,
+                                YesNoStateToString),
       have_seen_a_potentially_blocking_gesture(
           false,
           "RendererScheduler.HaveSeenPotentiallyBlockingGesture",
@@ -702,9 +690,13 @@ scoped_refptr<MainThreadTaskQueue> RendererSchedulerImpl::NewTaskQueue(
   if (task_queue->CanBeThrottled())
     AddQueueToWakeUpBudgetPool(task_queue.get());
 
-  if (queue_class == MainThreadTaskQueue::QueueClass::kTimer) {
-    if (main_thread_only().virtual_time_stopped)
-      task_queue->InsertFence(TaskQueue::InsertFencePosition::kNow);
+  // If this is a timer queue, and virtual time is enabled and paused, it should
+  // be suspended by adding a fence to prevent immediate tasks from running when
+  // they're not supposed to.
+  if (queue_class == MainThreadTaskQueue::QueueClass::kTimer &&
+      main_thread_only().virtual_time_stopped &&
+      main_thread_only().use_virtual_time) {
+    task_queue->InsertFence(TaskQueue::InsertFencePosition::kNow);
   }
 
   return task_queue;
@@ -717,7 +709,8 @@ scoped_refptr<MainThreadTaskQueue> RendererSchedulerImpl::NewLoadingTaskQueue(
   return NewTaskQueue(
       MainThreadTaskQueue::QueueCreationParams(queue_type)
           .SetCanBePaused(true)
-          .SetCanBeStopped(StopLoadingInBackgroundEnabled())
+          .SetCanBeStopped(
+              RuntimeEnabledFeatures::StopLoadingInBackgroundEnabled())
           .SetCanBeDeferred(true)
           .SetUsedForImportantTasks(
               queue_type ==
@@ -966,9 +959,8 @@ void RendererSchedulerImpl::ResumeTimersForAndroidWebView() {
 
 void RendererSchedulerImpl::OnAudioStateChanged() {
   bool is_audio_playing = false;
-  for (WebViewSchedulerImpl* web_view_scheduler :
-       main_thread_only().web_view_schedulers) {
-    is_audio_playing = is_audio_playing || web_view_scheduler->IsPlayingAudio();
+  for (PageSchedulerImpl* page_scheduler : main_thread_only().page_schedulers) {
+    is_audio_playing = is_audio_playing || page_scheduler->IsPlayingAudio();
   }
 
   if (is_audio_playing == main_thread_only().is_audio_playing)
@@ -1540,7 +1532,7 @@ void RendererSchedulerImpl::UpdatePolicyLocked(UpdateType update_type) {
 
   if (main_thread_only().stopped_when_backgrounded) {
     new_policy.timer_queue_policy().is_stopped = true;
-    if (StopLoadingInBackgroundEnabled())
+    if (RuntimeEnabledFeatures::StopLoadingInBackgroundEnabled())
       new_policy.loading_queue_policy().is_stopped = true;
   }
   if (main_thread_only().renderer_pause_count != 0) {
@@ -1660,7 +1652,7 @@ void RendererSchedulerImpl::ApplyTaskQueuePolicy(
   }
 }
 
-RendererSchedulerImpl::UseCase RendererSchedulerImpl::ComputeCurrentUseCase(
+UseCase RendererSchedulerImpl::ComputeCurrentUseCase(
     base::TimeTicks now,
     base::TimeDelta* expected_use_case_duration) const {
   any_thread_lock_.AssertAcquired();
@@ -1755,10 +1747,9 @@ bool RendererSchedulerImpl::CanEnterLongIdlePeriod(
 }
 
 void RendererSchedulerImpl::SetStoppedInBackground(bool stopped) const {
-  for (WebViewSchedulerImpl* web_view_scheduler :
-       main_thread_only().web_view_schedulers) {
+  for (PageSchedulerImpl* page_scheduler : main_thread_only().page_schedulers) {
     // This moves the page to FROZEN lifecycle state.
-    web_view_scheduler->SetPageFrozen(stopped);
+    page_scheduler->SetPageFrozen(stopped);
   }
 }
 
@@ -2111,11 +2102,10 @@ RendererSchedulerImpl::AsValueLocked(base::TimeTicks optional_now) const {
       VirtualTimePolicyToString(main_thread_only().virtual_time_policy));
   state->SetBoolean("virtual_time", main_thread_only().use_virtual_time);
 
-  state->BeginDictionary("web_view_schedulers");
-  for (WebViewSchedulerImpl* web_view_scheduler :
-       main_thread_only().web_view_schedulers) {
-    state->BeginDictionaryWithCopiedName(PointerToString(web_view_scheduler));
-    web_view_scheduler->AsValueInto(state.get());
+  state->BeginDictionary("page_schedulers");
+  for (PageSchedulerImpl* page_scheduler : main_thread_only().page_schedulers) {
+    state->BeginDictionaryWithCopiedName(PointerToString(page_scheduler));
+    page_scheduler->AsValueInto(state.get());
     state->EndDictionary();
   }
   state->EndDictionary();
@@ -2159,6 +2149,8 @@ bool RendererSchedulerImpl::TaskQueuePolicy::IsQueueEnabled(
     return false;
   if (is_blocked && task_queue->CanBeDeferred())
     return false;
+  // TODO(panicker): Remove this, as it is redundant as we stop per-frame
+  // task_queues in WebFrameScheduler
   if (is_stopped && task_queue->CanBeStopped())
     return false;
   return true;
@@ -2231,14 +2223,31 @@ void RendererSchedulerImpl::OnPendingTasksChanged(bool has_tasks) {
       main_thread_only().compositor_will_send_main_frame_not_expected.get())
     return;
 
+  // Dispatch RequestBeginMainFrameNotExpectedSoon notifications asynchronously.
+  // This is needed because idle task can be posted (and OnPendingTasksChanged
+  // called) at any moment, including in the middle of allocating an object,
+  // when state is not consistent. Posting a task to dispatch notifications
+  // minimizes the amount of code that runs and sees an inconsistent state .
+  control_task_queue_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &RendererSchedulerImpl::DispatchRequestBeginMainFrameNotExpected,
+          weak_factory_.GetWeakPtr(), has_tasks));
+}
+
+void RendererSchedulerImpl::DispatchRequestBeginMainFrameNotExpected(
+    bool has_tasks) {
+  if (has_tasks ==
+      main_thread_only().compositor_will_send_main_frame_not_expected.get())
+    return;
   main_thread_only().compositor_will_send_main_frame_not_expected = has_tasks;
 
-  TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("renderer.scheduler"),
-               "RendererSchedulerImpl::OnPendingTasksChanged", "has_tasks",
-               has_tasks);
-  for (WebViewSchedulerImpl* web_view_scheduler :
-       main_thread_only().web_view_schedulers) {
-    web_view_scheduler->RequestBeginMainFrameNotExpected(has_tasks);
+  TRACE_EVENT1(
+      TRACE_DISABLED_BY_DEFAULT("renderer.scheduler"),
+      "RendererSchedulerImpl::DispatchRequestBeginMainFrameNotExpected",
+      "has_tasks", has_tasks);
+  for (PageSchedulerImpl* page_scheduler : main_thread_only().page_schedulers) {
+    page_scheduler->RequestBeginMainFrameNotExpected(has_tasks);
   }
 }
 
@@ -2322,19 +2331,17 @@ void RendererSchedulerImpl::ResetForNavigationLocked() {
   main_thread_only().have_seen_a_begin_main_frame = false;
   main_thread_only().have_reported_blocking_intervention_since_navigation =
       false;
-  for (WebViewSchedulerImpl* web_view_scheduler :
-       main_thread_only().web_view_schedulers) {
-    web_view_scheduler->OnNavigation();
+  for (PageSchedulerImpl* page_scheduler : main_thread_only().page_schedulers) {
+    page_scheduler->OnNavigation();
   }
   UpdatePolicyLocked(UpdateType::kMayEarlyOutIfPolicyUnchanged);
 
   UMA_HISTOGRAM_COUNTS_100("RendererScheduler.WebViewsPerScheduler",
-                           main_thread_only().web_view_schedulers.size());
+                           main_thread_only().page_schedulers.size());
 
   size_t frame_count = 0;
-  for (WebViewSchedulerImpl* web_view_scheduler :
-       main_thread_only().web_view_schedulers) {
-    frame_count += web_view_scheduler->FrameCount();
+  for (PageSchedulerImpl* page_scheduler : main_thread_only().page_schedulers) {
+    frame_count += page_scheduler->FrameCount();
   }
   UMA_HISTOGRAM_COUNTS_100("RendererScheduler.WebFramesPerScheduler",
                            frame_count);
@@ -2347,7 +2354,7 @@ void RendererSchedulerImpl::SetTopLevelBlameContext(
   // may still enter a more specific blame context if necessary.
   //
   // Per-frame task runners (loading, timers, etc.) are configured with a more
-  // specific blame context by WebFrameSchedulerImpl.
+  // specific blame context by FrameSchedulerImpl.
   //
   // TODO(altimin): automatically enter top-level for all task queues associated
   // with renderer scheduler which do not have a corresponding frame.
@@ -2421,22 +2428,22 @@ base::TickClock* RendererSchedulerImpl::tick_clock() const {
   return helper_.GetClock();
 }
 
-void RendererSchedulerImpl::AddWebViewScheduler(
-    WebViewSchedulerImpl* web_view_scheduler) {
-  main_thread_only().web_view_schedulers.insert(web_view_scheduler);
+void RendererSchedulerImpl::AddPageScheduler(
+    PageSchedulerImpl* page_scheduler) {
+  main_thread_only().page_schedulers.insert(page_scheduler);
 }
 
-void RendererSchedulerImpl::RemoveWebViewScheduler(
-    WebViewSchedulerImpl* web_view_scheduler) {
-  DCHECK(main_thread_only().web_view_schedulers.find(web_view_scheduler) !=
-         main_thread_only().web_view_schedulers.end());
-  main_thread_only().web_view_schedulers.erase(web_view_scheduler);
+void RendererSchedulerImpl::RemovePageScheduler(
+    PageSchedulerImpl* page_scheduler) {
+  DCHECK(main_thread_only().page_schedulers.find(page_scheduler) !=
+         main_thread_only().page_schedulers.end());
+  main_thread_only().page_schedulers.erase(page_scheduler);
 }
 
 void RendererSchedulerImpl::BroadcastIntervention(const std::string& message) {
   helper_.CheckOnValidThread();
-  for (auto* web_view_scheduler : main_thread_only().web_view_schedulers)
-    web_view_scheduler->ReportIntervention(message);
+  for (auto* page_scheduler : main_thread_only().page_schedulers)
+    page_scheduler->ReportIntervention(message);
 }
 
 void RendererSchedulerImpl::OnTaskStarted(MainThreadTaskQueue* queue,
@@ -2447,7 +2454,10 @@ void RendererSchedulerImpl::OnTaskStarted(MainThreadTaskQueue* queue,
   seqlock_queueing_time_estimator_.data.OnTopLevelTaskStarted(start, queue);
   seqlock_queueing_time_estimator_.seqlock.WriteEnd();
   main_thread_only().task_description_for_tracing = TaskDescriptionForTracing{
-      static_cast<TaskType>(task.task_type()), queue->queue_type()};
+      static_cast<TaskType>(task.task_type()),
+      queue
+          ? base::Optional<MainThreadTaskQueue::QueueType>(queue->queue_type())
+          : base::nullopt};
 }
 
 void RendererSchedulerImpl::OnTaskCompleted(
@@ -2461,7 +2471,8 @@ void RendererSchedulerImpl::OnTaskCompleted(
   seqlock_queueing_time_estimator_.data.OnTopLevelTaskCompleted(end);
   seqlock_queueing_time_estimator_.seqlock.WriteEnd();
 
-  task_queue_throttler()->OnTaskRunTimeReported(queue, start, end);
+  if (queue)
+    task_queue_throttler()->OnTaskRunTimeReported(queue, start, end);
 
   // TODO(altimin): Per-page metrics should also be considered.
   main_thread_only().metrics_helper.RecordTaskMetrics(queue, task, start, end,
@@ -2579,13 +2590,16 @@ TimeDomain* RendererSchedulerImpl::GetActiveTimeDomain() {
 void RendererSchedulerImpl::OnTraceLogEnabled() {
   CreateTraceEventObjectSnapshot();
   tracing_controller_.OnTraceLogEnabled();
-  for (WebViewSchedulerImpl* web_view_scheduler :
-      main_thread_only().web_view_schedulers) {
-    web_view_scheduler->OnTraceLogEnabled();
+  for (PageSchedulerImpl* page_scheduler : main_thread_only().page_schedulers) {
+    page_scheduler->OnTraceLogEnabled();
   }
 }
 
 void RendererSchedulerImpl::OnTraceLogDisabled() {}
+
+base::WeakPtr<RendererSchedulerImpl> RendererSchedulerImpl::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
+}
 
 // static
 const char* RendererSchedulerImpl::UseCaseToString(UseCase use_case) {

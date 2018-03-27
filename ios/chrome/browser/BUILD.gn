@@ -122,13 +122,12 @@ source_set("browser") {
     "//ios/chrome/browser/ssl:features",
     "//ios/chrome/browser/sync/glue",
     "//ios/chrome/browser/ui:feature_flags",
-    "//ios/chrome/browser/ui/activity_services:features",
     "//ios/chrome/browser/ui/coordinators:chrome_coordinators",
     "//ios/chrome/browser/ui/external_search:features",
     "//ios/chrome/browser/ui/history:history_base_feature",
     "//ios/chrome/browser/ui/main:feature_flags",
-    "//ios/chrome/browser/ui/ntp/recent_tabs:base_feature",
     "//ios/chrome/browser/ui/omnibox",
+    "//ios/chrome/browser/ui/popup_menu:flags",
     "//ios/chrome/browser/ui/toolbar/public:toolbar_base_feature",
     "//ios/chrome/common",
     "//ios/components/io_thread",
@@ -250,6 +249,7 @@ source_set("unit_tests") {
     "//net",
     "//net:test_support",
     "//testing/gtest",
+    "//third_party/ocmock",
     "//url",
   ]
 }

@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "components/download/public/common/download_create_info.h"
 #include "components/download/public/common/download_stats.h"
+#include "components/download/public/common/parallel_download_utils.h"
 #include "content/browser/download/download_utils.h"
 #include "content/browser/download/parallel_download_utils.h"
 #include "content/browser/storage_partition_impl.h"
@@ -28,31 +29,33 @@ const int kDownloadJobVerboseLevel = 1;
 }  // namespace
 
 ParallelDownloadJob::ParallelDownloadJob(
-    DownloadItemImpl* download_item,
+    download::DownloadItem* download_item,
     std::unique_ptr<download::DownloadRequestHandleInterface> request_handle,
-    const download::DownloadCreateInfo& create_info)
-    : DownloadJobImpl(download_item, std::move(request_handle), true),
+    const download::DownloadCreateInfo& create_info,
+    scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory)
+    : download::DownloadJobImpl(download_item, std::move(request_handle), true),
       initial_request_offset_(create_info.offset),
       initial_received_slices_(download_item->GetReceivedSlices()),
       content_length_(create_info.total_bytes),
       requests_sent_(false),
-      is_canceled_(false) {}
+      is_canceled_(false),
+      shared_url_loader_factory_(std::move(shared_url_loader_factory)) {}
 
 ParallelDownloadJob::~ParallelDownloadJob() = default;
 
 void ParallelDownloadJob::OnDownloadFileInitialized(
-    DownloadFile::InitializeCallback callback,
+    download::DownloadFile::InitializeCallback callback,
     download::DownloadInterruptReason result,
     int64_t bytes_wasted) {
-  DownloadJobImpl::OnDownloadFileInitialized(std::move(callback), result,
-                                             bytes_wasted);
+  download::DownloadJobImpl::OnDownloadFileInitialized(std::move(callback),
+                                                       result, bytes_wasted);
   if (result == download::DOWNLOAD_INTERRUPT_REASON_NONE)
     BuildParallelRequestAfterDelay();
 }
 
 void ParallelDownloadJob::Cancel(bool user_cancel) {
   is_canceled_ = true;
-  DownloadJobImpl::Cancel(user_cancel);
+  download::DownloadJobImpl::Cancel(user_cancel);
 
   if (!requests_sent_) {
     timer_.Stop();
@@ -64,7 +67,7 @@ void ParallelDownloadJob::Cancel(bool user_cancel) {
 }
 
 void ParallelDownloadJob::Pause() {
-  DownloadJobImpl::Pause();
+  download::DownloadJobImpl::Pause();
 
   if (!requests_sent_) {
     timer_.Stop();
@@ -76,7 +79,7 @@ void ParallelDownloadJob::Pause() {
 }
 
 void ParallelDownloadJob::Resume(bool resume_request) {
-  DownloadJobImpl::Resume(resume_request);
+  download::DownloadJobImpl::Resume(resume_request);
   if (!resume_request)
     return;
 
@@ -105,7 +108,7 @@ int ParallelDownloadJob::GetMinRemainingTimeInSeconds() const {
 
 void ParallelDownloadJob::CancelRequestWithOffset(int64_t offset) {
   if (initial_request_offset_ == offset) {
-    DownloadJobImpl::Cancel(false);
+    download::DownloadJobImpl::Cancel(false);
     return;
   }
 
@@ -124,8 +127,8 @@ void ParallelDownloadJob::BuildParallelRequestAfterDelay() {
 }
 
 void ParallelDownloadJob::OnInputStreamReady(
-    DownloadWorker* worker,
-    std::unique_ptr<DownloadManager::InputStream> input_stream) {
+    download::DownloadWorker* worker,
+    std::unique_ptr<download::InputStream> input_stream) {
   bool success = DownloadJob::AddInputStream(
       std::move(input_stream), worker->offset(), worker->length());
   download::RecordParallelDownloadAddStreamSuccess(success);
@@ -156,7 +159,7 @@ void ParallelDownloadJob::BuildParallelRequests() {
   const download::DownloadItem::ReceivedSlices& received_slices =
       download_item_->GetReceivedSlices();
   download::DownloadItem::ReceivedSlices slices_to_download =
-      FindSlicesToDownload(received_slices);
+      download::FindSlicesToDownload(received_slices);
 
   DCHECK(!slices_to_download.empty());
   int64_t first_slice_offset = slices_to_download[0].offset;
@@ -213,14 +216,11 @@ void ParallelDownloadJob::BuildParallelRequests() {
 
 void ParallelDownloadJob::ForkSubRequests(
     const download::DownloadItem::ReceivedSlices& slices_to_download) {
-  if (slices_to_download.size() < 2)
-    return;
-
   // If the initial request is working on the first hole, don't create parallel
   // request for this hole.
   bool skip_first_slice = true;
   download::DownloadItem::ReceivedSlices initial_slices_to_download =
-      FindSlicesToDownload(initial_received_slices_);
+      download::FindSlicesToDownload(initial_received_slices_);
   if (initial_slices_to_download.size() > 1) {
     DCHECK_EQ(initial_request_offset_, initial_slices_to_download[0].offset);
     int64_t first_hole_max = initial_slices_to_download[0].offset +
@@ -247,8 +247,8 @@ void ParallelDownloadJob::CreateRequest(int64_t offset, int64_t length) {
   DCHECK(download_item_);
   DCHECK_EQ(download::DownloadSaveInfo::kLengthFullContent, length);
 
-  std::unique_ptr<DownloadWorker> worker =
-      std::make_unique<DownloadWorker>(this, offset, length);
+  auto worker =
+      std::make_unique<download::DownloadWorker>(this, offset, length);
 
   StoragePartition* storage_partition =
       BrowserContext::GetStoragePartitionForSite(
@@ -299,15 +299,8 @@ void ParallelDownloadJob::CreateRequest(int64_t offset, int64_t length) {
   download_params->set_referrer(download_item_->GetReferrerUrl());
   download_params->set_referrer_policy(net::URLRequest::NEVER_CLEAR_REFERRER);
 
-  download_params->set_blob_storage_context_getter(
-      base::BindOnce(&BlobStorageContextGetter,
-                     DownloadItemUtils::GetBrowserContext(download_item_)
-                         ->GetResourceContext()));
-
   // Send the request.
-  worker->SendRequest(std::move(download_params),
-                      static_cast<StoragePartitionImpl*>(storage_partition)
-                          ->url_loader_factory_getter());
+  worker->SendRequest(std::move(download_params), shared_url_loader_factory_);
   DCHECK(workers_.find(offset) == workers_.end());
   workers_[offset] = std::move(worker);
 }

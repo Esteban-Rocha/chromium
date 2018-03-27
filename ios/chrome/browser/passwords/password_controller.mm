@@ -77,6 +77,9 @@ constexpr int kNotifyAutoSigninDuration = 3;  // seconds
 // Script command prefix for form changes. Possible command to be sent from
 // injected JS is 'form.buttonClicked'.
 constexpr char kCommandPrefix[] = "passwordForm";
+
+// The string ' •••' appended to the username in the suggestion.
+NSString* const kSuggestionSuffix = @" ••••••••";
 }
 
 @interface PasswordController ()
@@ -166,31 +169,28 @@ constexpr char kCommandPrefix[] = "passwordForm";
 namespace {
 
 // Constructs an array of FormSuggestions, each corresponding to a username/
-// password pair in |AccountSelectFillData|, such that |typedValue| is a prefix
-// of the username of each suggestion. "Show all" item is appended.
+// password pair in |AccountSelectFillData|. "Show all" item is appended.
 NSArray* BuildSuggestions(const AccountSelectFillData& fillData,
                           NSString* formName,
-                          NSString* fieldName,
-                          NSString* typedValue) {
+                          NSString* fieldIdentifier) {
   base::string16 form_name = base::SysNSStringToUTF16(formName);
-  base::string16 field_name = base::SysNSStringToUTF16(fieldName);
-  base::string16 typed_value = base::SysNSStringToUTF16(typedValue);
+  base::string16 field_identifier = base::SysNSStringToUTF16(fieldIdentifier);
 
   NSMutableArray* suggestions = [NSMutableArray array];
-  if (fillData.IsSuggestionsAvailable(form_name, field_name)) {
+  if (fillData.IsSuggestionsAvailable(form_name, field_identifier)) {
     std::vector<password_manager::UsernameAndRealm> username_and_realms_ =
-        fillData.RetrieveSuggestions(form_name, field_name, typed_value);
+        fillData.RetrieveSuggestions(form_name, field_identifier);
 
     // Add credentials.
     for (const auto& username_and_realm : username_and_realms_) {
-      NSString* username =
-          base::SysUTF16ToNSString(username_and_realm.username);
+      NSString* value = [base::SysUTF16ToNSString(username_and_realm.username)
+          stringByAppendingString:kSuggestionSuffix];
       NSString* origin =
           username_and_realm.realm.empty()
               ? nil
               : base::SysUTF8ToNSString(username_and_realm.realm);
 
-      [suggestions addObject:[FormSuggestion suggestionWithValue:username
+      [suggestions addObject:[FormSuggestion suggestionWithValue:value
                                               displayDescription:origin
                                                             icon:nil
                                                       identifier:0]];
@@ -688,7 +688,8 @@ bool GetPageURLAndCheckTrustLevel(web::WebState* web_state, GURL* page_url) {
 }
 
 - (void)checkIfSuggestionsAvailableForForm:(NSString*)formName
-                                     field:(NSString*)fieldName
+                                 fieldName:(NSString*)fieldName
+                           fieldIdentifier:(NSString*)fieldIdentifier
                                  fieldType:(NSString*)fieldType
                                       type:(NSString*)type
                                 typedValue:(NSString*)typedValue
@@ -721,33 +722,34 @@ bool GetPageURLAndCheckTrustLevel(web::WebState* web_state, GURL* page_url) {
           else {
             completion(fill_data->IsSuggestionsAvailable(
                 base::SysNSStringToUTF16(formName),
-                base::SysNSStringToUTF16(fieldName)));
+                base::SysNSStringToUTF16(fieldIdentifier)));
           }
         } copy];
     [self findPasswordFormsAndSendThemToPasswordStore];
     return;
   }
 
-  completion(!fillData_.Empty() && fillData_.IsSuggestionsAvailable(
-                                       base::SysNSStringToUTF16(formName),
-                                       base::SysNSStringToUTF16(fieldName)));
+  completion(!fillData_.Empty() &&
+             fillData_.IsSuggestionsAvailable(
+                 base::SysNSStringToUTF16(formName),
+                 base::SysNSStringToUTF16(fieldIdentifier)));
 }
 
 - (void)retrieveSuggestionsForForm:(NSString*)formName
-                             field:(NSString*)fieldName
+                         fieldName:(NSString*)fieldName2
+                   fieldIdentifier:(NSString*)fieldIdentifier
                          fieldType:(NSString*)fieldType
                               type:(NSString*)type
                         typedValue:(NSString*)typedValue
                           webState:(web::WebState*)webState
                  completionHandler:(SuggestionsReadyCompletion)completion {
   DCHECK(GetPageURLAndCheckTrustLevel(webState, nullptr));
-
-  completion(BuildSuggestions(fillData_, formName, fieldName, typedValue),
-             self);
+  completion(BuildSuggestions(fillData_, formName, fieldIdentifier), self);
 }
 
 - (void)didSelectSuggestion:(FormSuggestion*)suggestion
-                   forField:(NSString*)fieldName
+                  fieldName:(NSString*)fieldName2
+            fieldIdentifier:(NSString*)fieldIdentifier
                        form:(NSString*)formName
           completionHandler:(SuggestionHandledCompletion)completion {
   if (suggestion.identifier == 1) {
@@ -756,8 +758,10 @@ bool GetPageURLAndCheckTrustLevel(web::WebState* web_state, GURL* page_url) {
     completion();
     return;
   }
-  const base::string16 username = base::SysNSStringToUTF16(suggestion.value);
-  std::unique_ptr<FillData> fillData = fillData_.GetFillData(username);
+  base::string16 value = base::SysNSStringToUTF16(suggestion.value);
+  DCHECK([suggestion.value hasSuffix:kSuggestionSuffix]);
+  value.erase(value.length() - kSuggestionSuffix.length);
+  std::unique_ptr<FillData> fillData = fillData_.GetFillData(value);
 
   if (!fillData)
     completion();

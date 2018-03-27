@@ -115,7 +115,7 @@
             </div>
           </div>
           <cr-toggle checked="[[unifiedDesktopMode_]]"
-              on-tap="onUnifiedDesktopTap_"
+              on-click="onUnifiedDesktopTap_"
               aria-labelledby="displayUnifiedDesktopCheckboxLabel">
           </cr-toggle>
         </div>
@@ -166,6 +166,7 @@
             </div>
           </div>
           <settings-slider tick-values="[[zoomValues_]]"
+              disabled="[[!enableDisplayZoomSlider_(selectedDisplay)]]"
               pref="{{selectedZoomPref_}}" on-change="onSelectedZoomChange_"
               label-min="$i18n{displaySizeSliderMinLabel}"
               label-max="$i18n{displaySizeSliderMaxLabel}">
@@ -208,11 +209,11 @@
         </div>
       </template>
 
-      <button is="cr-link-row" icon-class="subpage-arrow" class="indented hr"
+      <cr-link-row icon-class="subpage-arrow" class="indented hr"
           id="overscan" label="$i18n{displayOverscanPageTitle}"
           sub-label="$i18n{displayOverscanPageText}" on-click="onOverscanTap_"
           hidden$="[[!showOverscanSetting_(selectedDisplay)]]">
-      </button>
+      </cr-link-row>
 
       <settings-display-overscan-dialog id="displayOverscan"
           display-id="{{overscanDisplayId}}"
@@ -229,9 +230,10 @@
             $i18n{displayTouchCalibrationText}
           </div>
         </div>
-        <button class="subpage-arrow" is="paper-icon-button-light"
-            aria-label="$i18n{displayTouchCalibrationTitle}"
-            aria-describedby="touchCalibrationSecondary"></button>
+        <paper-icon-button-light class="subpage-arrow">
+          <button aria-label="$i18n{displayTouchCalibrationTitle}"
+              aria-describedby="touchCalibrationSecondary"></button>
+        </paper-icon-button-light>
       </div>
     </div>
 

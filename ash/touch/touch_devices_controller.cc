@@ -4,8 +4,8 @@
 
 #include "ash/touch/touch_devices_controller.h"
 
-#include "ash/accessibility/accessibility_controller.h"
-#include "ash/public/cpp/accessibility_types.h"
+#include <utility>
+
 #include "ash/public/cpp/ash_pref_names.h"
 #include "ash/root_window_controller.h"
 #include "ash/session/session_controller.h"
@@ -39,23 +39,6 @@ PrefService* GetActivePrefService() {
 
 }  // namespace
 
-// Used to record pref started UMA. It is created on user session added and
-// destroyed on active user pref changed, which is a point of pref started.
-class TouchDevicesController::ScopedUmaRecorder {
- public:
-  ScopedUmaRecorder() = default;
-  ~ScopedUmaRecorder() {
-    PrefService* prefs = GetActivePrefService();
-    if (!prefs)
-      return;
-    UMA_HISTOGRAM_BOOLEAN("Touchpad.TapDragging.Started",
-                          prefs->GetBoolean(prefs::kTapDraggingEnabled));
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ScopedUmaRecorder);
-};
-
 // static
 void TouchDevicesController::RegisterProfilePrefs(PrefRegistrySimple* registry,
                                                   bool for_test) {
@@ -82,18 +65,6 @@ TouchDevicesController::TouchDevicesController() {
 
 TouchDevicesController::~TouchDevicesController() {
   Shell::Get()->session_controller()->RemoveObserver(this);
-}
-
-void TouchDevicesController::SetTapDraggingEnabled(bool enabled) {
-  PrefService* prefs = GetActivePrefService();
-  if (!prefs)
-    return;
-  prefs->SetBoolean(prefs::kTapDraggingEnabled, enabled);
-  prefs->CommitPendingWrite();
-}
-
-bool TouchDevicesController::GetTapDraggingEnabled() const {
-  return tap_dragging_enabled_;
 }
 
 void TouchDevicesController::ToggleTouchpad() {
@@ -131,7 +102,10 @@ void TouchDevicesController::SetTouchscreenEnabled(
 }
 
 void TouchDevicesController::OnUserSessionAdded(const AccountId& account_id) {
-  scoped_uma_recorder_ = std::make_unique<ScopedUmaRecorder>();
+  uma_record_callback_ = base::BindOnce([](PrefService* prefs) {
+    UMA_HISTOGRAM_BOOLEAN("Touchpad.TapDragging.Started",
+                          prefs->GetBoolean(prefs::kTapDraggingEnabled));
+  });
 }
 
 void TouchDevicesController::OnSigninScreenPrefServiceInitialized(
@@ -141,7 +115,8 @@ void TouchDevicesController::OnSigninScreenPrefServiceInitialized(
 
 void TouchDevicesController::OnActiveUserPrefServiceChanged(
     PrefService* prefs) {
-  scoped_uma_recorder_.reset();
+  if (uma_record_callback_)
+    std::move(uma_record_callback_).Run(prefs);
   ObservePrefs(prefs);
 }
 
@@ -177,12 +152,6 @@ void TouchDevicesController::UpdateTapDraggingEnabled() {
   tap_dragging_enabled_ = enabled;
 
   UMA_HISTOGRAM_BOOLEAN("Touchpad.TapDragging.Changed", enabled);
-
-  // Tap dragging is listed as a11y feature, so notifying a11y status changed.
-  // TODO(warx): tap dragging is considered to be removed from a11y feature.
-  // https://crbug.com/164273, https://crbug.com/724501.
-  Shell::Get()->accessibility_controller()->NotifyAccessibilityStatusChanged(
-      A11Y_NOTIFICATION_NONE);
 
   if (!GetInputDeviceControllerClient())
     return;  // Happens in tests.

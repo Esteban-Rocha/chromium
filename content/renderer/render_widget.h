@@ -189,6 +189,9 @@ class CONTENT_EXPORT RenderWidget
   blink::WebInputMethodController* GetInputMethodController() const;
 
   const gfx::Size& size() const { return size_; }
+  const gfx::Size& compositor_viewport_pixel_size() const {
+    return compositor_viewport_pixel_size_;
+  }
   bool is_fullscreen_granted() const { return is_fullscreen_granted_; }
   blink::WebDisplayMode display_mode() const { return display_mode_; }
   bool is_hidden() const { return is_hidden_; }
@@ -200,6 +203,9 @@ class CONTENT_EXPORT RenderWidget
   gfx::Point host_context_menu_location() const {
     return host_context_menu_location_;
   }
+  const gfx::Size& visible_viewport_size() const {
+    return visible_viewport_size_;
+  }
 
   void set_owner_delegate(RenderWidgetOwnerDelegate* owner_delegate) {
     DCHECK(!owner_delegate_);
@@ -207,9 +213,6 @@ class CONTENT_EXPORT RenderWidget
   }
 
   RenderWidgetOwnerDelegate* owner_delegate() const { return owner_delegate_; }
-
-  // ScreenInfo exposed so it can be passed to subframe RenderWidgets.
-  ScreenInfo screen_info() const { return screen_info_; }
 
   // Sets whether this RenderWidget has been swapped out to be displayed by
   // a RenderWidget in a different process.  If so, no new IPC messages will be
@@ -398,12 +401,12 @@ class CONTENT_EXPORT RenderWidget
     return mouse_lock_dispatcher_.get();
   }
 
-  // Returns the device scale factor exposed to Blink. In device emulation, this
-  // may not match the compositor device scale factor.
-  float GetWebDeviceScaleFactor() const;
+  // Returns the ScreenInfo exposed to Blink. In device emulation, this
+  // may not match the compositor ScreenInfo.
+  const ScreenInfo& GetWebScreenInfo() const;
 
-  // When emulated, this returns original (non-emulated) device scale factor.
-  float GetOriginalDeviceScaleFactor() const;
+  // When emulated, this returns the original (non-emulated) ScreenInfo.
+  const ScreenInfo& GetOriginalScreenInfo() const;
 
   // Helper to convert |point| using ConvertWindowToViewport().
   gfx::PointF ConvertWindowPointToViewport(const gfx::PointF& point);
@@ -465,6 +468,8 @@ class CONTENT_EXPORT RenderWidget
   };
 
   void DidResizeOrRepaintAck();
+
+  base::WeakPtr<RenderWidget> AsWeakPtr();
 
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
@@ -572,7 +577,8 @@ class CONTENT_EXPORT RenderWidget
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                            const gfx::Rect& window_screen_rect);
   void OnUpdateWindowScreenRect(const gfx::Rect& window_screen_rect);
-  void OnSetViewportIntersection(const gfx::Rect& viewport_intersection);
+  void OnSetViewportIntersection(const gfx::Rect& viewport_intersection,
+                                 const gfx::Rect& compositor_visible_rect);
   void OnSetIsInert(bool);
   void OnUpdateRenderThrottlingStatus(bool is_throttled,
                                       bool subtree_throttled);
@@ -618,6 +624,11 @@ class CONTENT_EXPORT RenderWidget
   void set_next_paint_is_resize_ack();
   void set_next_paint_is_repaint_ack();
   void reset_next_paint_is_resize_ack();
+
+  // Returns a rect that the compositor needs to raster. For a main frame this
+  // is always the entire viewprot, but for out-of-process iframes this can be
+  // constrained to limit overdraw.
+  gfx::Rect ViewportVisibleRect();
 
   // QueueMessage implementation extracted into a static method for easy
   // testing.
@@ -700,13 +711,13 @@ class CONTENT_EXPORT RenderWidget
   WebCursor current_cursor_;
 
   // The size of the RenderWidget in DIPs. This may differ from
-  // |physical_backing_size_| in the following (and possibly other) cases:
-  // * On Android, for top and bottom controls
-  // * On OOPIF, due to rounding
+  // |compositor_viewport_pixel_size_| in the following (and possibly other)
+  // cases: * On Android, for top and bottom controls * On OOPIF, due to
+  // rounding
   gfx::Size size_;
 
   // The size of the compositor's surface in pixels.
-  gfx::Size physical_backing_size_;
+  gfx::Size compositor_viewport_pixel_size_;
 
   // The size of the visible viewport in pixels.
   gfx::Size visible_viewport_size_;
@@ -722,8 +733,8 @@ class CONTENT_EXPORT RenderWidget
   // the browser about an already-completed auto-resize.
   bool need_resize_ack_for_auto_resize_;
 
-  // The sequence number used for ViewHostMsg_UpdateRect.
-  uint64_t resize_or_repaint_ack_num_ = 0;
+  // The sequence number used for the auto-resize request.
+  uint64_t auto_resize_sequence_number_ = 0;
 
   // A pending ResizeOrRepaintAck callback in response to an auto-resize
   // initiated by Blink. If auto-resize mode is canceled with an in-flight
@@ -854,6 +865,8 @@ class CONTENT_EXPORT RenderWidget
 
   bool has_added_input_handler_;
 
+  viz::LocalSurfaceId local_surface_id_;
+
  private:
   // TODO(ekaramad): This method should not be confused with its RenderView
   // variant, GetWebFrameWidget(). Currently Cast and AndroidWebview's
@@ -876,9 +889,10 @@ class CONTENT_EXPORT RenderWidget
                     blink::WebPopupType popup_type,
                     int32_t* routing_id);
 
-  void UpdateSurfaceAndScreenInfo(viz::LocalSurfaceId new_local_surface_id,
-                                  const gfx::Size& new_physical_backing_size,
-                                  const ScreenInfo& new_screen_info);
+  void UpdateSurfaceAndScreenInfo(
+      viz::LocalSurfaceId new_local_surface_id,
+      const gfx::Size& new_compositor_viewport_pixel_size,
+      const ScreenInfo& new_screen_info);
 
   // A variant of Send but is fatal if it fails. The browser may
   // be waiting for this IPC Message and if the send fails the browser will
@@ -960,8 +974,6 @@ class CONTENT_EXPORT RenderWidget
   // to replace it. See https://crbug.com/695579.
   uint32_t current_content_source_id_;
 
-  viz::LocalSurfaceId local_surface_id_;
-
   scoped_refptr<MainThreadEventQueue> input_event_queue_;
 
   mojo::Binding<mojom::Widget> widget_binding_;
@@ -972,6 +984,9 @@ class CONTENT_EXPORT RenderWidget
   // acked was received. This helps us make sure we don't ack a resize before
   // it's committed.
   bool did_commit_after_resize_ = false;
+
+  gfx::Rect viewport_intersection_;
+  gfx::Rect compositor_visible_rect_;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

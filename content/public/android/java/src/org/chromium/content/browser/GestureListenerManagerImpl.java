@@ -4,6 +4,7 @@
 
 package org.chromium.content.browser;
 
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 
 import org.chromium.base.ObserverList;
@@ -11,6 +12,7 @@ import org.chromium.base.ObserverList.RewindableIterator;
 import org.chromium.base.TraceEvent;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
+import org.chromium.content.browser.selection.SelectionPopupControllerImpl;
 import org.chromium.content.browser.webcontents.WebContentsImpl;
 import org.chromium.content.browser.webcontents.WebContentsUserData;
 import org.chromium.content.browser.webcontents.WebContentsUserData.UserDataFactory;
@@ -45,6 +47,13 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
     private int mPotentiallyActiveFlingCount;
 
     private long mNativeGestureListenerManager;
+
+    /**
+     * Whether a touch scroll sequence is active, used to hide text selection
+     * handles. Note that a scroll sequence will *always* bound a pinch
+     * sequence, so this will also be true for the duration of a pinch gesture.
+     */
+    private boolean mIsTouchScrollInProgress;
 
     /**
      * @param webContents {@link WebContents} object.
@@ -89,7 +98,8 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
     }
 
     /** Update all the listeners after touch down event occurred. */
-    public void updateOnTouchDown() {
+    @CalledByNative
+    private void updateOnTouchDown() {
         for (mIterator.rewind(); mIterator.hasNext();) mIterator.next().onTouchDown();
     }
 
@@ -120,6 +130,7 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
 
     /** Update all the listeners after scrolling end event occurred. */
     public void updateOnScrollEnd() {
+        setTouchScrollInProgress(false);
         for (mIterator.rewind(); mIterator.hasNext();) {
             mIterator.next().onScrollEnded(verticalScrollOffset(), verticalScrollExtent());
         }
@@ -147,6 +158,9 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
     @CalledByNative
     private void onFlingEnd() {
         if (mPotentiallyActiveFlingCount > 0) mPotentiallyActiveFlingCount--;
+        // Note that mTouchScrollInProgress should normally be false at this
+        // point, but we reset it anyway as another failsafe.
+        setTouchScrollInProgress(false);
         for (mIterator.rewind(); mIterator.hasNext();) {
             mIterator.next().onFlingEndGesture(verticalScrollOffset(), verticalScrollExtent());
         }
@@ -155,6 +169,7 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
     @CalledByNative
     private void onFlingStartEventConsumed() {
         mPotentiallyActiveFlingCount++;
+        setTouchScrollInProgress(false);
         for (mIterator.rewind(); mIterator.hasNext();) {
             mIterator.next().onFlingStartGesture(verticalScrollOffset(), verticalScrollExtent());
         }
@@ -162,6 +177,7 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
 
     @CalledByNative
     private void onScrollBeginEventAck() {
+        setTouchScrollInProgress(false);
         for (mIterator.rewind(); mIterator.hasNext();) {
             mIterator.next().onScrollStarted(verticalScrollOffset(), verticalScrollExtent());
         }
@@ -174,6 +190,8 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
 
     @CalledByNative
     private void onScrollUpdateGestureConsumed() {
+        SelectionPopupControllerImpl controller = getSelectionPopupController();
+        if (controller != null) controller.destroyPastePopup();
         for (mIterator.rewind(); mIterator.hasNext();) {
             mIterator.next().onScrollUpdateGestureConsumed();
         }
@@ -191,11 +209,14 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
 
     @CalledByNative
     private void onSingleTapEventAck(boolean consumed) {
+        SelectionPopupControllerImpl controller = getSelectionPopupController();
+        if (controller != null) controller.destroyPastePopup();
         for (mIterator.rewind(); mIterator.hasNext();) mIterator.next().onSingleTap(consumed);
     }
 
     @CalledByNative
     private void onLongPressAck() {
+        mContainerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         for (mIterator.rewind(); mIterator.hasNext();) mIterator.next().onLongPress();
     }
 
@@ -266,6 +287,36 @@ public class GestureListenerManagerImpl implements GestureListenerManager, Windo
         }
         if (scaleLimitsChanged) updateOnScaleLimitsChanged(minPageScaleFactor, maxPageScaleFactor);
         TraceEvent.end("GestureListenerManagerImpl:updateScrollInfo");
+    }
+
+    @Override
+    public boolean isScrollInProgress() {
+        return mIsTouchScrollInProgress || hasPotentiallyActiveFling();
+    }
+
+    void setTouchScrollInProgress(boolean touchScrollInProgress) {
+        mIsTouchScrollInProgress = touchScrollInProgress;
+
+        // Use the active touch scroll signal for hiding. The animation movement
+        // by fling will naturally hide the ActionMode by invalidating its content rect.
+        getSelectionPopupController().setScrollInProgress(touchScrollInProgress);
+    }
+
+    /**
+     * Reset scroll and fling accounting, notifying listeners as appropriate.
+     * This is useful as a failsafe when the input stream may have been interruped.
+     */
+    void resetScrollInProgress() {
+        if (!isScrollInProgress()) return;
+
+        final boolean touchScrollInProgress = mIsTouchScrollInProgress;
+        setTouchScrollInProgress(false);
+        if (touchScrollInProgress) updateOnScrollEnd();
+        resetFlingGesture();
+    }
+
+    private SelectionPopupControllerImpl getSelectionPopupController() {
+        return SelectionPopupControllerImpl.fromWebContents(mWebContents);
     }
 
     /**

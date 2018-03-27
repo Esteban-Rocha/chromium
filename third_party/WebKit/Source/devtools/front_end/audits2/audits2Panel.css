@@ -5,7 +5,8 @@
  */
 
 .toolbar {
-    border-bottom: 1px solid #ccc;
+    background-color: var(--toolbar-bg-color);
+    border-bottom: var(--divider-border);
 }
 
 .audits2-logo {
@@ -70,6 +71,15 @@
 
 .lh-root pre {
   word-wrap: break-word;
+}
+
+/* for View Trace button */
+.lh-audit-group {
+  position: relative;
+}
+button.view-trace {
+  position: absolute;
+  right: 0;
 }
 
 .audits2-landing-center button {

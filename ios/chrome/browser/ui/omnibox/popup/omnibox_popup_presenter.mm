@@ -5,6 +5,7 @@
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_presenter.h"
 
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_positioner.h"
+#import "ios/chrome/browser/ui/omnibox/popup/table_view_owning.h"
 #import "ios/chrome/browser/ui/toolbar/public/toolbar_controller_base_feature.h"
 #include "ios/chrome/browser/ui/ui_util.h"
 #import "ios/chrome/browser/ui/uikit_ui_util.h"
@@ -32,7 +33,7 @@ NS_INLINE CGFloat BottomPadding() {
 @property(nonatomic, strong) NSLayoutConstraint* bottomConstraint;
 
 @property(nonatomic, weak) id<OmniboxPopupPositioner> positioner;
-@property(nonatomic, weak) UITableViewController* viewController;
+@property(nonatomic, weak) UIViewController<TableViewOwning>* viewController;
 @property(nonatomic, strong) UIView* popupContainerView;
 @end
 
@@ -44,7 +45,8 @@ NS_INLINE CGFloat BottomPadding() {
 @synthesize bottomConstraint = _bottomConstraint;
 
 - (instancetype)initWithPopupPositioner:(id<OmniboxPopupPositioner>)positioner
-                    popupViewController:(UITableViewController*)viewController {
+                    popupViewController:
+                        (UIViewController<TableViewOwning>*)viewController {
   self = [super init];
   if (self) {
     _positioner = positioner;
@@ -139,6 +141,7 @@ NS_INLINE CGFloat BottomPadding() {
     self.bottomConstraint.active = NO;
     self.heightConstraint.active = YES;
   }
+
   [UIView animateWithDuration:kCollapseAnimationDuration
       delay:0
       options:UIViewAnimationOptionCurveEaseInOut

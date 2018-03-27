@@ -21,15 +21,16 @@
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "components/download/public/common/download_file_factory.h"
+#include "components/download/public/common/download_file_impl.h"
 #include "components/download/public/common/download_task_runner.h"
 #include "content/browser/devtools/protocol/devtools_download_manager_delegate.h"
-#include "content/browser/download/download_file_factory.h"
-#include "content/browser/download/download_file_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/interstitial_page_delegate.h"
@@ -49,6 +50,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
+#include "content/public/test/slow_download_http_response.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
@@ -58,9 +60,7 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "net/test/test_data_directory.h"
-#include "net/test/url_request/url_request_mock_http_job.h"
-#include "net/test/url_request/url_request_slow_download_job.h"
+#include "services/network/public/cpp/features.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -848,7 +848,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, CaptureScreenshot) {
   // integer precision.
   gfx::Size view_size = static_cast<RenderWidgetHostViewBase*>(
                             shell()->web_contents()->GetRenderWidgetHostView())
-                            ->GetPhysicalBackingSize();
+                            ->GetCompositorViewportPixelSize();
   expected_bitmap.allocN32Pixels(view_size.width(), view_size.height());
   expected_bitmap.eraseColor(SkColorSetRGB(0x12, 0x34, 0x56));
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, false);
@@ -871,7 +871,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, CaptureScreenshotJpeg) {
   // integer precision.
   gfx::Size view_size = static_cast<RenderWidgetHostViewBase*>(
                             shell()->web_contents()->GetRenderWidgetHostView())
-                            ->GetPhysicalBackingSize();
+                            ->GetCompositorViewportPixelSize();
   expected_bitmap.allocN32Pixels(view_size.width(), view_size.height());
   expected_bitmap.eraseColor(SkColorSetRGB(0x12, 0x34, 0x56));
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_JPEG, false);
@@ -932,7 +932,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest,
   // integer precision.
   gfx::Size view_size = static_cast<RenderWidgetHostViewBase*>(
                             shell()->web_contents()->GetRenderWidgetHostView())
-                            ->GetPhysicalBackingSize();
+                            ->GetCompositorViewportPixelSize();
   expected_bitmap.allocN32Pixels(view_size.width(), view_size.height());
   expected_bitmap.eraseColor(SkColorSetRGB(0x00, 0x00, 0xff));
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, true);
@@ -948,14 +948,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest,
 // Verifies that setDefaultBackgroundColor and captureScreenshot support a fully
 // and semi-transparent background, and that setDeviceMetricsOverride doesn't
 // affect it.
-// TODO(bokan): Temporarily disabled while landing --root-layer-scrolls.
-// https://crbug.com/811406.
-#if defined(OS_ANDROID)
-#define MAYBE_TransparentScreenshots DISABLED_TransparentScreenshots
-#else
-#define MAYBE_TransparentScreenshots TransparentScreenshots
-#endif
-IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, MAYBE_TransparentScreenshots) {
+IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, TransparentScreenshots) {
   if (base::SysInfo::IsLowEndDevice())
     return;
 
@@ -980,7 +973,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, MAYBE_TransparentScreenshots) {
   // integer precision.
   gfx::Size view_size = static_cast<RenderWidgetHostViewBase*>(
                             shell()->web_contents()->GetRenderWidgetHostView())
-                            ->GetPhysicalBackingSize();
+                            ->GetCompositorViewportPixelSize();
   expected_bitmap.allocN32Pixels(view_size.width(), view_size.height());
   expected_bitmap.eraseColor(SK_ColorTRANSPARENT);
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, true);
@@ -2410,19 +2403,19 @@ static void RemoveShellDelegate(Shell* shell) {
   DownloadManagerForShell(shell)->SetDelegate(nullptr);
 }
 
-class CountingDownloadFile : public DownloadFileImpl {
+class CountingDownloadFile : public download::DownloadFileImpl {
  public:
   CountingDownloadFile(
       std::unique_ptr<download::DownloadSaveInfo> save_info,
       const base::FilePath& default_downloads_directory,
-      std::unique_ptr<DownloadManager::InputStream> stream,
+      std::unique_ptr<download::InputStream> stream,
       uint32_t download_id,
       base::WeakPtr<download::DownloadDestinationObserver> observer)
-      : DownloadFileImpl(std::move(save_info),
-                         default_downloads_directory,
-                         std::move(stream),
-                         download_id,
-                         observer) {}
+      : download::DownloadFileImpl(std::move(save_info),
+                                   default_downloads_directory,
+                                   std::move(stream),
+                                   download_id,
+                                   observer) {}
 
   ~CountingDownloadFile() override {
     DCHECK(download::GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
@@ -2435,8 +2428,9 @@ class CountingDownloadFile : public DownloadFileImpl {
                   bool is_parallelizable) override {
     DCHECK(download::GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
     active_files_++;
-    DownloadFileImpl::Initialize(callback, cancel_request_callback,
-                                 received_slices, is_parallelizable);
+    download::DownloadFileImpl::Initialize(std::move(callback),
+                                           cancel_request_callback,
+                                           received_slices, is_parallelizable);
   }
 
   static void GetNumberActiveFiles(int* result) {
@@ -2463,16 +2457,16 @@ class CountingDownloadFile : public DownloadFileImpl {
 
 int CountingDownloadFile::active_files_ = 0;
 
-class CountingDownloadFileFactory : public DownloadFileFactory {
+class CountingDownloadFileFactory : public download::DownloadFileFactory {
  public:
   CountingDownloadFileFactory() {}
   ~CountingDownloadFileFactory() override {}
 
   // DownloadFileFactory interface.
-  DownloadFile* CreateFile(
+  download::DownloadFile* CreateFile(
       std::unique_ptr<download::DownloadSaveInfo> save_info,
       const base::FilePath& default_downloads_directory,
-      std::unique_ptr<DownloadManager::InputStream> stream,
+      std::unique_ptr<download::InputStream> stream,
       uint32_t download_id,
       base::WeakPtr<download::DownloadDestinationObserver> observer) override {
     return new CountingDownloadFile(std::move(save_info),
@@ -2514,7 +2508,7 @@ class TestShellDownloadManagerDelegate : public ShellDownloadManagerDelegate {
 class DownloadCreateObserver : DownloadManager::Observer {
  public:
   explicit DownloadCreateObserver(DownloadManager* manager)
-      : manager_(manager), item_(nullptr) {
+      : manager_(manager), item_(nullptr), received_item_response_(false) {
     manager_->AddObserver(this);
   }
 
@@ -2532,16 +2526,26 @@ class DownloadCreateObserver : DownloadManager::Observer {
 
   void OnDownloadCreated(DownloadManager* manager,
                          download::DownloadItem* download) override {
+    received_item_response_ = true;
+
     if (!item_)
       item_ = download;
 
-    if (!completion_closure_.is_null())
-      base::ResetAndReturn(&completion_closure_).Run();
+    if (completion_closure_)
+      std::move(completion_closure_).Run();
+  }
+
+  void OnDownloadDropped(DownloadManager* manager) override {
+    received_item_response_ = true;
+
+    item_ = nullptr;
+    if (completion_closure_)
+      std::move(completion_closure_).Run();
   }
 
   download::DownloadItem* WaitForFinished() {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    if (!item_) {
+    if (!received_item_response_) {
       base::RunLoop run_loop;
       completion_closure_ = run_loop.QuitClosure();
       run_loop.Run();
@@ -2552,6 +2556,7 @@ class DownloadCreateObserver : DownloadManager::Observer {
  private:
   DownloadManager* manager_;
   download::DownloadItem* item_;
+  bool received_item_response_;
   base::Closure completion_closure_;
 };
 
@@ -2575,14 +2580,8 @@ class DevToolsDownloadContentTest : public DevToolsProtocolTest {
     manager->SetDelegate(test_delegate_.get());
     test_delegate_->SetDownloadManager(manager);
 
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::BindOnce(&net::URLRequestSlowDownloadJob::AddUrlHandler));
-    base::FilePath mock_base(GetTestFilePath("download", ""));
-
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::BindOnce(&net::URLRequestMockHTTPJob::AddUrlHandlers, mock_base));
+    embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
+        &content::SlowDownloadHttpResponse::HandleSlowDownloadRequest));
     ASSERT_TRUE(embedded_test_server()->Start());
   }
 
@@ -2616,7 +2615,7 @@ class DevToolsDownloadContentTest : public DevToolsProtocolTest {
   // Note: Cannot be used with other alternative DownloadFileFactorys
   void SetupEnsureNoPendingDownloads() {
     DownloadManagerForShell(shell())->SetDownloadFileFactoryForTesting(
-        std::unique_ptr<DownloadFileFactory>(
+        std::unique_ptr<download::DownloadFileFactory>(
             new CountingDownloadFileFactory()));
   }
 
@@ -2628,13 +2627,7 @@ class DevToolsDownloadContentTest : public DevToolsProtocolTest {
   }
 
   bool EnsureNoPendingDownloads() {
-    bool result = true;
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::BindOnce(&EnsureNoPendingDownloadJobsOnIO, &result));
-    base::RunLoop().Run();
-    return result &&
-           (CountingDownloadFile::GetNumberActiveFilesFromFileThread() == 0);
+    return CountingDownloadFile::GetNumberActiveFilesFromFileThread() == 0;
   }
 
   // Checks that |path| is has |file_size| bytes, and matches the |value|
@@ -2678,14 +2671,6 @@ class DevToolsDownloadContentTest : public DevToolsProtocolTest {
   }
 
  private:
-  static void EnsureNoPendingDownloadJobsOnIO(bool* result) {
-    if (net::URLRequestSlowDownloadJob::NumberOutstandingRequests())
-      *result = false;
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::MessageLoop::current()->QuitWhenIdleClosure());
-  }
-
   // Location of the downloads directory for these tests
   base::ScopedTempDir downloads_directory_;
   std::unique_ptr<TestShellDownloadManagerDelegate> test_delegate_;
@@ -2704,8 +2689,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, SingleDownload) {
   // Create a download, wait until it's started, and confirm
   // we're in the expected state.
   download::DownloadItem* download = StartDownloadAndReturnItem(
-      shell(),
-      GURL(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib")));
+      shell(), embedded_test_server()->GetURL("/download/download-test.lib"));
   ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download->GetState());
 
   WaitForCompletion(download);
@@ -2723,7 +2707,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, DownloadCancelled) {
   // Create a download, wait until it's started, and confirm
   // we're in the expected state.
   download::DownloadItem* download = StartDownloadAndReturnItem(
-      shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
+      shell(), embedded_test_server()->GetURL(
+                   content::SlowDownloadHttpResponse::kUnknownSizeUrl));
   ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download->GetState());
 
   // Cancel the download and wait for download system quiesce.
@@ -2745,9 +2730,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, DeniedDownload) {
   SetDownloadBehavior("deny");
   // Create a download, wait and confirm it was cancelled.
   download::DownloadItem* download = StartDownloadAndReturnItem(
-      shell(),
-      GURL(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib")));
-  EnsureNoPendingDownloads();
+      shell(), embedded_test_server()->GetURL("/download/download-test.lib"));
+  DownloadTestFlushObserver flush_observer(DownloadManagerForShell(shell()));
+  flush_observer.WaitForFlush();
+  EXPECT_TRUE(EnsureNoPendingDownloads());
   ASSERT_EQ(download::DownloadItem::CANCELLED, download->GetState());
 }
 
@@ -2762,7 +2748,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, DefaultDownload) {
   // Create a download, wait until it's started, and confirm
   // we're in the expected state.
   download::DownloadItem* download = StartDownloadAndReturnItem(
-      shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
+      shell(), embedded_test_server()->GetURL(
+                   content::SlowDownloadHttpResponse::kUnknownSizeUrl));
   ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download->GetState());
 
   // Cancel the download and wait for download system quiesce.
@@ -2786,10 +2773,17 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, DefaultDownloadHeadless) {
   SetDownloadBehavior("default");
   // Create a download, wait and confirm it was cancelled.
   download::DownloadItem* download = StartDownloadAndReturnItem(
-      shell(),
-      GURL(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib")));
-  EnsureNoPendingDownloads();
-  ASSERT_EQ(download::DownloadItem::CANCELLED, download->GetState());
+      shell(), embedded_test_server()->GetURL("/download/download-test.lib"));
+  DownloadTestFlushObserver flush_observer(DownloadManagerForShell(shell()));
+  flush_observer.WaitForFlush();
+  EXPECT_TRUE(EnsureNoPendingDownloads());
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    // The download manager will intercept the download navigation and drop it
+    // since we have set the delegate to null.
+    EXPECT_EQ(nullptr, download);
+  } else {
+    EXPECT_EQ(download::DownloadItem::CANCELLED, download->GetState());
+  }
 }
 
 // Check that download logic is reset when creating a new target.
@@ -2806,7 +2800,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, ResetDownloadState) {
   // Create a download, wait and confirm it wasn't cancelled.
   download::DownloadItem* download = StartDownloadAndReturnItem(
       new_window,
-      GURL(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib")));
+      embedded_test_server()->GetURL("/download/download-test.lib"));
   WaitForCompletion(download);
   ASSERT_EQ(download::DownloadItem::COMPLETE, download->GetState());
 }
@@ -2823,13 +2817,14 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, MultiDownload) {
   // Create a download, wait until it's started, and confirm
   // we're in the expected state.
   download::DownloadItem* download1 = StartDownloadAndReturnItem(
-      shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
+      shell(), embedded_test_server()->GetURL(
+                   content::SlowDownloadHttpResponse::kUnknownSizeUrl));
   ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download1->GetState());
 
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   SetDownloadBehavior("allow", "download2");
   // Start the second download and wait until it's done.
-  GURL url(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib"));
+  GURL url(embedded_test_server()->GetURL("/download/download-test.lib"));
   download::DownloadItem* download2 = StartDownloadAndReturnItem(shell(), url);
   WaitForCompletion(download2);
 
@@ -2839,7 +2834,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, MultiDownload) {
   // Allow the first request to finish.
   std::unique_ptr<DownloadTestObserver> observer2(CreateWaiter(shell(), 1));
   NavigateToURL(shell(),
-                GURL(net::URLRequestSlowDownloadJob::kFinishDownloadUrl));
+                embedded_test_server()->GetURL(
+                    content::SlowDownloadHttpResponse::kFinishDownloadUrl));
   observer2->WaitForFinished();  // Wait for the third request.
   EXPECT_EQ(
       1u, observer2->NumDownloadsSeenInState(download::DownloadItem::COMPLETE));
@@ -2853,8 +2849,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, MultiDownload) {
   // source file.
   base::FilePath file1(download1->GetTargetFilePath());
   ASSERT_EQ(file1.DirName().MaybeAsASCII(), "download1");
-  size_t file_size1 = net::URLRequestSlowDownloadJob::kFirstDownloadSize +
-                      net::URLRequestSlowDownloadJob::kSecondDownloadSize;
+  size_t file_size1 = content::SlowDownloadHttpResponse::kFirstDownloadSize +
+                      content::SlowDownloadHttpResponse::kSecondDownloadSize;
   std::string expected_contents(file_size1, '*');
   ASSERT_TRUE(VerifyFile(file1, expected_contents, file_size1));
 

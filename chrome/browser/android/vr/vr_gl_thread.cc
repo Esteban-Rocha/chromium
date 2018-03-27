@@ -17,6 +17,7 @@
 #include "chrome/browser/vr/model/assets.h"
 #include "chrome/browser/vr/model/omnibox_suggestions.h"
 #include "chrome/browser/vr/model/toolbar_state.h"
+#include "chrome/browser/vr/sounds_manager_audio_delegate.h"
 #include "chrome/browser/vr/ui.h"
 #include "chrome/common/chrome_features.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -66,8 +67,12 @@ void VrGLThread::Init() {
       !keyboard_delegate_ ? nullptr : keyboard_delegate_.get();
   if (!keyboard_delegate)
     ui_initial_state_.needs_keyboard_update = true;
+
+  audio_delegate_ = std::make_unique<SoundsManagerAudioDelegate>();
+
   auto ui = std::make_unique<Ui>(this, this, keyboard_delegate,
-                                 text_input_delegate_.get(), ui_initial_state_);
+                                 text_input_delegate_.get(),
+                                 audio_delegate_.get(), ui_initial_state_);
   if (keyboard_enabled) {
     text_input_delegate_->SetRequestFocusCallback(
         base::BindRepeating(&Ui::RequestFocus, base::Unretained(ui.get())));
@@ -91,6 +96,7 @@ void VrGLThread::Init() {
 }
 
 void VrGLThread::CleanUp() {
+  audio_delegate_.reset();
   vr_shell_gl_.reset();
 }
 
@@ -203,16 +209,43 @@ void VrGLThread::OnContentPaused(bool enabled) {
       base::BindOnce(&VrShell::OnContentPaused, weak_vr_shell_, enabled));
 }
 
-void VrGLThread::Navigate(GURL gurl) {
+void VrGLThread::Navigate(GURL gurl, NavigationMethod method) {
   DCHECK(OnGlThread());
   main_thread_task_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&VrShell::Navigate, weak_vr_shell_, gurl));
+      FROM_HERE,
+      base::BindOnce(&VrShell::Navigate, weak_vr_shell_, gurl, method));
 }
 
 void VrGLThread::NavigateBack() {
   DCHECK(OnGlThread());
   main_thread_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&VrShell::NavigateBack, weak_vr_shell_));
+}
+
+void VrGLThread::NavigateForward() {
+  DCHECK(OnGlThread());
+  main_thread_task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&VrShell::NavigateForward, weak_vr_shell_));
+}
+
+void VrGLThread::ReloadTab() {
+  DCHECK(OnGlThread());
+  main_thread_task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&VrShell::ReloadTab, weak_vr_shell_));
+}
+
+void VrGLThread::OpenNewTab(bool incognito) {
+  DCHECK(OnGlThread());
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&VrShell::OpenNewTab, weak_vr_shell_, incognito));
+}
+
+void VrGLThread::CloseAllIncognitoTabs() {
+  DCHECK(OnGlThread());
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&VrShell::CloseAllIncognitoTabs, weak_vr_shell_));
 }
 
 void VrGLThread::ExitCct() {
@@ -326,39 +359,11 @@ void VrGLThread::SetWebVrMode(bool enabled, bool show_toast) {
                                 weak_browser_ui_, enabled, show_toast));
 }
 
-void VrGLThread::SetAudioCaptureEnabled(bool enabled) {
+void VrGLThread::SetCapturingState(const CapturingStateModel& state) {
   DCHECK(OnMainThread());
-  task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&BrowserUiInterface::SetAudioCaptureEnabled,
-                                weak_browser_ui_, enabled));
-}
-
-void VrGLThread::SetLocationAccessEnabled(bool enabled) {
-  DCHECK(OnMainThread());
-  task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&BrowserUiInterface::SetLocationAccessEnabled,
-                                weak_browser_ui_, enabled));
-}
-
-void VrGLThread::SetVideoCaptureEnabled(bool enabled) {
-  DCHECK(OnMainThread());
-  task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&BrowserUiInterface::SetVideoCaptureEnabled,
-                                weak_browser_ui_, enabled));
-}
-
-void VrGLThread::SetScreenCaptureEnabled(bool enabled) {
-  DCHECK(OnMainThread());
-  task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&BrowserUiInterface::SetScreenCaptureEnabled,
-                                weak_browser_ui_, enabled));
-}
-
-void VrGLThread::SetBluetoothConnected(bool enabled) {
-  DCHECK(OnMainThread());
-  task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&BrowserUiInterface::SetBluetoothConnected,
-                                weak_browser_ui_, enabled));
+  task_runner()->PostTask(FROM_HERE,
+                          base::BindOnce(&BrowserUiInterface::SetCapturingState,
+                                         weak_browser_ui_, state));
 }
 
 void VrGLThread::SetIsExiting() {
@@ -422,6 +427,13 @@ void VrGLThread::OnAssetsUnavailable() {
   task_runner()->PostTask(
       FROM_HERE, base::BindOnce(&BrowserUiInterface::OnAssetsUnavailable,
                                 weak_browser_ui_));
+}
+
+void VrGLThread::SetIncognitoTabsOpen(bool open) {
+  DCHECK(OnMainThread());
+  task_runner()->PostTask(
+      FROM_HERE, base::BindOnce(&BrowserUiInterface::SetIncognitoTabsOpen,
+                                weak_browser_ui_, open));
 }
 
 void VrGLThread::ShowSoftInput(bool show) {

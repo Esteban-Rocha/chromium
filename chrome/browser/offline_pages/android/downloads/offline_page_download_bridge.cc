@@ -8,6 +8,7 @@
 
 #include "base/android/jni_string.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/guid.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -107,10 +108,6 @@ content::WebContents* GetWebContentsFromJavaTab(
   return tab->web_contents();
 }
 
-void SavePageLaterCallback(AddRequestResult result) {
-  // do nothing.
-}
-
 void SavePageIfNotNavigatedAway(const GURL& url,
                                 const GURL& original_url,
                                 const ScopedJavaGlobalRef<jobject>& j_tab_ref,
@@ -147,8 +144,8 @@ void SavePageIfNotNavigatedAway(const GURL& url,
           RequestCoordinator::RequestAvailability::DISABLED_FOR_OFFLINER;
       params.original_url = original_url;
       params.request_origin = origin;
-      request_id = request_coordinator->SavePageLater(
-          params, base::Bind(&SavePageLaterCallback));
+      request_id =
+          request_coordinator->SavePageLater(params, base::DoNothing());
     } else {
       DVLOG(1) << "SavePageIfNotNavigatedAway has no valid coordinator.";
     }
@@ -343,8 +340,7 @@ static jlong JNI_OfflinePageDownloadBridge_Init(
         RequestCoordinatorFactory::GetForBrowserContext(browser_context);
     DCHECK(request_coordinator);
     offline_items_collection::OfflineContentAggregator* aggregator =
-        offline_items_collection::OfflineContentAggregatorFactory::
-            GetForBrowserContext(browser_context);
+        OfflineContentAggregatorFactory::GetForBrowserContext(browser_context);
     DCHECK(aggregator);
     adapter = new DownloadUIAdapter(
         aggregator, offline_page_model, request_coordinator,

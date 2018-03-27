@@ -34,7 +34,7 @@ class PingManagerTest : public testing::Test {
   ~PingManagerTest() override {}
 
   PingManager::Callback MakePingCallback();
-  scoped_refptr<UpdateContext> MakeFakeUpdateContext() const;
+  scoped_refptr<UpdateContext> MakeMockUpdateContext() const;
 
   // Overrides from testing::Test.
   void SetUp() override;
@@ -96,7 +96,7 @@ void PingManagerTest::PingSentCallback(int error, const std::string& response) {
   Quit();
 }
 
-scoped_refptr<UpdateContext> PingManagerTest::MakeFakeUpdateContext() const {
+scoped_refptr<UpdateContext> PingManagerTest::MakeMockUpdateContext() const {
   return base::MakeRefCounted<UpdateContext>(
       config_, false, std::vector<std::string>(),
       UpdateClient::CrxDataCallback(), UpdateEngine::NotifyObserversCallback(),
@@ -110,7 +110,7 @@ TEST_F(PingManagerTest, SendPing) {
   EXPECT_TRUE(interceptor);
 
   // Test eventresult="1" is sent for successful updates.
-  const auto update_context = MakeFakeUpdateContext();
+  const auto update_context = MakeMockUpdateContext();
 
   {
     Component component(*update_context, "abc");
@@ -135,11 +135,11 @@ TEST_F(PingManagerTest, SendPing) {
 
     // Check the ping request does not carry the specific extra request headers.
     EXPECT_FALSE(interceptor->GetRequests()[0].second.HasHeader(
-        "X-GoogleUpdate-Interactivity"));
+        "X-Goog-Update-Interactivity"));
     EXPECT_FALSE(interceptor->GetRequests()[0].second.HasHeader(
-        "X-GoogleUpdate-Updater"));
+        "X-Goog-Update-Updater"));
     EXPECT_FALSE(
-        interceptor->GetRequests()[0].second.HasHeader("X-GoogleUpdate-AppId"));
+        interceptor->GetRequests()[0].second.HasHeader("X-Goog-Update-AppId"));
 
     interceptor->Reset();
   }
@@ -303,7 +303,7 @@ TEST_F(PingManagerTest, SendPing) {
 TEST_F(PingManagerTest, RequiresEncryption) {
   config_->SetPingUrl(GURL("http:\\foo\bar"));
 
-  const auto update_context = MakeFakeUpdateContext();
+  const auto update_context = MakeMockUpdateContext();
 
   Component component(*update_context, "abc");
 

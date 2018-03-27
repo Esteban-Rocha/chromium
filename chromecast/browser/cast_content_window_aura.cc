@@ -14,32 +14,100 @@
 namespace chromecast {
 namespace shell {
 
+class TouchBlocker : public ui::EventHandler, public aura::WindowObserver {
+ public:
+  TouchBlocker(aura::Window* window, bool activated)
+      : window_(window), activated_(activated) {
+    DCHECK(window_);
+    window_->AddObserver(this);
+    if (activated_) {
+      window_->AddPreTargetHandler(this);
+    }
+  }
+
+  ~TouchBlocker() override {
+    if (window_) {
+      window_->RemoveObserver(this);
+      if (activated_) {
+        window_->RemovePreTargetHandler(this);
+      }
+    }
+  }
+
+  void Activate(bool activate) {
+    if (!window_ || activate == activated_) {
+      return;
+    }
+
+    if (activate) {
+      window_->AddPreTargetHandler(this);
+    } else {
+      window_->RemovePreTargetHandler(this);
+    }
+
+    activated_ = activate;
+  }
+
+ private:
+  // Overriden from ui::EventHandler.
+  void OnTouchEvent(ui::TouchEvent* touch) override {
+    if (activated_) {
+      touch->SetHandled();
+    }
+  }
+
+  // Overriden from aura::WindowObserver.
+  void OnWindowDestroyed(aura::Window* window) override { window_ = nullptr; }
+
+  aura::Window* window_;
+  bool activated_;
+
+  DISALLOW_COPY_AND_ASSIGN(TouchBlocker);
+};
+
 // static
 std::unique_ptr<CastContentWindow> CastContentWindow::Create(
-    CastContentWindow::Delegate* /* delegate */,
-    bool /* is_headless */,
-    bool /* enable_touch_input */) {
-  return base::WrapUnique(new CastContentWindowAura());
+    CastContentWindow::Delegate* delegate,
+    bool is_headless,
+    bool enable_touch_input) {
+  return base::WrapUnique(new CastContentWindowAura(enable_touch_input));
 }
 
-CastContentWindowAura::CastContentWindowAura() = default;
 CastContentWindowAura::~CastContentWindowAura() = default;
+
+CastContentWindowAura::CastContentWindowAura(bool is_touch_enabled)
+    : is_touch_enabled_(is_touch_enabled), touch_blocker_() {}
 
 void CastContentWindowAura::CreateWindowForWebContents(
     content::WebContents* web_contents,
     CastWindowManager* window_manager,
-    bool is_visible) {
+    bool is_visible,
+    VisibilityPriority visibility_priority) {
   DCHECK(web_contents);
   DCHECK(window_manager);
   gfx::NativeView window = web_contents->GetNativeView();
   window_manager->SetWindowId(window, CastWindowManager::APP);
   window_manager->AddWindow(window);
+
+  touch_blocker_ = std::make_unique<TouchBlocker>(window, !is_touch_enabled_);
+
   if (is_visible) {
     window->Show();
   } else {
     window->Hide();
   }
 }
+
+void CastContentWindowAura::EnableTouchInput(bool enabled) {
+  if (touch_blocker_) {
+    touch_blocker_->Activate(!enabled);
+  }
+}
+
+void CastContentWindowAura::RequestVisibility(
+    VisibilityPriority visibility_priority){};
+
+void CastContentWindowAura::RequestMoveOut(){};
 
 }  // namespace shell
 }  // namespace chromecast

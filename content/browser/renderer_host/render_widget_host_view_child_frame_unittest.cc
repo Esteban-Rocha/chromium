@@ -33,6 +33,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/fake_renderer_compositor_frame_sink.h"
 #include "content/test/mock_render_widget_host_delegate.h"
 #include "content/test/mock_widget_impl.h"
@@ -60,8 +61,10 @@ class MockFrameConnectorDelegate : public FrameConnectorDelegate {
     last_surface_info_ = surface_info;
   }
 
-  void SetViewportIntersection(const gfx::Rect& intersection) {
+  void SetViewportIntersection(const gfx::Rect& intersection,
+                               const gfx::Rect& compositor_visible_rect) {
     viewport_intersection_rect_ = intersection;
+    compositor_visible_rect_ = compositor_visible_rect;
   }
 
   RenderWidgetHostViewBase* GetParentRenderWidgetHostView() override {
@@ -79,9 +82,7 @@ class MockFrameConnectorDelegate : public FrameConnectorDelegate {
 
 class RenderWidgetHostViewChildFrameTest : public testing::Test {
  public:
-  RenderWidgetHostViewChildFrameTest()
-      : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::UI) {}
+  RenderWidgetHostViewChildFrameTest() {}
 
   void SetUp() override {
     SetUpEnvironment(false /* use_zoom_for_device_scale_factor */);
@@ -148,7 +149,7 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
   }
 
  protected:
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  TestBrowserThreadBundle thread_bundle_;
 
   std::unique_ptr<BrowserContext> browser_context_;
   MockRenderWidgetHostDelegate delegate_;
@@ -236,7 +237,8 @@ TEST_F(RenderWidgetHostViewChildFrameTest, SwapCompositorFrame) {
 // whenever screen rects are updated.
 TEST_F(RenderWidgetHostViewChildFrameTest, ViewportIntersectionUpdated) {
   gfx::Rect intersection_rect(5, 5, 100, 80);
-  test_frame_connector_->SetViewportIntersection(intersection_rect);
+  test_frame_connector_->SetViewportIntersection(intersection_rect,
+                                                 intersection_rect);
 
   MockRenderProcessHost* process =
       static_cast<MockRenderProcessHost*>(widget_host_->GetProcess());
@@ -248,9 +250,11 @@ TEST_F(RenderWidgetHostViewChildFrameTest, ViewportIntersectionUpdated) {
       process->sink().GetUniqueMessageMatching(
           ViewMsg_SetViewportIntersection::ID);
   ASSERT_TRUE(intersection_update);
-  std::tuple<gfx::Rect> sent_rect;
-  ViewMsg_SetViewportIntersection::Read(intersection_update, &sent_rect);
-  EXPECT_EQ(intersection_rect, std::get<0>(sent_rect));
+  std::tuple<gfx::Rect, gfx::Rect> sent_rects;
+
+  ViewMsg_SetViewportIntersection::Read(intersection_update, &sent_rects);
+  EXPECT_EQ(intersection_rect, std::get<0>(sent_rects));
+  EXPECT_EQ(intersection_rect, std::get<1>(sent_rects));
 }
 
 // Tests specific to non-scroll-latching behaviour.
@@ -310,19 +314,20 @@ TEST_F(RenderWidgetHostViewChildFrameScrollLatchingDisabledTest,
 }
 
 // Tests that moving the child around does not affect the physical backing size.
-TEST_F(RenderWidgetHostViewChildFrameZoomForDSFTest, PhysicalBackingSize) {
+TEST_F(RenderWidgetHostViewChildFrameZoomForDSFTest,
+       CompositorViewportPixelSize) {
   ScreenInfo screen_info;
   screen_info.device_scale_factor = 2.0f;
   test_frame_connector_->SetScreenInfoForTesting(screen_info);
 
   gfx::Size local_frame_size(1276, 410);
   test_frame_connector_->SetLocalFrameSize(local_frame_size);
-  EXPECT_EQ(local_frame_size, view_->GetPhysicalBackingSize());
+  EXPECT_EQ(local_frame_size, view_->GetCompositorViewportPixelSize());
 
   gfx::Rect screen_space_rect(local_frame_size);
   screen_space_rect.set_origin(gfx::Point(230, 263));
   test_frame_connector_->SetScreenSpaceRect(screen_space_rect);
-  EXPECT_EQ(local_frame_size, view_->GetPhysicalBackingSize());
+  EXPECT_EQ(local_frame_size, view_->GetCompositorViewportPixelSize());
   EXPECT_EQ(gfx::Point(115, 131), view_->GetViewBounds().origin());
   EXPECT_EQ(gfx::Point(230, 263),
             test_frame_connector_->screen_space_rect_in_pixels().origin());
@@ -337,8 +342,8 @@ TEST_F(RenderWidgetHostViewChildFrameTest, WasResizedOncePerChange) {
 
   widget_host_->Init();
 
-  constexpr gfx::Size physical_backing_size(100, 100);
-  constexpr gfx::Rect screen_space_rect(physical_backing_size);
+  constexpr gfx::Size compositor_viewport_pixel_size(100, 100);
+  constexpr gfx::Rect screen_space_rect(compositor_viewport_pixel_size);
   viz::ParentLocalSurfaceIdAllocator allocator;
   viz::LocalSurfaceId local_surface_id = allocator.GenerateId();
   constexpr viz::FrameSinkId frame_sink_id(1, 1);
@@ -346,8 +351,9 @@ TEST_F(RenderWidgetHostViewChildFrameTest, WasResizedOncePerChange) {
 
   process->sink().ClearMessages();
 
-  test_frame_connector_->UpdateResizeParams(
-      screen_space_rect, physical_backing_size, ScreenInfo(), 1u, surface_id);
+  test_frame_connector_->UpdateResizeParams(screen_space_rect,
+                                            compositor_viewport_pixel_size,
+                                            ScreenInfo(), 1u, surface_id);
 
   ASSERT_EQ(1u, process->sink().message_count());
 
@@ -356,7 +362,8 @@ TEST_F(RenderWidgetHostViewChildFrameTest, WasResizedOncePerChange) {
   ASSERT_NE(nullptr, resize_msg);
   ViewMsg_Resize::Param params;
   ViewMsg_Resize::Read(resize_msg, &params);
-  EXPECT_EQ(physical_backing_size, std::get<0>(params).physical_backing_size);
+  EXPECT_EQ(compositor_viewport_pixel_size,
+            std::get<0>(params).compositor_viewport_pixel_size);
   EXPECT_EQ(screen_space_rect.size(), std::get<0>(params).new_size);
   EXPECT_EQ(local_surface_id, std::get<0>(params).local_surface_id);
 }

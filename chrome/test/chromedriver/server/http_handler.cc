@@ -146,6 +146,9 @@ HttpHandler::HttpHandler(
       CommandMapping(
           kPost, "session/:sessionId/window/:windowHandle/maximize",
           WrapToCommand("MaximizeWindow", base::Bind(&ExecuteMaximizeWindow))),
+      CommandMapping(
+          kPost, "session/:sessionId/window/:windowHandle/minimize",
+          WrapToCommand("MinimizeWindow", base::Bind(&ExecuteMinimizeWindow))),
       CommandMapping(kPost, "session/:sessionId/window/fullscreen",
                      WrapToCommand("FullscreenWindow",
                                    base::Bind(&ExecuteFullScreenWindow))),
@@ -317,6 +320,9 @@ HttpHandler::HttpHandler(
       CommandMapping(kGet, "session/:sessionId/element/:id/location",
                      WrapToCommand("GetElementLocation",
                                    base::Bind(&ExecuteGetElementLocation))),
+      CommandMapping(
+          kGet, "session/:sessionId/element/:id/rect",
+          WrapToCommand("GetElementRect", base::Bind(&ExecuteGetElementRect))),
       CommandMapping(
           kGet, "session/:sessionId/element/:id/location_in_view",
           WrapToCommand(

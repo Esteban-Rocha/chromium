@@ -4,10 +4,7 @@
 
 #include "components/browser_sync/profile_sync_service.h"
 
-#include <stddef.h>
-
 #include <cstddef>
-#include <map>
 #include <utility>
 
 #include "base/bind.h"
@@ -15,30 +12,23 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
-#include "base/files/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/metrics/histogram.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/single_thread_task_runner.h"
-#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/browser_sync/browser_sync_switches.h"
 #include "components/invalidation/impl/invalidation_prefs.h"
 #include "components/invalidation/public/invalidation_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
-#include "components/prefs/json_pref_store.h"
 #include "components/reading_list/features/reading_list_buildflags.h"
-#include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_metrics.h"
 #include "components/sync/base/bind_to_task_runner.h"
 #include "components/sync/base/cryptographer.h"
 #include "components/sync/base/passphrase_type.h"
-#include "components/sync/base/pref_names.h"
 #include "components/sync/base/report_unrecoverable_error.h"
 #include "components/sync/base/stop_source.h"
 #include "components/sync/base/system_encryptor.h"
@@ -66,6 +56,7 @@
 #include "components/sync/model/change_processor.h"
 #include "components/sync/model/model_type_change_processor.h"
 #include "components/sync/model/sync_error.h"
+#include "components/sync/model_impl/client_tag_based_model_type_processor.h"
 #include "components/sync/protocol/sync.pb.h"
 #include "components/sync/syncable/directory.h"
 #include "components/sync/syncable/sync_db_util.h"
@@ -86,6 +77,7 @@
 using sync_sessions::SessionsSyncManager;
 using syncer::BackendMigrator;
 using syncer::ChangeProcessor;
+using syncer::ClientTagBasedModelTypeProcessor;
 using syncer::DataTypeController;
 using syncer::DataTypeManager;
 using syncer::DataTypeStatusTable;
@@ -236,9 +228,10 @@ void ProfileSyncService::Initialize() {
 
   device_info_sync_bridge_ = std::make_unique<DeviceInfoSyncBridge>(
       local_device_.get(), model_type_store_factory_,
-      base::BindRepeating(
-          &ModelTypeChangeProcessor::Create,
-          base::BindRepeating(&syncer::ReportUnrecoverableError, channel_)));
+      std::make_unique<ClientTagBasedModelTypeProcessor>(
+          syncer::DEVICE_INFO,
+          /*dump_stack=*/base::BindRepeating(&syncer::ReportUnrecoverableError,
+                                             channel_)));
 
   syncer::SyncApiComponentFactory::RegisterDataTypesMethod
       register_platform_types_callback =
@@ -569,6 +562,8 @@ void ProfileSyncService::OnGetTokenSuccess(
     engine_->UpdateCredentials(GetCredentials());
   else
     startup_controller_->TryStart();
+
+  UpdateAuthErrorState(GoogleServiceAuthError(GoogleServiceAuthError::NONE));
 }
 
 void ProfileSyncService::OnGetTokenFailure(
@@ -1059,6 +1054,9 @@ void ProfileSyncService::OnConnectionStatusChange(
           base::Bind(&ProfileSyncService::RequestAccessToken,
                      sync_enabled_weak_factory_.GetWeakPtr()));
     }
+    // Make observers aware of the change. This call is unnecessary in the
+    // block below because UpdateAuthErrorState() will notify observers.
+    NotifyObservers();
   } else {
     // Reset backoff time after successful connection.
     if (status == syncer::CONNECTION_OK) {
@@ -1525,6 +1523,20 @@ void ProfileSyncService::OnUserChoseDatatypes(
   if (data_type_manager_)
     data_type_manager_->ResetDataTypeErrors();
   ChangePreferredDataTypes(chosen_types);
+}
+
+void ProfileSyncService::OnUserChangedSyncEverythingOnly(bool sync_everything) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (!engine_ && !HasUnrecoverableError()) {
+    NOTREACHED();
+    return;
+  }
+
+  sync_prefs_.SetKeepEverythingSynced(sync_everything);
+  UpdateSelectedTypesHistogram(sync_everything, GetPreferredDataTypes());
+  if (data_type_manager_)
+    data_type_manager_->ResetDataTypeErrors();
+  ReconfigureDatatypeManager();
 }
 
 void ProfileSyncService::ChangePreferredDataTypes(

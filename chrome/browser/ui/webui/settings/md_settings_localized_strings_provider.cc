@@ -33,6 +33,7 @@
 #include "components/strings/grit/components_strings.h"
 #include "components/subresource_filter/core/browser/subresource_filter_features.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "content/public/common/content_features.h"
 #include "services/device/public/cpp/device_features.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -250,9 +251,8 @@ void AddA11yStrings(content::WebUIDataSource* html_source) {
                           arraysize(localized_strings));
 
 #if defined(OS_CHROMEOS)
-  html_source->AddString(
-      "a11yLearnMoreUrl",
-      GetHelpUrlWithBoard(chrome::kChromeAccessibilityHelpURL));
+  html_source->AddString("a11yLearnMoreUrl",
+                         chrome::kChromeAccessibilityHelpURL);
 
   html_source->AddBoolean(
       "showExperimentalA11yFeatures",
@@ -1319,6 +1319,7 @@ void AddPasswordsAndFormsStrings(content::WebUIDataSource* html_source) {
       {"autofill", IDS_SETTINGS_AUTOFILL},
       {"googlePayments", IDS_SETTINGS_GOOGLE_PAYMENTS},
       {"googlePaymentsCached", IDS_SETTINGS_GOOGLE_PAYMENTS_CACHED},
+      {"autofillFormsLabel", IDS_SETTINGS_AUTOFILL_TOGGLE_LABEL},
       {"addresses", IDS_SETTINGS_AUTOFILL_ADDRESSES_HEADING},
       {"addAddressTitle", IDS_SETTINGS_AUTOFILL_ADDRESSES_ADD_TITLE},
       {"editAddressTitle", IDS_SETTINGS_AUTOFILL_ADDRESSES_EDIT_TITLE},
@@ -1340,6 +1341,8 @@ void AddPasswordsAndFormsStrings(content::WebUIDataSource* html_source) {
       {"addCreditCardTitle", IDS_SETTINGS_ADD_CREDIT_CARD_TITLE},
       {"autofillDetail", IDS_SETTINGS_AUTOFILL_DETAIL},
       {"passwords", IDS_SETTINGS_PASSWORDS},
+      {"passwordsSavePasswordsLabel",
+       IDS_SETTINGS_PASSWORDS_SAVE_PASSWORDS_TOGGLE_LABEL},
       {"passwordsAutosigninLabel",
        IDS_SETTINGS_PASSWORDS_AUTOSIGNIN_CHECKBOX_LABEL},
       {"passwordsAutosigninDescription",
@@ -1499,6 +1502,9 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
     {"editPerson", IDS_SETTINGS_EDIT_PERSON},
     {"profileNameAndPicture", IDS_SETTINGS_PROFILE_NAME_AND_PICTURE},
     {"showShortcutLabel", IDS_SETTINGS_PROFILE_SHORTCUT_TOGGLE_LABEL},
+    {"syncWillStart", IDS_SETTINGS_SYNC_WILL_START},
+    {"syncSettingsSavedToast", IDS_SETTINGS_SYNC_SETTINGS_SAVED_TOAST_LABEL},
+    {"cancelSync", IDS_SETTINGS_SYNC_SETTINGS_CANCEL_SYNC},
 #endif  // defined(OS_CHROMEOS)
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
     {"peopleSignIn", IDS_SETTINGS_PEOPLE_SIGN_IN},
@@ -1509,6 +1515,7 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
     {"syncAsName", IDS_SETTINGS_PEOPLE_SYNC_AS_NAME},
     {"syncedToName", IDS_SETTINGS_PEOPLE_SYNCED_AS_NAME},
     {"turnOffSync", IDS_SETTINGS_PEOPLE_SYNC_TURN_OFF},
+    {"syncNotWorking", IDS_SETTINGS_PEOPLE_SYNC_NOT_WORKING},
 #endif
     {"syncOverview", IDS_SETTINGS_SYNC_OVERVIEW},
     {"syncDisabledByAdministrator",
@@ -1529,6 +1536,7 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
     {"syncDisconnectExplanation", IDS_SETTINGS_SYNC_DISCONNECT_EXPLANATION},
     {"syncDisconnectConfirm", IDS_SETTINGS_SYNC_DISCONNECT_CONFIRM},
     {"sync", IDS_SETTINGS_SYNC},
+    {"syncAndPersonalization", IDS_SETTINGS_SYNC_SYNC_AND_PERSONALIZATION},
     {"syncPageTitle", IDS_SETTINGS_SYNC_PAGE_TITLE},
     {"syncLoading", IDS_SETTINGS_SYNC_LOADING},
     {"syncTimeout", IDS_SETTINGS_SYNC_TIMEOUT},
@@ -2184,6 +2192,13 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
     {"siteSettingsAdsBlock", IDS_SETTINGS_SITE_SETTINGS_ADS_BLOCK},
     {"siteSettingsAdsBlockRecommended",
      IDS_SETTINGS_SITE_SETTINGS_ADS_BLOCK_RECOMMENDED},
+    {"siteSettingsPaymentHandler", IDS_SETTINGS_SITE_SETTINGS_PAYMENT_HANDLER},
+    {"siteSettingsPaymentHandlerAllow",
+     IDS_SETTINGS_SITE_SETTINGS_PAYMENT_HANDLER_ALLOW},
+    {"siteSettingsPaymentHandlerAllowRecommended",
+     IDS_SETTINGS_SITE_SETTINGS_PAYMENT_HANDLER_ALLOW_RECOMMENDED},
+    {"siteSettingsPaymentHandlerBlock",
+     IDS_SETTINGS_SITE_SETTINGS_PAYMENT_HANDLER_BLOCK},
   };
   AddLocalizedStringsBulk(html_source, localized_strings,
                           arraysize(localized_strings));
@@ -2207,6 +2222,10 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
   html_source->AddBoolean(
       "enableSensorsContentSetting",
       base::FeatureList::IsEnabled(features::kGenericSensorExtraClasses));
+
+  html_source->AddBoolean(
+      "enablePaymentHandlerContentSetting",
+      base::FeatureList::IsEnabled(features::kServiceWorkerPaymentApps));
 
   if (PluginUtils::ShouldPreferHtmlOverPlugins(
           HostContentSettingsMapFactory::GetForProfile(profile))) {

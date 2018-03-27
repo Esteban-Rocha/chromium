@@ -12,6 +12,8 @@
 #include "components/url_formatter/elide_url.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/base_event_utils.h"
+#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/geometry/size.h"
@@ -42,7 +44,6 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/native_cursor.h"
-#include "ui/views/view_targeter.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -533,44 +534,6 @@ class InlineSettingsRadioButton : public views::RadioButton {
 // NotificationViewMD
 // ////////////////////////////////////////////////////////////
 
-views::View* NotificationViewMD::TargetForRect(views::View* root,
-                                               const gfx::Rect& rect) {
-  CHECK_EQ(root, this);
-
-  // TODO(tetsui): Modify this function to support rect-based event
-  // targeting. Using the center point of |rect| preserves this function's
-  // expected behavior for the time being.
-  gfx::Point point = rect.CenterPoint();
-
-  // Want to return this for underlying views, otherwise GetCursor is not
-  // called. But buttons are exceptions, they'll have their own event handlings.
-  std::vector<views::View*> buttons;
-  if (header_row_->expand_button())
-    buttons.push_back(header_row_->expand_button());
-  buttons.push_back(header_row_);
-
-  if (action_buttons_row_->visible()) {
-    buttons.insert(buttons.end(), action_buttons_.begin(),
-                   action_buttons_.end());
-  }
-  if (inline_reply_->visible())
-    buttons.push_back(inline_reply_);
-  if (settings_row_) {
-    buttons.push_back(block_all_button_);
-    buttons.push_back(dont_block_button_);
-    buttons.push_back(settings_done_button_);
-  }
-
-  for (size_t i = 0; i < buttons.size(); ++i) {
-    gfx::Point point_in_child = point;
-    ConvertPointToTarget(this, buttons[i], &point_in_child);
-    if (buttons[i]->HitTestPoint(point_in_child))
-      return buttons[i]->GetEventHandlerForPoint(point_in_child);
-  }
-
-  return root;
-}
-
 void NotificationViewMD::CreateOrUpdateViews(const Notification& notification) {
   CreateOrUpdateContextTitleView(notification);
   CreateOrUpdateTitleView(notification);
@@ -591,8 +554,7 @@ void NotificationViewMD::CreateOrUpdateViews(const Notification& notification) {
 
 NotificationViewMD::NotificationViewMD(const Notification& notification)
     : MessageView(notification),
-      ink_drop_container_(new views::InkDropContainerView()),
-      clickable_(notification.clickable()) {
+      ink_drop_container_(new views::InkDropContainerView()) {
   SetLayoutManager(std::make_unique<views::BoxLayout>(
       views::BoxLayout::kVertical, gfx::Insets(), 0));
 
@@ -657,8 +619,6 @@ NotificationViewMD::NotificationViewMD(const Notification& notification)
   CreateOrUpdateViews(notification);
   UpdateControlButtonsVisibilityWithNotification(notification);
 
-  SetEventTargeter(
-      std::unique_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
   set_notify_enter_exit_on_child(true);
 
   click_activator_ = std::make_unique<ClickActivator>(this);
@@ -721,30 +681,28 @@ void NotificationViewMD::ScrollRectToVisible(const gfx::Rect& rect) {
   views::View::ScrollRectToVisible(GetLocalBounds());
 }
 
-gfx::NativeCursor NotificationViewMD::GetCursor(const ui::MouseEvent& event) {
-  // Do not change the cursor on a notification that isn't clickable.
-  if (!clickable_)
-    return views::View::GetCursor(event);
-
-  // Do not change the cursor on the actions row.
-  if (expanded_) {
-    DCHECK(actions_row_);
-    gfx::Point point_in_child = event.location();
-    ConvertPointToTarget(this, actions_row_, &point_in_child);
-    if (actions_row_->HitTestPoint(point_in_child))
-      return views::View::GetCursor(event);
-  }
-
-  // Do not change the cursor when inline settings is shown.
-  if (settings_row_ && settings_row_->visible())
-    return views::View::GetCursor(event);
-
-  return views::GetNativeHandCursor();
+bool NotificationViewMD::OnMousePressed(const ui::MouseEvent& event) {
+  last_mouse_pressed_timestamp_ = base::TimeTicks(event.time_stamp());
+  return true;
 }
 
-bool NotificationViewMD::OnMousePressed(const ui::MouseEvent& event) {
+bool NotificationViewMD::OnMouseDragged(const ui::MouseEvent& event) {
+  return true;
+}
+
+void NotificationViewMD::OnMouseReleased(const ui::MouseEvent& event) {
   if (!event.IsOnlyLeftMouseButton())
-    return false;
+    return;
+
+  // The mouse has been clicked for a long time.
+  if (ui::EventTimeStampToSeconds(event.time_stamp()) -
+          ui::EventTimeStampToSeconds(last_mouse_pressed_timestamp_) >
+      ui::GetGestureProviderConfig(
+          ui::GestureProviderConfigType::CURRENT_PLATFORM)
+          .gesture_detector_config.longpress_timeout.InSecondsF()) {
+    ToggleInlineSettings(event);
+    return;
+  }
 
   // Ignore click of actions row outside action buttons.
   if (expanded_) {
@@ -752,14 +710,14 @@ bool NotificationViewMD::OnMousePressed(const ui::MouseEvent& event) {
     gfx::Point point_in_child = event.location();
     ConvertPointToTarget(this, actions_row_, &point_in_child);
     if (actions_row_->HitTestPoint(point_in_child))
-      return true;
+      return;
   }
 
   // Ignore clicks of outside region when inline settings is shown.
   if (settings_row_ && settings_row_->visible())
-    return true;
+    return;
 
-  return MessageView::OnMousePressed(event);
+  MessageView::OnMouseReleased(event);
 }
 
 void NotificationViewMD::OnMouseEvent(ui::MouseEvent* event) {
@@ -778,7 +736,7 @@ void NotificationViewMD::OnMouseEvent(ui::MouseEvent* event) {
 
 void NotificationViewMD::OnGestureEvent(ui::GestureEvent* event) {
   if (event->type() == ui::ET_GESTURE_LONG_TAP) {
-    ToggleInlineSettings(*event->AsLocatedEvent());
+    ToggleInlineSettings(*event);
     return;
   }
   MessageView::OnGestureEvent(event);
@@ -845,7 +803,7 @@ void NotificationViewMD::ButtonPressed(views::Button* sender,
   if (sender == settings_done_button_) {
     if (block_all_button_->checked())
       MessageCenter::Get()->DisableNotification(id);
-    ToggleInlineSettings(*event.AsLocatedEvent());
+    ToggleInlineSettings(event);
     return;
   }
 }
@@ -1281,7 +1239,7 @@ void NotificationViewMD::UpdateViewForExpandedState(bool expanded) {
   }
 }
 
-void NotificationViewMD::ToggleInlineSettings(const ui::LocatedEvent& event) {
+void NotificationViewMD::ToggleInlineSettings(const ui::Event& event) {
   DCHECK(settings_row_);
 
   bool inline_settings_visible = !settings_row_->visible();
@@ -1345,8 +1303,7 @@ void NotificationViewMD::SetManuallyExpandedOrCollapsed(bool value) {
   manually_expanded_or_collapsed_ = value;
 }
 
-void NotificationViewMD::OnSettingsButtonPressed(
-    const ui::LocatedEvent& event) {
+void NotificationViewMD::OnSettingsButtonPressed(const ui::Event& event) {
   if (settings_row_)
     ToggleInlineSettings(event);
   else
@@ -1358,35 +1315,37 @@ void NotificationViewMD::Activate() {
   GetWidget()->Activate();
 }
 
-void NotificationViewMD::AddBackgroundAnimation(const ui::LocatedEvent& event) {
-  header_row_->SetSubpixelRenderingEnabled(false);
-
+void NotificationViewMD::AddBackgroundAnimation(const ui::Event& event) {
   SetInkDropMode(InkDropMode::ON_NO_GESTURE_HANDLER);
+  // In case the animation is triggered from keyboard operation.
+  if (!event.IsLocatedEvent()) {
+    AnimateInkDrop(views::InkDropState::ACTION_PENDING, nullptr);
+    return;
+  }
 
   // Convert the point of |event| from the coordinate system of
   // |control_buttons_view_| to that of NotificationViewMD, create a new
   // LocatedEvent which has the new point.
   views::View* target = static_cast<views::View*>(event.target());
-  const gfx::Point& location = event.location();
+  const gfx::Point& location = event.AsLocatedEvent()->location();
   gfx::Point converted_location(location);
   View::ConvertPointToTarget(target, this, &converted_location);
   std::unique_ptr<ui::Event> cloned_event = ui::Event::Clone(event);
   ui::LocatedEvent* cloned_located_event = cloned_event->AsLocatedEvent();
   cloned_located_event->set_location(converted_location);
 
-  if (View::HitTestPoint(event.location())) {
+  if (View::HitTestPoint(event.AsLocatedEvent()->location())) {
     AnimateInkDrop(views::InkDropState::ACTION_PENDING,
                    ui::LocatedEvent::FromIfValid(cloned_located_event));
   }
 }
 
 void NotificationViewMD::RemoveBackgroundAnimation() {
-  header_row_->SetSubpixelRenderingEnabled(true);
-
   AnimateInkDrop(views::InkDropState::HIDDEN, nullptr);
 }
 
 void NotificationViewMD::AddInkDropLayer(ui::Layer* ink_drop_layer) {
+  GetInkDrop()->AddObserver(this);
   header_row_->SetPaintToLayer();
   header_row_->layer()->SetFillsBoundsOpaquely(false);
   block_all_button_->SetPaintToLayer();
@@ -1406,6 +1365,7 @@ void NotificationViewMD::RemoveInkDropLayer(ui::Layer* ink_drop_layer) {
   settings_done_button_->DestroyLayer();
   ResetInkDropMask();
   ink_drop_container_->RemoveInkDropLayer(ink_drop_layer);
+  GetInkDrop()->RemoveObserver(this);
 }
 
 std::unique_ptr<views::InkDropRipple> NotificationViewMD::CreateInkDropRipple()
@@ -1417,6 +1377,16 @@ std::unique_ptr<views::InkDropRipple> NotificationViewMD::CreateInkDropRipple()
 
 SkColor NotificationViewMD::GetInkDropBaseColor() const {
   return kSettingsRowBackgroundColor;
+}
+
+void NotificationViewMD::InkDropAnimationStarted() {
+  header_row_->SetSubpixelRenderingEnabled(false);
+}
+
+void NotificationViewMD::InkDropRippleAnimationEnded(
+    views::InkDropState ink_drop_state) {
+  if (ink_drop_state == views::InkDropState::HIDDEN)
+    header_row_->SetSubpixelRenderingEnabled(true);
 }
 
 }  // namespace message_center

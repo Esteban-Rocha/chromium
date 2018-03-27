@@ -60,6 +60,7 @@
 #include "core/html_names.h"
 #include "core/input/EventHandler.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/inspector/IdentifiersFactory.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FormSubmission.h"
@@ -77,9 +78,9 @@
 #include "core/probe/CoreProbes.h"
 #include "core/svg/graphics/SVGImage.h"
 #include "core/xml/parser/XMLDocumentParser.h"
+#include "platform/FrameScheduler.h"
 #include "platform/Histogram.h"
 #include "platform/InstanceCounters.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/bindings/DOMWrapperWorld.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
@@ -1135,11 +1136,10 @@ void FrameLoader::CommitProvisionalLoad() {
   if (!PrepareForCommit())
     return;
 
-  // If we are loading the mainframe, or a frame that is a local root, it is
-  // important to explicitly set the event listenener properties to Nothing as
-  // this triggers notifications to the client. Clients may assume the presence
-  // of handlers for touch and wheel events, so these notifications tell it
-  // there are (presently) no handlers.
+  // If we are loading a local root, it is important to explicitly set the event
+  // listener properties to Nothing as this triggers notifications to the
+  // client. Clients may assume the presence of handlers for touch and wheel
+  // events, so these notifications tell it there are (presently) no handlers.
   if (frame_->IsLocalRoot()) {
     frame_->GetPage()->GetChromeClient().SetEventListenerProperties(
         frame_, WebEventListenerClass::kTouchStartOrMove,
@@ -1612,7 +1612,7 @@ void FrameLoader::StartLoad(FrameLoadRequest& frame_load_request,
   }
 
   DCHECK(!frame_load_request.GetResourceRequest().IsSameDocumentNavigation());
-  frame_->FrameScheduler()->DidStartProvisionalLoad(frame_->IsMainFrame());
+  frame_->GetFrameScheduler()->DidStartProvisionalLoad(frame_->IsMainFrame());
 
   // TODO(ananta):
   // We should get rid of the dependency on the DocumentLoader in consumers of
@@ -1803,10 +1803,7 @@ void FrameLoader::RecordLatestRequiredCSP() {
 std::unique_ptr<TracedValue> FrameLoader::ToTracedValue() const {
   std::unique_ptr<TracedValue> traced_value = TracedValue::Create();
   traced_value->BeginDictionary("frame");
-  traced_value->SetString(
-      "id_ref", String::Format("0x%" PRIx64,
-                               static_cast<uint64_t>(
-                                   reinterpret_cast<uintptr_t>(frame_.Get()))));
+  traced_value->SetString("id_ref", IdentifiersFactory::FrameId(frame_.Get()));
   traced_value->EndDictionary();
   traced_value->SetBoolean("isLoadingMainFrame", IsLoadingMainFrame());
   traced_value->SetString("stateMachine", state_machine_.ToString());

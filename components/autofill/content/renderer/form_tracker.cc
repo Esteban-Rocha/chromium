@@ -126,6 +126,9 @@ void FormTracker::FormControlDidChangeImpl(
     const WebFormControlElement& element,
     Observer::ElementChangeSource change_source) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(form_tracker_sequence_checker_);
+  // Render frame could be gone as this is the post task.
+  if (!render_frame()) return;
+
   if (element.Form().IsNull()) {
     last_interacted_formless_element_ = element;
   } else {
@@ -140,8 +143,10 @@ void FormTracker::FormControlDidChangeImpl(
 void FormTracker::DidCommitProvisionalLoad(bool is_new_navigation,
                                            bool is_same_document_navigation) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(form_tracker_sequence_checker_);
-  if (!is_same_document_navigation)
+  if (!is_same_document_navigation) {
+    ResetLastInteractedElements();
     return;
+  }
 
   FireSubmissionIfFormDisappear(SubmissionSource::SAME_DOCUMENT_NAVIGATION);
 }

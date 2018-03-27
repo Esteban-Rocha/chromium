@@ -51,9 +51,9 @@
 #include "platform/graphics/paint/ForeignLayerDisplayItem.h"
 #include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/PaintRecorder.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
 #include "public/platform/WebCoalescedInputEvent.h"
@@ -769,13 +769,12 @@ TEST_F(WebPluginContainerTest, GestureLongPressReachesPlugin) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
 
   // First, send an event that doesn't hit the plugin to verify that the
   // plugin doesn't receive it.
-  event.x = 0;
-  event.y = 0;
+  event.SetPositionInWidget(WebFloatPoint(0, 0));
 
   web_view->HandleInputEvent(WebCoalescedInputEvent(event));
   RunPendingTasks();
@@ -785,8 +784,8 @@ TEST_F(WebPluginContainerTest, GestureLongPressReachesPlugin) {
   // Next, send an event that does hit the plugin, and verify it does receive
   // it.
   WebRect rect = plugin_container_one_element.BoundsInViewport();
-  event.x = rect.x + rect.width / 2;
-  event.y = rect.y + rect.height / 2;
+  event.SetPositionInWidget(
+      WebFloatPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
 
   web_view->HandleInputEvent(WebCoalescedInputEvent(event));
   RunPendingTasks();
@@ -1186,6 +1185,31 @@ TEST_F(WebPluginContainerTest, IsRectTopmostTest) {
   web_view_helper.Reset();
 
   EXPECT_FALSE(plugin_container_impl->IsRectTopmost(rect));
+}
+
+// Verify that IsRectTopmost works with odd and even dimensions.
+TEST_F(WebPluginContainerTest, IsRectTopmostTestWithOddAndEvenDimensions) {
+  RegisterMockedURL("plugin_container.html");
+  // Must outlive |web_view_helper|.
+  TestPluginWebFrameClient plugin_web_frame_client;
+  FrameTestHelpers::WebViewHelper web_view_helper;
+  WebViewImpl* web_view = web_view_helper.InitializeAndLoad(
+      base_url_ + "plugin_container.html", &plugin_web_frame_client);
+  EnablePlugins(web_view, WebSize(300, 300));
+
+  WebPluginContainerImpl* even_plugin_container_impl =
+      ToWebPluginContainerImpl(GetWebPluginContainer(
+          web_view, WebString::FromUTF8("translated-plugin")));
+  even_plugin_container_impl->SetFrameRect(IntRect(0, 0, 300, 300));
+  auto even_rect = even_plugin_container_impl->GetElement().BoundsInViewport();
+  EXPECT_TRUE(even_plugin_container_impl->IsRectTopmost(even_rect));
+
+  WebPluginContainerImpl* odd_plugin_container_impl =
+      ToWebPluginContainerImpl(GetWebPluginContainer(
+          web_view, WebString::FromUTF8("odd-dimensions-plugin")));
+  odd_plugin_container_impl->SetFrameRect(IntRect(0, 0, 300, 300));
+  auto odd_rect = odd_plugin_container_impl->GetElement().BoundsInViewport();
+  EXPECT_TRUE(odd_plugin_container_impl->IsRectTopmost(odd_rect));
 }
 
 TEST_F(WebPluginContainerTest, ClippedRectsForIframedElement) {

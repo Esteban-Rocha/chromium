@@ -15,9 +15,9 @@
 #include "media/base/cdm_config.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_helpers.h"
+#include "media/mojo/buildflags.h"
 #include "media/mojo/clients/mojo_demuxer_stream_impl.h"
 #include "media/mojo/common/media_type_converters.h"
-#include "media/mojo/features.h"
 #include "media/mojo/interfaces/constants.mojom.h"
 #include "media/mojo/interfaces/content_decryption_module.mojom.h"
 #include "media/mojo/interfaces/decryptor.mojom.h"
@@ -122,8 +122,9 @@ class MediaServiceTest : public service_manager::test::ServiceTest {
 
   void InitializeRenderer(const VideoDecoderConfig& video_config,
                           bool expected_result) {
-    interface_factory_->CreateRenderer(std::string(),
-                                       mojo::MakeRequest(&renderer_));
+    interface_factory_->CreateRenderer(
+        media::mojom::HostedRendererType::kDefault, std::string(),
+        mojo::MakeRequest(&renderer_));
 
     video_stream_.set_video_decoder_config(video_config);
 

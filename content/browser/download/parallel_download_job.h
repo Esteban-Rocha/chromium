@@ -11,8 +11,8 @@
 
 #include "base/macros.h"
 #include "base/timer/timer.h"
-#include "content/browser/download/download_job_impl.h"
-#include "content/browser/download/download_worker.h"
+#include "components/download/public/common/download_job_impl.h"
+#include "components/download/public/common/download_worker.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -20,13 +20,15 @@ namespace content {
 // DownloadJob that can create concurrent range requests to fetch different
 // parts of the file.
 // The original request is hold in base class.
-class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
-                                           public DownloadWorker::Delegate {
+class CONTENT_EXPORT ParallelDownloadJob
+    : public download::DownloadJobImpl,
+      public download::DownloadWorker::Delegate {
  public:
   ParallelDownloadJob(
-      DownloadItemImpl* download_item,
+      download::DownloadItem* download_item,
       std::unique_ptr<download::DownloadRequestHandleInterface> request_handle,
-      const download::DownloadCreateInfo& create_info);
+      const download::DownloadCreateInfo& create_info,
+      scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory);
   ~ParallelDownloadJob() override;
 
   // DownloadJobImpl implementation.
@@ -37,9 +39,10 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
 
  protected:
   // DownloadJobImpl implementation.
-  void OnDownloadFileInitialized(DownloadFile::InitializeCallback callback,
-                                 download::DownloadInterruptReason result,
-                                 int64_t bytes_wasted) override;
+  void OnDownloadFileInitialized(
+      download::DownloadFile::InitializeCallback callback,
+      download::DownloadInterruptReason result,
+      int64_t bytes_wasted) override;
 
   // Virtual for testing.
   virtual int GetParallelRequestCount() const;
@@ -47,7 +50,7 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
   virtual int GetMinRemainingTimeInSeconds() const;
 
   using WorkerMap =
-      std::unordered_map<int64_t, std::unique_ptr<DownloadWorker>>;
+      std::unordered_map<int64_t, std::unique_ptr<download::DownloadWorker>>;
 
   // Map from the offset position of the slice to the worker that downloads the
   // slice.
@@ -58,8 +61,8 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
 
   // DownloadWorker::Delegate implementation.
   void OnInputStreamReady(
-      DownloadWorker* worker,
-      std::unique_ptr<DownloadManager::InputStream> input_stream) override;
+      download::DownloadWorker* worker,
+      std::unique_ptr<download::InputStream> input_stream) override;
 
   // Build parallel requests after a delay, to effectively measure the single
   // stream bandwidth.
@@ -101,6 +104,9 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
 
   // If the download progress is canceled.
   bool is_canceled_;
+
+  // SharedURLLoaderFactory to issue network requests.
+  scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ParallelDownloadJob);
 };

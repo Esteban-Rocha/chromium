@@ -444,13 +444,13 @@ class RenderViewImplScaleFactorTest : public RenderViewImplBlinkSettingsTest {
     ResizeParams params;
     params.screen_info.device_scale_factor = dsf;
     params.new_size = gfx::Size(100, 100);
-    params.physical_backing_size = gfx::Size(200, 200);
+    params.compositor_viewport_pixel_size = gfx::Size(200, 200);
     params.visible_viewport_size = params.new_size;
     params.needs_resize_ack = false;
     params.content_source_id = view()->GetContentSourceId();
     view()->OnResize(params);
-    ASSERT_EQ(dsf, view()->GetWebDeviceScaleFactor());
-    ASSERT_EQ(dsf, view()->GetOriginalDeviceScaleFactor());
+    ASSERT_EQ(dsf, view()->GetWebScreenInfo().device_scale_factor);
+    ASSERT_EQ(dsf, view()->GetOriginalScreenInfo().device_scale_factor);
   }
 
   void TestEmulatedSizeDprDsf(int width, int height, float dpr,
@@ -517,10 +517,9 @@ static blink::WebCoalescedInputEvent FatTap(int x,
                                             int height) {
   blink::WebGestureEvent event(
       blink::WebInputEvent::kGestureTap, blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = blink::kWebGestureDeviceTouchscreen;
-  event.x = x;
-  event.y = y;
+      blink::WebInputEvent::GetStaticTimeStampForTests(),
+      blink::kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(gfx::PointF(x, y));
   event.data.tap.width = width;
   event.data.tap.height = height;
   return blink::WebCoalescedInputEvent(event);
@@ -800,6 +799,61 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
   EXPECT_EQ(blink::kWebNavigationPolicyIgnore, policy);
 
   CloseRenderView(new_view);
+}
+
+// This test verifies that when device emulation is enabled, RenderFrameProxy
+// continues to receive the original ScreenInfo and not the emualted
+// ScreenInfo.
+TEST_F(RenderViewImplScaleFactorTest, DeviceEmulationWithOOPIF) {
+  DoSetUp();
+
+  // This test should only run with --site-per-process.
+  if (!AreAllSitesIsolatedForTesting())
+    return;
+
+  const float device_scale = 2.0f;
+  float compositor_dsf = IsUseZoomForDSFEnabled() ? 1.f : device_scale;
+  SetDeviceScaleFactor(device_scale);
+
+  LoadHTML(
+      "<body style='min-height:1000px;'>"
+      "  <iframe src='data:text/html,frame 1'></iframe>"
+      "</body>");
+
+  WebFrame* web_frame = frame()->GetWebFrame();
+  ASSERT_TRUE(web_frame->FirstChild()->IsWebLocalFrame());
+  TestRenderFrame* child_frame = static_cast<TestRenderFrame*>(
+      RenderFrame::FromWebFrame(web_frame->FirstChild()->ToWebLocalFrame()));
+  ASSERT_TRUE(child_frame);
+
+  child_frame->SwapOut(kProxyRoutingId + 1, true,
+                       ReconstructReplicationStateForTesting(child_frame));
+  EXPECT_TRUE(web_frame->FirstChild()->IsWebRemoteFrame());
+  RenderFrameProxy* child_proxy = RenderFrameProxy::FromWebFrame(
+      web_frame->FirstChild()->ToWebRemoteFrame());
+  ASSERT_TRUE(child_proxy);
+
+  // Verify that the system device scale factor has propagated into the
+  // RenderFrameProxy.
+  EXPECT_EQ(device_scale,
+            view()->GetWidget()->GetWebScreenInfo().device_scale_factor);
+  EXPECT_EQ(device_scale,
+            view()->GetWidget()->GetOriginalScreenInfo().device_scale_factor);
+  EXPECT_EQ(device_scale, child_proxy->screen_info().device_scale_factor);
+
+  TestEmulatedSizeDprDsf(640, 480, 3.f, compositor_dsf);
+
+  // Verify that the RenderFrameProxy device scale factor is still the same.
+  EXPECT_EQ(3.f, view()->GetWidget()->GetWebScreenInfo().device_scale_factor);
+  EXPECT_EQ(device_scale,
+            view()->GetWidget()->GetOriginalScreenInfo().device_scale_factor);
+  EXPECT_EQ(device_scale, child_proxy->screen_info().device_scale_factor);
+
+  view()->OnDisableDeviceEmulation();
+
+  blink::WebDeviceEmulationParams params;
+  view()->OnEnableDeviceEmulation(params);
+  // Don't disable here to test that emulation is being shutdown properly.
 }
 
 // Verify that security origins are replicated properly to RenderFrameProxies
@@ -1469,8 +1523,7 @@ TEST_F(RenderViewImplTest, AndroidContextMenuSelectionOrdering) {
   WebGestureEvent gesture_event(
       WebInputEvent::kGestureLongPress, WebInputEvent::kNoModifiers,
       ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
-  gesture_event.x = 250;
-  gesture_event.y = 250;
+  gesture_event.SetPositionInWidget(gfx::PointF(250, 250));
 
   SendWebGestureEvent(gesture_event);
 
@@ -2379,6 +2432,54 @@ TEST_F(RenderViewImplTest, DispatchBeforeUnloadCanDetachFrame) {
   // Simulates a BeforeUnload IPC received from the browser.
   frame()->OnMessageReceived(
       FrameMsg_BeforeUnload(frame()->GetRoutingID(), false));
+
+  render_thread_->sink().RemoveFilter(callback_filter.get());
+}
+
+// IPC Listener that runs a callback when a javascript modal dialog is
+// triggered.
+class AlertCallbackFilter : public IPC::Listener {
+ public:
+  explicit AlertCallbackFilter(
+      base::RepeatingCallback<void(const base::string16&)> callback)
+      : callback_(std::move(callback)) {}
+
+  bool OnMessageReceived(const IPC::Message& msg) override {
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(AlertCallbackFilter, msg)
+      IPC_MESSAGE_HANDLER(FrameHostMsg_RunJavaScriptDialog,
+                          OnRunJavaScriptDialog)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+    return handled;
+  }
+
+  // Not really part of IPC::Listener but required to intercept a sync msg.
+  void Send(const IPC::Message* msg) { delete msg; }
+
+  void OnRunJavaScriptDialog(const base::string16& message,
+                             const base::string16&,
+                             JavaScriptDialogType,
+                             bool*,
+                             base::string16*) {
+    callback_.Run(message);
+  }
+
+ private:
+  base::RepeatingCallback<void(const base::string16&)> callback_;
+};
+
+// Test that invoking one of the modal dialogs doesn't crash.
+TEST_F(RenderViewImplTest, ModalDialogs) {
+  LoadHTML("<body></body>");
+
+  std::unique_ptr<AlertCallbackFilter> callback_filter(new AlertCallbackFilter(
+      base::BindRepeating([](const base::string16& msg) {
+        EXPECT_EQ(base::UTF8ToUTF16("Please don't crash"), msg);
+      })));
+  render_thread_->sink().AddFilter(callback_filter.get());
+
+  frame()->GetWebFrame()->Alert(WebString::FromUTF8("Please don't crash"));
 
   render_thread_->sink().RemoveFilter(callback_filter.get());
 }

@@ -12,10 +12,10 @@
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_features.h"
+#include "ui/app_list/app_list_metrics.h"
 #include "ui/app_list/app_list_util.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_item_view.h"
-#include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/apps_container_view.h"
 #include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/contents_view.h"
@@ -54,6 +54,10 @@ constexpr int kIndexContentsContainer = 1;
 constexpr int kIndexChildItems = 2;
 constexpr int kIndexFolderHeader = 3;
 constexpr int kIndexPageSwitcher = 4;
+
+int GetCompositorActivatedFrameCount(ui::Compositor* compositor) {
+  return compositor ? compositor->activated_frame_count() : 0;
+}
 
 // Transit from the background of the folder item's icon to the opened
 // folder's background when opening the folder. Transit the other way when
@@ -105,6 +109,7 @@ class BackgroundAnimation : public gfx::SlideAnimation,
       folder_view_->background_view()->SetBackground(nullptr);
       folder_view_->background_view()->SchedulePaint();
     }
+    folder_view_->RecordAnimationSmoothness();
   }
 
   void AnimationCanceled(const gfx::Animation* animation) override {
@@ -159,6 +164,7 @@ class FolderItemTitleAnimation : public gfx::SlideAnimation,
   void AnimationEnded(const gfx::Animation* animation) override {
     folder_view_->GetActivatedFolderItemView()->title()->SetEnabledColor(
         to_color_);
+    folder_view_->RecordAnimationSmoothness();
   }
 
   void AnimationCanceled(const gfx::Animation* animation) override {
@@ -252,6 +258,8 @@ class TopIconAnimation : public AppListFolderView::Animation,
         std::find(top_icon_views_.begin(), top_icon_views_.end(), view);
     DCHECK(to_delete != top_icon_views_.end());
     top_icon_views_.erase(to_delete);
+
+    folder_view_->RecordAnimationSmoothness();
 
     // An empty list indicates that all animations are done.
     if (!top_icon_views_.empty())
@@ -391,6 +399,7 @@ class ContentsContainerAnimation : public AppListFolderView::Animation,
     // Reset the transform after animation so that the following folder's
     // preferred bounds is calculated correctly.
     folder_view_->contents_container()->layer()->SetTransform(gfx::Transform());
+    folder_view_->RecordAnimationSmoothness();
   }
 
  private:
@@ -411,16 +420,17 @@ class ContentsContainerAnimation : public AppListFolderView::Animation,
 
 AppListFolderView::AppListFolderView(AppsContainerView* container_view,
                                      AppListModel* model,
-                                     AppListMainView* app_list_main_view)
+                                     ContentsView* contents_view)
     : container_view_(container_view),
-      app_list_main_view_(app_list_main_view),
+      contents_view_(contents_view),
       background_view_(new views::View),
       contents_container_(new views::View),
       folder_header_view_(new FolderHeaderView(this)),
       view_model_(new views::ViewModel),
       model_(model),
       folder_item_(NULL),
-      hide_for_reparent_(false) {
+      hide_for_reparent_(false),
+      animation_start_frame_number_(0) {
   // The background's corner radius cannot be changed in the same layer of the
   // contents container using layer animation, so use another layer to perform
   // such changes.
@@ -434,8 +444,7 @@ AppListFolderView::AppListFolderView(AppsContainerView* container_view,
   AddChildView(contents_container_);
   view_model_->Add(contents_container_, kIndexContentsContainer);
 
-  items_grid_view_ =
-      new AppsGridView(app_list_main_view_->contents_view(), this);
+  items_grid_view_ = new AppsGridView(contents_view_, this);
   items_grid_view_->SetModel(model);
   contents_container_->AddChildView(items_grid_view_);
   view_model_->Add(items_grid_view_, kIndexChildItems);
@@ -477,6 +486,9 @@ void AppListFolderView::SetAppListFolderItem(AppListFolderItem* folder) {
 
 void AppListFolderView::ScheduleShowHideAnimation(bool show,
                                                   bool hide_for_reparent) {
+  animation_start_frame_number_ =
+      GetCompositorActivatedFrameCount(GetCompositor());
+
   hide_for_reparent_ = hide_for_reparent;
 
   items_grid_view_->pagination_model()->SelectPage(0, false);
@@ -553,6 +565,20 @@ bool AppListFolderView::IsAnimationRunning() const {
 
 AppListItemView* AppListFolderView::GetActivatedFolderItemView() {
   return container_view_->apps_grid_view()->activated_folder_item_view();
+}
+
+void AppListFolderView::RecordAnimationSmoothness() {
+  ui::Compositor* compositor = GetCompositor();
+  // Do not record animation smoothness if |compositor| is nullptr.
+  if (!compositor)
+    return;
+
+  const int end_frame_number = GetCompositorActivatedFrameCount(compositor);
+  if (end_frame_number > animation_start_frame_number_) {
+    RecordFolderShowHideAnimationSmoothness(
+        end_frame_number - animation_start_frame_number_,
+        kFolderTransitionInDurationMs, compositor->refresh_rate());
+  }
 }
 
 void AppListFolderView::CalculateIdealBounds() {
@@ -732,12 +758,16 @@ void AppListFolderView::NavigateBack(AppListFolderItem* item,
 }
 
 void AppListFolderView::GiveBackFocusToSearchBox() {
-  app_list_main_view_->search_box_view()->search_box()->RequestFocus();
+  contents_view_->GetSearchBoxView()->search_box()->RequestFocus();
 }
 
 void AppListFolderView::SetItemName(AppListFolderItem* item,
                                     const std::string& name) {
   model_->SetItemName(item, name);
+}
+
+ui::Compositor* AppListFolderView::GetCompositor() {
+  return GetWidget()->GetCompositor();
 }
 
 }  // namespace app_list

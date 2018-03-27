@@ -84,7 +84,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/common/user_agent.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/base/escape.h"
 #include "printing/features/features.h"
 #include "rlz/features/features.h"
@@ -873,7 +873,8 @@ void ManagePasswordsForPage(Browser* browser) {
 void SavePage(Browser* browser) {
   base::RecordAction(UserMetricsAction("SavePage"));
   WebContents* current_tab = browser->tab_strip_model()->GetActiveWebContents();
-  if (current_tab && current_tab->GetContentsMimeType() == "application/pdf")
+  DCHECK(current_tab);
+  if (current_tab->GetContentsMimeType() == "application/pdf")
     base::RecordAction(UserMetricsAction("PDF.SavePage"));
   current_tab->OnSavePage();
 }

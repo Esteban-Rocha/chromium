@@ -47,7 +47,7 @@
 #include "platform/image-decoders/ImageDecoder.h"
 #include "platform/loader/fetch/MemoryCache.h"
 #include "platform/loader/fetch/ResourceRequest.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColorSpaceXform.h"
@@ -77,9 +77,9 @@ class ImageBitmapTest : public ::testing::Test {
     // Garbage collection is required prior to switching out the
     // test's memory cache; image resources are released, evicting
     // them from the cache.
-    ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                           BlinkGC::kGCWithSweep,
-                                           BlinkGC::kForcedGC);
+    ThreadState::Current()->CollectGarbage(
+        BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
+        BlinkGC::kEagerSweeping, BlinkGC::kForcedGC);
 
     ReplaceMemoryCacheForTesting(global_memory_cache_.Release());
   }
@@ -251,9 +251,6 @@ static ImageBitmapOptions PrepareBitmapOptions(
 }
 
 TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionHTMLImageElement) {
-  // Enable experimental canvas features for this test.
-  ScopedExperimentalCanvasFeaturesForTest experimental_canvas_features(true);
-
   HTMLImageElement* image_element =
       HTMLImageElement::Create(*Document::CreateForTest());
 
@@ -366,9 +363,6 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionHTMLImageElement) {
 }
 
 TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionImageBitmap) {
-  // Enable experimental canvas features for this test.
-  ScopedExperimentalCanvasFeaturesForTest experimental_canvas_features(true);
-
   HTMLImageElement* image_element =
       HTMLImageElement::Create(*Document::CreateForTest());
 
@@ -480,9 +474,6 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionImageBitmap) {
 }
 
 TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionStaticBitmapImage) {
-  // Enable experimental canvas features for this test.
-  ScopedExperimentalCanvasFeaturesForTest experimental_canvas_features(true);
-
   SkPaint p;
   p.setColor(SK_ColorRED);
   sk_sp<SkColorSpace> src_rgb_color_space = SkColorSpace::MakeSRGB();
@@ -586,9 +577,6 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionStaticBitmapImage) {
 }
 
 TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionImageData) {
-  // Enable experimental canvas features for this test.
-  ScopedExperimentalCanvasFeaturesForTest experimental_canvas_features(true);
-
   sk_sp<SkColorSpace> src_rgb_color_space = SkColorSpace::MakeSRGB();
   unsigned char data_buffer[4] = {32, 96, 160, 128};
   DOMUint8ClampedArray* data = DOMUint8ClampedArray::Create(data_buffer, 4);
@@ -696,9 +684,6 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionImageData) {
 // ImageBitmap from that does not crash. crbug.com/780358
 TEST_F(ImageBitmapTest,
        MAYBE_CreateImageBitmapFromTooBigImageDataDoesNotCrash) {
-  // Enable experimental canvas features for this test.
-  ScopedExperimentalCanvasFeaturesForTest experimental_canvas_features(true);
-
   ImageData* image_data =
       ImageData::CreateForTest(IntSize(v8::TypedArray::kMaxLength / 16, 1));
   DCHECK(image_data);

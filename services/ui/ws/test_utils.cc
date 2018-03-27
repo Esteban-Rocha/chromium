@@ -170,28 +170,27 @@ void WindowTreeTestApi::StopPointerWatcher() {
   tree_->StopPointerWatcher();
 }
 
-// EventDispatcherTestApi  ----------------------------------------------------
+// EventProcessorTestApi  ----------------------------------------------------
 
-bool EventDispatcherTestApi::IsWindowPointerTarget(
+bool EventProcessorTestApi::IsWindowPointerTarget(
     const ServerWindow* window) const {
-  for (const auto& pair : ed_->pointer_targets_) {
+  for (const auto& pair : ep_->pointer_targets_) {
     if (pair.second.window == window)
       return true;
   }
   return false;
 }
 
-int EventDispatcherTestApi::NumberPointerTargetsForWindow(
-    ServerWindow* window) {
+int EventProcessorTestApi::NumberPointerTargetsForWindow(ServerWindow* window) {
   int count = 0;
-  for (const auto& pair : ed_->pointer_targets_)
+  for (const auto& pair : ep_->pointer_targets_)
     if (pair.second.window == window)
       count++;
   return count;
 }
 
-bool EventDispatcherTestApi::IsObservingWindow(ServerWindow* window) {
-  return ed_->observed_windows_.count(window) > 0;
+bool EventProcessorTestApi::IsObservingWindow(ServerWindow* window) {
+  return ep_->observed_windows_.count(window) > 0;
 }
 
 // TestDisplayBinding ---------------------------------------------------------
@@ -314,6 +313,12 @@ void TestWindowTreeClient::OnEmbed(
   // TODO(sky): add test coverage of |focused_window_id|.
   tracker_.OnEmbed(std::move(root), drawn);
 }
+
+void TestWindowTreeClient::OnEmbedFromToken(
+    const base::UnguessableToken& token,
+    ::ui::mojom::WindowDataPtr root,
+    int64_t display_id,
+    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {}
 
 void TestWindowTreeClient::OnEmbeddedAppDisconnected(Id window) {
   tracker_.OnEmbeddedAppDisconnected(window);

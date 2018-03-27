@@ -11,6 +11,7 @@
 #include "base/guid.h"
 #include "base/logging.h"
 #include "build/build_config.h"
+#include "content/browser/site_isolation_policy.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/browser/login_delegate.h"
 #include "content/public/browser/memory_coordinator_delegate.h"
@@ -22,7 +23,7 @@
 #include "device/geolocation/public/cpp/location_provider.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/cdm_factory.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "net/ssl/client_cert_identity.h"
 #include "net/ssl/client_cert_store.h"
@@ -93,11 +94,8 @@ bool ContentBrowserClient::ShouldLockToOrigin(BrowserContext* browser_context,
   return true;
 }
 
-bool ContentBrowserClient::ShouldBypassDocumentBlocking(
-    const url::Origin& initiator,
-    const GURL& url,
-    ResourceType resource_type) {
-  return false;
+const char* ContentBrowserClient::GetInitatorSchemeBypassingDocumentBlocking() {
+  return nullptr;
 }
 
 void ContentBrowserClient::GetAdditionalViewSourceSchemes(
@@ -179,6 +177,18 @@ bool ContentBrowserClient::ShouldAssignSiteForURL(const GURL& url) {
 std::vector<url::Origin>
 ContentBrowserClient::GetOriginsRequiringDedicatedProcess() {
   return std::vector<url::Origin>();
+}
+
+bool ContentBrowserClient::ShouldEnableStrictSiteIsolation() {
+  // By default --site-per-process is turned off for //content embedders.
+  // This ensures that embedders like ChromeCast and/or Opera are not forced
+  // into --site-per-process.
+  return false;
+}
+
+// static
+bool ContentBrowserClient::IsStrictSiteIsolationEnabled() {
+  return SiteIsolationPolicy::UseDedicatedProcessesForAllSites();
 }
 
 bool ContentBrowserClient::IsFileAccessAllowed(
@@ -263,7 +273,7 @@ void ContentBrowserClient::AllowWorkerFileSystem(
     ResourceContext* context,
     const std::vector<std::pair<int, int> >& render_frames,
     base::Callback<void(bool)> callback) {
-  callback.Run(true);
+  std::move(callback).Run(true);
 }
 
 bool ContentBrowserClient::AllowWorkerIndexedDB(
@@ -686,6 +696,17 @@ scoped_refptr<LoginDelegate> ContentBrowserClient::CreateLoginDelegate(
     const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
         auth_required_callback) {
   return nullptr;
+}
+
+bool ContentBrowserClient::HandleExternalProtocol(
+    const GURL& url,
+    ResourceRequestInfo::WebContentsGetter web_contents_getter,
+    int child_id,
+    NavigationUIData* navigation_data,
+    bool is_main_frame,
+    ui::PageTransition page_transition,
+    bool has_user_gesture) {
+  return true;
 }
 
 }  // namespace content

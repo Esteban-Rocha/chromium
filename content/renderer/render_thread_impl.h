@@ -49,7 +49,7 @@
 #include "content/renderer/media/audio_output_ipc_factory.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "ipc/ipc_sync_channel.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/thread_safe_interface_ptr.h"
@@ -133,7 +133,6 @@ class AecDumpMessageFilter;
 class AudioMessageFilter;
 class AudioRendererMixerManager;
 class BrowserPluginManager;
-class CacheStorageDispatcher;
 class CategorizedWorkerPool;
 class DomStorageDispatcher;
 class FileSystemDispatcher;
@@ -250,7 +249,6 @@ class CONTENT_EXPORT RenderThreadImpl
   bool IsGpuRasterizationForced() override;
   int GetGpuRasterizationMSAASampleCount() override;
   bool IsLcdTextEnabled() override;
-  bool IsDistanceFieldTextEnabled() override;
   bool IsZeroCopyEnabled() override;
   bool IsPartialRasterEnabled() override;
   bool IsGpuMemoryBufferCompositorResourcesEnabled() override;
@@ -642,7 +640,6 @@ class CONTENT_EXPORT RenderThreadImpl
   std::unique_ptr<blink::scheduler::RendererScheduler> renderer_scheduler_;
   std::unique_ptr<RendererBlinkPlatformImpl> blink_platform_impl_;
   std::unique_ptr<ResourceDispatcher> resource_dispatcher_;
-  std::unique_ptr<CacheStorageDispatcher> main_thread_cache_storage_dispatcher_;
   std::unique_ptr<FileSystemDispatcher> file_system_dispatcher_;
   std::unique_ptr<URLLoaderThrottleProvider> url_loader_throttle_provider_;
 
@@ -768,7 +765,6 @@ class CONTENT_EXPORT RenderThreadImpl
   bool is_gpu_rasterization_forced_;
   int gpu_rasterization_msaa_sample_count_;
   bool is_lcd_text_enabled_;
-  bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;
   bool is_gpu_memory_buffer_compositor_resources_enabled_;
   bool is_partial_raster_enabled_;

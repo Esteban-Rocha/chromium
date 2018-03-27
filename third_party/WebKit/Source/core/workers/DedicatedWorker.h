@@ -26,8 +26,9 @@ class DedicatedWorkerMessagingProxy;
 class ExceptionState;
 class ExecutionContext;
 class ScriptState;
+class WorkerClassicScriptLoader;
 class WorkerClients;
-class WorkerScriptLoader;
+class WorkerModuleFetchCoordinator;
 struct GlobalScopeCreationParams;
 
 // Implementation of the Worker interface defined in the WebWorker HTML spec:
@@ -47,6 +48,7 @@ class CORE_EXPORT DedicatedWorker final
  public:
   static DedicatedWorker* Create(ExecutionContext*,
                                  const String& url,
+                                 const WorkerOptions&,
                                  ExceptionState&);
 
   ~DedicatedWorker() override;
@@ -81,8 +83,7 @@ class CORE_EXPORT DedicatedWorker final
 
   WorkerClients* CreateWorkerClients();
 
-  // [classic script only]
-  // Callbacks for |script_loader_|.
+  // Callbacks for |classic_script_loader_|.
   void OnResponse();
   void OnFinished(const v8_inspector::V8StackTraceId&);
 
@@ -93,7 +94,9 @@ class CORE_EXPORT DedicatedWorker final
   const WorkerOptions options_;
   const Member<DedicatedWorkerMessagingProxy> context_proxy_;
 
-  scoped_refptr<WorkerScriptLoader> script_loader_;
+  scoped_refptr<WorkerClassicScriptLoader> classic_script_loader_;
+
+  Member<WorkerModuleFetchCoordinator> module_fetch_coordinator_;
 };
 
 }  // namespace blink

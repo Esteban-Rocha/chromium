@@ -15,6 +15,12 @@
   <message name="IDS_KSV_CLEAR_SEARCHBOX_ACCESSIBILITY_NAME" desc="Accessibility name for the button that clears all text from the search box.">
     Clear searchbox text
   </message>
+  <message name="IDS_KSV_SEARCH_BOX_ACCESSIBILITY_VALUE_WITH_RESULTS" desc="Accessibility value for the search box with searched results.">
+    Displaying <ph name="n">$1<ex>1</ex></ph> search results for <ph name="query">$2<ex>a</ex></ph>
+  </message>
+  <message name="IDS_KSV_SEARCH_BOX_ACCESSIBILITY_VALUE_WITHOUT_RESULTS" desc="Accessibility value for the search box without searched results.">
+    No search result for <ph name="query">$1<ex>a</ex></ph>
+  </message>
 
   <!-- Search illustration -->
   <message name="IDS_KSV_SEARCH_NO_RESULT" desc="No search results.">
@@ -58,7 +64,10 @@
     Launcher
   </message>
 
-  <!-- Keys with special meaning -->
+  <!-- Keys with special label -->
+  <message name="IDS_KSV_KEY_ESCAPE" desc="Name of [Esc] key. Shouldn't be translated in many languages.">
+    Esc
+  </message>
   <message name="IDS_KSV_KEY_SPACE" desc="Name of [Space] key.">
     Space
   </message>
@@ -67,6 +76,9 @@
   </message>
   <message name="IDS_KSV_KEY_FULLSCREEN" desc="Name of the key on a Chromebook keyboard that triggers the fullscreen.">
     Fullscreen key
+  </message>
+  <message name="IDS_KSV_KEY_NO_MAPPING" desc="Alternative string to display if no meaning found for the key.">
+    Not supported with current keyboard layout
   </message>
 
   <!-- Generic shortcut strings -->
@@ -112,7 +124,7 @@
     Press and hold <ph name="alt">$1<ex>Alt</ex></ph>, tap <ph name="tab">$2<ex>v</ex></ph> until you get to the window you want to open, then release.
   </message>
   <message name="IDS_KSV_DESCRIPTION_CYCLE_BACKWARD_MRU" desc="Description of the command in keyboard shortcut viewer.">
-    Open the window you used least recently
+    Open the window that has been unused for the longest time
   </message>
   <message name="IDS_KSV_SHORTCUT_CYCLE_BACKWARD_MRU" desc="Human readable version of the keyboard shortcut.">
     Press and hold <ph name="alt">$1<ex>Alt</ex></ph><ph name="separator">$2<ex>+</ex></ph><ph name="shift">$3<ex>Shift</ex></ph>, tap <ph name="tab">$4<ex>v</ex></ph> until you get to the window you want to open, then release.
@@ -271,7 +283,7 @@
     Highlight the bookmarks bar (if shown)
   </message>
   <message name="IDS_KSV_DESCRIPTION_IDC_FOCUS_SEARCH" desc="Description of the command in keyboard shortcut viewer.">
-    Focus address bar on search
+    Place focus in search address bar
   </message>
   <message name="IDS_KSV_SHORTCUT_IDC_FOCUS_SEARCH" desc="Description of the command in keyboard shortcut viewer.">
     <ph name="ctrl">$1<ex>Ctrl</ex></ph><ph name="separator">$2<ex>+</ex></ph><ph name="k">$3<ex>v</ex></ph> or <ph name="e">$4<ex>v</ex></ph>
@@ -295,7 +307,7 @@
     Paste content from the clipboard
   </message>
   <message name="IDS_KSV_DESCRIPTION_SELECT_NUMBERED_TAB" desc="Description of the command in keyboard shortcut viewer.">
-    Go to numbered tab
+    Go to tabs 1 through 8
   </message>
   <message name="IDS_KSV_SHORTCUT_SELECT_NUMBERED_TAB" desc="Human readable version of the keyboard shortcut.">
     <ph name="ctrl">$1<ex>Ctrl</ex></ph><ph name="separator">$2<ex>+</ex></ph> 1 through 8
@@ -454,19 +466,19 @@
     <ph name="shift1">$1<ex>Shift</ex></ph><ph name="separator1">$2<ex>+</ex></ph><ph name="alt">$3<ex>Alt</ex></ph><ph name="separator2">$4<ex>+</ex></ph><ph name="l">$5<ex>v</ex></ph>, then <ph name="shift2">$6<ex>Shift</ex></ph><ph name="separator3">$7<ex>+</ex></ph><ph name="tab">$8<ex>v</ex></ph> or <ph name="left">$9<ex>v</ex></ph>
   </message>
   <message name="IDS_KSV_DESCRIPTION_OPEN_HIGHLIGHTED_ITEM_ON_SHELF" desc="Description of the command in keyboard shortcut viewer.">
-    Open the highlighted button on your shelf
+    Open the highlighted item on your shelf
   </message>
   <message name="IDS_KSV_SHORTCUT_OPEN_HIGHLIGHTED_ITEM_ON_SHELF" desc="Human readable version of the keyboard shortcut.">
     <ph name="shift">$1<ex>Shift</ex></ph><ph name="separator1">$2<ex>+</ex></ph><ph name="alt">$3<ex>Alt</ex></ph><ph name="separator2">$4<ex>+</ex></ph><ph name="l">$5<ex>v</ex></ph>, then <ph name="space">$6<ex>v</ex></ph> or <ph name="enter">$7<ex>v</ex></ph>
   </message>
   <message name="IDS_KSV_DESCRIPTION_REMOVE_HIGHLIGHT_ON_SHELF" desc="Description of the command in keyboard shortcut viewer.">
-    Remove the highlight from a button on your shelf
+    Remove the highlight from an item on your shelf
   </message>
   <message name="IDS_KSV_SHORTCUT_REMOVE_HIGHLIGHT_ON_SHELF" desc="Human readable version of the keyboard shortcut.">
     <ph name="shift">$1<ex>Shift</ex></ph><ph name="separator1">$2<ex>+</ex></ph><ph name="alt">$3<ex>Alt</ex></ph><ph name="separator2">$4<ex>+</ex></ph><ph name="l">$5<ex>v</ex></ph>, then <ph name="esc">$6<ex>v</ex></ph>
   </message>
   <message name="IDS_KSV_DESCRIPTION_SWITCH_FOCUS" desc="Description of the command in keyboard shortcut viewer.">
-    Switch focus between: Status area (where your account picture appears) Launcher Address bar Bookmarks bar (if visible) The webpage that's open Downloads bar (if visible)
+    Switch focus between: Status area (where your account picture appears), Launcher, Address bar, Bookmarks bar (if visible), The webpage that's open, and Downloads bar (if visible).
   </message>
   <message name="IDS_KSV_SHORTCUT_SWITCH_FOCUS" desc="Human readable version of the keyboard shortcut.">
     <ph name="ctrl1">$1<ex>Ctrl</ex></ph><ph name="separator1">$2<ex>+</ex></ph><ph name="left">$3<ex>v</ex></ph> or <ph name="ctrl2">$4<ex>Ctrl</ex></ph><ph name="separator2">$5<ex>+</ex></ph><ph name="right">$6<ex>v</ex></ph>

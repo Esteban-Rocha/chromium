@@ -79,6 +79,7 @@ class TestUDPClientSocket : public DatagramClientSocket {
     return NetworkChangeNotifier::kInvalidNetworkHandle;
   }
   void ApplySocketTag(const SocketTag& tag) override {}
+  void SetMsgConfirm(bool confirm) override {}
 
   int Connect(const IPEndPoint& remote) override {
     if (connected_)
@@ -110,7 +111,6 @@ class TestSocketFactory : public ClientSocketFactory {
 
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType,
-      const RandIntCallback&,
       NetLog*,
       const NetLogSource&) override {
     return std::unique_ptr<DatagramClientSocket>(

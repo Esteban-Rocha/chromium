@@ -8,12 +8,14 @@
 #include <memory>
 
 #include "ash/ash_export.h"
+#include "ash/frame/caption_buttons/caption_button_model.h"
 #include "ash/public/interfaces/window_style.mojom.h"
 #include "ash/shell_observer.h"
 #include "ash/wm/splitview/split_view_controller.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/aura/window_observer.h"
 #include "ui/views/window/non_client_view.h"
 
 namespace views {
@@ -41,7 +43,8 @@ enum class FrameBackButtonState {
 // BrowserNonClientFrameViewAsh.
 class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
                                       public ShellObserver,
-                                      public SplitViewController::Observer {
+                                      public SplitViewController::Observer,
+                                      public aura::WindowObserver {
  public:
   // Internal class name.
   static const char kViewClassName[];
@@ -56,8 +59,12 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
       views::Widget* frame,
       ImmersiveFullscreenControllerDelegate* immersive_delegate = nullptr,
       bool enable_immersive = true,
-      mojom::WindowStyle window_style = mojom::WindowStyle::DEFAULT);
+      mojom::WindowStyle window_style = mojom::WindowStyle::DEFAULT,
+      std::unique_ptr<CaptionButtonModel> model = nullptr);
   ~CustomFrameViewAsh() override;
+
+  // Sets the caption button modeland updates the caption buttons.
+  void SetCaptionButtonModel(std::unique_ptr<CaptionButtonModel> model);
 
   // Inits |immersive_fullscreen_controller| so that the controller reveals
   // and hides |header_view_| in immersive fullscreen.
@@ -69,10 +76,6 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   // Sets the active and inactive frame colors. Note the inactive frame color
   // will have some transparency added when the frame is drawn.
   void SetFrameColors(SkColor active_frame_color, SkColor inactive_frame_color);
-
-  // Set the back buttons status. If |show| is true, the button becomes visible.
-  // |enabled| controls the enabled/disabled state of the back button.
-  void SetBackButtonState(FrameBackButtonState state);
 
   // Sets the height of the header. If |height| has no value (the default), the
   // preferred height is used.
@@ -101,6 +104,12 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   gfx::Size GetMaximumSize() const override;
   void SchedulePaintInRect(const gfx::Rect& r) override;
   void SetVisible(bool visible) override;
+
+  // aura::WindowObserver:
+  void OnWindowDestroying(aura::Window* window) override;
+  void OnWindowPropertyChanged(aura::Window* window,
+                               const void* key,
+                               intptr_t old) override;
 
   // If |paint| is false, we should not paint the header. Used for overview mode
   // with OnOverviewModeStarting() and OnOverviewModeEnded() to hide/show the

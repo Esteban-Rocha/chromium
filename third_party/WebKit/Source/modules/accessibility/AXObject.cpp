@@ -873,17 +873,11 @@ const AXObject* AXObject::InertRoot() const {
   return nullptr;
 }
 
-bool AXObject::DispatchEventToAOMEventListeners(Event& event,
-                                                Element* target_element) {
+bool AXObject::DispatchEventToAOMEventListeners(Event& event) {
   HeapVector<Member<AccessibleNode>> event_path;
   for (AXObject* ancestor = this; ancestor;
        ancestor = ancestor->ParentObject()) {
-    Element* ancestor_element = ancestor->GetElement();
-    if (!ancestor_element)
-      continue;
-
-    AccessibleNode* ancestor_accessible_node =
-        ancestor_element->ExistingAccessibleNode();
+    AccessibleNode* ancestor_accessible_node = ancestor->GetAccessibleNode();
     if (!ancestor_accessible_node)
       continue;
 
@@ -916,13 +910,13 @@ bool AXObject::DispatchEventToAOMEventListeners(Event& event,
   // AccessibleNode for the target element and create it if necessary -
   // otherwise we wouldn't be able to set the event target. However note
   // that if it didn't previously exist it won't be part of the event path.
-  if (!target_element)
-    target_element = GetElement();
-  AccessibleNode* target = nullptr;
-  if (target_element) {
-    target = target_element->accessibleNode();
-    event.SetTarget(target);
+  AccessibleNode* target = GetAccessibleNode();
+  if (!target) {
+    Element* element = GetElement();
+    if (element)
+      target = element->accessibleNode();
   }
+  event.SetTarget(target);
 
   // Capturing phase.
   event.SetEventPhase(Event::kCapturingPhase);
@@ -1133,6 +1127,7 @@ bool AXObject::CanSetSelectedAttribute() const {
   return IsSubWidget(RoleValue()) && Restriction() != kDisabled;
 }
 
+// static
 bool AXObject::IsSubWidget(AccessibilityRole role) {
   switch (role) {
     case kCellRole:
@@ -1633,16 +1628,15 @@ bool AXObject::SupportsRangeValue() const {
 }
 
 int AXObject::IndexInParent() const {
-  if (!ParentObject())
+  if (!ParentObjectUnignored())
     return 0;
 
-  const auto& siblings = ParentObject()->Children();
+  const auto& siblings = ParentObjectUnignored()->Children();
   int child_count = siblings.size();
 
   for (int index = 0; index < child_count; ++index) {
-    if (siblings[index].Get() == this) {
+    if (siblings[index].Get() == this)
       return index;
-    }
   }
   return 0;
 }
@@ -1819,6 +1813,10 @@ AXObject* AXObject::ElementAccessibilityHitTest(const IntPoint& point) const {
   return const_cast<AXObject*>(this);
 }
 
+int AXObject::ChildCount() const {
+  return static_cast<int>(Children().size());
+}
+
 const AXObject::AXObjectVector& AXObject::Children() const {
   return const_cast<AXObject*>(this)->Children();
 }
@@ -1827,6 +1825,36 @@ const AXObject::AXObjectVector& AXObject::Children() {
   UpdateChildrenIfNecessary();
 
   return children_;
+}
+
+AXObject* AXObject::FirstChild() const {
+  return ChildCount() ? *Children().begin() : nullptr;
+}
+
+AXObject* AXObject::LastChild() const {
+  return ChildCount() ? *(Children().end() - 1) : nullptr;
+}
+
+AXObject* AXObject::DeepestFirstChild() const {
+  if (!ChildCount())
+    return nullptr;
+
+  AXObject* deepest_child = FirstChild();
+  while (deepest_child->ChildCount())
+    deepest_child = deepest_child->FirstChild();
+
+  return deepest_child;
+}
+
+AXObject* AXObject::DeepestLastChild() const {
+  if (!ChildCount())
+    return nullptr;
+
+  AXObject* deepest_child = LastChild();
+  while (deepest_child->ChildCount())
+    deepest_child = deepest_child->LastChild();
+
+  return deepest_child;
 }
 
 bool AXObject::IsAncestorOf(const AXObject& descendant) const {
@@ -1838,6 +1866,59 @@ bool AXObject::IsDescendantOf(const AXObject& ancestor) const {
   while (parent && parent != &ancestor)
     parent = parent->ParentObject();
   return !!parent;
+}
+
+AXObject* AXObject::NextSibling() const {
+  AXObject* parent = ParentObjectUnignored();
+  if (!parent)
+    return nullptr;
+
+  if (IndexInParent() < parent->ChildCount() - 1)
+    return *(parent->Children().begin() + IndexInParent() + 1);
+
+  return nullptr;
+}
+
+AXObject* AXObject::PreviousSibling() const {
+  AXObject* parent = ParentObjectUnignored();
+  if (!parent)
+    return nullptr;
+
+  if (IndexInParent() > 0)
+    return *(parent->Children().begin() + IndexInParent() - 1);
+
+  return nullptr;
+}
+
+AXObject* AXObject::NextInTreeObject(bool can_wrap_to_first_element) const {
+  if (ChildCount())
+    return FirstChild();
+
+  if (NextSibling())
+    return NextSibling();
+  AXObject* current_object = const_cast<AXObject*>(this);
+  while (current_object->ParentObjectUnignored()) {
+    current_object = current_object->ParentObjectUnignored();
+    AXObject* sibling = current_object->NextSibling();
+    if (sibling)
+      return sibling;
+  }
+
+  return can_wrap_to_first_element ? current_object : nullptr;
+}
+
+AXObject* AXObject::PreviousInTreeObject(bool can_wrap_to_last_element) const {
+  AXObject* sibling = PreviousSibling();
+  if (!sibling) {
+    if (ParentObjectUnignored())
+      return ParentObjectUnignored();
+    return can_wrap_to_last_element ? DeepestLastChild() : nullptr;
+  }
+
+  if (sibling->ChildCount())
+    return sibling->DeepestLastChild();
+
+  return sibling;
 }
 
 AXObject* AXObject::ParentObject() const {
@@ -2176,24 +2257,17 @@ LayoutRect AXObject::GetBoundsInFrameCoordinates() const {
 //
 
 bool AXObject::RequestDecrementAction() {
-  Element* element = GetElement();
-  if (element) {
-    Event* event = Event::CreateCancelable(EventTypeNames::accessibledecrement);
-    if (DispatchEventToAOMEventListeners(*event, element)) {
-      return true;
-    }
-  }
+  Event* event = Event::CreateCancelable(EventTypeNames::accessibledecrement);
+  if (DispatchEventToAOMEventListeners(*event))
+    return true;
 
   return OnNativeDecrementAction();
 }
 
 bool AXObject::RequestClickAction() {
-  Element* element = GetElement();
-  if (element) {
-    Event* event = Event::CreateCancelable(EventTypeNames::accessibleclick);
-    if (DispatchEventToAOMEventListeners(*event, element))
-      return true;
-  }
+  Event* event = Event::CreateCancelable(EventTypeNames::accessibleclick);
+  if (DispatchEventToAOMEventListeners(*event))
+    return true;
 
   return OnNativeClickAction();
 }
@@ -2223,23 +2297,17 @@ bool AXObject::OnNativeClickAction() {
 }
 
 bool AXObject::RequestFocusAction() {
-  Element* element = GetElement();
-  if (element) {
-    Event* event = Event::CreateCancelable(EventTypeNames::accessiblefocus);
-    if (DispatchEventToAOMEventListeners(*event, element))
-      return true;
-  }
+  Event* event = Event::CreateCancelable(EventTypeNames::accessiblefocus);
+  if (DispatchEventToAOMEventListeners(*event))
+    return true;
 
   return OnNativeFocusAction();
 }
 
 bool AXObject::RequestIncrementAction() {
-  Element* element = GetElement();
-  if (element) {
-    Event* event = Event::CreateCancelable(EventTypeNames::accessibleincrement);
-    if (DispatchEventToAOMEventListeners(*event, element))
-      return true;
-  }
+  Event* event = Event::CreateCancelable(EventTypeNames::accessibleincrement);
+  if (DispatchEventToAOMEventListeners(*event))
+    return true;
 
   return OnNativeIncrementAction();
 }
@@ -2249,13 +2317,10 @@ bool AXObject::RequestScrollToGlobalPointAction(const IntPoint& point) {
 }
 
 bool AXObject::RequestScrollToMakeVisibleAction() {
-  Element* element = GetElement();
-  if (element) {
-    Event* event =
-        Event::CreateCancelable(EventTypeNames::accessiblescrollintoview);
-    if (DispatchEventToAOMEventListeners(*event, element))
-      return true;
-  }
+  Event* event =
+      Event::CreateCancelable(EventTypeNames::accessiblescrollintoview);
+  if (DispatchEventToAOMEventListeners(*event))
+    return true;
 
   return OnNativeScrollToMakeVisibleAction();
 }
@@ -2282,13 +2347,9 @@ bool AXObject::RequestSetValueAction(const String& value) {
 }
 
 bool AXObject::RequestShowContextMenuAction() {
-  Element* element = GetElement();
-  if (element) {
-    Event* event =
-        Event::CreateCancelable(EventTypeNames::accessiblecontextmenu);
-    if (DispatchEventToAOMEventListeners(*event, element))
-      return true;
-  }
+  Event* event = Event::CreateCancelable(EventTypeNames::accessiblecontextmenu);
+  if (DispatchEventToAOMEventListeners(*event))
+    return true;
 
   return OnNativeShowContextMenuAction();
 }
@@ -2439,11 +2500,13 @@ int AXObject::LineForPosition(const VisiblePosition& position) const {
   return line_count;
 }
 
+// static
 bool AXObject::IsARIAControl(AccessibilityRole aria_role) {
   return IsARIAInput(aria_role) || aria_role == kButtonRole ||
          aria_role == kComboBoxMenuButtonRole || aria_role == kSliderRole;
 }
 
+// static
 bool AXObject::IsARIAInput(AccessibilityRole aria_role) {
   return aria_role == kRadioButtonRole || aria_role == kCheckBoxRole ||
          aria_role == kTextFieldRole || aria_role == kSwitchRole ||
@@ -2670,12 +2733,14 @@ AccessibilityRole AXObject::ButtonRoleType() const {
   return kButtonRole;
 }
 
+// static
 const AtomicString& AXObject::RoleName(AccessibilityRole role) {
   static const Vector<AtomicString>* role_name_vector = CreateRoleNameVector();
 
   return role_name_vector->at(role);
 }
 
+// static
 const AtomicString& AXObject::InternalRoleName(AccessibilityRole role) {
   static const Vector<AtomicString>* internal_role_name_vector =
       CreateInternalRoleNameVector();
@@ -2683,8 +2748,100 @@ const AtomicString& AXObject::InternalRoleName(AccessibilityRole role) {
   return internal_role_name_vector->at(role);
 }
 
+// static
+const AXObject* AXObject::LowestCommonAncestor(const AXObject& first,
+                                               const AXObject& second,
+                                               int* index_in_ancestor1,
+                                               int* index_in_ancestor2) {
+  *index_in_ancestor1 = -1;
+  *index_in_ancestor2 = -1;
+
+  if (first.IsDetached() || second.IsDetached())
+    return nullptr;
+
+  if (first == second)
+    return &first;
+
+  HeapVector<Member<const AXObject>> ancestors1;
+  ancestors1.push_back(&first);
+  while (ancestors1.back())
+    ancestors1.push_back(ancestors1.back()->ParentObjectUnignored());
+
+  HeapVector<Member<const AXObject>> ancestors2;
+  ancestors2.push_back(&second);
+  while (ancestors2.back())
+    ancestors2.push_back(ancestors2.back()->ParentObjectUnignored());
+
+  const AXObject* common_ancestor = nullptr;
+  while (!ancestors1.IsEmpty() && !ancestors2.IsEmpty() &&
+         ancestors1.back() == ancestors2.back()) {
+    common_ancestor = ancestors1.back();
+    ancestors1.pop_back();
+    ancestors2.pop_back();
+  }
+
+  if (common_ancestor) {
+    if (!ancestors1.IsEmpty())
+      *index_in_ancestor1 = ancestors1.back()->IndexInParent();
+    if (!ancestors2.IsEmpty())
+      *index_in_ancestor2 = ancestors2.back()->IndexInParent();
+  }
+
+  return common_ancestor;
+}
+
 VisiblePosition AXObject::VisiblePositionForIndex(int) const {
   return VisiblePosition();
+}
+
+bool operator==(const AXObject& first, const AXObject& second) {
+  if (first.IsDetached() || second.IsDetached())
+    return false;
+  if (&first == &second) {
+    DCHECK_EQ(first.AXObjectID(), second.AXObjectID());
+    return true;
+  }
+  return false;
+}
+
+bool operator!=(const AXObject& first, const AXObject& second) {
+  return !(first == second);
+}
+
+bool operator<(const AXObject& first, const AXObject& second) {
+  if (first.IsDetached() || second.IsDetached())
+    return false;
+
+  int index_in_ancestor1, index_in_ancestor2;
+  const AXObject* ancestor = AXObject::LowestCommonAncestor(
+      first, second, &index_in_ancestor1, &index_in_ancestor2);
+  DCHECK_GE(index_in_ancestor1, -1);
+  DCHECK_GE(index_in_ancestor2, -1);
+  if (!ancestor)
+    return false;
+  return index_in_ancestor1 < index_in_ancestor2;
+}
+
+bool operator<=(const AXObject& first, const AXObject& second) {
+  return first == second || first < second;
+}
+
+bool operator>(const AXObject& first, const AXObject& second) {
+  if (first.IsDetached() || second.IsDetached())
+    return false;
+
+  int index_in_ancestor1, index_in_ancestor2;
+  const AXObject* ancestor = AXObject::LowestCommonAncestor(
+      first, second, &index_in_ancestor1, &index_in_ancestor2);
+  DCHECK_GE(index_in_ancestor1, -1);
+  DCHECK_GE(index_in_ancestor2, -1);
+  if (!ancestor)
+    return false;
+  return index_in_ancestor1 > index_in_ancestor2;
+}
+
+bool operator>=(const AXObject& first, const AXObject& second) {
+  return first == second || first > second;
 }
 
 std::ostream& operator<<(std::ostream& stream, const AXObject& obj) {

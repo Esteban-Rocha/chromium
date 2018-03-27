@@ -87,25 +87,28 @@ bool WindowSelectorController::CanSelect() {
 }
 
 bool WindowSelectorController::ToggleOverview() {
+  auto windows = Shell::Get()->mru_window_tracker()->BuildMruWindowList();
+
+  // Hidden windows will be removed by ShouldExcludeWindowFromOverview so we
+  // must copy them out first.
+  std::vector<aura::Window*> hide_windows(windows.size());
+  auto end = std::copy_if(windows.begin(), windows.end(), hide_windows.begin(),
+                          ShouldHideWindowInOverview);
+  hide_windows.resize(end - hide_windows.begin());
+
+  end = std::remove_if(windows.begin(), windows.end(),
+                       ShouldExcludeWindowFromOverview);
+  windows.resize(end - windows.begin());
+
   if (IsSelecting()) {
+    // Do not allow ending overview if we're in single split mode.
+    if (windows.empty() && Shell::Get()->IsSplitViewModeActive())
+      return true;
     OnSelectionEnded();
   } else {
     // Don't start overview if window selection is not allowed.
     if (!CanSelect())
       return false;
-
-    auto windows = Shell::Get()->mru_window_tracker()->BuildMruWindowList();
-
-    // Hidden windows will be removed by ShouldExcludeWindowFromOverview so we
-    // must copy them out first.
-    std::vector<aura::Window*> hide_windows(windows.size());
-    auto end = std::copy_if(windows.begin(), windows.end(),
-                            hide_windows.begin(), ShouldHideWindowInOverview);
-    hide_windows.resize(end - hide_windows.begin());
-
-    end = std::remove_if(windows.begin(), windows.end(),
-                         ShouldExcludeWindowFromOverview);
-    windows.resize(end - windows.begin());
 
     // Don't enter overview with no windows to select from.
     if (!IsNewOverviewUi() && windows.empty())
@@ -231,8 +234,10 @@ void WindowSelectorController::OnOverviewButtonTrayLongPressed(
   // The transform will be reset later after the window is snapped.
   item_to_snap->RestoreWindow(/*reset_transform=*/false);
   aura::Window* window = item_to_snap->GetWindow();
+  const gfx::Rect item_bounds = item_to_snap->target_bounds();
   window_selector_->RemoveWindowSelectorItem(item_to_snap);
-  split_view_controller->SnapWindow(window, SplitViewController::LEFT);
+  split_view_controller->SnapWindow(window, SplitViewController::LEFT,
+                                    item_bounds);
   window_selector_->SetBoundsForWindowGridsInScreen(
       split_view_controller->GetSnappedWindowBoundsInScreen(
           window, SplitViewController::RIGHT));

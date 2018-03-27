@@ -52,11 +52,13 @@ std::string FakeVideoDecoder::GetDisplayName() const {
   return decoder_name_;
 }
 
-void FakeVideoDecoder::Initialize(const VideoDecoderConfig& config,
-                                  bool low_delay,
-                                  CdmContext* cdm_context,
-                                  const InitCB& init_cb,
-                                  const OutputCB& output_cb) {
+void FakeVideoDecoder::Initialize(
+    const VideoDecoderConfig& config,
+    bool low_delay,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb) {
   DVLOG(1) << decoder_name_ << ": " << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(config.IsValidConfig());
@@ -78,7 +80,9 @@ void FakeVideoDecoder::Initialize(const VideoDecoderConfig& config,
 
   if (config.is_encrypted() && (!supports_encrypted_config_ || !cdm_context)) {
     DVLOG(1) << "Encrypted config not supported.";
-    fail_to_initialize_ = true;
+    state_ = STATE_NORMAL;
+    init_cb_.RunOrHold(false);
+    return;
   }
 
   if (fail_to_initialize_) {

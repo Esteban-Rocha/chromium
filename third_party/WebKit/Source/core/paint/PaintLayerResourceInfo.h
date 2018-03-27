@@ -63,9 +63,7 @@ class PaintLayerResourceInfo final
 
   void ClearLayer() { layer_ = nullptr; }
 
-  TreeScope* GetTreeScope() override;
-
-  void ResourceContentChanged() override;
+  void ResourceContentChanged(InvalidationModeMask) override;
   void ResourceElementChanged() override;
 
   void Trace(blink::Visitor*) override;

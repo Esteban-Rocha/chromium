@@ -34,11 +34,10 @@
 
 #include "core/exported/WebRemoteFrameImpl.h"
 #include "core/frame/WebLocalFrameImpl.h"
-#include "core/layout/LayoutTestHelper.h"
+#include "core/testing/CoreUnitTestHelper.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/wtf/Functional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "public/platform/Platform.h"

@@ -124,9 +124,9 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/network_connection_tracker.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
-#include "extensions/features/features.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/features/features.h"
@@ -143,7 +143,13 @@
 #include "chrome/browser/chrome_browser_main_mac.h"
 #endif
 
-#if !defined(OS_ANDROID)
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/ui/ash/ash_util.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/android/physical_web/physical_web_data_source_android.h"
+#else  // !defined(OS_ANDROID)
 #include "chrome/browser/gcm/gcm_product_util.h"
 #include "components/gcm_driver/gcm_client_factory.h"
 #include "components/gcm_driver/gcm_desktop_utils.h"
@@ -168,6 +174,7 @@
 #endif
 
 #if BUILDFLAG(ENABLE_WEBRTC)
+#include "chrome/browser/media/webrtc/webrtc_event_log_manager.h"
 #include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
 #endif
 
@@ -178,10 +185,6 @@
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
 #include "chrome/browser/first_run/upgrade_util.h"
 #include "chrome/browser/ui/user_manager.h"
-#endif
-
-#if defined(OS_ANDROID)
-#include "chrome/browser/android/physical_web/physical_web_data_source_android.h"
 #endif
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
@@ -264,9 +267,16 @@ void BrowserProcessImpl::Init() {
   extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
 #endif
 
-  // TODO(estade): don't initialize the MessageCenter until we know it's needed
-  // (i.e. because a NotificationPlatformBridgeMessageCenter has been created).
-  message_center::MessageCenter::Initialize();
+  bool initialize_message_center = true;
+#if defined(OS_CHROMEOS)
+  // On Chrome OS, the message center is initialized and shut down by Ash and
+  // should not be directly accessible to Chrome. However, ARC++ still relies
+  // on the existence of a MessageCenter object, so in Mash, initialize one
+  // here.
+  initialize_message_center = ash_util::IsRunningInMash();
+#endif
+  if (initialize_message_center)
+    message_center::MessageCenter::Initialize();
 
   update_client::UpdateQueryParams::SetDelegate(
       ChromeUpdateQueryParamsDelegate::GetInstance());
@@ -299,6 +309,11 @@ void BrowserProcessImpl::Init() {
       std::max(std::min(max_per_proxy, 99),
                net::ClientSocketPoolManager::max_sockets_per_group(
                    net::HttpNetworkSession::NORMAL_SOCKET_POOL)));
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+  DCHECK(!webrtc_event_log_manager_);
+  webrtc_event_log_manager_ = WebRtcEventLogManager::CreateSingletonInstance();
+#endif
 }
 
 BrowserProcessImpl::~BrowserProcessImpl() {
@@ -376,7 +391,8 @@ void BrowserProcessImpl::StartTearDown() {
   storage_monitor::StorageMonitor::Destroy();
 #endif
 
-  message_center::MessageCenter::Shutdown();
+  if (message_center::MessageCenter::Get())
+    message_center::MessageCenter::Shutdown();
 
   // The policy providers managed by |browser_policy_connector_| need to shut
   // down while the IO and FILE threads are still alive. The monitoring
@@ -412,7 +428,7 @@ void BrowserProcessImpl::PostDestroyThreads() {
   icon_manager_.reset();
 
 #if BUILDFLAG(ENABLE_WEBRTC)
-  // Must outlive the file thread.
+  // Must outlive the worker threads.
   webrtc_log_uploader_.reset();
 #endif
 
@@ -1091,7 +1107,7 @@ void BrowserProcessImpl::PreCreateThreads(
     }
     net_log_->StartWritingToFile(
         log_file, GetNetCaptureModeFromCommandLine(command_line),
-        command_line.GetCommandLineString(), chrome::GetChannelString());
+        command_line.GetCommandLineString(), chrome::GetChannelName());
   }
 
   // Must be created before the IOThread.

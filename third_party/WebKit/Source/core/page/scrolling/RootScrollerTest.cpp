@@ -10,6 +10,7 @@
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/RootFrameViewport.h"
 #include "core/frame/VisualViewport.h"
+#include "core/frame/WebFrameWidgetBase.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/geometry/DOMRect.h"
 #include "core/html/HTMLFrameOwnerElement.h"
@@ -24,9 +25,9 @@
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "core/testing/sim/SimRequest.h"
 #include "core/testing/sim/SimTest.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "platform/wtf/Vector.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCoalescedInputEvent.h"
@@ -156,10 +157,8 @@ class RootScrollerTest : public ::testing::Test,
                                               int delta_x,
                                               int delta_y) {
     WebGestureEvent event(type, WebInputEvent::kNoModifiers,
-                          WebInputEvent::GetStaticTimeStampForTests());
-    event.source_device = device;
-    event.x = 100;
-    event.y = 100;
+                          WebInputEvent::GetStaticTimeStampForTests(), device);
+    event.SetPositionInWidget(WebFloatPoint(100, 100));
     if (type == WebInputEvent::kGestureScrollUpdate) {
       event.data.scroll_update.delta_x = delta_x;
       event.data.scroll_update.delta_y = delta_y;
@@ -774,7 +773,7 @@ TEST_P(RootScrollerTest, RemoteIFrame) {
 }
 
 // Make sure that if an effective root scroller becomes a remote frame, it's
-// demoted.
+// immediately demoted.
 TEST_P(RootScrollerTest, IFrameSwapToRemote) {
   Initialize("root-scroller-iframe.html");
   Element* iframe = MainFrame()->GetDocument()->getElementById("iframe");
@@ -789,6 +788,9 @@ TEST_P(RootScrollerTest, IFrameSwapToRemote) {
   // Swap in a remote frame. Make sure we revert back to the document.
   {
     MainWebFrame()->FirstChild()->Swap(FrameTestHelpers::CreateRemote());
+    EXPECT_EQ(MainFrame()->GetDocument(),
+              EffectiveRootScroller(MainFrame()->GetDocument()));
+    GetWebView()->ResizeWithBrowserControls(IntSize(400, 450), 50, 0, false);
     MainFrameView()->UpdateAllLifecyclePhases();
     EXPECT_EQ(MainFrame()->GetDocument(),
               EffectiveRootScroller(MainFrame()->GetDocument()));

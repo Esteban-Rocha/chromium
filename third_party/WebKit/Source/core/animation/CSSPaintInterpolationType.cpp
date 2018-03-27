@@ -5,29 +5,27 @@
 #include "core/animation/CSSPaintInterpolationType.h"
 
 #include <memory>
-#include "core/CSSPropertyNames.h"
+#include <utility>
+
+#include "base/memory/ptr_util.h"
 #include "core/animation/CSSColorInterpolationType.h"
 #include "core/css/StyleColor.h"
 #include "core/css/resolver/StyleResolverState.h"
+#include "core/css_property_names.h"
 #include "core/style/ComputedStyle.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
 namespace {
-static bool GetColorFromPaint(const SVGPaintType type,
-                              const Color color,
-                              StyleColor& result) {
-  switch (type) {
-    case SVG_PAINTTYPE_RGBCOLOR:
-      result = color;
-      return true;
-    case SVG_PAINTTYPE_CURRENTCOLOR:
-      result = StyleColor::CurrentColor();
-      return true;
-    default:
-      return false;
-  }
+
+static bool GetColorFromPaint(const SVGPaint& paint, StyleColor& result) {
+  if (!paint.IsColor())
+    return false;
+  if (paint.HasCurrentColor())
+    result = StyleColor::CurrentColor();
+  else
+    result = paint.GetColor();
+  return true;
 }
 
 bool GetColor(const CSSProperty& property,
@@ -35,16 +33,15 @@ bool GetColor(const CSSProperty& property,
               StyleColor& result) {
   switch (property.PropertyID()) {
     case CSSPropertyFill:
-      return GetColorFromPaint(style.SvgStyle().FillPaintType(),
-                               style.SvgStyle().FillPaintColor(), result);
+      return GetColorFromPaint(style.SvgStyle().FillPaint(), result);
     case CSSPropertyStroke:
-      return GetColorFromPaint(style.SvgStyle().StrokePaintType(),
-                               style.SvgStyle().StrokePaintColor(), result);
+      return GetColorFromPaint(style.SvgStyle().StrokePaint(), result);
     default:
       NOTREACHED();
       return false;
   }
 }
+
 }  // namespace
 
 InterpolationValue CSSPaintInterpolationType::MaybeConvertNeutral(
@@ -70,11 +67,11 @@ class InheritedPaintChecker
   static std::unique_ptr<InheritedPaintChecker> Create(
       const CSSProperty& property,
       const StyleColor& color) {
-    return WTF::WrapUnique(new InheritedPaintChecker(property, color));
+    return base::WrapUnique(new InheritedPaintChecker(property, color));
   }
   static std::unique_ptr<InheritedPaintChecker> Create(
       const CSSProperty& property) {
-    return WTF::WrapUnique(new InheritedPaintChecker(property));
+    return base::WrapUnique(new InheritedPaintChecker(property));
   }
 
  private:
@@ -141,14 +138,15 @@ void CSSPaintInterpolationType::ApplyStandardPropertyValue(
     StyleResolverState& state) const {
   Color color = CSSColorInterpolationType::ResolveInterpolableColor(
       interpolable_color, state);
+  SVGComputedStyle& mutable_svg_style = state.Style()->AccessSVGStyle();
   switch (CssProperty().PropertyID()) {
     case CSSPropertyFill:
-      state.Style()->AccessSVGStyle().SetFillPaint(SVG_PAINTTYPE_RGBCOLOR,
-                                                   color, String(), true, true);
+      mutable_svg_style.SetFillPaint(SVGPaint(color));
+      mutable_svg_style.SetVisitedLinkFillPaint(SVGPaint(color));
       break;
     case CSSPropertyStroke:
-      state.Style()->AccessSVGStyle().SetStrokePaint(
-          SVG_PAINTTYPE_RGBCOLOR, color, String(), true, true);
+      mutable_svg_style.SetStrokePaint(SVGPaint(color));
+      mutable_svg_style.SetVisitedLinkStrokePaint(SVGPaint(color));
       break;
     default:
       NOTREACHED();

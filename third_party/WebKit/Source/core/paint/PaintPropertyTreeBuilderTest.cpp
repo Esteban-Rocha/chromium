@@ -89,17 +89,12 @@ void PaintPropertyTreeBuilderTest::SetUp() {
 
 #define CHECK_VISUAL_RECT(expected, source_object, ancestor, slop_factor)      \
   do {                                                                         \
-    if ((source_object)->HasLayer() && (ancestor)->HasLayer()) {               \
-      LayoutRect source((source_object)->LocalVisualRect());                   \
-      source.MoveBy((source_object)->FirstFragment().PaintOffset());           \
-      auto contents_properties =                                               \
-          (ancestor)->FirstFragment().ContentsProperties();                    \
-      FloatClipRect actual_float_rect((FloatRect(source)));                    \
-      GeometryMapper::LocalToAncestorVisualRect(                               \
-          (source_object)->FirstFragment().LocalBorderBoxProperties(),         \
-          contents_properties, actual_float_rect);                             \
-      LayoutRect actual(actual_float_rect.Rect());                             \
-      actual.MoveBy(-(ancestor)->FirstFragment().PaintOffset());               \
+    if ((source_object)->HasLayer() && (ancestor)->HasLayer() &&               \
+        RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {                  \
+      LayoutRect actual((source_object)->LocalVisualRect());                   \
+      (source_object)                                                          \
+          ->MapToVisualRectInAncestorSpace(ancestor, actual,                   \
+                                           kUseGeometryMapper);                \
       SCOPED_TRACE("GeometryMapper: ");                                        \
       EXPECT_EQ(expected, actual);                                             \
     }                                                                          \
@@ -551,7 +546,6 @@ TEST_P(PaintPropertyTreeBuilderTest, Transform) {
             transform_properties->PaintOffsetTranslation()->Parent());
 
   EXPECT_TRUE(transform_properties->Transform()->HasDirectCompositingReasons());
-  EXPECT_FALSE(FrameScrollTranslation()->HasDirectCompositingReasons());
 
   CHECK_EXACT_VISUAL_RECT(LayoutRect(173, 556, 400, 300),
                           transform->GetLayoutObject(),
@@ -1266,6 +1260,56 @@ TEST_P(PaintPropertyTreeBuilderTest, TransformNodesAcrossSVGHTMLBoundary) {
             div_with_transform_properties->Transform()->Parent()->Parent());
 }
 
+TEST_P(PaintPropertyTreeBuilderTest, ForeignObjectWithTransformAndOffset) {
+  SetBodyInnerHTML(R"HTML(
+    <style> body { margin: 0px; } </style>
+    <svg id='svgWithTransform'>
+      <foreignObject id="foreignObject"
+          x="10" y="10" width="50" height="40" transform="scale(5)">
+        <div id='div'></div>
+      </foreignObject>
+    </svg>
+  )HTML");
+
+  LayoutObject& foreign_object = *GetLayoutObjectByElementId("foreignObject");
+  const ObjectPaintProperties* foreign_object_properties =
+      foreign_object.FirstFragment().PaintProperties();
+  EXPECT_EQ(TransformationMatrix().Scale(5),
+            foreign_object_properties->Transform()->Matrix());
+  EXPECT_EQ(LayoutPoint(10, 10), foreign_object.FirstFragment().PaintOffset());
+  EXPECT_EQ(nullptr, foreign_object_properties->PaintOffsetTranslation());
+
+  LayoutObject& div = *GetLayoutObjectByElementId("div");
+  EXPECT_EQ(LayoutPoint(10, 10), div.FirstFragment().PaintOffset());
+}
+
+TEST_P(PaintPropertyTreeBuilderTest, ForeignObjectWithMask) {
+  // SPV1 has no effect tree.
+  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
+    return;
+
+  SetBodyInnerHTML(R"HTML(
+    <style> body { margin: 0px; } </style>
+    <svg id='svg' style='position; relative'>
+      <foreignObject id="foreignObject"
+          x="10" y="10" width="50" height="40"
+          style="-webkit-mask:linear-gradient(red,red)">
+        <div id='div'></div>
+      </foreignObject>
+    </svg>
+  )HTML");
+
+  LayoutObject& svg = *GetLayoutObjectByElementId("svg");
+  LayoutObject& foreign_object = *GetLayoutObjectByElementId("foreignObject");
+  const ObjectPaintProperties* foreign_object_properties =
+      foreign_object.FirstFragment().PaintProperties();
+  EXPECT_TRUE(foreign_object_properties->Mask());
+  EXPECT_EQ(foreign_object_properties->MaskClip(),
+            foreign_object_properties->Mask()->OutputClip());
+  EXPECT_EQ(svg.FirstFragment().LocalBorderBoxProperties().Transform(),
+            foreign_object_properties->Mask()->LocalTransformSpace());
+}
+
 TEST_P(PaintPropertyTreeBuilderTest, PaintOffsetTranslationSVGHTMLBoundary) {
   SetBodyInnerHTML(R"HTML(
     <svg id='svg'
@@ -1577,7 +1621,7 @@ TEST_P(PaintPropertyTreeBuilderTest, TransformNodesAcrossSubframes) {
       }
     </style>
     <div id='divWithTransform'>
-      <iframe style='border: 7px solid black'></iframe>
+      <iframe id='iframe' style='border: 7px solid black'></iframe>
     </div>
   )HTML");
   SetChildFrameHTML(R"HTML(
@@ -1620,8 +1664,8 @@ TEST_P(PaintPropertyTreeBuilderTest, TransformNodesAcrossSubframes) {
   // Ensure that the inner div's transform is correctly rooted in the root
   // frame's transform tree.
   // This asserts that we have the following tree structure:
-  // ...
-  //   Transform transform=translation=1.000000,2.000000,3.000000
+  // Transform transform=translation=1.000000,2.000000,3.000000
+  //   PaintOffsetTranslation transform=Identity
   //     PreTranslation transform=translation=7.000000,7.000000,0.000000
   //       PaintOffsetTranslation transform=Identity
   //         ScrollTranslation transform=translation=0.000000,0.000000,0.000000
@@ -1635,8 +1679,22 @@ TEST_P(PaintPropertyTreeBuilderTest, TransformNodesAcrossSubframes) {
   EXPECT_EQ(FloatSize(), paint_offset_translation->Matrix().To2DTranslation());
   EXPECT_EQ(TransformationMatrix().Translate3d(7, 7, 0),
             iframe_pre_translation->Matrix());
-  EXPECT_EQ(div_with_transform_properties->Transform(),
-            iframe_pre_translation->Parent());
+  // SPv1 composited elements always create paint offset translation,
+  // where in SPv2 they don't.
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+    EXPECT_EQ(div_with_transform_properties->Transform(),
+              iframe_pre_translation->Parent());
+  } else {
+    LayoutObject* iframe_element = GetLayoutObjectByElementId("iframe");
+    const ObjectPaintProperties* iframe_element_properties =
+        iframe_element->FirstFragment().PaintProperties();
+    EXPECT_EQ(iframe_element_properties->PaintOffsetTranslation(),
+              iframe_pre_translation->Parent());
+    EXPECT_EQ(TransformationMatrix(),
+              iframe_element_properties->PaintOffsetTranslation()->Matrix());
+    EXPECT_EQ(div_with_transform_properties->Transform(),
+              iframe_element_properties->PaintOffsetTranslation()->Parent());
+  }
 }
 
 TEST_P(PaintPropertyTreeBuilderTest, TransformNodesInTransformedSubframes) {
@@ -2538,13 +2596,12 @@ TEST_P(PaintPropertyTreeBuilderTest, SvgRootAndForeignObjectPixelSnapping) {
   const auto* foreign_object_properties =
       foreign_object->FirstFragment().PaintProperties();
   EXPECT_EQ(nullptr, foreign_object_properties->PaintOffsetTranslation());
-  // Paint offset of foreignObject should be originated from SVG root and
-  // snapped to pixels.
+
   EXPECT_EQ(LayoutPoint(4, 5), foreign_object->FirstFragment().PaintOffset());
 
   const auto* div = GetLayoutObjectByElementId("div");
-  // Paint offset of descendant of foreignObject accumulates on paint offset of
-  // foreignObject.
+  // Paint offset of descendant of foreignObject accumulates on paint offset
+  // of foreignObject.
   EXPECT_EQ(LayoutPoint(LayoutUnit(4 + 5.6), LayoutUnit(5 + 7.3)),
             div->FirstFragment().PaintOffset());
 }
@@ -5092,15 +5149,7 @@ TEST_P(PaintPropertyTreeBuilderTest, OverflowControlsClipSubpixel) {
 
   const auto* properties2 = PaintPropertiesForElement("div2");
   ASSERT_NE(nullptr, properties2);
-  EXPECT_NE(nullptr, properties2->OverflowControlsClip());
-  const auto* overflow_controls_clip2 = properties2->OverflowControlsClip();
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    EXPECT_EQ(FloatRect(0, 0, 51, 50),
-              overflow_controls_clip2->ClipRect().Rect());
-  } else {
-    EXPECT_EQ(FloatRect(0, 0, 50.5, 50),
-              overflow_controls_clip2->ClipRect().Rect());
-  }
+  EXPECT_EQ(nullptr, properties2->OverflowControlsClip());
 }
 
 TEST_P(PaintPropertyTreeBuilderTest, FragmentPaintOffsetUnderOverflowScroll) {
@@ -5241,6 +5290,89 @@ TEST_P(PaintPropertyTreeBuilderTest, SVGRootWithCSSMask) {
   const LayoutSVGRoot& root =
       *ToLayoutSVGRoot(GetLayoutObjectByElementId("svg"));
   EXPECT_TRUE(root.FirstFragment().PaintProperties()->Mask());
+}
+
+TEST_P(PaintPropertyTreeBuilderTest, ClearClipPathEffectNode) {
+  // This test makes sure ClipPath effect node is cleared properly upon
+  // removal of a clip-path.
+
+  // SPv1 has no effect tree.
+  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
+    return;
+  SetBodyInnerHTML(R"HTML(
+    <svg>
+      <clipPath clip-path="circle()" id="clip"></clipPath>
+      <rect id="rect" width="800" clip-path="url(#clip)" height="800"/>
+    </svg>
+  )HTML");
+
+  {
+    const auto* rect = GetLayoutObjectByElementId("rect");
+    ASSERT_TRUE(rect);
+    EXPECT_TRUE(rect->FirstFragment().PaintProperties()->MaskClip());
+    EXPECT_TRUE(rect->FirstFragment().PaintProperties()->ClipPath());
+  }
+
+  Element* clip = GetDocument().getElementById("clip");
+  ASSERT_TRUE(clip);
+  clip->remove();
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
+
+  {
+    const auto* rect = GetLayoutObjectByElementId("rect");
+    ASSERT_TRUE(rect);
+    EXPECT_FALSE(rect->FirstFragment().PaintProperties()->MaskClip());
+    EXPECT_FALSE(rect->FirstFragment().PaintProperties()->ClipPath());
+  }
+}
+
+TEST_P(PaintPropertyTreeBuilderTest, RootHasCompositedScrolling) {
+  // TODO(pdr): Set compositing reasons for FrameView scrolling.
+  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled())
+    return;
+
+  SetBodyInnerHTML(R"HTML(
+    <div id='forceScroll' style='height: 2000px'></div>
+  )HTML");
+
+  // When the root scrolls, there should be direct compositing reasons.
+  EXPECT_TRUE(FrameScrollTranslation()->HasDirectCompositingReasons());
+
+  // Remove scrolling from the root.
+  Element* force_scroll_element = GetDocument().getElementById("forceScroll");
+  force_scroll_element->setAttribute(HTMLNames::styleAttr, "");
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
+  // Without scrolling, the root should not have direct compositing reasons or
+  // even a scroll node.
+  EXPECT_EQ(nullptr, FrameScrollTranslation());
+}
+
+TEST_P(PaintPropertyTreeBuilderTest, IframeDoesNotRequireCompositedScrolling) {
+  // TODO(pdr): Set compositing reasons for FrameView scrolling.
+  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled())
+    return;
+
+  SetBodyInnerHTML(R"HTML(
+    <iframe style='width: 200px; height: 200px;'></iframe>
+    <div id='forceScroll' style='height: 2000px'></div>
+  )HTML");
+  SetChildFrameHTML(R"HTML(
+    <div id='forceInnerScroll' style='height: 2000px'></div>
+  )HTML");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  EXPECT_TRUE(FrameScrollTranslation()->HasDirectCompositingReasons());
+
+  // When the child iframe scrolls, there should not be direct compositing
+  // reasons because only the root frame needs scrolling compositing reasons.
+  EXPECT_FALSE(FrameScrollTranslation(ChildDocument().View())
+                   ->HasDirectCompositingReasons());
+}
+
+TEST_P(PaintPropertyTreeBuilderTest,
+       NoTransformPropertyForWillChangeWithoutLayer) {
+  SetBodyInnerHTML("<svg id='target' style='will-change: left'></svg>");
+  EXPECT_EQ(nullptr, PaintPropertiesForElement("target")->Transform());
 }
 
 }  // namespace blink

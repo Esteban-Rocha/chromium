@@ -30,6 +30,7 @@
 #include "ui/base/ime/input_method_factory.h"
 #include "ui/base/ime/text_edit_commands.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
@@ -67,6 +68,10 @@
 #include "ui/wm/core/ime_util_chromeos.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "ui/base/cocoa/secure_password_input.h"
+#endif
+
 using base::ASCIIToUTF16;
 using base::UTF8ToUTF16;
 using base::WideToUTF16;
@@ -83,7 +88,7 @@ class MockInputMethod : public ui::InputMethodBase {
   ~MockInputMethod() override;
 
   // Overridden from InputMethod:
-  bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
+  bool OnUntranslatedIMEMessage(const ui::PlatformEvent& event,
                                 NativeEventResult* result) override;
   ui::EventDispatchDetails DispatchKeyEvent(ui::KeyEvent* key) override;
   void OnTextInputTypeChanged(const ui::TextInputClient* client) override;
@@ -144,7 +149,7 @@ MockInputMethod::MockInputMethod()
 MockInputMethod::~MockInputMethod() {
 }
 
-bool MockInputMethod::OnUntranslatedIMEMessage(const base::NativeEvent& event,
+bool MockInputMethod::OnUntranslatedIMEMessage(const ui::PlatformEvent& event,
                                                NativeEventResult* result) {
   if (result)
     *result = NativeEventResult();
@@ -698,21 +703,35 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
     const bool is_all_selected = !text.empty() &&
         textfield_->GetSelectedRange().length() == text.length();
 
-    EXPECT_EQ(can_undo, menu->IsEnabledAt(0 /* UNDO */));
-    EXPECT_TRUE(menu->IsEnabledAt(1 /* Separator */));
-    EXPECT_EQ(textfield_has_selection, menu->IsEnabledAt(2 /* CUT */));
-    EXPECT_EQ(textfield_has_selection, menu->IsEnabledAt(3 /* COPY */));
+    int menu_index = 0;
+#if defined(OS_MACOSX)
+    // On Mac, the Look Up item should appear at the top of the menu if the
+    // textfield has a selection.
+    if (textfield_has_selection) {
+      EXPECT_TRUE(menu->IsEnabledAt(menu_index++ /* LOOK UP */));
+      EXPECT_TRUE(menu->IsEnabledAt(menu_index++ /* Separator */));
+    }
+#endif
+
+    EXPECT_EQ(can_undo, menu->IsEnabledAt(menu_index++ /* UNDO */));
+    EXPECT_TRUE(menu->IsEnabledAt(menu_index++ /* Separator */));
+    EXPECT_EQ(textfield_has_selection,
+              menu->IsEnabledAt(menu_index++ /* CUT */));
+    EXPECT_EQ(textfield_has_selection,
+              menu->IsEnabledAt(menu_index++ /* COPY */));
     EXPECT_NE(GetClipboardText(ui::CLIPBOARD_TYPE_COPY_PASTE).empty(),
-              menu->IsEnabledAt(4 /* PASTE */));
-    EXPECT_EQ(textfield_has_selection, menu->IsEnabledAt(5 /* DELETE */));
-    EXPECT_TRUE(menu->IsEnabledAt(6 /* Separator */));
-    EXPECT_EQ(!is_all_selected, menu->IsEnabledAt(7 /* SELECT ALL */));
+              menu->IsEnabledAt(menu_index++ /* PASTE */));
+    EXPECT_EQ(textfield_has_selection,
+              menu->IsEnabledAt(menu_index++ /* DELETE */));
+    EXPECT_TRUE(menu->IsEnabledAt(menu_index++ /* Separator */));
+    EXPECT_EQ(!is_all_selected,
+              menu->IsEnabledAt(menu_index++ /* SELECT ALL */));
   }
 
   void PressMouseButton(ui::EventFlags mouse_button_flags, int extra_flags) {
     ui::MouseEvent press(ui::ET_MOUSE_PRESSED, mouse_position_, mouse_position_,
                          ui::EventTimeForNow(), mouse_button_flags,
-                         mouse_button_flags | extra_flags);
+                         mouse_button_flags);
     textfield_->OnMousePressed(press);
   }
 
@@ -3445,6 +3464,51 @@ TEST_F(TextfieldTest, TextServicesContextMenuTextDirectionTest) {
       base::i18n::TextDirection::LEFT_TO_RIGHT));
   EXPECT_TRUE(test_api_->IsTextDirectionCheckedInContextMenu(
       base::i18n::TextDirection::RIGHT_TO_LEFT));
+}
+
+// Tests to see if the look up item is updated when the textfield's selected
+// text has changed.
+TEST_F(TextfieldTest, LookUpItemUpdate) {
+  InitTextfield();
+  EXPECT_TRUE(textfield_->context_menu_controller());
+
+  const base::string16 kTextOne = ASCIIToUTF16("crake");
+  textfield_->SetText(kTextOne);
+  textfield_->SelectAll(false);
+
+  ui::MenuModel* context_menu = GetContextMenuModel();
+  EXPECT_TRUE(context_menu);
+  EXPECT_GT(context_menu->GetItemCount(), 0);
+  EXPECT_EQ(context_menu->GetLabelAt(0),
+            l10n_util::GetStringFUTF16(IDS_CONTENT_CONTEXT_LOOK_UP, kTextOne));
+
+  const base::string16 kTextTwo = ASCIIToUTF16("rail");
+  textfield_->SetText(kTextTwo);
+  textfield_->SelectAll(false);
+
+  context_menu = GetContextMenuModel();
+  EXPECT_TRUE(context_menu);
+  EXPECT_GT(context_menu->GetItemCount(), 0);
+  EXPECT_EQ(context_menu->GetLabelAt(0),
+            l10n_util::GetStringFUTF16(IDS_CONTENT_CONTEXT_LOOK_UP, kTextTwo));
+}
+
+TEST_F(TextfieldTest, SecurePasswordInput) {
+  InitTextfield();
+  ASSERT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  // Shouldn't enable secure input if it's not a password textfield.
+  textfield_->OnFocus();
+  EXPECT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  textfield_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
+
+  // Single matched calls immediately update IsPasswordInputEnabled().
+  textfield_->OnFocus();
+  EXPECT_TRUE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  textfield_->OnBlur();
+  EXPECT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
 }
 #endif  // defined(OS_MACOSX)
 

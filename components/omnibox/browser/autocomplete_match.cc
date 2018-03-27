@@ -229,7 +229,8 @@ const gfx::VectorIcon& AutocompleteMatch::TypeToVectorIcon(Type type,
                          : vector_icons::kSearchIcon;
 
     case Type::EXTENSION_APP:
-      return omnibox::kExtensionAppIcon;
+      return is_touch_ui ? omnibox::kExtensionApp20Icon
+                         : omnibox::kExtensionAppIcon;
 
     case Type::CALCULATOR:
       return omnibox::kCalculatorIcon;
@@ -438,9 +439,19 @@ TemplateURL* AutocompleteMatch::GetTemplateURLWithKeyword(
     TemplateURLService* template_url_service,
     const base::string16& keyword,
     const std::string& host) {
+  return const_cast<TemplateURL*>(GetTemplateURLWithKeyword(
+      static_cast<const TemplateURLService*>(template_url_service), keyword,
+      host));
+}
+
+// static
+const TemplateURL* AutocompleteMatch::GetTemplateURLWithKeyword(
+    const TemplateURLService* template_url_service,
+    const base::string16& keyword,
+    const std::string& host) {
   if (template_url_service == nullptr)
     return nullptr;
-  TemplateURL* template_url =
+  const TemplateURL* template_url =
       keyword.empty() ? nullptr
                       : template_url_service->GetTemplateURLForKeyword(keyword);
   return (template_url || host.empty()) ?
@@ -451,7 +462,7 @@ TemplateURL* AutocompleteMatch::GetTemplateURLWithKeyword(
 GURL AutocompleteMatch::GURLToStrippedGURL(
     const GURL& url,
     const AutocompleteInput& input,
-    TemplateURLService* template_url_service,
+    const TemplateURLService* template_url_service,
     const base::string16& keyword) {
   if (!url.is_valid())
     return url;
@@ -574,14 +585,11 @@ url_formatter::FormatUrlTypes AutocompleteMatch::GetFormatTypes(
   auto format_types = url_formatter::kFormatUrlOmitDefaults;
   if (preserve_scheme) {
     format_types &= ~url_formatter::kFormatUrlOmitHTTP;
-  } else if (base::FeatureList::IsEnabled(
-                 omnibox::kUIExperimentHideSuggestionUrlScheme)) {
+  } else {
     format_types |= url_formatter::kFormatUrlOmitHTTPS;
   }
 
-  if (!preserve_subdomain &&
-      base::FeatureList::IsEnabled(
-          omnibox::kUIExperimentHideSuggestionUrlTrivialSubdomains)) {
+  if (!preserve_subdomain) {
     format_types |= url_formatter::kFormatUrlOmitTrivialSubdomains;
   }
 

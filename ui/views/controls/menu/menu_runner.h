@@ -96,10 +96,8 @@ class VIEWS_EXPORT MenuRunner {
     // finger after the context menu of the item is opened.
     SEND_GESTURE_EVENTS_TO_OWNER = 1 << 7,
 
-    // Whether to always use a menu rendered with views::MenuItemView, even if
-    // the MenuRunnerImpl would otherwise pick a native implementation on this
-    // platform.
-    ALWAYS_VIEWS = 1 << 8,
+    // Whether to use the touchable layout for this context menu.
+    USE_TOUCHABLE_LAYOUT = 1 << 8,
   };
 
   // Creates a new MenuRunner, which may use a native menu if available.

@@ -31,7 +31,6 @@
 #include "bindings/core/v8/BindingSecurity.h"
 #include "bindings/core/v8/ReferrerScriptInfo.h"
 #include "bindings/core/v8/RejectedPromises.h"
-#include "bindings/core/v8/RetainedDOMInfo.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/ScriptValue.h"
@@ -260,10 +259,12 @@ static void PromiseRejectHandler(v8::PromiseRejectMessage data,
     // DOMException).
     DCHECK(exception->IsObject());
     auto private_error = V8PrivateProperty::GetDOMExceptionError(isolate);
-    v8::Local<v8::Value> error =
-        private_error.GetOrUndefined(exception.As<v8::Object>());
-    if (!error->IsUndefined())
+    v8::Local<v8::Value> error;
+    if (private_error.GetOrUndefined(exception.As<v8::Object>())
+            .ToLocal(&error) &&
+        !error->IsUndefined()) {
       exception = error;
+    }
   }
 
   String error_message;
@@ -499,8 +500,9 @@ static void HostGetImportMetaProperties(v8::Local<v8::Context> context,
   if (!modulator)
     return;
 
-  ModuleImportMeta host_meta =
-      modulator->HostGetImportMetaProperties(ScriptModule(isolate, module));
+  // TODO(shivanisha): Can a valid source url be passed to the constructor.
+  ModuleImportMeta host_meta = modulator->HostGetImportMetaProperties(
+      ScriptModule(isolate, module, KURL()));
 
   // 3. Return <<Record { [[Key]]: "url", [[Value]]: urlString }>>. [spec text]
   v8::Local<v8::String> url_key = V8String(isolate, "url");
@@ -636,9 +638,6 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
   isolate->SetPromiseRejectCallback(PromiseRejectHandlerInMainThread);
 
   if (v8::HeapProfiler* profiler = isolate->GetHeapProfiler()) {
-    profiler->SetWrapperClassInfoProvider(
-        WrapperTypeInfo::kNodeClassId, &RetainedDOMInfo::CreateRetainedDOMInfo);
-    profiler->SetGetRetainerInfosCallback(&V8GCController::GetRetainerInfos);
     profiler->SetBuildEmbedderGraphCallback(
         &V8EmbedderGraphBuilder::BuildEmbedderGraphCallback);
   }

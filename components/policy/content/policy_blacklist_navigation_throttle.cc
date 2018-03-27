@@ -56,6 +56,13 @@ KeyedService* PolicyBlacklistFactory::BuildServiceInstanceFor(
   return new PolicyBlacklistService(std::move(url_blacklist_manager));
 }
 
+content::BrowserContext* PolicyBlacklistFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  // TODO(crbug.com/701326): This DCHECK should be moved to GetContextToUse().
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return context;
+}
+
 PolicyBlacklistNavigationThrottle::PolicyBlacklistNavigationThrottle(
     content::NavigationHandle* navigation_handle,
     content::BrowserContext* context)
@@ -67,8 +74,7 @@ PolicyBlacklistNavigationThrottle::~PolicyBlacklistNavigationThrottle() {}
 
 content::NavigationThrottle::ThrottleCheckResult
 PolicyBlacklistNavigationThrottle::WillStartRequest() {
-  if (blacklist_service_ &&
-      blacklist_service_->IsURLBlocked(navigation_handle()->GetURL())) {
+  if (blacklist_service_->IsURLBlocked(navigation_handle()->GetURL())) {
     return ThrottleCheckResult(BLOCK_REQUEST,
                                net::ERR_BLOCKED_BY_ADMINISTRATOR);
   }

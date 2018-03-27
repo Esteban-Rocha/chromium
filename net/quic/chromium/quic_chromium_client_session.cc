@@ -76,6 +76,12 @@ const int kDefaultRTTMilliSecs = 300;
 // The maximum size of uncompressed QUIC headers that will be allowed.
 const size_t kMaxUncompressedHeaderSize = 256 * 1024;
 
+// The maximum time allowed to have no retransmittable packets on the wire
+// (after sending the first retransmittable packet) if
+// |migrate_session_early_v2_| is true. PING frames will be sent as needed to
+// enforce this.
+const size_t kDefaultRetransmittableOnWireTimeoutMillisecs = 100;
+
 // Histograms for tracking down the crashes from http://crbug.com/354669
 // Note: these values must be kept in sync with the corresponding values in:
 // tools/metrics/histograms/histograms.xml
@@ -752,6 +758,11 @@ QuicChromiumClientSession::QuicChromiumClientSession(
   }
   connect_timing_.dns_start = dns_resolution_start_time;
   connect_timing_.dns_end = dns_resolution_end_time;
+  if (migrate_session_early_v2_) {
+    connection->set_retransmittable_on_wire_timeout(
+        QuicTime::Delta::FromMilliseconds(
+            kDefaultRetransmittableOnWireTimeoutMillisecs));
+  }
 }
 
 QuicChromiumClientSession::~QuicChromiumClientSession() {
@@ -901,11 +912,12 @@ void QuicChromiumClientSession::OnHeadersHeadOfLineBlocking(
       base::TimeDelta::FromMicroseconds(delta.ToMicroseconds()));
 }
 
-void QuicChromiumClientSession::UnregisterStreamPriority(QuicStreamId id) {
+void QuicChromiumClientSession::UnregisterStreamPriority(QuicStreamId id,
+                                                         bool is_static) {
   if (headers_include_h2_stream_dependency_) {
     priority_dependency_state_.OnStreamDestruction(id);
   }
-  QuicSpdySession::UnregisterStreamPriority(id);
+  QuicSpdySession::UnregisterStreamPriority(id, is_static);
 }
 
 void QuicChromiumClientSession::UpdateStreamPriority(
@@ -1564,7 +1576,7 @@ void QuicChromiumClientSession::OnConnectionClosed(
 
 void QuicChromiumClientSession::OnSuccessfulVersionNegotiation(
     const ParsedQuicVersion& version) {
-  logger_->OnSuccessfulVersionNegotiation(version.transport_version);
+  logger_->OnSuccessfulVersionNegotiation(version);
   QuicSpdySession::OnSuccessfulVersionNegotiation(version);
 }
 
@@ -1675,11 +1687,7 @@ void QuicChromiumClientSession::WriteToNewSocket() {
     // Unblock the connection before sending a PING packet, since it
     // may have been blocked before the migration started.
     connection()->OnCanWrite();
-    if (use_control_frame_manager()) {
-      SendPing();
-    } else {
-      connection()->SendPing();
-    }
+    SendPing();
     return;
   }
 
@@ -2453,13 +2461,31 @@ void QuicChromiumClientSession::OnReadError(
     int result,
     const DatagramClientSocket* socket) {
   DCHECK(socket != nullptr);
+  base::UmaHistogramSparse("Net.QuicSession.ReadError.AnyNetwork", -result);
   if (socket != GetDefaultSocket()) {
-    // Ignore read errors from old sockets that are no longer active.
+    base::UmaHistogramSparse("Net.QuicSession.ReadError.OtherNetworks",
+                             -result);
+    // Ignore read errors from sockets that are not affecting the current
+    // network, i.e., sockets that are no longer active and probing socket.
     // TODO(jri): Maybe clean up old sockets on error.
     return;
   }
+
+  base::UmaHistogramSparse("Net.QuicSession.ReadError.CurrentNetwork", -result);
+  if (IsCryptoHandshakeConfirmed()) {
+    base::UmaHistogramSparse(
+        "Net.QuicSession.ReadError.CurrentNetwork.HandshakeConfirmed", -result);
+  }
+
+  if (migration_pending_) {
+    // Ignore read errors during pending migration. Connection will be closed if
+    // pending migration failed or timed out.
+    base::UmaHistogramSparse("Net.QuicSession.ReadError.PendingMigration",
+                             -result);
+    return;
+  }
+
   DVLOG(1) << "Closing session on read error: " << result;
-  base::UmaHistogramSparse("Net.QuicSession.ReadError", -result);
   connection()->CloseConnection(QUIC_PACKET_READ_ERROR, ErrorToString(result),
                                 ConnectionCloseBehavior::SILENT_CLOSE);
 }
@@ -2716,7 +2742,7 @@ bool QuicChromiumClientSession::HandlePromised(QuicStreamId id,
       // push promise headers are received, send a PRIORITY frame for the
       // promised stream ID. Send |kDefaultPriority| since that will be the
       // initial SpdyPriority of the push promise stream when created.
-      const SpdyPriority priority = kDefaultPriority;
+      const SpdyPriority priority = QuicStream::kDefaultPriority;
       SpdyStreamId parent_stream_id = 0;
       int weight = 0;
       bool exclusive = false;

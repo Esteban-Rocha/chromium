@@ -5,9 +5,9 @@
 <translation id="1126871238933253947">Mudar para o idioma de teclado utilizado anteriormente</translation>
 <translation id="1195667586424773550">Arraste o link para a barra de endereço do separador.</translation>
 <translation id="1204450209689312104">Abrir uma nova janela em modo de navegação anónima</translation>
+<translation id="1293699935367580298">Esc</translation>
 <translation id="1299858300159559687">Imprimir a página atual</translation>
 <translation id="1383876407941801731">Pesquisar</translation>
-<translation id="1439252533104567537">Aceder ao separador numerado</translation>
 <translation id="1454364489140280055"><ph name="CTRL" /><ph name="SEPARATOR1" /><ph name="SHIFT1" /><ph name="SEPARATOR2" /><ph name="G" /> ou <ph name="SHIFT2" /><ph name="SEPARATOR3" /><ph name="ENTER" />.</translation>
 <translation id="1510238584712386396">Iniciador</translation>
 <translation id="152892567002884378">Aumentar o volume</translation>
@@ -21,6 +21,7 @@
 <translation id="1920446759863417809"><ph name="SHIFT1" /><ph name="SEPARATOR1" /><ph name="ALT" /><ph name="SEPARATOR2" /><ph name="L" /> e, em seguida, <ph name="SHIFT2" /><ph name="SEPARATOR3" /><ph name="TAB" /> ou <ph name="LEFT" />.</translation>
 <translation id="1996162290124031907">Aceder ao separador seguinte</translation>
 <translation id="2010818616644390445">Ir para o último separador na janela</translation>
+<translation id="2088054208777350526">Procurar atalhos de teclado</translation>
 <translation id="2145908266289632567">Edição de texto</translation>
 <translation id="215292019801409139"><ph name="SEARCH" /><ph name="SEPARATOR" /> 1 a =</translation>
 <translation id="2181097965834437145">Mostrar ou ocultar a barra de marcadores</translation>
@@ -44,11 +45,9 @@
 <translation id="3084301071537457911">Realçar o item seguinte na prateleira</translation>
 <translation id="309173601632226815">Realçar o botão do iniciador na prateleira</translation>
 <translation id="3105917916468784889">Criar captura de ecrã</translation>
-<translation id="3118681365140644126">Remover o realce de um botão na prateleira</translation>
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="3140353188828248647">Focar barra de endereço</translation>
 <translation id="3288816184963444640">Fechar a janela atual</translation>
-<translation id="3356202203145076517">Abrir uma janela que tenha sido menos utilizada recentemente</translation>
 <translation id="3407560819924487926">Abrir o Gestor de tarefas</translation>
 <translation id="3422679037938588196">Ir para a correspondência anterior da pesquisa</translation>
 <translation id="344577624355799426"><ph name="ALT" /> ou <ph name="SEARCH" /><ph name="SEPARATOR" /><ph name="DOWN" />.</translation>
@@ -63,6 +62,7 @@
 <translation id="379295446891231126"><ph name="CTRL" /><ph name="SEPARATOR" /> 1 a 8</translation>
 <translation id="3837047332182291558">Aumentar o brilho do teclado (apenas para teclados retroiluminados)</translation>
 <translation id="3976863468609830880">Clicar no último ícone da prateleira</translation>
+<translation id="4026843240379844265">Mova a janela ativa entre ecrãs.</translation>
 <translation id="4035482366624727273">Selecionar tudo na página</translation>
 <translation id="4060703249685950734">Reabrir o último separador ou a última janela que fechou</translation>
 <translation id="4090342722461256974">Prima sem soltar <ph name="ALT" /><ph name="SEPARATOR" /><ph name="SHIFT" /> e, em seguida, toque em <ph name="TAB" /> até alcançar a janela que pretende abrir. Em seguida, solte.</translation>
@@ -73,7 +73,6 @@
 <translation id="4556221320735744018">Consultar a Ajuda dos atalhos de teclado</translation>
 <translation id="4628718545549558538">Abrir a área de estado (onde é apresentada a imagem da conta)</translation>
 <translation id="4642092649622328492">Criar uma captura de ecrã parcial</translation>
-<translation id="4725377341024374454">Abrir o botão realçado na prateleira</translation>
 <translation id="4801989101741319327">Ir para o fim da palavra seguinte</translation>
 <translation id="4916163929714267752">Abrir o link numa nova janela</translation>
 <translation id="5034421018520995080">Ir para a parte superior da página</translation>
@@ -94,7 +93,6 @@
 <translation id="587531134027443617">Eliminar a palavra anterior</translation>
 <translation id="5928303187149237472">Alterar a resolução do ecrã</translation>
 <translation id="5975083100439434680">Reduzir</translation>
-<translation id="6011500873794669296">Mudar o foco entre: a área de estado (onde é apresentada a sua imagem da conta), o Iniciador, a barra de endereço, a barra de marcadores (se estiver visível), a página Web que está aberta, a barra de transferências (se visível)</translation>
 <translation id="6022924867608035986">Limpar texto da caixa de pesquisa</translation>
 <translation id="6045998054441862242">Ativar o modo de alto contraste</translation>
 <translation id="6052614013050385269">Clicar com o botão direito num link</translation>
@@ -113,7 +111,7 @@
 <translation id="649811797655257835">Selecione o ficheiro e, em seguida, prima <ph name="SPACE" />.</translation>
 <translation id="6572206071785323178">Alterne entre os idiomas de teclado definidos. Saiba como escolher o idioma do teclado.</translation>
 <translation id="6634456834225946400">Realçar a barra de marcadores (se visível)</translation>
-<translation id="666343722268997814">Abrir o menu de clique com o botão direito do rato referente ao item realçado</translation>
+<translation id="666343722268997814">Abrir o menu de de contexto referente ao item realçado</translation>
 <translation id="6671538777808758331">Ir para a correspondência seguinte da pesquisa</translation>
 <translation id="6690765639083431875">Ancorar uma janela à esquerda</translation>
 <translation id="6692847073476874842">Pré-visualizar um ficheiro na aplicação Ficheiros</translation>
@@ -124,6 +122,7 @@
 <translation id="6981982820502123353">Acessibilidade</translation>
 <translation id="7020813747703216897">Não foram encontrados resultados correspondentes.</translation>
 <translation id="7025325401470358758">Painel seguinte</translation>
+<translation id="7237562915163138771">Introduza um endereço Web na barra de endereço e, em seguida, prima <ph name="ALT" /><ph name="SEPARATOR" /><ph name="ENTER" />.</translation>
 <translation id="7379254767514753910"><ph name="ALT" /> ou <ph name="SEARCH" /><ph name="SEPARATOR" /><ph name="UP" />.</translation>
 <translation id="7439718573248533901">Eliminar a letra seguinte (eliminação para a frente)</translation>
 <translation id="766326951329901120">Colar o conteúdo da área de transferência como texto simples</translation>
@@ -139,13 +138,22 @@
 <translation id="8388247778047144397">Arraste o link para uma área em branco na Faixa de separadores.</translation>
 <translation id="8389638407792712197">Abrir nova janela</translation>
 <translation id="8429696719963529183">Utilizar as teclas F (F1 a F12)</translation>
+<translation id="8537650670971624753">Sair do modo de pesquisa</translation>
 <translation id="85690795166292698">Abrir o link num novo separador</translation>
 <translation id="8609384513243082612">Abrir novo separador</translation>
 <translation id="8644639153978066712">Apresentar ficheiros ocultos na aplicação Ficheiros</translation>
-<translation id="8709893667941082515">Focar a barra de endereço na pesquisa</translation>
 <translation id="8717459106217102612">Selecionar a palavra ou letra anterior</translation>
 <translation id="8727232706774971183">Ver as suas notificações</translation>
+<translation id="8855885154700222542">Tecla de ecrã inteiro</translation>
 <translation id="88986195241502842">Página para baixo</translation>
 <translation id="8903921497873541725">Ampliar</translation>
+<translation id="8924883688469390268">Mudar para o utilizador anterior</translation>
+<translation id="8977648847395357314">Selecionar o conteúdo na barra de endereço</translation>
+<translation id="8990356943438003669"><ph name="ALT" /><ph name="SEPARATOR" /> 1 a 8</translation>
+<translation id="9041599225465145264">Colar o conteúdo da área de transferência</translation>
+<translation id="9052808072970550123">Mudar para o utilizador seguinte</translation>
 <translation id="9179672198516322668">Atalhos populares</translation>
+<translation id="93603345341560814">Premir <ph name="SHIFT" /> e clicar num link</translation>
+<translation id="945383118875625837">Arrastar o link para a barra de marcadores</translation>
+<translation id="98120814841227350">Ir para o fim do documento</translation>
 </translationbundle>

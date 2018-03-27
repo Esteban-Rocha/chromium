@@ -64,10 +64,9 @@ class PLATFORM_EXPORT LayoutRect {
   explicit LayoutRect(const IntRect& rect)
       : location_(rect.Location()), size_(rect.Size()) {}
 
-  explicit LayoutRect(
-      const FloatRect&);  // don't do this implicitly since it's lossy
-  explicit LayoutRect(
-      const DoubleRect&);  // don't do this implicitly since it's lossy
+  // Don't do these implicitly since they are lossy.
+  explicit LayoutRect(const FloatRect&);
+  explicit LayoutRect(const DoubleRect&);
 
   LayoutPoint Location() const { return location_; }
   LayoutSize Size() const { return size_; }
@@ -208,6 +207,11 @@ class PLATFORM_EXPORT LayoutRect {
   // the result for isEmpty() is not conclusive.
   bool InclusiveIntersect(const LayoutRect&);
 
+  // Similar to |Intersects| but inclusive (see also: |InclusiveIntersect|).
+  // For example, (0,0 10x10) would inclusively intersect (10,10 0x0) even
+  // though the intersection has zero area and |Intersects| would be false.
+  bool IntersectsInclusively(const LayoutRect&);
+
   // Besides non-empty rects, this method also unites empty rects (as points or
   // line segments).  For example, union of (100, 100, 0x0) and (200, 200, 50x0)
   // is (100, 100, 150x100).
@@ -236,9 +240,10 @@ class PLATFORM_EXPORT LayoutRect {
   static IntRect InfiniteIntRect() {
     // Due to saturated arithemetic this value is not the same as
     // LayoutRect(IntRect(INT_MIN/2, INT_MIN/2, INT_MAX, INT_MAX)).
-    static IntRect infinite_int_rect(
-        LayoutRect(LayoutUnit::NearlyMin() / 2, LayoutUnit::NearlyMin() / 2,
-                   LayoutUnit::NearlyMax(), LayoutUnit::NearlyMax()));
+    static IntRect infinite_int_rect(LayoutUnit::NearlyMin().ToInt() / 2,
+                                     LayoutUnit::NearlyMin().ToInt() / 2,
+                                     LayoutUnit::NearlyMax().ToInt(),
+                                     LayoutUnit::NearlyMax().ToInt());
     return infinite_int_rect;
   }
 
@@ -289,6 +294,12 @@ inline IntRect PixelSnappedIntRect(const LayoutRect& rect) {
 inline IntRect EnclosingIntRect(const LayoutRect& rect) {
   IntPoint location = FlooredIntPoint(rect.MinXMinYCorner());
   IntPoint max_point = CeiledIntPoint(rect.MaxXMaxYCorner());
+  return IntRect(location, max_point - location);
+}
+
+inline IntRect EnclosedIntRect(const LayoutRect& rect) {
+  IntPoint location = CeiledIntPoint(rect.MinXMinYCorner());
+  IntPoint max_point = FlooredIntPoint(rect.MaxXMaxYCorner());
   return IntRect(location, max_point - location);
 }
 

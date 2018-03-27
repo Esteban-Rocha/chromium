@@ -13,6 +13,7 @@
 
 #include "base/macros.h"
 #include "base/optional.h"
+#include "components/sync/model/model_type_change_processor.h"
 #include "components/sync/model/model_type_store.h"
 #include "components/sync/model/model_type_sync_bridge.h"
 #include "components/sync/user_events/global_id_mapper.h"
@@ -21,9 +22,10 @@ namespace syncer {
 
 class UserEventSyncBridge : public ModelTypeSyncBridge {
  public:
-  UserEventSyncBridge(OnceModelTypeStoreFactory store_factory,
-                      const ChangeProcessorFactory& change_processor_factory,
-                      GlobalIdMapper* global_id_mapper);
+  UserEventSyncBridge(
+      OnceModelTypeStoreFactory store_factory,
+      std::unique_ptr<ModelTypeChangeProcessor> change_processor,
+      GlobalIdMapper* global_id_mapper);
   ~UserEventSyncBridge() override;
 
   // ModelTypeSyncBridge implementation.
@@ -38,7 +40,8 @@ class UserEventSyncBridge : public ModelTypeSyncBridge {
   void GetAllData(DataCallback callback) override;
   std::string GetClientTag(const EntityData& entity_data) override;
   std::string GetStorageKey(const EntityData& entity_data) override;
-  void DisableSync() override;
+  void ApplyDisableSyncChanges(
+      std::unique_ptr<MetadataChangeList> delete_metadata_change_list) override;
 
   void RecordUserEvent(std::unique_ptr<sync_pb::UserEventSpecifics> specifics);
 
@@ -55,9 +58,6 @@ class UserEventSyncBridge : public ModelTypeSyncBridge {
   void OnReadAllData(DataCallback callback,
                      const base::Optional<ModelError>& error,
                      std::unique_ptr<ModelTypeStore::RecordList> data_records);
-  void OnReadAllDataToDelete(
-      const base::Optional<ModelError>& error,
-      std::unique_ptr<ModelTypeStore::RecordList> data_records);
 
   void HandleGlobalIdChange(int64_t old_global_id, int64_t new_global_id);
 

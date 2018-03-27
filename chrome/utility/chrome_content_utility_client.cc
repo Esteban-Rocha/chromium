@@ -17,15 +17,15 @@
 #include "chrome/common/buildflags.h"
 #include "chrome/common/profiling/constants.mojom.h"
 #include "chrome/profiling/profiling_service.h"
-#include "components/patch_service/patch_service.h"
-#include "components/patch_service/public/interfaces/constants.mojom.h"
-#include "components/unzip_service/public/interfaces/constants.mojom.h"
-#include "components/unzip_service/unzip_service.h"
+#include "components/services/patch/patch_service.h"
+#include "components/services/patch/public/interfaces/constants.mojom.h"
+#include "components/services/unzip/public/interfaces/constants.mojom.h"
+#include "components/services/unzip/unzip_service.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/simple_connection_filter.h"
 #include "content/public/utility/utility_thread.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "services/service_manager/embedder/embedded_service_info.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/sandbox/switches.h"
@@ -51,7 +51,6 @@
 #include "chrome/services/removable_storage_writer/public/mojom/constants.mojom.h"
 #include "chrome/services/removable_storage_writer/removable_storage_writer_service.h"
 #include "chrome/utility/extensions/extensions_handler.h"
-#include "extensions/utility/utility_handler.h"
 #if defined(OS_WIN)
 #include "chrome/services/wifi_util_win/public/mojom/constants.mojom.h"
 #include "chrome/services/wifi_util_win/wifi_util_win_service.h"
@@ -118,10 +117,6 @@ ChromeContentUtilityClient::ChromeContentUtilityClient()
 ChromeContentUtilityClient::~ChromeContentUtilityClient() = default;
 
 void ChromeContentUtilityClient::UtilityThreadStarted() {
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-  extensions::utility_handler::UtilityThreadStarted();
-#endif
-
 #if defined(OS_WIN)
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   utility_process_running_elevated_ = command_line->HasSwitch(
@@ -137,10 +132,6 @@ void ChromeContentUtilityClient::UtilityThreadStarted() {
     return;
 
   auto registry = std::make_unique<service_manager::BinderRegistry>();
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-  extensions::utility_handler::ExposeInterfacesToBrowser(
-      registry.get(), utility_process_running_elevated_);
-#endif
   // If our process runs with elevated privileges, only add elevated Mojo
   // interfaces to the interface registry.
   if (!utility_process_running_elevated_) {

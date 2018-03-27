@@ -10,7 +10,7 @@
 #include "ash/display/display_util.h"
 #include "ash/display/mirror_window_controller.h"
 #include "ash/display/mirror_window_test_api.h"
-#include "ash/display/screen_orientation_controller_chromeos.h"
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/display/screen_orientation_controller_test_api.h"
 #include "ash/display/window_tree_host_manager.h"
 #include "ash/public/cpp/app_types.h"
@@ -40,6 +40,7 @@
 #include "ui/display/display_observer.h"
 #include "ui/display/display_switches.h"
 #include "ui/display/manager/chromeos/display_change_observer.h"
+#include "ui/display/manager/chromeos/display_util.h"
 #include "ui/display/manager/chromeos/test/touch_device_manager_test_api.h"
 #include "ui/display/manager/display_layout_store.h"
 #include "ui/display/manager/display_manager_utilities.h"
@@ -1300,7 +1301,7 @@ TEST_F(DisplayManagerTest, UpdateDisplayZoomTest) {
 
   float zoom_factor_1 = 2.0f;
   display_manager()->UpdateZoomFactor(info_1.id(), zoom_factor_1);
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(info_1.id()),
+  EXPECT_EQ(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
             zoom_factor_1);
 
   // With the zoom factor set for the display. The effective zoom factor
@@ -1313,7 +1314,7 @@ TEST_F(DisplayManagerTest, UpdateDisplayZoomTest) {
   float zoom_factor_2 = 1.5f;
   display_manager()->UpdateZoomFactor(info_1.id(), zoom_factor_2);
 
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(info_1.id()),
+  EXPECT_EQ(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
             zoom_factor_2);
 
   // Change the display mode of the device.
@@ -1335,7 +1336,7 @@ TEST_F(DisplayManagerTest, UpdateDisplayZoomTest) {
 
   // Set the zoom factor back to |zoom_factor_2| for first display.
   display_manager()->UpdateZoomFactor(info_1.id(), zoom_factor_2);
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(info_1.id()),
+  EXPECT_EQ(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
             zoom_factor_2);
   EXPECT_EQ(
       display_manager()->GetDisplayForId(info_1.id()).device_scale_factor(),
@@ -1345,7 +1346,7 @@ TEST_F(DisplayManagerTest, UpdateDisplayZoomTest) {
   float zoom_factor_3 = 1.5f;
   const display::ManagedDisplayInfo& info_2 = GetDisplayInfoAt(1);
   display_manager()->UpdateZoomFactor(info_2.id(), zoom_factor_3);
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(info_2.id()),
+  EXPECT_EQ(display_manager()->GetDisplayInfo(info_2.id()).zoom_factor(),
             zoom_factor_3);
   EXPECT_EQ(
       display_manager()->GetDisplayForId(info_2.id()).device_scale_factor(),
@@ -1353,13 +1354,13 @@ TEST_F(DisplayManagerTest, UpdateDisplayZoomTest) {
 
   // Modifying zoom factor for a display should not effect zoom factors of
   // other displays.
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(info_1.id()),
+  EXPECT_EQ(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
             zoom_factor_2);
 
   // Update the zoom factor for display to see if it gets reflected.
   display_manager()->UpdateZoomFactor(info_1.id(), zoom_factor_3);
 
-  EXPECT_EQ(display_manager()->GetZoomFactorForDisplay(info_1.id()),
+  EXPECT_EQ(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
             zoom_factor_3);
   display::test::SetDisplayResolution(display_manager(), info_1.id(),
                                       modes[0].size());
@@ -1371,6 +1372,112 @@ TEST_F(DisplayManagerTest, UpdateDisplayZoomTest) {
   EXPECT_EQ(
       display_manager()->GetDisplayForId(info_2.id()).device_scale_factor(),
       zoom_factor_3 * display_2_dsf);
+}
+
+TEST_F(DisplayManagerTest, ZoomDisplay) {
+  // Initialize a display pair.
+  UpdateDisplay("1920x1080#1920x1080|1280x720%60, 2560x1440*2#2560x1440");
+  reset();
+
+  ASSERT_EQ(2u, display_manager()->GetNumDisplays());
+
+  const display::ManagedDisplayInfo& info_1 = GetDisplayInfoAt(0);
+  const display::ManagedDisplayInfo::ManagedDisplayModeList& modes_1 =
+      info_1.display_modes();
+
+  const display::ManagedDisplayInfo& info_2 = GetDisplayInfoAt(1);
+  const display::ManagedDisplayInfo::ManagedDisplayModeList& modes_2 =
+      info_2.display_modes();
+
+  // Set the display mode for each display.
+  display::test::SetDisplayResolution(display_manager(), info_1.id(),
+                                      modes_1[0].size());
+  display::test::SetDisplayResolution(display_manager(), info_2.id(),
+                                      modes_2[0].size());
+  display_manager()->UpdateDisplays();
+
+  // Enumerate the zoom factors for display.
+  const std::vector<double> zoom_factors_1 =
+      display::GetDisplayZoomFactors(modes_1[0]);
+
+  // Set the zoom factor to one of the enumerated zoom factors for the said
+  // display.
+  const std::size_t zoom_factor_idx_1 = 0;
+  display_manager()->UpdateZoomFactor(info_1.id(),
+                                      zoom_factors_1[zoom_factor_idx_1]);
+
+  // Make sure the chage was successful.
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
+              zoom_factors_1[zoom_factor_idx_1], 0.001f);
+
+  // Zoom out the display. This should have no effect, since the display is
+  // already at the minimum zoom level.
+  display_manager()->ZoomDisplay(info_1.id(), true /* up */);
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
+              zoom_factors_1[zoom_factor_idx_1], 0.001f);
+
+  // Ensure that this call did not modify the zoom value for the other display.
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_2.id()).zoom_factor(), 1.f,
+              0.001f);
+
+  // Zoom in the display.
+  display_manager()->ZoomDisplay(info_1.id(), false /* up */);
+
+  // The zoom factor for the display should be set to the next zoom factor in
+  // list.
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
+              zoom_factors_1[zoom_factor_idx_1 + 1], 0.001f);
+
+  // Zoom out the display.
+  display_manager()->ZoomDisplay(info_1.id(), true /* up */);
+
+  // The zoom level should decrease from the previous level.
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
+              zoom_factors_1[zoom_factor_idx_1], 0.001f);
+
+  // Enumerate the zoom factors for display.
+  const std::vector<double> zoom_factors_2 =
+      display::GetDisplayZoomFactors(modes_2[0]);
+
+  // Set the zoom factor to one of the enumerated zoom factors for the said
+  // display.
+  const std::size_t zoom_factor_idx_2 = zoom_factors_2.size() - 1;
+  display_manager()->UpdateZoomFactor(info_2.id(),
+                                      zoom_factors_2[zoom_factor_idx_2]);
+
+  // Make sure the chage was successful.
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_2.id()).zoom_factor(),
+              zoom_factors_2[zoom_factor_idx_2], 0.001f);
+
+  // Zoom in the display. This should have no effect since we are already at
+  // maximum zoom.
+  display_manager()->ZoomDisplay(info_2.id(), false /* up */);
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_2.id()).zoom_factor(),
+              zoom_factors_2[zoom_factor_idx_2], 0.001f);
+
+  // Zoom out the display
+  display_manager()->ZoomDisplay(info_2.id(), true /* up */);
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_2.id()).zoom_factor(),
+              zoom_factors_2[zoom_factor_idx_2 - 1], 0.001f);
+
+  // Ensure that this call did not modify the zoom value for the other display.
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(),
+              zoom_factors_1[zoom_factor_idx_1], 0.001f);
+
+  // Reset the zoom value for displays.
+  display_manager()->ResetDisplayZoom(info_1.id());
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(), 1.f,
+              0.001f);
+  // Resetting the zoom level of one display should not effect the other display
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_2.id()).zoom_factor(),
+              zoom_factors_2[zoom_factor_idx_2 - 1], 0.001f);
+
+  // Now reset the zoom value for other display.
+  display_manager()->ResetDisplayZoom(info_2.id());
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_2.id()).zoom_factor(), 1.f,
+              0.001f);
+  EXPECT_NEAR(display_manager()->GetDisplayInfo(info_1.id()).zoom_factor(), 1.f,
+              0.001f);
 }
 
 TEST_F(DisplayManagerTest, TestDeviceScaleOnlyChange) {
@@ -2709,7 +2816,7 @@ TEST_F(DisplayManagerTest, UnifiedDesktopWith2xDSF) {
   EXPECT_EQ("1025x500", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("1025x500",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
-  accelerators::ZoomInternalDisplay(false);
+  accelerators::ZoomDisplay(false);
   // (800 / 500 * 400 + 500) /2 = 820
   EXPECT_EQ("820x400", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("820x400",
@@ -2728,7 +2835,7 @@ TEST_F(DisplayManagerTest, UnifiedDesktopWith2xDSF) {
   EXPECT_EQ("1000x400", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("1000x400",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
-  accelerators::ZoomInternalDisplay(true);
+  accelerators::ZoomDisplay(true);
   // 1000 / 800 * 1200 + 1000 = 2500
   EXPECT_EQ("2500x1000", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("2500x1000",
@@ -2747,7 +2854,7 @@ TEST_F(DisplayManagerTest, UnifiedDesktopWith2xDSF) {
   EXPECT_EQ("1000x400", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("1000x400",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
-  accelerators::ZoomInternalDisplay(true);
+  accelerators::ZoomDisplay(true);
   EXPECT_EQ("1250x500", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("1250x500",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
@@ -2765,7 +2872,7 @@ TEST_F(DisplayManagerTest, UnifiedDesktopWith2xDSF) {
   EXPECT_EQ("650x400", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("650x400",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
-  accelerators::ZoomInternalDisplay(true);
+  accelerators::ZoomDisplay(true);
   EXPECT_EQ("1300x800", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("1300x800",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
@@ -2782,7 +2889,7 @@ TEST_F(DisplayManagerTest, UnifiedDesktopWith2xDSF) {
   EXPECT_EQ("1300x800", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("1300x800",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
-  accelerators::ZoomInternalDisplay(false);
+  accelerators::ZoomDisplay(false);
   EXPECT_EQ("650x400", screen->GetPrimaryDisplay().size().ToString());
   EXPECT_EQ("650x400",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
@@ -3626,12 +3733,16 @@ class DisplayManagerOrientationTest : public DisplayManagerTest {
                           0.f, 0.f);
     portrait_secondary->Set(chromeos::ACCELEROMETER_SOURCE_SCREEN, kMeanGravity,
                             0.f, 0.f);
+    landscape_primary->Set(chromeos::ACCELEROMETER_SOURCE_SCREEN, 0,
+                           -kMeanGravity, 0.f);
   }
 
  protected:
   scoped_refptr<chromeos::AccelerometerUpdate> portrait_primary =
       new chromeos::AccelerometerUpdate();
   scoped_refptr<chromeos::AccelerometerUpdate> portrait_secondary =
+      new chromeos::AccelerometerUpdate();
+  scoped_refptr<chromeos::AccelerometerUpdate> landscape_primary =
       new chromeos::AccelerometerUpdate();
 
  private:
@@ -3673,25 +3784,22 @@ TEST_F(DisplayManagerOrientationTest, SaveRestoreUserRotationLock) {
   {
     window_a->SetProperty(aura::client::kAppType,
                           static_cast<int>(AppType::CHROME_APP));
-    orientation_controller->LockOrientationForWindow(
-        window_a, blink::kWebScreenOrientationLockAny,
-        ScreenOrientationController::LockCompletionBehavior::None);
+    orientation_controller->LockOrientationForWindow(window_a,
+                                                     OrientationLockType::kAny);
   }
   aura::Window* window_p = CreateTestWindowInShellWithId(0);
   {
     window_p->SetProperty(aura::client::kAppType,
                           static_cast<int>(AppType::CHROME_APP));
     orientation_controller->LockOrientationForWindow(
-        window_p, blink::kWebScreenOrientationLockPortrait,
-        ScreenOrientationController::LockCompletionBehavior::None);
+        window_p, OrientationLockType::kPortrait);
   }
   aura::Window* window_l = CreateTestWindowInShellWithId(0);
   {
     window_l->SetProperty(aura::client::kAppType,
                           static_cast<int>(AppType::CHROME_APP));
     orientation_controller->LockOrientationForWindow(
-        window_l, blink::kWebScreenOrientationLockLandscape,
-        ScreenOrientationController::LockCompletionBehavior::None);
+        window_l, OrientationLockType::kLandscape);
   }
 
   DisplayConfigurationController* configuration_controller =
@@ -3713,7 +3821,7 @@ TEST_F(DisplayManagerOrientationTest, SaveRestoreUserRotationLock) {
 
   EXPECT_EQ(display::Display::ROTATE_0, screen->GetPrimaryDisplay().rotation());
   EXPECT_FALSE(display_manager->registered_internal_display_rotation_lock());
-  EXPECT_EQ(blink::kWebScreenOrientationLockLandscapePrimary,
+  EXPECT_EQ(OrientationLockType::kLandscapePrimary,
             test_api.GetCurrentOrientation());
 
   // Enable lock at 0.
@@ -3731,7 +3839,7 @@ TEST_F(DisplayManagerOrientationTest, SaveRestoreUserRotationLock) {
   EXPECT_EQ(display::Display::ROTATE_0,
             display_manager->registered_internal_display_rotation());
   EXPECT_EQ(0, test_observer.countAndReset());
-  EXPECT_EQ(blink::kWebScreenOrientationLockPortraitPrimary,
+  EXPECT_EQ(OrientationLockType::kPortraitPrimary,
             test_api.GetCurrentOrientation());
 
   // Any will rotate to the locked rotation.
@@ -3804,8 +3912,7 @@ TEST_F(DisplayManagerOrientationTest, UserRotationLockReverse) {
   Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
 
   orientation_controller->LockOrientationForWindow(
-      window, blink::kWebScreenOrientationLockPortrait,
-      ScreenOrientationController::LockCompletionBehavior::None);
+      window, OrientationLockType::kPortrait);
   EXPECT_EQ(display::Display::ROTATE_270,
             screen->GetPrimaryDisplay().rotation());
 
@@ -3843,49 +3950,66 @@ TEST_F(DisplayManagerOrientationTest, LockToSpecificOrientation) {
   {
     window_a->SetProperty(aura::client::kAppType,
                           static_cast<int>(AppType::CHROME_APP));
-    orientation_controller->LockOrientationForWindow(
-        window_a, blink::kWebScreenOrientationLockAny,
-        ScreenOrientationController::LockCompletionBehavior::None);
+    orientation_controller->LockOrientationForWindow(window_a,
+                                                     OrientationLockType::kAny);
   }
   wm::ActivateWindow(window_a);
   Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
 
   orientation_controller->OnAccelerometerUpdated(portrait_primary);
 
-  EXPECT_EQ(blink::kWebScreenOrientationLockPortraitPrimary,
+  EXPECT_EQ(OrientationLockType::kPortraitPrimary,
             test_api.GetCurrentOrientation());
 
   orientation_controller->OnAccelerometerUpdated(portrait_secondary);
 
-  aura::Window* window_ps = CreateTestWindowInShellWithId(1);
-  {
-    window_ps->SetProperty(aura::client::kAppType,
-                           static_cast<int>(AppType::CHROME_APP));
-    orientation_controller->LockOrientationForWindow(
-        window_ps, blink::kWebScreenOrientationLockPortrait,
-        ScreenOrientationController::LockCompletionBehavior::DisableSensor);
-    wm::ActivateWindow(window_ps);
-  }
+  aura::Window* window_lsc = CreateTestWindowInShellWithId(1);
+  window_lsc->SetProperty(aura::client::kAppType,
+                          static_cast<int>(AppType::CHROME_APP));
 
-  EXPECT_EQ(blink::kWebScreenOrientationLockPortraitSecondary,
+  aura::Window* window_psc = CreateTestWindowInShellWithId(1);
+  window_psc->SetProperty(aura::client::kAppType,
+                          static_cast<int>(AppType::CHROME_APP));
+
+  orientation_controller->LockOrientationForWindow(
+      window_psc, OrientationLockType::kPortraitSecondary);
+  orientation_controller->LockOrientationForWindow(
+      window_psc, OrientationLockType::kCurrent);
+  wm::ActivateWindow(window_psc);
+
+  orientation_controller->LockOrientationForWindow(
+      window_lsc, OrientationLockType::kLandscapeSecondary);
+  orientation_controller->LockOrientationForWindow(
+      window_lsc, OrientationLockType::kCurrent);
+
+  EXPECT_EQ(OrientationLockType::kPortraitSecondary,
             test_api.GetCurrentOrientation());
 
   // The orientation should stay portrait secondary.
   orientation_controller->OnAccelerometerUpdated(portrait_primary);
-  EXPECT_EQ(blink::kWebScreenOrientationLockPortraitSecondary,
+  EXPECT_EQ(OrientationLockType::kPortraitSecondary,
+            test_api.GetCurrentOrientation());
+  wm::ActivateWindow(window_lsc);
+
+  EXPECT_EQ(OrientationLockType::kLandscapeSecondary,
+            test_api.GetCurrentOrientation());
+
+  // The orientation should stay landscape secondary.
+  orientation_controller->OnAccelerometerUpdated(landscape_primary);
+  EXPECT_EQ(OrientationLockType::kLandscapeSecondary,
             test_api.GetCurrentOrientation());
 
   wm::ActivateWindow(window_a);
   orientation_controller->OnAccelerometerUpdated(portrait_primary);
 
   // Swtching to |window_a| enables rotation.
-  EXPECT_EQ(blink::kWebScreenOrientationLockPortraitPrimary,
+  EXPECT_EQ(OrientationLockType::kPortraitPrimary,
             test_api.GetCurrentOrientation());
 
   // The orientation has alraedy been locked to secondary once, so
   // it should swtich back to the portrait secondary.
-  wm::ActivateWindow(window_ps);
-  EXPECT_EQ(blink::kWebScreenOrientationLockPortraitSecondary,
+  wm::ActivateWindow(window_psc);
+  EXPECT_EQ(OrientationLockType::kPortraitSecondary,
             test_api.GetCurrentOrientation());
 }
 

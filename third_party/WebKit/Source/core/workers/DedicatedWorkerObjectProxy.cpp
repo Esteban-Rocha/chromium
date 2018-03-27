@@ -31,6 +31,9 @@
 #include "core/workers/DedicatedWorkerObjectProxy.h"
 
 #include <memory>
+#include <utility>
+
+#include "base/memory/ptr_util.h"
 #include "bindings/core/v8/SourceLocation.h"
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
 #include "core/dom/Document.h"
@@ -45,7 +48,6 @@
 #include "platform/CrossThreadFunctional.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/wtf/Functional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
 
@@ -55,7 +57,7 @@ std::unique_ptr<DedicatedWorkerObjectProxy> DedicatedWorkerObjectProxy::Create(
     DedicatedWorkerMessagingProxy* messaging_proxy_weak_ptr,
     ParentFrameTaskRunners* parent_frame_task_runners) {
   DCHECK(messaging_proxy_weak_ptr);
-  return WTF::WrapUnique(new DedicatedWorkerObjectProxy(
+  return base::WrapUnique(new DedicatedWorkerObjectProxy(
       messaging_proxy_weak_ptr, parent_frame_task_runners));
 }
 
@@ -111,6 +113,20 @@ void DedicatedWorkerObjectProxy::DidCreateWorkerGlobalScope(
     WorkerOrWorkletGlobalScope* global_scope) {
   DCHECK(!worker_global_scope_);
   worker_global_scope_ = ToWorkerGlobalScope(global_scope);
+}
+
+void DedicatedWorkerObjectProxy::DidEvaluateClassicScript(bool success) {
+  PostCrossThreadTask(
+      *GetParentFrameTaskRunners()->Get(TaskType::kUnspecedTimer), FROM_HERE,
+      CrossThreadBind(&DedicatedWorkerMessagingProxy::DidEvaluateScript,
+                      messaging_proxy_weak_ptr_, success));
+}
+
+void DedicatedWorkerObjectProxy::DidEvaluateModuleScript(bool success) {
+  PostCrossThreadTask(
+      *GetParentFrameTaskRunners()->Get(TaskType::kUnspecedTimer), FROM_HERE,
+      CrossThreadBind(&DedicatedWorkerMessagingProxy::DidEvaluateScript,
+                      messaging_proxy_weak_ptr_, success));
 }
 
 void DedicatedWorkerObjectProxy::WillDestroyWorkerGlobalScope() {

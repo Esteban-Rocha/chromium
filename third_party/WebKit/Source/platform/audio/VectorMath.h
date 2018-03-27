@@ -27,13 +27,35 @@
 #define VectorMath_h
 
 #include <cstddef>
+
 #include "platform/PlatformExport.h"
+#include "platform/audio/AudioArray.h"
 
 // Defines the interface for several vector math functions whose implementation
 // will ideally be optimized.
 
 namespace blink {
 namespace VectorMath {
+
+// Direct vector convolution:
+//
+// dest[k*dest_stride] =
+//     sum(source[(k+m)*source_stride]*filter[m*filter_stride]) for all m
+PLATFORM_EXPORT void Conv(const float* source_p,
+                          int source_stride,
+                          const float* filter_p,
+                          int filter_stride,
+                          float* dest_p,
+                          int dest_stride,
+                          size_t frames_to_process,
+                          size_t filter_size,
+                          const AudioFloatArray* prepared_filter);
+
+// Prepare filter for Conv for faster processing.
+PLATFORM_EXPORT void PrepareFilterForConv(const float* filter_p,
+                                          int filter_stride,
+                                          size_t filter_size,
+                                          AudioFloatArray* prepared_filter);
 
 // Vector scalar multiply and then add.
 //

@@ -94,14 +94,11 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
                                  ScrollType,
                                  ScrollBehavior = kScrollBehaviorInstant);
 
-  // Scrolls the area so that the given rect, given in the document's content
-  // coordinates, such that it's visible in the area. Returns the new location
-  // of the input rect relative once again to the document.
-  // Note, in the case of a Document container, such as FrameView, the output
-  // will always be the input rect since scrolling it can't change the location
-  // of content relative to the document, unlike an overflowing element.
-  virtual LayoutRect ScrollIntoView(const LayoutRect& rect_in_content,
-                                    const WebScrollIntoViewParams& params);
+  // Scrolls the area so that the given rect, given in absolute coordinates,
+  // such that it's visible in the area. Returns the new location of the input
+  // rect in absolute coordinates.
+  virtual LayoutRect ScrollIntoView(const LayoutRect&,
+                                    const WebScrollIntoViewParams&);
 
   static bool ScrollBehaviorFromString(const String&, ScrollBehavior&);
 
@@ -112,9 +109,11 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   void MouseEnteredScrollbar(Scrollbar&);
   void MouseExitedScrollbar(Scrollbar&);
   void MouseCapturedScrollbar();
-  void MouseReleasedScrollbar();
+  void MouseReleasedScrollbar(ScrollbarOrientation);
   void ContentAreaDidShow() const;
   void ContentAreaDidHide() const;
+
+  virtual void SnapAfterScrollbarDragging(ScrollbarOrientation) {}
 
   void FinishCurrentScrollAnimations() const;
 
@@ -277,12 +276,15 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   virtual void RegisterForAnimation() {}
   virtual void DeregisterForAnimation() {}
 
-  virtual bool UsesCompositedScrolling() const { return false; }
+  bool UsesCompositedScrolling() const { return uses_composited_scrolling_; }
+  void SetUsesCompositedScrolling(bool uses_composited_scrolling) {
+    uses_composited_scrolling_ = uses_composited_scrolling;
+  }
   virtual bool ShouldScrollOnMainThread() const;
 
   // Overlay scrollbars can "fade-out" when inactive.
-  virtual bool ScrollbarsHidden() const;
-  virtual void SetScrollbarsHidden(bool);
+  virtual bool ScrollbarsHiddenIfOverlay() const;
+  virtual void SetScrollbarsHiddenIfOverlay(bool);
 
   // Returns true if the GraphicsLayer tree needs to be rebuilt.
   virtual bool UpdateAfterCompositingChange() { return false; }
@@ -485,13 +487,14 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   unsigned horizontal_scrollbar_needs_paint_invalidation_ : 1;
   unsigned vertical_scrollbar_needs_paint_invalidation_ : 1;
   unsigned scroll_corner_needs_paint_invalidation_ : 1;
-  unsigned scrollbars_hidden_ : 1;
+  unsigned scrollbars_hidden_if_overlay_ : 1;
   unsigned scrollbar_captured_ : 1;
   unsigned mouse_over_scrollbar_ : 1;
 
   // Indicates that the next compositing update needs to call
   // WebLayer::showScrollbars on our scroll layer. Ignored if not composited.
   unsigned needs_show_scrollbar_layers_ : 1;
+  unsigned uses_composited_scrolling_ : 1;
 
   // There are 6 possible combinations of writing mode and direction. Scroll
   // origin will be non-zero in the x or y axis if there is any reversed

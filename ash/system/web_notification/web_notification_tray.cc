@@ -414,7 +414,7 @@ bool WebNotificationTray::ShowPopups() {
   if (IsMessageCenterVisible())
     return false;
 
-  popup_collection_->DoUpdateIfPossible();
+  popup_collection_->DoUpdate();
   return true;
 }
 
@@ -444,9 +444,22 @@ bool WebNotificationTray::IsMessageCenterVisible() const {
 
 void WebNotificationTray::UpdateAfterShelfAlignmentChange() {
   TrayBackgroundView::UpdateAfterShelfAlignmentChange();
-  // Destroy any existing bubble so that it will be rebuilt correctly.
+  // Destroy existing message center bubble so that it won't be reused.
   message_center_ui_controller_->HideMessageCenterBubble();
+
+  // Destroy any existing popup bubbles and rebuilt if necessary.
   message_center_ui_controller_->HidePopupBubble();
+  message_center_ui_controller_->ShowPopupBubble();
+}
+
+void WebNotificationTray::UpdateAfterRootWindowBoundsChange(
+    const gfx::Rect& old_bounds,
+    const gfx::Rect& new_bounds) {
+  TrayBackgroundView::UpdateAfterRootWindowBoundsChange(old_bounds, new_bounds);
+  // Hide the message center bubble, since the bounds may not have enough to
+  // show the current size of the message center. This handler is invoked when
+  // the screen is rotated or the screen size is changed.
+  message_center_ui_controller_->HideMessageCenterBubble();
 }
 
 void WebNotificationTray::AnchorUpdated() {

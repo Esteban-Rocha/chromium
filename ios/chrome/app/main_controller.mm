@@ -888,7 +888,7 @@ void MainControllerAuthenticationServiceDelegate::ClearBrowsingData(
   }
   if (!_mainCoordinator) {
     // Lazily create the main coordinator.
-    if (IsTabSwitcherTabGridEnabled()) {
+    if (IsUIRefreshPhase1Enabled()) {
       TabGridCoordinator* tabGridCoordinator =
           [[TabGridCoordinator alloc] initWithWindow:self.window
                           applicationCommandEndpoint:self];
@@ -1938,8 +1938,11 @@ void MainControllerAuthenticationServiceDelegate::ClearBrowsingData(
 
   _dismissingStackView = YES;
   // Prevent wayward touches from wreaking havoc while the stack view is being
-  // dismissed.
-  [[_tabSwitcher viewController].view setUserInteractionEnabled:NO];
+  // dismissed. Don't do this when the tab grid is used.
+  if (!IsUIRefreshPhase1Enabled()) {
+    [[_tabSwitcher viewController].view setUserInteractionEnabled:NO];
+  }
+
   BrowserViewController* targetBVC =
       (tabModel == self.mainTabModel) ? self.mainBVC : self.otrBVC;
   self.currentBVC = targetBVC;
@@ -2003,10 +2006,17 @@ void MainControllerAuthenticationServiceDelegate::ClearBrowsingData(
                                timePeriod:(browsing_data::TimePeriod)timePeriod
                                removeMask:(BrowsingDataRemoveMask)removeMask
                           completionBlock:(ProceduralBlock)completionBlock {
-  // TODO(crbug.com/632772): Remove web usage disabling once
-  // https://bugs.webkit.org/show_bug.cgi?id=149079 has been fixed.
-  if (IsRemoveDataMaskSet(removeMask,
-                          BrowsingDataRemoveMask::REMOVE_SITE_DATA)) {
+  // TODO(crbug.com/632772): https://bugs.webkit.org/show_bug.cgi?id=149079
+  // makes it necessary to disable web usage while clearing browsing data.
+  // It is however unnecessary for off-the-record BrowserState (as the code
+  // is not invoked) and has undesired side-effect (cause all regular tabs
+  // to reload, see http://crbug.com/821753 for details).
+
+  const BOOL disableWebUsageDuringRemoval =
+      !browserState->IsOffTheRecord() &&
+      IsRemoveDataMaskSet(removeMask, BrowsingDataRemoveMask::REMOVE_SITE_DATA);
+
+  if (disableWebUsageDuringRemoval) {
     // Disables browsing and purges web views.
     // Must be called only on the main thread.
     DCHECK([NSThread isMainThread]);
@@ -2065,6 +2075,7 @@ void MainControllerAuthenticationServiceDelegate::ClearBrowsingData(
 - (void)closeSettingsAnimated:(BOOL)animated
                    completion:(ProceduralBlock)completion {
   DCHECK(_settingsNavigationController);
+  [_settingsNavigationController settingsWillBeDismissed];
   UIViewController* presentingViewController =
       [_settingsNavigationController presentingViewController];
   DCHECK(presentingViewController);
@@ -2475,12 +2486,12 @@ void MainControllerAuthenticationServiceDelegate::ClearBrowsingData(
 
 // Creates and returns a tab switcher object according to the current
 // experimental flags and device idioms:
-// - If the tab grid experimental flag is enabled, the TabGridController's
+// - If the UI Refresh phase 1 flag is enabled, the TabGridController's
 //   TabSwitcher is returned.
 // - If the current device is an iPad, a new TabSwitcherController is returned.
 // - Otherwise, a new StackViewController is returned.
 - (id<TabSwitcher>)newTabSwitcher {
-  if (IsTabSwitcherTabGridEnabled()) {
+  if (IsUIRefreshPhase1Enabled()) {
     DCHECK(_mainCoordinator)
         << " Main coordinator not created when tab switcher needed.";
     TabGridCoordinator* tabGridCoordinator =

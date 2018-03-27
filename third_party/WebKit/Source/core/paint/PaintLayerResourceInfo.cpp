@@ -41,13 +41,7 @@ PaintLayerResourceInfo::~PaintLayerResourceInfo() {
   DCHECK(!layer_);
 }
 
-TreeScope* PaintLayerResourceInfo::GetTreeScope() {
-  DCHECK(layer_);
-  Node* node = layer_->GetLayoutObject().GetNode();
-  return node ? &node->GetTreeScope() : nullptr;
-}
-
-void PaintLayerResourceInfo::ResourceContentChanged() {
+void PaintLayerResourceInfo::ResourceContentChanged(InvalidationModeMask) {
   DCHECK(layer_);
   LayoutObject& layout_object = layer_->GetLayoutObject();
   layout_object.SetShouldDoFullPaintInvalidation();

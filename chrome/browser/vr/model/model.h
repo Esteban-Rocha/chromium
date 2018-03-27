@@ -33,6 +33,7 @@ struct Model {
   bool incognito = false;
   bool in_cct = false;
   bool can_navigate_back = false;
+  bool can_navigate_forward = false;
   ToolbarState toolbar_state;
   std::vector<OmniboxSuggestion> omnibox_suggestions;
   SpeechRecognitionModel speech;
@@ -49,6 +50,8 @@ struct Model {
   bool background_loaded = false;
   bool supports_selection = true;
   bool needs_keyboard_update = false;
+  bool overflow_menu_enabled = false;
+  bool incognito_tabs_open = false;
 
   // WebVR state.
   WebVrModel web_vr;
@@ -69,6 +72,7 @@ struct Model {
   bool web_vr_enabled() const;
   bool web_vr_autopresentation_enabled() const;
   bool reposition_window_enabled() const;
+  bool reposition_window_permitted() const;
 
   // Focused text state.
   bool editing_input = false;

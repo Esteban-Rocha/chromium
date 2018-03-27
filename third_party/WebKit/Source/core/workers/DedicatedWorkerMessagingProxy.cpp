@@ -71,20 +71,6 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
   } else {
     NOTREACHED();
   }
-
-  // Post all queued tasks to the worker.
-  for (auto& queued_task : queued_early_tasks_) {
-    WTF::CrossThreadClosure task = CrossThreadBind(
-        &DedicatedWorkerObjectProxy::ProcessMessageFromWorkerObject,
-        CrossThreadUnretained(&WorkerObjectProxy()),
-        WTF::Passed(std::move(queued_task.message)),
-        WTF::Passed(std::move(queued_task.channels)),
-        CrossThreadUnretained(GetWorkerThread()), queued_task.stack_id);
-    PostCrossThreadTask(
-        *GetWorkerThread()->GetTaskRunner(TaskType::kPostedMessage), FROM_HERE,
-        std::move(task));
-  }
-  queued_early_tasks_.clear();
 }
 
 void DedicatedWorkerMessagingProxy::PostMessageToWorkerGlobalScope(
@@ -94,28 +80,51 @@ void DedicatedWorkerMessagingProxy::PostMessageToWorkerGlobalScope(
   DCHECK(IsParentContextThread());
   if (AskedToTerminate())
     return;
-
-  if (GetWorkerThread()) {
-    WTF::CrossThreadClosure task = CrossThreadBind(
-        &DedicatedWorkerObjectProxy::ProcessMessageFromWorkerObject,
-        CrossThreadUnretained(&WorkerObjectProxy()), std::move(message),
-        WTF::Passed(std::move(channels)),
-        CrossThreadUnretained(GetWorkerThread()), stack_id);
-    PostCrossThreadTask(
-        *GetWorkerThread()->GetTaskRunner(TaskType::kPostedMessage), FROM_HERE,
-        std::move(task));
-  } else {
-    // GetWorkerThread() returns nullptr while the worker thread is being
-    // created. In that case, push events into the queue and dispatch them in
-    // WorkerThreadCreated().
+  if (!was_script_evaluated_) {
     queued_early_tasks_.push_back(
         QueuedTask{std::move(message), std::move(channels), stack_id});
+    return;
   }
+  PostCrossThreadTask(
+      *GetWorkerThread()->GetTaskRunner(TaskType::kPostedMessage), FROM_HERE,
+      CrossThreadBind(
+          &DedicatedWorkerObjectProxy::ProcessMessageFromWorkerObject,
+          CrossThreadUnretained(&WorkerObjectProxy()), std::move(message),
+          WTF::Passed(std::move(channels)),
+          CrossThreadUnretained(GetWorkerThread()), stack_id));
 }
 
 bool DedicatedWorkerMessagingProxy::HasPendingActivity() const {
   DCHECK(IsParentContextThread());
   return !AskedToTerminate();
+}
+
+void DedicatedWorkerMessagingProxy::DidEvaluateScript(bool success) {
+  DCHECK(IsParentContextThread());
+  was_script_evaluated_ = true;
+
+  Vector<QueuedTask> tasks;
+  queued_early_tasks_.swap(tasks);
+
+  // The worker thread can already be terminated.
+  if (!GetWorkerThread()) {
+    DCHECK(AskedToTerminate());
+    return;
+  }
+
+  // Post all queued tasks to the worker.
+  // TODO(nhiroki): Consider whether to post the queued tasks to the worker when
+  // |success| is false.
+  for (auto& task : tasks) {
+    PostCrossThreadTask(
+        *GetWorkerThread()->GetTaskRunner(TaskType::kPostedMessage), FROM_HERE,
+        CrossThreadBind(
+            &DedicatedWorkerObjectProxy::ProcessMessageFromWorkerObject,
+            CrossThreadUnretained(&WorkerObjectProxy()),
+            WTF::Passed(std::move(task.message)),
+            WTF::Passed(std::move(task.channels)),
+            CrossThreadUnretained(GetWorkerThread()), task.stack_id));
+  }
 }
 
 void DedicatedWorkerMessagingProxy::PostMessageToWorkerObject(

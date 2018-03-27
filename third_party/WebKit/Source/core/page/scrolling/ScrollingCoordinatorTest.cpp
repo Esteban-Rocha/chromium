@@ -31,6 +31,7 @@
 #include "core/frame/FrameTestHelpers.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/VisualViewport.h"
+#include "core/frame/WebFrameWidgetBase.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/layout/LayoutEmbeddedContent.h"
@@ -42,9 +43,9 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/TouchAction.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCache.h"
 #include "public/platform/WebLayer.h"
@@ -72,7 +73,7 @@ class ScrollingCoordinatorTest : public ::testing::Test,
     // VisualViewport layers need to be initialized.
     GetWebView()->UpdateAllLifecyclePhases();
     WebFrameWidgetBase* main_frame_widget =
-        GetWebView()->MainFrameImpl()->FrameWidget();
+        GetWebView()->MainFrameImpl()->FrameWidgetImpl();
     main_frame_widget->SetRootGraphicsLayer(GetWebView()
                                                 ->MainFrameImpl()
                                                 ->GetFrame()
@@ -1117,6 +1118,18 @@ TEST_P(ScrollingCoordinatorTest,
         web_scroll_layer->MainThreadScrollingReasons() &
         MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects);
   }
+}
+
+TEST_P(ScrollingCoordinatorTest, StickyTriggersMainThreadScroll) {
+  GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
+  LoadHTML(
+      "<body style='height: 1200px'>"
+      "<div style='position: sticky; top: 0'>sticky</div>");
+  ForceFullCompositingUpdate();
+  ScrollableArea* viewport = GetFrame()->View()->LayoutViewportScrollableArea();
+  WebLayer* scroll_layer = viewport->LayerForScrolling()->PlatformLayer();
+  ASSERT_EQ(MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects,
+            scroll_layer->MainThreadScrollingReasons());
 }
 
 class NonCompositedMainThreadScrollingReasonTest

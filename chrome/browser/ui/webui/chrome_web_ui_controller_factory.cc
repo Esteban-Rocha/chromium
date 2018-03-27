@@ -80,14 +80,16 @@
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/web_ui/constants.h"
 #include "components/safe_browsing/web_ui/safe_browsing_ui.h"
+#include "components/security_interstitials/content/connection_help_ui.h"
+#include "components/security_interstitials/content/urls.h"
 #include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/signin_buildflags.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_utils.h"
-#include "extensions/features/features.h"
-#include "media/media_features.h"
+#include "extensions/buildflags/buildflags.h"
+#include "media/media_buildflags.h"
 #include "ppapi/features/features.h"
 #include "printing/features/features.h"
 #include "ui/gfx/favicon_size.h"
@@ -120,8 +122,6 @@
 #include "chrome/browser/ui/webui/snippets_internals_ui.h"
 #include "chrome/browser/ui/webui/webapks_ui.h"
 #else
-#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service.h"
-#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service_factory.h"
 #include "chrome/browser/ui/webui/devtools_ui.h"
 #include "chrome/browser/ui/webui/inspect_ui.h"
 #include "chrome/browser/ui/webui/md_bookmarks/md_bookmarks_ui.h"
@@ -134,6 +134,9 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/sys_info.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service_factory.h"
+#include "chrome/browser/ui/webui/chromeos/assistant_optin/assistant_optin_ui.h"
 #include "chrome/browser/ui/webui/chromeos/bluetooth_pairing_dialog.h"
 #include "chrome/browser/ui/webui/chromeos/certificate_manager_dialog_ui.h"
 #include "chrome/browser/ui/webui/chromeos/cryptohome_ui.h"
@@ -144,6 +147,7 @@
 #include "chrome/browser/ui/webui/chromeos/keyboard_overlay_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/mobile_setup_ui.h"
+#include "chrome/browser/ui/webui/chromeos/multidevice_setup/multidevice_setup_dialog.h"
 #include "chrome/browser/ui/webui/chromeos/network_ui.h"
 #include "chrome/browser/ui/webui/chromeos/power_ui.h"
 #include "chrome/browser/ui/webui/chromeos/set_time_ui.h"
@@ -279,10 +283,6 @@ WebUIController* NewWebUI<WelcomeWin10UI>(WebUI* web_ui, const GURL& url) {
 #endif  // defined(OS_WIN)
 
 bool IsAboutUI(const GURL& url) {
-  if (base::FeatureList::IsEnabled(features::kBundledConnectionHelpFeature) &&
-      url.host_piece() == chrome::kChromeUIConnectionHelpHost) {
-    return true;
-  }
   return (url.host_piece() == chrome::kChromeUIChromeURLsHost ||
           url.host_piece() == chrome::kChromeUICreditsHost ||
           url.host_piece() == chrome::kChromeUIDNSHost
@@ -404,6 +404,10 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return MdBookmarksUI::IsEnabled() ? &NewWebUI<MdBookmarksUI>
                                       : &NewWebUI<BookmarksUI>;
   }
+  if (base::FeatureList::IsEnabled(features::kBundledConnectionHelpFeature) &&
+      url.host_piece() == security_interstitials::kChromeUIConnectionHelpHost) {
+    return &NewWebUI<security_interstitials::ConnectionHelpUI>;
+  }
   // Downloads list on Android uses the built-in download manager.
   if (url.host_piece() == chrome::kChromeUIDownloadsHost)
     return &NewWebUI<MdDownloadsUI>;
@@ -445,6 +449,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<KeyboardOverlayUI>;
   if (url.host_piece() == chrome::kChromeUIMobileSetupHost)
     return &NewWebUI<MobileSetupUI>;
+  if (url.host_piece() == chrome::kChromeUIMultiDeviceSetupHost)
+    return &NewWebUI<chromeos::multidevice_setup::MultiDeviceSetupDialogUI>;
   if (url.host_piece() == chrome::kChromeUINetworkHost)
     return &NewWebUI<chromeos::NetworkUI>;
   if (url.host_piece() == chrome::kChromeUIOobeHost)
@@ -466,6 +472,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   if (url.host_piece() == chrome::kChromeUISysInternalsHost &&
       SysInternalsUI::IsEnabled())
     return &NewWebUI<SysInternalsUI>;
+  if (url.host_piece() == chrome::kChromeUIAssistantOptInHost)
+    return &NewWebUI<chromeos::AssistantOptInUI>;
 #if !defined(OFFICIAL_BUILD)
   if (!base::SysInfo::IsRunningOnChromeOS()) {
     if (url.host_piece() == chrome::kChromeUIDeviceEmulatorHost)

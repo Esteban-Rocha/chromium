@@ -635,10 +635,21 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
 
   // High-level accessibility tree access. Other modules should only use these
   // functions.
+  int ChildCount() const;
   const AXObjectVector& Children() const;
   const AXObjectVector& Children();
+  AXObject* FirstChild() const;
+  AXObject* LastChild() const;
+  AXObject* DeepestFirstChild() const;
+  AXObject* DeepestLastChild() const;
   bool IsAncestorOf(const AXObject&) const;
   bool IsDescendantOf(const AXObject&) const;
+  AXObject* NextSibling() const;
+  AXObject* PreviousSibling() const;
+  // Next object in tree using depth-first pre-order traversal.
+  AXObject* NextInTreeObject(bool can_wrap_to_first_element = false) const;
+  // Previous object in tree using depth-first pre-order traversal.
+  AXObject* PreviousInTreeObject(bool can_wrap_to_last_element = false) const;
   AXObject* ParentObject() const;
   AXObject* ParentObjectIfExists() const;
   virtual AXObject* ComputeParent() const = 0;
@@ -755,13 +766,22 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   // Static helper functions.
   static bool IsARIAControl(AccessibilityRole);
   static bool IsARIAInput(AccessibilityRole);
-  // Is this a widget that requires container widget
+  // Is this a widget that requires container widget.
   static bool IsSubWidget(AccessibilityRole);
   static AccessibilityRole AriaRoleToWebCoreRole(const String&);
   static const AtomicString& RoleName(AccessibilityRole);
   static const AtomicString& InternalRoleName(AccessibilityRole);
   static void AccessibleNodeListToElementVector(const AccessibleNodeList&,
                                                 HeapVector<Member<Element>>&);
+
+  // Given two AX objects, returns the lowest common ancestor and the child
+  // indices in that ancestor corresponding to the branch under which each
+  // object is to be found. If the lowest common ancestor is the same as either
+  // of the objects, the corresponding index is set to -1 to indicate this.
+  static const AXObject* LowestCommonAncestor(const AXObject& first,
+                                              const AXObject& second,
+                                              int* index_in_ancestor1,
+                                              int* index_in_ancestor2);
 
  protected:
   AXID id_;
@@ -817,7 +837,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   const AXObject* InertRoot() const;
 
   // Returns true if the event was handled.
-  bool DispatchEventToAOMEventListeners(Event&, Element*);
+  bool DispatchEventToAOMEventListeners(Event&);
 
   mutable Member<AXObject> parent_;
 
@@ -855,6 +875,12 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   DISALLOW_COPY_AND_ASSIGN(AXObject);
 };
 
+MODULES_EXPORT bool operator==(const AXObject& first, const AXObject& second);
+MODULES_EXPORT bool operator!=(const AXObject& first, const AXObject& second);
+MODULES_EXPORT bool operator<(const AXObject& first, const AXObject& second);
+MODULES_EXPORT bool operator<=(const AXObject& first, const AXObject& second);
+MODULES_EXPORT bool operator>(const AXObject& first, const AXObject& second);
+MODULES_EXPORT bool operator>=(const AXObject& first, const AXObject& second);
 MODULES_EXPORT std::ostream& operator<<(std::ostream&, const AXObject&);
 
 #define DEFINE_AX_OBJECT_TYPE_CASTS(thisType, predicate)           \

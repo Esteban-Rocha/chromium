@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/profiles/dice_accounts_menu.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -85,21 +86,34 @@ DiceAccountsMenu::DiceAccountsMenu(const std::vector<AccountInfo>& accounts,
   menu_.AddSeparator(ui::SPACING_SEPARATOR);
 }
 
-void DiceAccountsMenu::Show(views::View* anchor_view) {
+void DiceAccountsMenu::Show(views::View* anchor_view,
+                            views::MenuButton* menu_button) {
   DCHECK(!runner_);
-  runner_ = std::make_unique<views::MenuRunner>(
-      &menu_, views::MenuRunner::COMBOBOX | views::MenuRunner::ALWAYS_VIEWS);
+  runner_ =
+      std::make_unique<views::MenuRunner>(&menu_, views::MenuRunner::COMBOBOX);
   // Calculate custom anchor bounds to position the menu.
   // The menu is aligned along the right edge (left edge in RTL mode) of the
   // anchor, slightly shifted inside by |kAnchorInset| and overlapping
-  // |anchor_view| on the bottom by |kAnchorInset|. |anchor_bounds|' width is
-  // set to 0 so that the menu only is as wide as it needs to be.
+  // |anchor_view| on the bottom by |kAnchorInset|. |anchor_bounds| is collapsed
+  // so the menu only takes the width it needs.
   gfx::Rect anchor_bounds = anchor_view->GetBoundsInScreen();
-  anchor_bounds.Inset(
-      base::i18n::IsRTL() ? kAnchorInset : anchor_bounds.width() - kAnchorInset,
-      kAnchorInset, 0, kAnchorInset);
-  anchor_bounds.set_width(0);
-  runner_->RunMenuAt(anchor_view->GetWidget(), nullptr, anchor_bounds,
+  anchor_bounds.Inset(kAnchorInset, kAnchorInset);
+#if defined(OS_MACOSX)
+  // On Mac, menus align to the left of the anchor, so collapse the right side
+  // of the rect.
+  bool collapse_right = true;
+#else
+  bool collapse_right = false;
+#endif
+  if (base::i18n::IsRTL())
+    collapse_right = !collapse_right;
+
+  if (collapse_right)
+    anchor_bounds.Inset(0, 0, anchor_bounds.width(), 0);
+  else
+    anchor_bounds.Inset(anchor_bounds.width(), 0, 0, 0);
+
+  runner_->RunMenuAt(anchor_view->GetWidget(), menu_button, anchor_bounds,
                      views::MENU_ANCHOR_TOPRIGHT, ui::MENU_SOURCE_MOUSE);
 }
 

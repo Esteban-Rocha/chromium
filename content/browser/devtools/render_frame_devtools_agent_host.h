@@ -18,6 +18,7 @@
 #include "content/common/navigation_params.mojom.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "net/base/net_errors.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "third_party/WebKit/public/web/devtools_agent.mojom.h"
 
 #if defined(OS_ANDROID)
@@ -69,6 +70,11 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   static void ApplyOverrides(FrameTreeNode* frame_tree_node,
                              mojom::BeginNavigationParams* begin_params,
                              bool* report_raw_headers);
+  static bool WillCreateURLLoaderFactory(
+      RenderFrameHostImpl* rfh,
+      bool is_navigation,
+      network::mojom::URLLoaderFactoryRequest* loader_factory_request);
+
   static void OnNavigationRequestWillBeSent(
       const NavigationRequest& navigation_request);
   static void OnNavigationResponseReceived(
@@ -133,6 +139,7 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   void DidDetachInterstitialPage() override;
   void OnVisibilityChanged(content::Visibility visibility) override;
   void DidReceiveCompositorFrame() override;
+  void OnPageScaleFactorChanged(float page_scale_factor) override;
 
   bool IsChildFrame();
   bool IsFrameHostAllowedForRestrictedSessions();

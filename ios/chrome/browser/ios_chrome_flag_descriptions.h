@@ -71,20 +71,14 @@ extern const char kMarkHttpAsDescription[];
 extern const char kMemexTabSwitcherName[];
 extern const char kMemexTabSwitcherDescription[];
 
+// Title and description for the flag to enable new tools menu.
+extern const char kNewToolsMenuName[];
+extern const char kNewToolsMenuDescription[];
+
 // Title and description for the flag to enable elision of the URL path, query,
 // and ref in omnibox URL suggestions.
 extern const char kOmniboxUIElideSuggestionUrlAfterHostName[];
 extern const char kOmniboxUIElideSuggestionUrlAfterHostDescription[];
-
-// Title and description for the flag to enable hiding the URL scheme in
-// omnibox URL suggestions.
-extern const char kOmniboxUIHideSuggestionUrlSchemeName[];
-extern const char kOmniboxUIHideSuggestionUrlSchemeDescription[];
-
-// Title and description for the flag to enable hiding trivial subdomains
-// (www, m) in omnibox URL suggestions.
-extern const char kOmniboxUIHideSuggestionUrlTrivialSubdomainsName[];
-extern const char kOmniboxUIHideSuggestionUrlTrivialSubdomainsDescription[];
 
 // Title and description for the flag to enable the ability to export passwords
 // from the password settings.
@@ -95,25 +89,15 @@ extern const char kPasswordExportDescription[];
 extern const char kPhysicalWeb[];
 extern const char kPhysicalWebDescription[];
 
-// Title and description for the flag to enable the new UI Reboot on Recent
-// Tabs.
-extern const char kRecentTabsUIRebootName[];
-extern const char kRecentTabsUIRebootDescription[];
-
-// Title and description for the flag to share the canonical URL of the
-// current page instead of the visible URL.
-extern const char kShareCanonicalURLName[];
-extern const char kShareCanonicalURLDescription[];
+// Title and description for the flag to enable the new UI Reboot on existing
+// Collections.
+extern const char kCollectionsUIRebootName[];
+extern const char kCollectionsUIRebootDescription[];
 
 // Title and description for the flag to enable WKBackForwardList based
 // navigation manager.
 extern const char kSlimNavigationManagerName[];
 extern const char kSlimNavigationManagerDescription[];
-
-// Title and description for the flag to enable PassKit with ios/web Donwload
-// API.
-extern const char kNewPassKitDownloadName[];
-extern const char kNewPassKitDownloadDescription[];
 
 // Title and description for the flag to enable new Download Manager UI and
 // backend.
@@ -130,9 +114,10 @@ extern const char kShowAutofillTypePredictionsDescription[];
 extern const char kTabSwitcherPresentsBVCName[];
 extern const char kTabSwitcherPresentsBVCDescription[];
 
-// Title and description for the flag to enable the TabGrid as the tab switcher.
-extern const char kTabSwitcherTabGridName[];
-extern const char kTabSwitcherTabGridDescription[];
+// Title and description for the flag to choose the position of the toolbars'
+// buttons.
+extern const char kToolbarButtonPositionsName[];
+extern const char kToolbarButtonPositionsDescription[];
 
 // Title and description for the flag to enable the phase 1 UI Refresh.
 extern const char kUIRefreshPhase1Name[];

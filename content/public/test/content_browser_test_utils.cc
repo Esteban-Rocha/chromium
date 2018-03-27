@@ -12,6 +12,7 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_frame_host.h"
@@ -146,9 +147,9 @@ void LookupAndLogNameAndIdOfFirstCamera() {
                       LOG(INFO) << "Using camera "
                                 << descriptors.front().display_name() << " ("
                                 << descriptors.front().model_id << ")";
-                      quit_closure.Run();
+                      std::move(quit_closure).Run();
                     },
-                    quit_closure));
+                    std::move(quit_closure)));
           },
           media_stream_manager, run_loop.QuitClosure()));
   run_loop.Run();

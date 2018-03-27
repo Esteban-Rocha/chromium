@@ -547,6 +547,7 @@ Console.ConsoleViewMessage = class {
       case 'regexp':
       case 'symbol':
       case 'undefined':
+      case 'bigint':
         element = this._formatParameterAsValue(output);
         break;
       default:
@@ -595,9 +596,11 @@ Console.ConsoleViewMessage = class {
     if (!obj.hasChildren || obj.customPreview())
       return titleElement;
 
-    const note = titleElement.createChild('span', 'object-state-note');
-    note.classList.add('info-note');
-    note.title = Common.UIString('Value below was evaluated just now.');
+    const note = titleElement.createChild('span', 'object-state-note info-note');
+    if (this._message.type === SDK.ConsoleMessage.MessageType.QueryObjectResult)
+      note.title = ls`This value will not be collected until console is cleared.`;
+    else
+      note.title = ls`Value below was evaluated just now.`;
 
     const section = new ObjectUI.ObjectPropertiesSection(obj, titleElement, this._linkifier);
     section.element.classList.add('console-view-object-properties-section');
@@ -1085,6 +1088,8 @@ Console.ConsoleViewMessage = class {
         break;
       case SDK.ConsoleMessage.MessageLevel.Info:
         this._element.classList.add('console-info-level');
+        if (this._message.type === SDK.ConsoleMessage.MessageType.System)
+          this._element.classList.add('console-system-type');
         break;
       case SDK.ConsoleMessage.MessageLevel.Warning:
         this._element.classList.add('console-warning-level');

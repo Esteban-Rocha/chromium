@@ -54,7 +54,6 @@
 #include "platform/SharedBuffer.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/scheduler/child/web_scheduler.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
@@ -543,7 +542,7 @@ void NavigationScheduler::StartTimer() {
   // wrapWeakPersistent(this) is safe because a posted task is canceled when the
   // task handle is destroyed on the dtor of this NavigationScheduler.
   navigate_task_handle_ = PostDelayedCancellableTask(
-      *frame_->FrameScheduler()->GetTaskRunner(TaskType::kUnspecedLoading),
+      *frame_->GetFrameScheduler()->GetTaskRunner(TaskType::kUnspecedLoading),
       FROM_HERE,
       WTF::Bind(&NavigationScheduler::NavigateTask, WrapWeakPersistent(this)),
       TimeDelta::FromSecondsD(redirect_->Delay()));

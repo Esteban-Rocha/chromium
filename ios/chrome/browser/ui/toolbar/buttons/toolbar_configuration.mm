@@ -35,16 +35,6 @@
   }
 }
 
-- (UIColor*)blurEffectBackgroundColor {
-  switch (self.style) {
-    case NORMAL:
-      return [UIColor colorWithWhite:kBlurBackgroundGrayscaleComponent
-                               alpha:kBlurBackgroundAlpha];
-    case INCOGNITO:
-      return nil;
-  }
-}
-
 - (UIColor*)NTPBackgroundColor {
   switch (self.style) {
     case NORMAL:
@@ -57,8 +47,13 @@
 
 - (UIColor*)backgroundColor {
   if (IsUIRefreshPhase1Enabled()) {
-    NOTREACHED();
-    return nil;
+    switch (self.style) {
+      case NORMAL:
+        return
+            [UIColor colorWithWhite:kBlurBackgroundGrayscaleComponent alpha:1];
+      case INCOGNITO:
+        return UIColorFromRGB(kIncognitoToolbarBackgroundColor);
+    }
   } else {
     switch (self.style) {
       case NORMAL:

@@ -86,6 +86,7 @@ void DumpTransformOperations(const cc::TransformOperations& ops,
 
 EventHandlers::EventHandlers() = default;
 EventHandlers::~EventHandlers() = default;
+EventHandlers::EventHandlers(const EventHandlers& other) = default;
 
 UiElement::UiElement() : id_(AllocateId()) {
   animation_.set_target(this);
@@ -139,6 +140,10 @@ void UiElement::Render(UiElementRenderer* renderer,
 void UiElement::Initialize(SkiaSurfaceProvider* provider) {}
 
 void UiElement::OnHoverEnter(const gfx::PointF& position) {
+  if (GetSounds().hover_enter != kSoundNone && audio_delegate_) {
+    audio_delegate_->PlaySound(GetSounds().hover_enter);
+  }
+
   if (event_handlers_.hover_enter) {
     event_handlers_.hover_enter.Run();
   } else if (parent() && bubble_events()) {
@@ -147,6 +152,9 @@ void UiElement::OnHoverEnter(const gfx::PointF& position) {
 }
 
 void UiElement::OnHoverLeave() {
+  if (GetSounds().hover_leave != kSoundNone && audio_delegate_) {
+    audio_delegate_->PlaySound(GetSounds().hover_leave);
+  }
   if (event_handlers_.hover_leave) {
     event_handlers_.hover_leave.Run();
   } else if (parent() && bubble_events()) {
@@ -155,6 +163,9 @@ void UiElement::OnHoverLeave() {
 }
 
 void UiElement::OnMove(const gfx::PointF& position) {
+  if (GetSounds().move != kSoundNone && audio_delegate_) {
+    audio_delegate_->PlaySound(GetSounds().move);
+  }
   if (event_handlers_.hover_move) {
     event_handlers_.hover_move.Run(position);
   } else if (parent() && bubble_events()) {
@@ -163,6 +174,9 @@ void UiElement::OnMove(const gfx::PointF& position) {
 }
 
 void UiElement::OnButtonDown(const gfx::PointF& position) {
+  if (GetSounds().button_down != kSoundNone && audio_delegate_) {
+    audio_delegate_->PlaySound(GetSounds().button_down);
+  }
   if (event_handlers_.button_down) {
     event_handlers_.button_down.Run();
   } else if (parent() && bubble_events()) {
@@ -171,6 +185,9 @@ void UiElement::OnButtonDown(const gfx::PointF& position) {
 }
 
 void UiElement::OnButtonUp(const gfx::PointF& position) {
+  if (GetSounds().button_up != kSoundNone && audio_delegate_) {
+    audio_delegate_->PlaySound(GetSounds().button_up);
+  }
   if (event_handlers_.button_up) {
     event_handlers_.button_up.Run();
   } else if (parent() && bubble_events()) {
@@ -527,6 +544,11 @@ void UiElement::DumpGeometry(std::ostringstream* os) const {
 }
 #endif
 
+void UiElement::SetSounds(Sounds sounds, AudioDelegate* delegate) {
+  sounds_ = sounds;
+  audio_delegate_ = delegate;
+}
+
 void UiElement::OnUpdatedWorldSpaceTransform() {}
 
 gfx::SizeF UiElement::stale_size() const {
@@ -651,27 +673,56 @@ void UiElement::RemoveKeyframeModel(int keyframe_model_id) {
   animation_.RemoveKeyframeModel(keyframe_model_id);
 }
 
+void UiElement::RemoveKeyframeModels(int target_property) {
+  animation_.RemoveKeyframeModels(target_property);
+}
+
 bool UiElement::IsAnimatingProperty(TargetProperty property) const {
   return animation_.IsAnimatingProperty(static_cast<int>(property));
+}
+
+bool UiElement::SizeAndLayOut() {
+  bool changed = false;
+  for (auto& child : children_) {
+    changed |= child->SizeAndLayOut();
+  }
+  changed |= PrepareToDraw();
+  DoLayOutChildren();
+  return changed;
 }
 
 void UiElement::DoLayOutChildren() {
   LayOutChildren();
   if (!bounds_contain_children_) {
-    DCHECK_EQ(0.0f, x_padding_);
-    DCHECK_EQ(0.0f, y_padding_);
+    DCHECK_EQ(0.0f, right_padding_);
+    DCHECK_EQ(0.0f, left_padding_);
+    DCHECK_EQ(0.0f, top_padding_);
+    DCHECK_EQ(0.0f, bottom_padding_);
     return;
   }
 
+  bool requires_relayout = false;
   gfx::RectF bounds;
   for (auto& child : children_) {
-    if (!child->IsVisible() || child->size().IsEmpty() ||
+    gfx::RectF outer_bounds(child->size());
+    gfx::RectF inner_bounds(child->size());
+    if (!child->bounds_contain_padding_) {
+      inner_bounds.Inset(child->left_padding_, child->bottom_padding_,
+                         child->right_padding_, child->top_padding_);
+    }
+    gfx::SizeF size = inner_bounds.size();
+    if (child->x_anchoring() != NONE || child->y_anchoring() != NONE) {
+      DCHECK(!child->contributes_to_parent_bounds());
+      requires_relayout = true;
+    }
+    if (!child->IsVisible() || size.IsEmpty() ||
         !child->contributes_to_parent_bounds()) {
       continue;
     }
-    gfx::Point3F child_center(child->local_origin());
-    gfx::Vector3dF corner_offset(child->size().width(), child->size().height(),
-                                 0);
+    gfx::Vector2dF delta =
+        outer_bounds.CenterPoint() - inner_bounds.CenterPoint();
+    gfx::Point3F child_center(child->local_origin() - delta);
+    gfx::Vector3dF corner_offset(size.width(), size.height(), 0);
     corner_offset.Scale(-0.5);
     gfx::Point3F child_upper_left = child_center + corner_offset;
     gfx::Point3F child_lower_right = child_center - corner_offset;
@@ -685,10 +736,17 @@ void UiElement::DoLayOutChildren() {
     bounds.Union(local_rect);
   }
 
-  bounds.Inset(-x_padding_, -y_padding_);
+  bounds.Inset(-left_padding_, -bottom_padding_, -right_padding_,
+               -top_padding_);
   bounds.set_origin(bounds.CenterPoint());
   local_origin_ = bounds.origin();
+  if (bounds.size() == GetTargetSize())
+    return;
+
   SetSize(bounds.width(), bounds.height());
+
+  if (requires_relayout)
+    LayOutChildren();
 }
 
 void UiElement::LayOutChildren() {
@@ -709,6 +767,20 @@ void UiElement::LayOutChildren() {
     }
     child->SetLayoutOffset(x_offset, y_offset);
   }
+}
+
+UiElement* UiElement::FirstLaidOutChild() const {
+  auto i = std::find_if(
+      children_.begin(), children_.end(),
+      [](const std::unique_ptr<UiElement>& e) { return e->requires_layout(); });
+  return i == children_.end() ? nullptr : i->get();
+}
+
+UiElement* UiElement::LastLaidOutChild() const {
+  auto i = std::find_if(
+      children_.rbegin(), children_.rend(),
+      [](const std::unique_ptr<UiElement>& e) { return e->requires_layout(); });
+  return i == children_.rend() ? nullptr : i->get();
 }
 
 void UiElement::UpdateComputedOpacity() {
@@ -754,6 +826,10 @@ gfx::Transform UiElement::LocalTransform() const {
 
 gfx::Transform UiElement::GetTargetLocalTransform() const {
   return layout_offset_.Apply() * GetTargetTransform().Apply();
+}
+
+const Sounds& UiElement::GetSounds() const {
+  return sounds_;
 }
 
 }  // namespace vr

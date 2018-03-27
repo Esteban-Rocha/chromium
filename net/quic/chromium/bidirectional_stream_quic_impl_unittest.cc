@@ -28,6 +28,7 @@
 #include "net/quic/chromium/quic_chromium_packet_writer.h"
 #include "net/quic/chromium/quic_http_utils.h"
 #include "net/quic/chromium/quic_server_info.h"
+#include "net/quic/chromium/quic_stream_factory.h"
 #include "net/quic/chromium/quic_test_packet_maker.h"
 #include "net/quic/chromium/test_task_runner.h"
 #include "net/quic/core/crypto/crypto_protocol.h"
@@ -46,6 +47,7 @@
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/socket/socket_test_util.h"
 #include "net/test/gtest_util.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -167,7 +169,7 @@ class TestDelegateBase : public BidirectionalStreamImpl::Delegate {
     not_expect_callback_ = true;
     stream_ = std::make_unique<BidirectionalStreamQuicImpl>(std::move(session));
     stream_->Start(request_info, net_log, send_request_headers_automatically_,
-                   this, nullptr);
+                   this, nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
     not_expect_callback_ = false;
   }
 

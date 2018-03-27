@@ -83,6 +83,11 @@ void Frame::Detach(FrameDetachType type) {
   // its owning reference back to our owning LocalFrame.
   client_->Detached(type);
   client_ = nullptr;
+  // Mark the frame as detached once |client_| is null, as most of the frame has
+  // been torn down at this point.
+  // TODO(dcheng): Once https://crbug.com/820782 is fixed, Frame::Client() will
+  // also assert that it is only accessed when the frame is not detached.
+  lifecycle_.AdvanceTo(FrameLifecycle::kDetached);
   // TODO(dcheng): This currently needs to happen after calling
   // FrameClient::Detached() to make it easier for FrameClient::Detached()
   // implementations to detect provisional frames and avoid removing them from
@@ -92,16 +97,16 @@ void Frame::Detach(FrameDetachType type) {
 }
 
 void Frame::DisconnectOwnerElement() {
-  if (owner_) {
-    // Ocassionally, provisional frames need to be detached, but it shouldn't
-    // affect the frame tree structure. Make sure the frame owner's content
-    // frame actually refers to this frame before clearing it.
-    // TODO(dcheng): https://crbug.com/578349 tracks the cleanup for this once
-    // it's no longer needed.
-    if (owner_->ContentFrame() == this)
-      owner_->ClearContentFrame();
-    owner_ = nullptr;
-  }
+  if (!owner_)
+    return;
+
+  // TODO(https://crbug.com/578349): If this is a provisional frame, the frame
+  // owner doesn't actually point to this frame, so don't clear it. Note that
+  // this can't use IsProvisional() because the |client_| is null already.
+  if (owner_->ContentFrame() == this)
+    owner_->ClearContentFrame();
+
+  owner_ = nullptr;
 }
 
 Page* Frame::GetPage() const {
@@ -110,16 +115,6 @@ Page* Frame::GetPage() const {
 
 bool Frame::IsMainFrame() const {
   return !Tree().Parent();
-}
-
-bool Frame::IsLocalRoot() const {
-  if (IsRemoteFrame())
-    return false;
-
-  if (!Tree().Parent())
-    return true;
-
-  return Tree().Parent()->IsRemoteFrame();
 }
 
 HTMLFrameOwnerElement* Frame::DeprecatedLocalOwner() const {
@@ -177,21 +172,21 @@ void Frame::DidChangeVisibilityState() {
     child_frames[i]->DidChangeVisibilityState();
 }
 
-// TODO(mustaq): Should be merged with NotifyUserActivation() below but
-// not sure why this one doesn't update frame clients.  Could be related to
-// crbug.com/775930 .
-void Frame::UpdateUserActivationInFrameTree() {
+void Frame::NotifyUserActivationInLocalTree() {
   user_activation_state_.Activate();
-  if (Frame* parent = Tree().Parent())
-    parent->UpdateUserActivationInFrameTree();
+  for (Frame* parent = Tree().Parent(); parent;
+       parent = parent->Tree().Parent()) {
+    parent->user_activation_state_.Activate();
+  }
 }
 
 void Frame::NotifyUserActivation() {
   bool had_gesture = HasBeenActivated();
   if (RuntimeEnabledFeatures::UserActivationV2Enabled() || !had_gesture)
-    UpdateUserActivationInFrameTree();
-  if (IsLocalFrame())
-    ToLocalFrame(this)->Client()->SetHasReceivedUserGesture(had_gesture);
+    NotifyUserActivationInLocalTree();
+
+  DCHECK(IsLocalFrame());
+  ToLocalFrame(this)->Client()->SetHasReceivedUserGesture(had_gesture);
 }
 
 bool Frame::ConsumeTransientUserActivation() {
@@ -208,7 +203,7 @@ bool Frame::ConsumeTransientUserActivation() {
 
 // static
 std::unique_ptr<UserGestureIndicator> Frame::NotifyUserActivation(
-    Frame* frame,
+    LocalFrame* frame,
     UserGestureToken::Status status) {
   if (frame)
     frame->NotifyUserActivation();
@@ -216,7 +211,8 @@ std::unique_ptr<UserGestureIndicator> Frame::NotifyUserActivation(
 }
 
 // static
-bool Frame::HasTransientUserActivation(Frame* frame, bool checkIfMainThread) {
+bool Frame::HasTransientUserActivation(LocalFrame* frame,
+                                       bool checkIfMainThread) {
   if (RuntimeEnabledFeatures::UserActivationV2Enabled()) {
     return frame ? frame->HasTransientUserActivation() : false;
   }
@@ -227,7 +223,7 @@ bool Frame::HasTransientUserActivation(Frame* frame, bool checkIfMainThread) {
 }
 
 // static
-bool Frame::ConsumeTransientUserActivation(Frame* frame,
+bool Frame::ConsumeTransientUserActivation(LocalFrame* frame,
                                            bool checkIfMainThread) {
   if (RuntimeEnabledFeatures::UserActivationV2Enabled()) {
     return frame ? frame->ConsumeTransientUserActivation() : false;
@@ -259,6 +255,13 @@ void Frame::UpdateInertIfPossible() {
     if (ToHTMLFrameOwnerElement(owner_)->IsInert())
       SetIsInert(true);
   }
+}
+
+const CString& Frame::ToTraceValue() {
+  // token's ToString() is latin1.
+  if (!trace_value_)
+    trace_value_ = CString(devtools_frame_token_.ToString().c_str());
+  return trace_value_.value();
 }
 
 Frame::Frame(FrameClient* client,

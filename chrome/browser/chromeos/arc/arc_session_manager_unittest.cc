@@ -35,8 +35,6 @@
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_test.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
-#include "chrome/browser/ui/ash/test_wallpaper_controller.h"
-#include "chrome/browser/ui/ash/wallpaper_controller_client.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -265,15 +263,10 @@ class ArcSessionManagerTestBase : public testing::Test {
     StartPreferenceSyncing();
 
     ASSERT_FALSE(arc_session_manager_->enable_requested());
-    wallpaper_controller_client_ =
-        std::make_unique<WallpaperControllerClient>();
-    wallpaper_controller_client_->InitForTesting(
-        test_wallpaper_controller_.CreateInterfacePtr());
   }
 
   void TearDown() override {
     arc_session_manager_->Shutdown();
-    wallpaper_controller_client_.reset();
     profile_.reset();
     arc_session_manager_.reset();
     arc_service_manager_.reset();
@@ -320,8 +313,6 @@ class ArcSessionManagerTestBase : public testing::Test {
   std::unique_ptr<ArcSessionManager> arc_session_manager_;
   user_manager::ScopedUserManager user_manager_enabler_;
   base::ScopedTempDir temp_dir_;
-  std::unique_ptr<WallpaperControllerClient> wallpaper_controller_client_;
-  TestWallpaperController test_wallpaper_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ArcSessionManagerTestBase);
 };
@@ -788,13 +779,17 @@ TEST_P(ArcSessionManagerPolicyTest, SkippingTerms) {
   arc_session_manager()->RequestEnable();
 
   // Terms of Service are skipped iff ARC is enabled by policy and both policies
-  // are either managed or unused (for Active Directory users a LaForge account
-  // is created, not a full Dasher account, where the policies have no meaning).
-  const bool prefs_managed = backup_restore_pref_value().is_bool() &&
-                             location_service_pref_value().is_bool();
+  // are either managed/OFF or unused (for Active Directory users a LaForge
+  // account is created, not a full Dasher account, where the policies have no
+  // meaning).
   const bool prefs_unused = is_active_directory_user();
+  const bool backup_managed_off = backup_restore_pref_value().is_bool() &&
+                                  !backup_restore_pref_value().GetBool();
+  const bool location_managed_off = location_service_pref_value().is_bool() &&
+                                    !location_service_pref_value().GetBool();
   const bool expected_terms_skipping =
-      (arc_enabled_pref_managed() && (prefs_managed || prefs_unused));
+      (arc_enabled_pref_managed() &&
+       ((backup_managed_off && location_managed_off) || prefs_unused));
   EXPECT_EQ(expected_terms_skipping
                 ? ArcSessionManager::State::CHECKING_ANDROID_MANAGEMENT
                 : ArcSessionManager::State::NEGOTIATING_TERMS_OF_SERVICE,

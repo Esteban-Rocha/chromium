@@ -48,6 +48,7 @@
 #include "core/dom/FlatTreeTraversal.h"
 #include "core/dom/GetRootNodeOptions.h"
 #include "core/dom/LayoutTreeBuilderTraversal.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/ProcessingInstruction.h"
@@ -324,15 +325,7 @@ Node::~Node() {
   InstanceCounters::DecrementCounter(InstanceCounters::kNodeCounter);
 }
 
-NodeRareData* Node::RareData() const {
-  SECURITY_DCHECK(HasRareData());
-  return static_cast<NodeRareData*>(data_.rare_data_);
-}
-
-NodeRareData& Node::EnsureRareData() {
-  if (HasRareData())
-    return *RareData();
-
+NodeRareData& Node::CreateRareData() {
   if (IsElementNode())
     data_.rare_data_ = ElementRareData::Create(data_.node_layout_data_);
   else
@@ -681,6 +674,9 @@ void Node::SetLayoutObject(LayoutObject* layout_object) {
 
 void Node::SetNonAttachedStyle(
     scoped_refptr<ComputedStyle> non_attached_style) {
+  // We don't set non-attached style for text nodes.
+  DCHECK(IsElementNode());
+
   NodeRenderingData* node_layout_data =
       HasRareData() ? data_.rare_data_->GetNodeRenderingData()
                     : data_.node_layout_data_;
@@ -694,6 +690,10 @@ void Node::SetNonAttachedStyle(
 
   if (!non_attached_style)
     return;
+
+  // Ensure we don't unnecessarily set non-attached style for elements which are
+  // not part of the flat tree and consequently won't be attached.
+  DCHECK(LayoutTreeBuilderTraversal::Parent(*this));
 
   // Swap the NodeRenderingData to point to a new NodeRenderingData instead of
   // the static SharedEmptyData instance.
@@ -1101,7 +1101,6 @@ void Node::AttachLayoutTree(AttachContext& context) {
 
   ClearNeedsStyleRecalc();
   ClearNeedsReattachLayoutTree();
-  SetNonAttachedStyle(nullptr);
 
   if (AXObjectCache* cache = GetDocument().GetOrCreateAXObjectCache())
     cache->UpdateCacheAfterNodeIsAttached(this);

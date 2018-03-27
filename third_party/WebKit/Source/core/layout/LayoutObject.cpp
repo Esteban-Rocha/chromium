@@ -95,6 +95,7 @@
 #include "platform/geometry/TransformState.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/TouchAction.h"
+#include "platform/graphics/paint/GeometryMapper.h"
 #include "platform/graphics/paint/PropertyTreeState.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
 #include "platform/runtime_enabled_features.h"
@@ -697,9 +698,10 @@ PaintLayer* LayoutObject::PaintingLayer() const {
 }
 
 bool LayoutObject::IsFixedPositionObjectInPagedMedia() const {
+  if (StyleRef().GetPosition() != EPosition::kFixed)
+    return false;
   LayoutView* view = View();
-  return StyleRef().GetPosition() == EPosition::kFixed && Container() == view &&
-         view->PageLogicalHeight() &&
+  return Container() == view && view->PageLogicalHeight() &&
          // TODO(crbug.com/619094): Figure out the correct behaviour for fixed
          // position objects in paged media with vertical writing modes.
          view->IsHorizontalWritingMode();
@@ -1018,6 +1020,12 @@ LayoutBlock* LayoutObject::ContainingBlockForFixedPosition(
     AncestorSkipInfo* skip_info) const {
   auto* container = ContainerForFixedPosition(skip_info);
   return FindContainingBlock(container, skip_info);
+}
+
+const LayoutBlock* LayoutObject::InclusiveContainingBlock() const {
+  if (IsLayoutBlock())
+    return ToLayoutBlock(this);
+  return ContainingBlock();
 }
 
 LayoutBlock* LayoutObject::ContainingBlock(AncestorSkipInfo* skip_info) const {
@@ -1543,10 +1551,40 @@ LayoutRect LayoutObject::LocalVisualRectIgnoringVisibility() const {
   return LayoutRect();
 }
 
+bool LayoutObject::MapToVisualRectInAncestorSpaceInternalFastPath(
+    const LayoutBoxModelObject* ancestor,
+    LayoutRect& rect,
+    VisualRectFlags visual_rect_flags) const {
+  if (!(visual_rect_flags & kUseGeometryMapper) ||
+      !RuntimeEnabledFeatures::SlimmingPaintV175Enabled() ||
+      (visual_rect_flags & kEdgeInclusive) ||
+      !FirstFragment().HasLocalBorderBoxProperties() || !ancestor ||
+      !ancestor->FirstFragment().HasLocalBorderBoxProperties()) {
+    return false;
+  }
+
+  if (ancestor == this)
+    return true;
+
+  rect.MoveBy(FirstFragment().PaintOffset());
+  FloatClipRect clip_rect((FloatRect(rect)));
+  GeometryMapper::LocalToAncestorVisualRect(
+      FirstFragment().LocalBorderBoxProperties(),
+      ancestor->FirstFragment().ContentsProperties(), clip_rect);
+  rect = LayoutRect(clip_rect.Rect());
+  rect.MoveBy(-ancestor->FirstFragment().PaintOffset());
+
+  return true;
+}
+
 bool LayoutObject::MapToVisualRectInAncestorSpace(
     const LayoutBoxModelObject* ancestor,
     LayoutRect& rect,
     VisualRectFlags visual_rect_flags) const {
+  if (MapToVisualRectInAncestorSpaceInternalFastPath(ancestor, rect,
+                                                     visual_rect_flags))
+    return !rect.IsEmpty();
+
   TransformState transform_state(TransformState::kApplyTransformDirection,
                                  FloatQuad(FloatRect(rect)));
   bool retval = MapToVisualRectInAncestorSpaceInternal(
@@ -1622,7 +1660,7 @@ void LayoutObject::ShowLayoutTreeForThis() const {
 }
 
 void LayoutObject::ShowLineTreeForThis() const {
-  if (LayoutBlock* cb = ContainingBlock()) {
+  if (const LayoutBlock* cb = InclusiveContainingBlock()) {
     if (cb->IsLayoutBlockFlow())
       ToLayoutBlockFlow(cb)->ShowLineTreeAndMark(nullptr, nullptr, nullptr,
                                                  nullptr, this);
@@ -2006,19 +2044,13 @@ void LayoutObject::SetStyle(scoped_refptr<ComputedStyle> style) {
 
   // Text nodes share style with their parents but the paint properties don't
   // apply to them, hence the !isText() check.
+  // In SPv175 mode, if property nodes are added or removed as a result of these
+  // style changes, PaintPropertyTreeBuilder will call SetNeedsRepaint
+  // to cause re-generation of PaintChunks.
   if (!IsText() && (diff.TransformChanged() || diff.OpacityChanged() ||
                     diff.ZIndexChanged() || diff.FilterChanged() ||
-                    diff.BackdropFilterChanged() || diff.CssClipChanged())) {
+                    diff.BackdropFilterChanged() || diff.CssClipChanged()))
     SetNeedsPaintPropertyUpdate();
-
-    // We don't need to invalidate paint of objects on SPv175 when only paint
-    // property or paint order change. Mark the painting layer needing repaint
-    // for changed paint property or paint order. Raster invalidation will be
-    // issued if needed during paint.
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-        !ShouldDoFullPaintInvalidation())
-      ObjectPaintInvalidator(*this).SlowSetPaintingLayerNeedsRepaint();
-  }
 }
 
 void LayoutObject::StyleWillChange(StyleDifference diff,

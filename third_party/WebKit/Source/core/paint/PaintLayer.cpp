@@ -44,8 +44,10 @@
 
 #include "core/paint/PaintLayer.h"
 
-#include "core/CSSPropertyNames.h"
+#include <limits>
+
 #include "core/css/PseudoStyleRequest.h"
+#include "core/css_property_names.h"
 #include "core/dom/Document.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/frame/LocalFrame.h"
@@ -85,7 +87,6 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/transforms/TransformationMatrix.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/allocator/Partitions.h"
 #include "platform/wtf/text/CString.h"
@@ -112,11 +113,6 @@ struct SameSizeAsPaintLayer : DisplayItemClient {
 
 static_assert(sizeof(PaintLayer) == sizeof(SameSizeAsPaintLayer),
               "PaintLayer should stay small");
-
-bool IsReferenceClipPath(const ClipPathOperation* clip_operation) {
-  return clip_operation &&
-         clip_operation->GetType() == ClipPathOperation::REFERENCE;
-}
 
 }  // namespace
 
@@ -163,6 +159,7 @@ PaintLayer::PaintLayer(LayoutBoxModelObject& layout_object)
       has_non_isolated_descendant_with_blend_mode_(false),
       self_painting_status_changed_(false),
       filter_on_effect_node_dirty_(false),
+      is_under_svg_hidden_container_(false),
       layout_object_(layout_object),
       parent_(nullptr),
       previous_(nullptr),
@@ -183,11 +180,10 @@ PaintLayer::~PaintLayer() {
   if (rare_data_ && rare_data_->resource_info) {
     const ComputedStyle& style = GetLayoutObject().StyleRef();
     if (style.HasFilter())
-      style.Filter().RemoveClient(rare_data_->resource_info);
-    if (IsReferenceClipPath(style.ClipPath())) {
-      ToReferenceClipPathOperation(style.ClipPath())
-          ->RemoveClient(*rare_data_->resource_info);
-    }
+      style.Filter().RemoveClient(*rare_data_->resource_info);
+    if (auto* reference_clip =
+            ToReferenceClipPathOperationOrNull(style.ClipPath()))
+      reference_clip->RemoveClient(*rare_data_->resource_info);
     rare_data_->resource_info->ClearLayer();
   }
   if (GetLayoutObject().GetFrame()) {
@@ -306,11 +302,26 @@ void PaintLayer::UpdateLayerPositionsAfterLayout() {
   }
 }
 
-void PaintLayer::UpdateLayerPositionRecursive() {
-  UpdateLayerPosition();
+void PaintLayer::UpdateLayerPositionRecursive(
+    UpdateLayerPositionBehavior behavior) {
+  switch (behavior) {
+    case AllLayers:
+      UpdateLayerPosition();
+      break;
+    case OnlyStickyLayers:
+      if (GetLayoutObject().Style()->HasStickyConstrainedPosition())
+        UpdateLayerPosition();
+      if (PaintLayerScrollableArea* scroller = GetScrollableArea()) {
+        if (!scroller->HasStickyDescendants())
+          return;
+      }
+      break;
+    default:
+      NOTREACHED();
+  }
 
   for (PaintLayer* child = FirstChild(); child; child = child->NextSibling())
-    child->UpdateLayerPositionRecursive();
+    child->UpdateLayerPositionRecursive(behavior);
 }
 
 void PaintLayer::UpdateHasSelfPaintingLayerDescendant() const {
@@ -392,16 +403,17 @@ bool PaintLayer::ScrollsWithRespectTo(const PaintLayer* other) const {
 }
 
 void PaintLayer::UpdateLayerPositionsAfterOverflowScroll() {
-  // The root PaintLayer (i.e. the LayoutView) is special, in that scroll offset
-  // is not included in clip rects. Therefore, we do not need to clear them
-  // when that PaintLayer is scrolled. We also don't need to update layer
-  // positions, because they also do not depend on the root's scroll offset.
   if (IsRootLayer()) {
-    GetScrollableArea()->UpdateLayerPositionForStickyDescendants();
-  } else {
-    ClearClipRects();
-    UpdateLayerPositionRecursive();
+    // The root PaintLayer (i.e. the LayoutView) is special, in that scroll
+    // offset is not included in clip rects. Therefore, we do not need to clear
+    // them when that PaintLayer is scrolled. We also don't need to update layer
+    // positions, because they also do not depend on the root's scroll offset.
+    if (GetScrollableArea()->HasStickyDescendants())
+      UpdateLayerPositionRecursive(OnlyStickyLayers);
+    return;
   }
+  ClearClipRects();
+  UpdateLayerPositionRecursive(AllLayers);
 }
 
 void PaintLayer::UpdateTransformationMatrix() {
@@ -973,15 +985,15 @@ PaintLayer* PaintLayer::ContainingLayer(const PaintLayer* ancestor,
   return nullptr;
 }
 
-LayoutPoint PaintLayer::ComputeOffsetFromTransformedAncestor() const {
+LayoutPoint PaintLayer::ComputeOffsetFromAncestor(
+    const PaintLayer& ancestor_layer) const {
   TransformState transform_state(TransformState::kApplyTransformDirection,
                                  FloatPoint());
-  const LayoutBoxModelObject& ancestor =
-      TransformAncestorOrRoot().GetLayoutObject();
-
-  GetLayoutObject().MapLocalToAncestor(&ancestor, transform_state, 0);
-  if (ancestor.UsesCompositedScrolling())
-    transform_state.Move(ToLayoutBox(ancestor).ScrolledContentOffset());
+  const LayoutBoxModelObject& ancestor_object =
+      ancestor_layer.GetLayoutObject();
+  GetLayoutObject().MapLocalToAncestor(&ancestor_object, transform_state, 0);
+  if (ancestor_object.UsesCompositedScrolling())
+    transform_state.Move(ToLayoutBox(ancestor_object).ScrolledContentOffset());
   transform_state.Flatten();
   return LayoutPoint(transform_state.LastPlanarPoint());
 }
@@ -1082,8 +1094,7 @@ void PaintLayer::SetNeedsCompositingInputsUpdateInternal() {
 
 void PaintLayer::UpdateAncestorDependentCompositingInputs(
     const AncestorDependentCompositingInputs& compositing_inputs) {
-  ancestor_dependent_compositing_inputs_ =
-      std::make_unique<AncestorDependentCompositingInputs>(compositing_inputs);
+  EnsureAncestorDependentCompositingInputs() = compositing_inputs;
   needs_ancestor_dependent_compositing_inputs_update_ = false;
 }
 
@@ -1716,13 +1727,12 @@ bool PaintLayer::HitTest(HitTestResult& result) {
   PaintLayer* inside_layer = HitTestLayer(this, nullptr, result, hit_test_area,
                                           hit_test_location, false);
   if (!inside_layer && IsRootLayer()) {
-    IntRect hit_rect = hit_test_location.BoundingBox();
     bool fallback = false;
     // If we didn't hit any layers but are still inside the document
     // bounds, then we should fallback to hitting the document.
     // For rect-based hit test, we do the fallback only when the hit-rect
     // is totally within the document bounds.
-    if (hit_test_area.Contains(LayoutRect(hit_rect))) {
+    if (hit_test_area.Contains(hit_test_location.BoundingBox())) {
       fallback = true;
 
       // Mouse dragging outside the main document should also be
@@ -2014,9 +2024,11 @@ PaintLayer* PaintLayer::HitTestLayer(
   // fragment.
   PaintLayerFragments layer_fragments;
   if (applied_transform) {
+    DCHECK(root_layer == this);
+    LayoutPoint offset;
     AppendSingleFragmentIgnoringPagination(
         layer_fragments, root_layer, hit_test_rect,
-        kExcludeOverlayScrollbarSizeForHitTesting, clip_behavior);
+        kExcludeOverlayScrollbarSizeForHitTesting, clip_behavior, &offset);
   } else {
     CollectFragments(layer_fragments, root_layer, hit_test_rect,
                      kExcludeOverlayScrollbarSizeForHitTesting, clip_behavior);
@@ -2626,7 +2638,7 @@ void PaintLayer::EnsureCompositedLayerMapping() {
     return;
 
   EnsureRareData().composited_layer_mapping =
-      WTF::WrapUnique(new CompositedLayerMapping(*this));
+      std::make_unique<CompositedLayerMapping>(*this);
   rare_data_->composited_layer_mapping->SetNeedsGraphicsLayerUpdate(
       kGraphicsLayerUpdateSubtree);
 
@@ -2904,34 +2916,26 @@ void PaintLayer::UpdateFilters(const ComputedStyle* old_style,
     return;
 
   const bool had_resource_info = ResourceInfo();
-  if (new_style.HasFilterInducingProperty()) {
-    new_style.Filter().AddClient(&EnsureResourceInfo(),
-                                 GetLayoutObject()
-                                     .GetDocument()
-                                     .GetTaskRunner(TaskType::kUnspecedLoading)
-                                     .get());
-  }
+  if (new_style.HasFilterInducingProperty())
+    new_style.Filter().AddClient(EnsureResourceInfo());
   if (had_resource_info && old_style)
-    old_style->Filter().RemoveClient(ResourceInfo());
+    old_style->Filter().RemoveClient(*ResourceInfo());
   if (PaintLayerResourceInfo* resource_info = ResourceInfo())
     resource_info->InvalidateFilterChain();
 }
 
 void PaintLayer::UpdateClipPath(const ComputedStyle* old_style,
                                 const ComputedStyle& new_style) {
-  ClipPathOperation* new_clip_operation = new_style.ClipPath();
-  ClipPathOperation* old_clip_operation =
-      old_style ? old_style->ClipPath() : nullptr;
-  if (!new_clip_operation && !old_clip_operation)
+  ClipPathOperation* new_clip = new_style.ClipPath();
+  ClipPathOperation* old_clip = old_style ? old_style->ClipPath() : nullptr;
+  if (!new_clip && !old_clip)
     return;
   const bool had_resource_info = ResourceInfo();
-  if (IsReferenceClipPath(new_clip_operation)) {
-    ToReferenceClipPathOperation(new_clip_operation)
-        ->AddClient(EnsureResourceInfo());
-  }
-  if (had_resource_info && IsReferenceClipPath(old_clip_operation)) {
-    ToReferenceClipPathOperation(old_clip_operation)
-        ->RemoveClient(*ResourceInfo());
+  if (auto* reference_clip = ToReferenceClipPathOperationOrNull(new_clip))
+    reference_clip->AddClient(EnsureResourceInfo());
+  if (had_resource_info) {
+    if (auto* old_reference_clip = ToReferenceClipPathOperationOrNull(old_clip))
+      old_reference_clip->RemoveClient(*ResourceInfo());
   }
 }
 
@@ -3027,6 +3031,14 @@ void PaintLayer::StyleDidChange(StyleDifference diff,
 
   SetNeedsCompositingInputsUpdate();
   GetLayoutObject().SetNeedsPaintPropertyUpdate();
+
+  // We don't need to invalidate paint of objects on SPv175 when paint order
+  // changes. However, we do need to repaint the containing stacking context,
+  // in order to generate new paint chunks in the correct order. Raster
+  // invalidation will be issued if needed during paint.
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
+      diff.ZIndexChanged())
+    SetNeedsRepaint();
 }
 
 LayoutPoint PaintLayer::LocationInternal() const {
@@ -3072,8 +3084,8 @@ void PaintLayer::UpdateCompositorFilterOperationsForFilter(
       reference_box == operations.ReferenceBox())
     return;
 
-  operations = FilterEffectBuilder(EnclosingNode(), reference_box, zoom)
-                   .BuildFilterOperations(filter);
+  operations =
+      FilterEffectBuilder(reference_box, zoom).BuildFilterOperations(filter);
 }
 
 CompositorFilterOperations
@@ -3081,7 +3093,7 @@ PaintLayer::CreateCompositorFilterOperationsForBackdropFilter() const {
   const auto& style = GetLayoutObject().StyleRef();
   float zoom = style.EffectiveZoom();
   FloatRect reference_box = FilterReferenceBox(style.BackdropFilter(), zoom);
-  return FilterEffectBuilder(EnclosingNode(), reference_box, zoom)
+  return FilterEffectBuilder(reference_box, zoom)
       .BuildFilterOperations(style.BackdropFilter());
 }
 
@@ -3136,8 +3148,7 @@ FilterEffect* PaintLayer::LastFilterEffect() const {
 
   const auto& style = GetLayoutObject().StyleRef();
   float zoom = style.EffectiveZoom();
-  FilterEffectBuilder builder(EnclosingNode(),
-                              FilterReferenceBox(style.Filter(), zoom), zoom);
+  FilterEffectBuilder builder(FilterReferenceBox(style.Filter(), zoom), zoom);
   resource_info->SetLastEffect(
       builder.BuildFilterEffect(FilterOperationsIncludingReflection()));
   return resource_info->LastEffect();

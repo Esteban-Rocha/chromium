@@ -75,10 +75,6 @@
 #include "content/public/common/content_descriptors.h"
 #endif
 
-#if defined(OS_MACOSX)
-#include "base/allocator/allocator_interception_mac.h"
-#endif
-
 namespace content {
 namespace {
 
@@ -557,14 +553,6 @@ void ChildThreadImpl::Init(const Options& options) {
       connection_timeout = temp;
   }
 
-#if defined(OS_MACOSX)
-  if (base::CommandLine::InitializedForCurrentProcess() &&
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableHeapProfiling)) {
-    base::allocator::PeriodicallyShimNewMallocZones();
-  }
-#endif
-
   message_loop_->task_runner()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&ChildThreadImpl::EnsureConnected,
@@ -603,8 +591,8 @@ void ChildThreadImpl::InitTracing() {
   channel_->AddFilter(new tracing::ChildTraceMessageFilter(
       ChildProcess::current()->io_task_runner()));
 
-  chrome_trace_event_agent_ =
-      std::make_unique<tracing::ChromeTraceEventAgent>(GetConnector());
+  chrome_trace_event_agent_ = std::make_unique<tracing::ChromeTraceEventAgent>(
+      GetConnector(), false /* request_clock_sync_marker_on_android */);
 }
 
 ChildThreadImpl::~ChildThreadImpl() {
@@ -672,6 +660,23 @@ mojom::FontCacheWin* ChildThreadImpl::GetFontCacheWin() {
                                   &font_cache_win_ptr_);
   }
   return font_cache_win_ptr_.get();
+}
+#elif defined(OS_MACOSX)
+bool ChildThreadImpl::LoadFont(const base::string16& font_name,
+                               float font_point_size,
+                               uint32_t* out_buffer_size,
+                               mojo::ScopedSharedBufferHandle* out_font_data,
+                               uint32_t* out_font_id) {
+  return GetFontLoaderMac()->LoadFont(
+      font_name, font_point_size, out_buffer_size, out_font_data, out_font_id);
+}
+
+mojom::FontLoaderMac* ChildThreadImpl::GetFontLoaderMac() {
+  if (!font_loader_mac_ptr_) {
+    GetConnector()->BindInterface(mojom::kBrowserServiceName,
+                                  &font_loader_mac_ptr_);
+  }
+  return font_loader_mac_ptr_.get();
 }
 #endif
 
@@ -759,14 +764,14 @@ void ChildThreadImpl::ProcessShutdown() {
   base::RunLoop::QuitCurrentWhenIdleDeprecated();
 }
 
-void ChildThreadImpl::SetIPCLoggingEnabled(bool enable) {
 #if BUILDFLAG(IPC_MESSAGE_LOG_ENABLED)
+void ChildThreadImpl::SetIPCLoggingEnabled(bool enable) {
   if (enable)
     IPC::Logging::GetInstance()->Enable();
   else
     IPC::Logging::GetInstance()->Disable();
-#endif  //  IPC_MESSAGE_LOG_ENABLED
 }
+#endif  //  IPC_MESSAGE_LOG_ENABLED
 
 void ChildThreadImpl::OnChildControlRequest(
     mojom::ChildControlRequest request) {

@@ -74,10 +74,6 @@ bool PowerButtonControllerTestApi::MenuHasSignOutItem() const {
          GetPowerButtonMenuView()->sign_out_item_for_testing();
 }
 
-bool PowerButtonControllerTestApi::ShouldTurnScreenOffForTap() const {
-  return controller_->turn_screen_off_for_tap_;
-}
-
 PowerButtonScreenshotController*
 PowerButtonControllerTestApi::GetScreenshotController() {
   return controller_->screenshot_controller_.get();
@@ -99,7 +95,12 @@ void PowerButtonControllerTestApi::SetTickClock(base::TickClock* tick_clock) {
 
 void PowerButtonControllerTestApi::SetTurnScreenOffForTap(
     bool turn_screen_off_for_tap) {
-  controller_->turn_screen_off_for_tap_ = turn_screen_off_for_tap;
+  controller_->default_turn_screen_off_for_tap_ = turn_screen_off_for_tap;
+}
+
+void PowerButtonControllerTestApi::SetShowMenuAnimationDone(
+    bool show_menu_animation_done) {
+  controller_->show_menu_animation_done_ = show_menu_animation_done;
 }
 
 }  // namespace ash

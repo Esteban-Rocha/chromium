@@ -447,8 +447,13 @@ public class Tab
             private void onScrollingStateChanged() {
                 FullscreenManager fullscreenManager = getFullscreenManager();
                 if (fullscreenManager == null) return;
-                fullscreenManager.onContentViewScrollingStateChanged(
-                        getContentViewCore() != null && getContentViewCore().isScrollInProgress());
+                fullscreenManager.onContentViewScrollingStateChanged(isScrollInProgress());
+            }
+
+            private boolean isScrollInProgress() {
+                WebContents webContents = getWebContents();
+                if (webContents == null) return false;
+                return GestureListenerManager.fromWebContents(webContents).isScrollInProgress();
             }
         };
     }
@@ -751,10 +756,10 @@ public class Tab
             }
 
             if (mNativeTabAndroid == 0) {
-                // if mNativeTabAndroid is invalid then we are going to crash anyways on the
+                // if mNativeTabAndroid is null then we are going to crash anyways on the
                 // native side. Lets crash on the java side so that we can have a better stack
-                // trace. https://crbug.com/662877
-                throw new RuntimeException("Please post this crash on crbug.com/662877");
+                // trace.
+                throw new RuntimeException("Tab.loadUrl called when no native side exists");
             }
 
             // We load the URL from the tab rather than directly from the ContentView so the tab has
@@ -1790,11 +1795,11 @@ public class Tab
     }
 
     private ContentViewCore createContentViewCore(WebContents webContents) {
-        ContentViewCore cvc = ContentViewCore.create(mThemedApplicationContext, PRODUCT_VERSION);
-        ContentView cv = ContentView.createContentView(mThemedApplicationContext, cvc);
+        ContentView cv = ContentView.createContentView(mThemedApplicationContext, webContents);
         cv.setContentDescription(mThemedApplicationContext.getResources().getString(
                 R.string.accessibility_content_view));
-        cvc.initialize(new TabViewAndroidDelegate(this, cv), cv, webContents, getWindowAndroid());
+        ContentViewCore cvc = ContentViewCore.create(mThemedApplicationContext, PRODUCT_VERSION,
+                webContents, new TabViewAndroidDelegate(this, cv), cv, getWindowAndroid());
         SelectionPopupController controller = SelectionPopupController.fromWebContents(webContents);
         ChromeActionModeCallback actionModeCallback =
                 new ChromeActionModeCallback(this, controller.getActionModeCallbackHelper());
@@ -1843,7 +1848,15 @@ public class Tab
 
             mDownloadDelegate = new ChromeDownloadDelegate(mThemedApplicationContext, this);
 
-            initWebContents(mContentViewCore.getWebContents());
+            WebContents parentWebContents = null;
+            if (getParentId() != INVALID_TAB_ID) {
+                Tab parentTab = getTabModelSelector().getTabById(getParentId());
+                if (parentTab != null && parentTab.isIncognito() == isIncognito()) {
+                    parentWebContents = parentTab.getWebContents();
+                }
+            }
+
+            initWebContents(mContentViewCore.getWebContents(), parentWebContents);
 
             // In the case where restoring a Tab or showing a prerendered one we already have a
             // valid infobar container, no need to recreate one.
@@ -1896,10 +1909,10 @@ public class Tab
         }
     }
 
-    private void initWebContents(WebContents webContents) {
+    private void initWebContents(WebContents webContents, WebContents parentWebContents) {
         assert mNativeTabAndroid != 0;
         nativeInitWebContents(mNativeTabAndroid, mIncognito, mIsDetached, webContents,
-                mWebContentsDelegate,
+                parentWebContents, mWebContentsDelegate,
                 new TabContextMenuPopulator(
                         mDelegateFactory.createContextMenuPopulator(this), this));
 
@@ -3505,7 +3518,7 @@ public class Tab
     private native void nativeInit();
     private native void nativeDestroy(long nativeTabAndroid);
     private native void nativeInitWebContents(long nativeTabAndroid, boolean incognito,
-            boolean isBackgroundTab, WebContents webContents,
+            boolean isBackgroundTab, WebContents webContents, WebContents parentWebContents,
             TabWebContentsDelegateAndroid delegate, ContextMenuPopulator contextMenuPopulator);
     private native void nativeUpdateDelegates(long nativeTabAndroid,
             TabWebContentsDelegateAndroid delegate, ContextMenuPopulator contextMenuPopulator);

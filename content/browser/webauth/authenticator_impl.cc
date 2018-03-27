@@ -23,13 +23,13 @@
 #include "crypto/sha2.h"
 #include "device/fido/u2f_register.h"
 #include "device/fido/u2f_request.h"
-#include "device/fido/u2f_return_code.h"
 #include "device/fido/u2f_sign.h"
 #include "device/fido/u2f_transport_protocol.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "url/url_constants.h"
 #include "url/url_util.h"
 
 namespace content {
@@ -49,7 +49,15 @@ constexpr int32_t kCoseEs256 = -7;
 bool HasValidEffectiveDomain(url::Origin caller_origin) {
   return !caller_origin.unique() &&
          !url::HostIsIPAddress(caller_origin.host()) &&
-         content::IsOriginSecure(caller_origin.GetURL());
+         content::IsOriginSecure(caller_origin.GetURL()) &&
+         // Additionally, the scheme is required to be HTTP(S). Other schemes
+         // may be supported in the future but the webauthn relying party is
+         // just the domain of the origin so we would have to define how the
+         // authority part of other schemes maps to a "domain" without
+         // collisions. Given the |IsOriginSecure| check, just above, HTTP is
+         // effectively restricted to just "localhost".
+         (caller_origin.scheme() == url::kHttpScheme ||
+          caller_origin.scheme() == url::kHttpsScheme);
 }
 
 // Ensure the relying party ID is a registrable domain suffix of or equal
@@ -132,7 +140,7 @@ bool IsAppIdAllowedForOrigin(const GURL& appid, const url::Origin& origin) {
   const GURL kGstatic1 =
       GURL("https://www.gstatic.com/securitykey/origins.json");
   const GURL kGstatic2 =
-      GURL("https://www.gstatic.com/a/google.com/securitykey/origins.json");
+      GURL("https://www.gstatic.com/securitykey/a/google.com/origins.json");
   DCHECK(kGstatic1.is_valid() && kGstatic2.is_valid());
 
   if (origin.DomainIs("google.com") && !appid.has_ref() &&
@@ -144,7 +152,9 @@ bool IsAppIdAllowedForOrigin(const GURL& appid, const url::Origin& origin) {
   return false;
 }
 
-bool HasValidAlgorithm(
+// Check that at least one of the cryptographic parameters is supported.
+// Only ES256 is currently supported by U2F_V2 (CTAP 1.0).
+bool IsAlgorithmSupportedByU2fAuthenticators(
     const std::vector<webauth::mojom::PublicKeyCredentialParametersPtr>&
         parameters) {
   for (const auto& params : parameters) {
@@ -152,6 +162,21 @@ bool HasValidAlgorithm(
       return true;
   }
   return false;
+}
+
+// Verify that the request doesn't contain parameters that U2F authenticators
+// cannot fulfill.
+bool AreOptionsSupportedByU2fAuthenticators(
+    const webauth::mojom::PublicKeyCredentialCreationOptionsPtr& options) {
+  if (options->authenticator_selection) {
+    if (options->authenticator_selection->user_verification ==
+            webauth::mojom::UserVerificationRequirement::REQUIRED ||
+        options->authenticator_selection->require_resident_key)
+      return false;
+  }
+  if (!IsAlgorithmSupportedByU2fAuthenticators(options->public_key_parameters))
+    return false;
+  return true;
 }
 
 std::vector<std::vector<uint8_t>> FilterCredentialList(
@@ -204,13 +229,14 @@ base::Optional<std::vector<uint8_t>> ProcessAppIdExtension(
 }
 
 webauth::mojom::MakeCredentialAuthenticatorResponsePtr
-CreateMakeCredentialResponse(const std::string& client_data_json,
-                             device::RegisterResponseData response_data) {
+CreateMakeCredentialResponse(
+    const std::string& client_data_json,
+    device::AuthenticatorMakeCredentialResponse response_data) {
   auto response = webauth::mojom::MakeCredentialAuthenticatorResponse::New();
   auto common_info = webauth::mojom::CommonCredentialInfo::New();
   common_info->client_data_json.assign(client_data_json.begin(),
                                        client_data_json.end());
-  common_info->raw_id = response_data.raw_id();
+  common_info->raw_id = response_data.raw_credential_id();
   common_info->id = response_data.GetId();
   response->info = std::move(common_info);
   response->attestation_object =
@@ -220,19 +246,22 @@ CreateMakeCredentialResponse(const std::string& client_data_json,
 
 webauth::mojom::GetAssertionAuthenticatorResponsePtr CreateGetAssertionResponse(
     const std::string& client_data_json,
-    device::SignResponseData response_data,
+    device::AuthenticatorGetAssertionResponse response_data,
     bool echo_appid_extension) {
   auto response = webauth::mojom::GetAssertionAuthenticatorResponse::New();
   auto common_info = webauth::mojom::CommonCredentialInfo::New();
   common_info->client_data_json.assign(client_data_json.begin(),
                                        client_data_json.end());
-  common_info->raw_id = response_data.raw_id();
+  common_info->raw_id = response_data.raw_credential_id();
   common_info->id = response_data.GetId();
   response->info = std::move(common_info);
-  response->authenticator_data = response_data.GetAuthenticatorDataBytes();
+  response->authenticator_data =
+      response_data.auth_data().SerializeToByteArray();
   response->signature = response_data.signature();
-  response->user_handle.emplace();
   response->echo_appid_extension = echo_appid_extension;
+  response_data.user_entity()
+      ? response->user_handle.emplace(response_data.user_entity()->user_id())
+      : response->user_handle.emplace();
   return response;
 }
 
@@ -361,9 +390,10 @@ void AuthenticatorImpl::MakeCredential(
     return;
   }
 
-  // Check that at least one of the cryptographic parameters is supported.
-  // Only ES256 is currently supported by U2F_V2.
-  if (!HasValidAlgorithm(options->public_key_parameters)) {
+  // Verify that the request doesn't contain parameters that U2F authenticators
+  // cannot fulfill.
+  // TODO(crbug.com/819256): Improve messages for "Not Supported" errors.
+  if (!AreOptionsSupportedByU2fAuthenticators(options)) {
     InvokeCallbackAndCleanup(
         std::move(callback),
         webauth::mojom::AuthenticatorStatus::NOT_SUPPORTED_ERROR, nullptr);
@@ -445,6 +475,15 @@ void AuthenticatorImpl::GetAssertion(
     return;
   }
 
+  // To use U2F, the relying party must not require user verification.
+  if (options->user_verification ==
+      webauth::mojom::UserVerificationRequirement::REQUIRED) {
+    InvokeCallbackAndCleanup(
+        std::move(callback),
+        webauth::mojom::AuthenticatorStatus::NOT_SUPPORTED_ERROR, nullptr);
+    return;
+  }
+
   std::vector<uint8_t> application_parameter =
       CreateApplicationParameter(options->relying_party_id);
 
@@ -493,10 +532,14 @@ void AuthenticatorImpl::GetAssertion(
 
 // Callback to handle the async registration response from a U2fDevice.
 void AuthenticatorImpl::OnRegisterResponse(
-    device::U2fReturnCode status_code,
-    base::Optional<device::RegisterResponseData> response_data) {
+    device::FidoReturnCode status_code,
+    base::Optional<device::AuthenticatorMakeCredentialResponse> response_data) {
+  // If callback is called immediately, this code will call |Cleanup| before
+  // |u2f_request_| has been assigned – violating invariants.
+  DCHECK(u2f_request_) << "unsupported callback hairpin";
+
   switch (status_code) {
-    case device::U2fReturnCode::CONDITIONS_NOT_SATISFIED:
+    case device::FidoReturnCode::kConditionsNotSatisfied:
       // Duplicate registration: the new credential would be created on an
       // authenticator that already contains one of the credentials in
       // |exclude_credentials|.
@@ -504,16 +547,16 @@ void AuthenticatorImpl::OnRegisterResponse(
           std::move(make_credential_response_callback_),
           webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
       return;
-    case device::U2fReturnCode::FAILURE:
+    case device::FidoReturnCode::kFailure:
       // The response from the authenticator was corrupted.
       InvokeCallbackAndCleanup(
           std::move(make_credential_response_callback_),
           webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
       return;
-    case device::U2fReturnCode::INVALID_PARAMS:
+    case device::FidoReturnCode::kInvalidParams:
       NOTREACHED();
       return;
-    case device::U2fReturnCode::SUCCESS:
+    case device::FidoReturnCode::kSuccess:
       DCHECK(response_data.has_value());
 
       if (attestation_preference_ !=
@@ -541,45 +584,72 @@ void AuthenticatorImpl::OnRegisterResponse(
 }
 
 void AuthenticatorImpl::OnRegisterResponseAttestationDecided(
-    device::RegisterResponseData response_data,
+    device::AuthenticatorMakeCredentialResponse response_data,
     bool attestation_permitted) {
   DCHECK(attestation_preference_ !=
          webauth::mojom::AttestationConveyancePreference::NONE);
 
   if (!attestation_permitted) {
-    // To protect users from being identified without consent, we let the
-    // timeout run out.
-    // See https://w3c.github.io/webauthn/#sec-assertion-privacy.
-    return;
-  } else {
     InvokeCallbackAndCleanup(
         std::move(make_credential_response_callback_),
-        webauth::mojom::AuthenticatorStatus::SUCCESS,
-        CreateMakeCredentialResponse(std::move(client_data_json_),
-                                     std::move(response_data)));
+        webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
+    return;
   }
+
+  // The check for IsAttestationCertificateInappropriatelyIdentifying is
+  // performed after the permissions prompt, even though we know the answer
+  // before, because this still effectively discloses the make & model of the
+  // authenticator: If an RP sees a "none" attestation from Chrome after
+  // requesting direct attestation then it knows that it was one of the tokens
+  // with inappropriate certs.
+  if (response_data.IsAttestationCertificateInappropriatelyIdentifying() &&
+      !GetContentClient()
+           ->browser()
+           ->ShouldPermitIndividualAttestationForWebauthnRPID(
+               render_frame_host_->GetProcess()->GetBrowserContext(),
+               relying_party_id_)) {
+    // The attestation response is incorrectly individually identifiable, but
+    // the consent is for make & model information about a token, not for
+    // individually-identifiable information. Erase the attestation to stop it
+    // begin a tracking signal.
+
+    // The only way to get the underlying attestation will be to list the RP ID
+    // in the enterprise policy, because that enables the individual attestation
+    // bit in the register request and permits individual attestation generally.
+    response_data.EraseAttestationStatement();
+  }
+
+  InvokeCallbackAndCleanup(
+      std::move(make_credential_response_callback_),
+      webauth::mojom::AuthenticatorStatus::SUCCESS,
+      CreateMakeCredentialResponse(std::move(client_data_json_),
+                                   std::move(response_data)));
 }
 
 void AuthenticatorImpl::OnSignResponse(
-    device::U2fReturnCode status_code,
-    base::Optional<device::SignResponseData> response_data) {
+    device::FidoReturnCode status_code,
+    base::Optional<device::AuthenticatorGetAssertionResponse> response_data) {
+  // If callback is called immediately, this code will call |Cleanup| before
+  // |u2f_request_| has been assigned – violating invariants.
+  DCHECK(u2f_request_) << "unsupported callback hairpin";
+
   switch (status_code) {
-    case device::U2fReturnCode::CONDITIONS_NOT_SATISFIED:
+    case device::FidoReturnCode::kConditionsNotSatisfied:
       // No authenticators contained the credential.
       InvokeCallbackAndCleanup(
           std::move(get_assertion_response_callback_),
           webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
       return;
-    case device::U2fReturnCode::FAILURE:
+    case device::FidoReturnCode::kFailure:
       // The response from the authenticator was corrupted.
       InvokeCallbackAndCleanup(
           std::move(make_credential_response_callback_),
           webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
       return;
-    case device::U2fReturnCode::INVALID_PARAMS:
+    case device::FidoReturnCode::kInvalidParams:
       NOTREACHED();
       return;
-    case device::U2fReturnCode::SUCCESS:
+    case device::FidoReturnCode::kSuccess:
       DCHECK(response_data.has_value());
       InvokeCallbackAndCleanup(
           std::move(get_assertion_response_callback_),

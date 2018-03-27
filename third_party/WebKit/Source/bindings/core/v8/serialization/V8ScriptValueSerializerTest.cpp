@@ -43,7 +43,7 @@
 #include "core/messaging/MessagePort.h"
 #include "core/offscreencanvas/OffscreenCanvas.h"
 #include "platform/graphics/StaticBitmapImage.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "platform/wtf/DateMath.h"
 #include "platform/wtf/Time.h"
 #include "public/platform/WebBlobInfo.h"
@@ -986,9 +986,6 @@ TEST(V8ScriptValueSerializerTest, RoundTripImageBitmap) {
 }
 
 TEST(V8ScriptValueSerializerTest, RoundTripImageBitmapWithColorSpaceInfo) {
-  // enable experimental canvas features and color canvas extensions for this
-  // test
-  ScopedExperimentalCanvasFeaturesForTest experimental_canvas_features(true);
   V8TestingScope scope;
   // Make a 10x7 red ImageBitmap in P3 color space.
   SkImageInfo info = SkImageInfo::Make(

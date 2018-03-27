@@ -41,8 +41,11 @@ void BoxPainter::PaintChildren(const PaintInfo& paint_info,
                                const LayoutPoint& paint_offset) {
   PaintInfo child_info(paint_info);
   for (LayoutObject* child = layout_box_.SlowFirstChild(); child;
-       child = child->NextSibling())
-    child->Paint(child_info, paint_offset);
+       child = child->NextSibling()) {
+    if (!child->IsBoxModelObject() ||
+        !ToLayoutBoxModelObject(child)->HasSelfPaintingLayer())
+      child->Paint(child_info, paint_offset);
+  }
 }
 
 void BoxPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info,
@@ -112,7 +115,8 @@ void BoxPainter::PaintBoxDecorationBackgroundWithRect(
   // because we always paint using the latest data (buffered ranges, current
   // time and duration) which may be different from the cached data, and for
   // delayed-invalidation object because it may change before it's actually
-  // invalidated.
+  // invalidated. Note that we still report harmless under-invalidation of
+  // non-delayed-invalidation animated background, which should be ignored.
   if (RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled() &&
       (style.Appearance() == kMediaSliderPart ||
        layout_box_.FullPaintInvalidationReason() ==

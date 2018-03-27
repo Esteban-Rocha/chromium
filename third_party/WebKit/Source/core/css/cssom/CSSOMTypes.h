@@ -5,8 +5,8 @@
 #ifndef CSSOMTypes_h
 #define CSSOMTypes_h
 
-#include "core/CSSPropertyNames.h"
 #include "core/css/cssom/CSSStyleValue.h"
+#include "core/css_property_names.h"
 #include "platform/wtf/Allocator.h"
 
 namespace blink {
@@ -19,6 +19,7 @@ class CSSOMTypes {
   STATIC_ONLY(CSSOMTypes);
 
  public:
+  static bool IsPropertySupported(CSSPropertyID);
   static bool PropertyCanTake(CSSPropertyID, const CSSStyleValue&);
   static bool PropertyCanTakeType(CSSPropertyID, CSSStyleValue::StyleValueType);
 };

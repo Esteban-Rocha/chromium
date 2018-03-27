@@ -38,7 +38,11 @@ class StyledLabel;
 namespace ash {
 
 class LoginAuthUserView;
+class LoginBigUserView;
 class LoginBubble;
+class LoginDetachableBaseModel;
+class LoginPublicAccountUserView;
+class LoginUserView;
 class NoteActionLaunchButton;
 class ScrollableUsersListView;
 
@@ -66,19 +70,23 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
     explicit TestApi(LockContentsView* view);
     ~TestApi();
 
-    LoginAuthUserView* primary_auth() const;
-    LoginAuthUserView* opt_secondary_auth() const;
+    LoginBigUserView* primary_big_view() const;
+    LoginBigUserView* opt_secondary_big_view() const;
     ScrollableUsersListView* users_list() const;
     views::View* note_action() const;
     LoginBubble* tooltip_bubble() const;
+    LoginBubble* auth_error_bubble() const;
+    LoginBubble* detachable_base_error_bubble() const;
     views::View* dev_channel_info() const;
 
    private:
     LockContentsView* const view_;
   };
 
-  LockContentsView(mojom::TrayActionState initial_note_action_state,
-                   LoginDataDispatcher* data_dispatcher);
+  LockContentsView(
+      mojom::TrayActionState initial_note_action_state,
+      LoginDataDispatcher* data_dispatcher,
+      std::unique_ptr<LoginDetachableBaseModel> detachable_base_model);
   ~LockContentsView() override;
 
   // views::View:
@@ -111,6 +119,8 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
                                      const base::ListValue& locales,
                                      const std::string& default_locale,
                                      bool show_advanced_view) override;
+  void OnDetachableBasePairingStatusChanged(
+      DetachableBasePairingStatus pairing_status) override;
 
   // SystemTrayFocusObserver:
   void OnFocusLeavingSystemTray(bool reverse) override;
@@ -184,8 +194,8 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
   void AddRotationAction(const OnRotate& on_rotate);
 
   // Change the active |auth_user_|. If |is_primary| is true, the active auth
-  // switches to |opt_secondary_auth_|. If |is_primary| is false, the active
-  // auth switches to |primary_auth_|.
+  // switches to |opt_secondary_big_view_|. If |is_primary| is false, the active
+  // auth switches to |primary_big_view_|.
   void SwapActiveAuthBetweenPrimaryAndSecondary(bool is_primary);
 
   // Called when an authentication check is complete.
@@ -196,27 +206,36 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
   UserState* FindStateForUser(const AccountId& user);
 
   // Updates the auth methods for |to_update| and |to_hide|, if passed.
-  // |to_hide| will be set to LoginAuthUserView::AUTH_NONE. At minimum,
-  // |to_update| will show a password prompt.
-  void LayoutAuth(LoginAuthUserView* to_update,
-                  LoginAuthUserView* opt_to_hide,
+  // For auth users:
+  //   |to_hide| will be set to LoginAuthUserView::AUTH_NONE. At minimum,
+  //   |to_update| will show a password prompt.
+  // For pubic account users:
+  //   |to_hide| will set to disable auth.
+  //   |to_update| will show an arrow button.
+  void LayoutAuth(LoginBigUserView* to_update,
+                  LoginBigUserView* opt_to_hide,
                   bool animate);
 
-  // Make the user at |user_index| the auth user. We pass in the index because
-  // the actual user may change.
-  void SwapToAuthUser(int user_index);
+  // Make the user at |user_index| the big user with auth enabled.
+  // We pass in the index because the actual user may change.
+  void SwapToBigUser(int user_index);
 
-  // Called after the auth user change has taken place.
-  void OnAuthUserChanged();
+  // Warning to remove a user is shown.
+  void OnRemoveUserWarningShown(bool is_primary);
+  // Remove one of the auth users.
+  void RemoveUser(bool is_primary);
+
+  // Called after the big user change has taken place.
+  void OnBigUserChanged();
 
   // Shows the correct (cached) easy unlock icon for the given auth user.
   void UpdateEasyUnlockIconForUser(const AccountId& user);
 
-  // Get the LoginAuthUserView of the current auth user.
-  LoginAuthUserView* CurrentAuthUserView();
+  // Get the current active big user view.
+  LoginBigUserView* CurrentBigUserView();
 
   // Opens an error bubble to indicate authentication failure.
-  void ShowErrorMessage();
+  void ShowAuthErrorMessage();
 
   // Called when the easy unlock icon is hovered.
   void OnEasyUnlockIconHovered();
@@ -228,28 +247,47 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
   // displayed in this window.
   keyboard::KeyboardController* GetKeyboardController() const;
 
-  // Helper method to allocate a LoginAuthUserView instance.
-  LoginAuthUserView* AllocateLoginAuthUserView(
+  // Called when the public account is tapped.
+  void OnPublicAccountTapped();
+
+  // Helper method to allocate a LoginBigUserView instance.
+  LoginBigUserView* AllocateLoginBigUserView(
       const mojom::LoginUserInfoPtr& user,
       bool is_primary);
 
-  // Returns the authentication view for |user| if |user| is one of the active
-  // authentication views. If |require_auth_active| is true then the view must
-  // also be actively displaying auth.
-  LoginAuthUserView* TryToFindAuthUser(const AccountId& user,
-                                       bool require_auth_active);
+  // Returns the big view for |user| if |user| is one of the active
+  // big views. If |require_auth_active| is true then the view must
+  // have auth enabled.
+  LoginBigUserView* TryToFindBigUser(const AccountId& user,
+                                     bool require_auth_active);
+
+  // Returns the user view for |user|.
+  LoginUserView* TryToFindUserView(const AccountId& user);
 
   // Returns scrollable view with initialized size and rows for all |users|.
   ScrollableUsersListView* BuildScrollableUsersListView(
       const std::vector<mojom::LoginUserInfoPtr>& users,
       LoginDisplayStyle display_style);
 
+  // Update the auth enable/disabled for public account user.
+  // Both |opt_to_update| and |opt_to_hide| could be null.
+  void UpdateAuthForPublicAccount(LoginPublicAccountUserView* opt_to_update,
+                                  LoginPublicAccountUserView* opt_to_hide,
+                                  bool animate);
+
+  // Update the auth method for regular user.
+  // Both |opt_to_update| and |opt_to_hide| could be null.
+  void UpdateAuthForAuthUser(LoginAuthUserView* opt_to_update,
+                             LoginAuthUserView* opt_to_hide,
+                             bool animate);
+
   std::vector<UserState> users_;
 
   LoginDataDispatcher* const data_dispatcher_;  // Unowned.
+  std::unique_ptr<LoginDetachableBaseModel> detachable_base_model_;
 
-  LoginAuthUserView* primary_auth_ = nullptr;
-  LoginAuthUserView* opt_secondary_auth_ = nullptr;
+  LoginBigUserView* primary_big_view_ = nullptr;
+  LoginBigUserView* opt_secondary_big_view_ = nullptr;
   ScrollableUsersListView* users_list_ = nullptr;
 
   // View that contains the note action button and the dev channel info labels,
@@ -279,7 +317,12 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
                  keyboard::KeyboardControllerObserver>
       keyboard_observer_;
 
-  std::unique_ptr<LoginBubble> error_bubble_;
+  // Bubbles for displaying authentication error.
+  std::unique_ptr<LoginBubble> auth_error_bubble_;
+
+  // Bubble for displaying error when the user's detachable base changes.
+  std::unique_ptr<LoginBubble> detachable_base_error_bubble_;
+
   std::unique_ptr<LoginBubble> tooltip_bubble_;
 
   int unlock_attempt_ = 0;

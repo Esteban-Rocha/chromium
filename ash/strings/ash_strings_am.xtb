@@ -23,8 +23,10 @@
 <translation id="1484102317210609525"><ph name="DEVICE_NAME" /> (HDMI/DP)</translation>
 <translation id="1510238584712386396">ማስጀመሪያ</translation>
 <translation id="1525508553941733066">አሰናብት</translation>
+<translation id="1537254971476575106">የሙሉ ማያ ገጽ ማጉያ</translation>
 <translation id="15373452373711364">ትልቅ የመዳፊት ጠቋሚ</translation>
 <translation id="1550523713251050646">ለተጨማሪ አማራጮች ጠቅ ያድርጉ</translation>
+<translation id="1567387640189251553">የእርስዎን የይለፍ ቃል ለመጨረሻ ጊዜ ካስገቡ ወዲህ የተለየ የቁልፍ ሰሌዳ ተገናኝቷል። የእርስዎን የቁልፍ ጭረቶች ለመስረቅ እየሞከረ ሊሆን ይችላል።</translation>
 <translation id="1608626060424371292">ይህን ተጠቃሚ አስወግድ</translation>
 <translation id="1621499497873603021">ባትሪ ባዶ እስኪሆን ድረስ የቀረው ጊዜ፣ <ph name="TIME_LEFT" /></translation>
 <translation id="1658406695958299976">ይቅርታ፣ የይለፍ ቃልዎ አሁንም ሊረጋገጥ አልቻለም። ማሳሰቢያ፦ የይለፍ ቃልዎን በቅርብ ጊዜ ቀይረው ከሆነ አዲስ የይለፍ ቃልዎ የሚተገበረው ሲወጡ ነው፣ እባክዎ የድሮውን ይለፍ ቃል እዚህ ይጠቀሙ።</translation>
@@ -40,6 +42,7 @@
 <translation id="1882897271359938046">ወደ <ph name="DISPLAY_NAME" /> በማንጸባረቅ ላይ</translation>
 <translation id="1919743966458266018">የተግባር መሪው የሚከፈትበት አቋራጭ ተቀይሯል። እባክዎ ከ<ph name="OLD_SHORTCUT" /> ይልቅ <ph name="NEW_SHORTCUT" />ን ይጠቀሙ።</translation>
 <translation id="1923539912171292317">ራስ-ሰር ጠቅታዎች</translation>
+<translation id="1928739107511554905">ዝማኔውን ለማግኘት የእርስዎን Chromebook ከተያያዘው የቁልፍ ሰሌዳ ጋር እንደገና ለማስጀመር የንኪ ማያ ገጹን ይጠቀሙ።</translation>
 <translation id="1942830294380034169">የትርፍ ፍሰት አዝራር</translation>
 <translation id="1951012854035635156">ረዳት</translation>
 <translation id="1957803754585243749">0°</translation>
@@ -49,9 +52,12 @@
 <translation id="2049639323467105390">ይህ መሣሪያ በ<ph name="DOMAIN" /> ነው የሚቀናበረው።</translation>
 <translation id="2050339315714019657">በቁመት</translation>
 <translation id="2067602449040652523">የቁልፍ ሰሌዳ ብሩህነት</translation>
+<translation id="2081529251031312395">$1 አሁንም በኋላ ላይ በመለያ መግባት ይችላሉ።</translation>
 <translation id="2122028596993374965"><ph name="TAB_NAME" />ን ወደ <ph name="RECEIVER_NAME" /> Cast ማድረግ አስቁም</translation>
 <translation id="2127372758936585790">አነስተኛ ኃይል ያለው ባትሪ መሙያ</translation>
+<translation id="2135456203358955318">የተተከለ ማጉያ</translation>
 <translation id="2144487987174258011">Adobe Flash Playerን ለማዘመን ዳግም ያስጀምሩ</translation>
+<translation id="2191905770366256395">የእርስዎ ሊነቀል የሚችል የቁልፍ ሰሌድዳ በጣም ወሳኝ የሆነ ዝማኔ ያስፈልገዋል</translation>
 <translation id="2208323208084708176">የተዋሃደ የዴስክቶፕ ሁነታ</translation>
 <translation id="2220572644011485463">ፒን ወይም የይለፍ ቃል</translation>
 <translation id="225680501294068881">መሣሪያዎችን በመቃኘት ላይ...</translation>
@@ -60,6 +66,7 @@
 <translation id="2292698582925480719">ልኬትን አሳይ</translation>
 <translation id="2303600792989757991">የመስኮት አጠቃላይ እይታን ቀያይር</translation>
 <translation id="2338501278241028356">በአቅራቢያ ያሉ መሣሪያዎችን ለማግኘት ብሉቱዝን ያብሩ</translation>
+<translation id="2351266942280602854">ቋንቋ እና ግቤት</translation>
 <translation id="2352467521400612932">የስቲለስ ቅንብሮች</translation>
 <translation id="2354174487190027830"><ph name="NAME" />ን በማግበር ላይ</translation>
 <translation id="2365393535144473978">የተንቀሳቃሽ ስልክ ውሂብን ማንቃት ብሉቱዝን ያነቃል።</translation>
@@ -75,6 +82,7 @@
 <translation id="2653659639078652383">አስገባ</translation>
 <translation id="2675319268637823299">አንድ አስተዳዳሪ ለ<ph name="USER_EMAIL" /> በርካታ በመለያ መግባቶችን ከልክሏል።
 ለመቀጠል ሁሉም ተጠቃሚዎች ዘግተው መውጣት አለባቸው።</translation>
+<translation id="2718395828230677721">የምሽት ብርሃን</translation>
 <translation id="2727977024730340865">አነስተኛ ኃይል ወዳለው ባትሪ መሙያ ተሰክቷል። የባትሪ መሙላት አስተማማኝ ላይሆን ይችላል።</translation>
 <translation id="2761704814324807722">የሁኔታ መሣቢያ፣ ሰዓት <ph name="TIME" />፣ <ph name="BATTERY" /></translation>
 <translation id="277257480934873581">ከ<ph name="NAME" /> ጋር ዳግም በማገናኘት ላይ</translation>
@@ -101,6 +109,7 @@
 <translation id="3126069444801937830">ለማዘመን ዳግም ያስጀምሩ</translation>
 <translation id="3147142846278915599">ማስጀመሪያ (መተግበሪያዎችን በማመሳሰል ላይ...)</translation>
 <translation id="315116470104423982">የተንቀሳቃሽ ስልክ ውሂብ</translation>
+<translation id="3151786313568798007">አቀማመጥ</translation>
 <translation id="3153444934357957346">በአንድ ጊዜ ብዙ መግባት ላይ እስከ <ph name="MULTI_PROFILE_USER_LIMIT" /> መለያዎች ድረስ ብቻ ነው ሊኖርዎት የሚችለው።</translation>
 <translation id="3236488194889173876">ምንም የተንቀሳቃሽ ስልክ አውታረ መረብ የለም</translation>
 <translation id="3294437725009624529">እንግዳ</translation>
@@ -122,6 +131,7 @@
 <translation id="3621202678540785336">ግብዓት</translation>
 <translation id="3626281679859535460">ብሩህነት</translation>
 <translation id="3631369015426612114">ማሳወቂያዎች ከሚከተሉት እንዲመጡ ፍቀድ፦</translation>
+<translation id="3705722231355495246">-</translation>
 <translation id="3712407551474845318">ክልልን አንሳ</translation>
 <translation id="371370241367527062">የፊት ማይክሮፎን</translation>
 <translation id="3771549900096082774">ባለከፍተኛ ንፅፅር ሁነታ</translation>
@@ -133,6 +143,7 @@
 <translation id="3891340733213178823">ዘግተው ለመውጣት Ctrl+Shift+Qን ሁለቴ ይጫኑ።</translation>
 <translation id="3893630138897523026">ChromeVox (የሚነገር ግብረመልስ)</translation>
 <translation id="3899995891769452915">የድምፅ ግቤት</translation>
+<translation id="3900355044994618856">የእርስዎ ክፍለ ጊዜ በ<ph name="SESSION_TIME_REMAINING" /> ውስጥ ያበቃል</translation>
 <translation id="3901991538546252627">ከ<ph name="NAME" /> ጋር በመገናኘት ላይ</translation>
 <translation id="394485226368336402">የድምጽ ቅንብሮች</translation>
 <translation id="397105322502079400">በማስላት ላይ...</translation>
@@ -165,6 +176,7 @@
 <translation id="4905614135390995787">ባለከፍተኛ ንፅፅር ሁነታ የሚቀይረው አቋራጭ ተለውጧል። እባክዎ በ<ph name="OLD_SHORTCUT" /> ምትክ <ph name="NEW_SHORTCUT" />ን ይጠቀሙ።</translation>
 <translation id="4918086044614829423">ይቀበሉ</translation>
 <translation id="4961318399572185831">የCast ማያ ገጽ</translation>
+<translation id="5136175204352732067">የተለየ የቁልፍ ሰሌዳ ተገናኝቷል</translation>
 <translation id="5168181903108465623">የCast መሣሪያዎች ይገኛሉ</translation>
 <translation id="5207949376430453814">የጽሑፍ ድፋቱን አድምቅ</translation>
 <translation id="5222676887888702881">ዘግተህ ውጣ</translation>
@@ -176,6 +188,7 @@
 <translation id="5431825016875453137">OpenVPN / L2TP</translation>
 <translation id="544691375626129091">ሁሉም የሚገኙ ተጤቃሚዎች አስቀድመው ወደዚህ ክፍለ-ጊዜ ታክለዋል።</translation>
 <translation id="5457599981699367932">እንደ እንግዳ ያስሱ</translation>
+<translation id="54609108002486618">የተቀናበረ</translation>
 <translation id="553675580533261935">ከክፍለ-ጊዜ በመውጣት ላይ</translation>
 <translation id="5548285847212963613">«<ph name="EXTENSION_NAME" />» ቅጥያ ወደዚህ አውታረመረብ ለማገናኘት ሊያግዝ ይችላል።</translation>
 <translation id="5571066253365925590">ብሉቱዝ ነቅቷል</translation>
@@ -200,6 +213,7 @@
 <translation id="5977415296283489383">ጆሮ ማዳጀጫ</translation>
 <translation id="5978382165065462689">የማያ ገጽዎን ቁጥጥር በርቀት እርዳታ በኩል በማጋራት ላይ።</translation>
 <translation id="5980301590375426705">ከእንግዳ ውጣ</translation>
+<translation id="598882571027504733">ዝማኔውን ለማግኘት፣ ከተያያዘው የቁልፍ ሰሌዳ ጋር የእርስዎን Chromebook ዳግም ያስጀምሩ።</translation>
 <translation id="5992218262414051481">ባለከፍተኛ ንፅፅር ሁነታ ነቅቷል። እሱን ለማጥፋት እንደገና Ctrl+Search+H ይጫኑ።</translation>
 <translation id="6018164090099858612">ከመስታወት ሁነታ በመውጣት ላይ</translation>
 <translation id="6043212731627905357">ይህ ማሳያ ከእርስዎ <ph name="DEVICE_TYPE" /> ጋር መስማማት አልቻለም (ማሳያው የሚደገፍ አይደለም)።</translation>
@@ -253,6 +267,7 @@
 <translation id="7066646422045619941">ይህ አውታረ መረብ በአስተዳዳሪዎ ነው የተሰናከለው።</translation>
 <translation id="7067196344162293536">በራስ-አሽከርክር</translation>
 <translation id="7098389117866926363">USB-C መሣሪያ (የግራ ወደብ ከኋላ በኩል)</translation>
+<translation id="7131634465328662194">በራስሰር ዘግተው እንዲወጡ ይደረጋሉ።</translation>
 <translation id="7165278925115064263">Alt+Shift+K</translation>
 <translation id="7168224885072002358">በ<ph name="TIMEOUT_SECONDS" /> ውስጥ ወደ ቀድሞው ጥራት በመመለስ ላይ</translation>
 <translation id="7256634071279256947">የኋላ ማይክሮፎን</translation>
@@ -309,9 +324,11 @@
 <translation id="8484916590211895857"><ph name="NAME" />፦ ዳግም በማገናኘት ላይ...</translation>
 <translation id="8517041960877371778">የእርሰዎ <ph name="DEVICE_TYPE" /> እንደበራ ኃይል መሙላት አይችሉ ይሆናል።</translation>
 <translation id="8639760480004882931"><ph name="PERCENTAGE" /> ይቀራል</translation>
+<translation id="8649101189709089199">ለመናገር-ይምረጡ</translation>
 <translation id="8652175077544655965">ቅንብሮችን ዝጋ</translation>
 <translation id="8673028979667498656">270°</translation>
 <translation id="8676770494376880701">አነስተኛ ኃይል ያለው ባትሪ መሙያ ተገናኝቷል</translation>
+<translation id="8734991477317290293">የእርስዎን የቁልፍ ጭረቶች ለመስረቅ እየሞከረ ሊሆን ይችላል</translation>
 <translation id="8814190375133053267">Wi-Fi</translation>
 <translation id="8814715559352963456">መስኮትን ወደ ሌላ ዴስክቶፕ መውሰድ ያልተጠበቀ ባህሪን ሊያስከትል ይችላል።
 
@@ -325,6 +342,7 @@
 <translation id="8921624153894383499">የGoogle ረዳቱ ይህን ቋንቋ አይናገርም።</translation>
 <translation id="8938800817013097409">USB-C መሣሪያ (የቀኝ ወደብ ከኋላ በኩል)</translation>
 <translation id="8940956008527784070">ባትሪ ዝቅተኛ ነው (<ph name="PERCENTAGE" />%)</translation>
+<translation id="8995603266996330174">የተቀናበረው በ<ph name="DOMAIN" /></translation>
 <translation id="9074739597929991885">ብሉቱዝ</translation>
 <translation id="9079731690316798640">Wi-Fi፦ <ph name="ADDRESS" /></translation>
 <translation id="9080206825613744995">ማይክሮፎን ስራ ላይ ነው።</translation>

@@ -12,6 +12,7 @@
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_source.h"
 #include "chrome/browser/resource_coordinator/time.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents_observer.h"
 
 class TabStripModel;
@@ -50,8 +51,8 @@ class TabLifecycleUnitSource::TabLifecycleUnit
   ~TabLifecycleUnit() override;
 
   // Sets the TabStripModel associated with this tab. The source that created
-  // this TabLifecycleUnit is responsible for calling this when the tab moves to
-  // a different TabStripModel.
+  // this TabLifecycleUnit is responsible for calling this when the tab is
+  // removed from a TabStripModel or inserted into a new TabStripModel.
   void SetTabStripModel(TabStripModel* tab_strip_model);
 
   // Sets the WebContents associated with this tab. The source that created this
@@ -96,6 +97,7 @@ class TabLifecycleUnitSource::TabLifecycleUnit
 
   // content::WebContentsObserver:
   void DidStartLoading() override;
+  void OnVisibilityChanged(content::Visibility visibility) override;
 
   // List of observers to notify when the discarded state or the auto-
   // discardable state of this tab changes.

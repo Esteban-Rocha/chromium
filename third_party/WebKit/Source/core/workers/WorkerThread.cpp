@@ -26,8 +26,10 @@
 
 #include "core/workers/WorkerThread.h"
 
-#include <limits.h>
+#include <limits>
 #include <memory>
+#include <utility>
+
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/WorkerOrWorkletScriptController.h"
 #include "core/inspector/ConsoleMessageStorage.h"
@@ -54,7 +56,6 @@
 #include "platform/scheduler/child/worker_scheduler.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/Functional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Threading.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
@@ -319,9 +320,9 @@ WorkerThread::WorkerThread(ThreadableLoadingContext* loading_context,
       devtools_worker_token_(base::UnguessableToken::Create()),
       loading_context_(loading_context),
       worker_reporting_proxy_(worker_reporting_proxy),
-      shutdown_event_(WTF::WrapUnique(
-          new WaitableEvent(WaitableEvent::ResetPolicy::kManual,
-                            WaitableEvent::InitialState::kNonSignaled))),
+      shutdown_event_(std::make_unique<WaitableEvent>(
+          WaitableEvent::ResetPolicy::kManual,
+          WaitableEvent::InitialState::kNonSignaled)),
       worker_thread_lifecycle_context_(new WorkerThreadLifecycleContext) {
   DCHECK(IsMainThread());
   MutexLocker lock(ThreadSetMutex());
@@ -382,7 +383,6 @@ void WorkerThread::InitializeSchedulerOnWorkerThread(
   global_scope_scheduler_ =
       std::make_unique<scheduler::WorkerGlobalScopeScheduler>(
           web_thread_for_worker.GetWorkerScheduler());
-  web_thread_for_worker.GetWorkerScheduler()->SetThreadType(GetThreadType());
   waitable_event->Signal();
 }
 

@@ -11,8 +11,8 @@
 
 #include "ash/app_list/model/search/search_box_model.h"
 #include "ash/app_list/model/search/search_model.h"
+#include "ash/public/cpp/wallpaper_types.h"
 #include "base/macros.h"
-#include "components/wallpaper/wallpaper_color_profile.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_util.h"
 #include "ui/app_list/app_list_view_delegate.h"
@@ -38,10 +38,11 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/vector_icons.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
-using wallpaper::ColorProfileType;
+using ash::ColorProfileType;
 
 namespace app_list {
 
@@ -199,6 +200,10 @@ void SearchBoxView::UpdateOpacity() {
   // changes from |kOpacityStartFraction| to |kOpaticyEndFraction|, the opacity
   // of searchbox changes from 0.f to 1.0f.
   ContentsView* contents = static_cast<ContentsView*>(contents_view());
+  if (!contents->GetPageView(contents->GetActivePageIndex())
+           ->ShouldShowSearchBox()) {
+    return;
+  }
   int app_list_y_position_in_screen =
       contents->app_list_view()->app_list_y_position_in_screen();
   float fraction =
@@ -300,6 +305,7 @@ void SearchBoxView::HintTextChanged() {
       search_model_->search_box();
   search_box()->set_placeholder_text(search_box_model->hint_text());
   search_box()->SetAccessibleName(search_box_model->accessible_name());
+  SchedulePaint();
 }
 
 void SearchBoxView::SelectionModelChanged() {
@@ -311,6 +317,10 @@ void SearchBoxView::Update() {
   search_box()->SetText(search_model_->search_box()->text());
   UpdateCloseButtonVisisbility();
   NotifyQueryChanged();
+}
+
+void SearchBoxView::SearchEngineChanged() {
+  UpdateSearchIcon();
 }
 
 void SearchBoxView::OnWallpaperProminentColorsReceived(
@@ -327,7 +337,8 @@ void SearchBoxView::OnWallpaperProminentColorsReceived(
   UpdateSearchIcon();
   close_button()->SetImage(
       views::Button::STATE_NORMAL,
-      gfx::CreateVectorIcon(kIcCloseIcon, kCloseIconSize, search_box_color()));
+      gfx::CreateVectorIcon(views::kIcCloseIcon, kCloseIconSize,
+                            search_box_color()));
   search_box()->set_placeholder_text_color(search_box_color());
   UpdateBackgroundColor(background_color());
   SchedulePaint();
@@ -373,9 +384,9 @@ void SearchBoxView::SetupBackButton() {
 
 void SearchBoxView::SetupCloseButton() {
   views::ImageButton* close = close_button();
-  close->SetImage(
-      views::ImageButton::STATE_NORMAL,
-      gfx::CreateVectorIcon(kIcCloseIcon, kCloseIconSize, search_box_color()));
+  close->SetImage(views::ImageButton::STATE_NORMAL,
+                  gfx::CreateVectorIcon(views::kIcCloseIcon, kCloseIconSize,
+                                        search_box_color()));
   close->SetVisible(false);
   close->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_APP_LIST_CLEAR_SEARCHBOX));

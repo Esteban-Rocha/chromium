@@ -12,6 +12,7 @@
 #include "chrome/browser/image_decoder.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/login/login_state.h"
+#include "content/public/browser/browser_thread.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
@@ -44,18 +45,18 @@ base::LazySequencedTaskRunner g_non_blocking_task_runner =
 
 const char kCancelWallpaperMessage[] = "Set wallpaper was canceled.";
 
-wallpaper::WallpaperLayout GetLayoutEnum(const std::string& layout) {
+ash::WallpaperLayout GetLayoutEnum(const std::string& layout) {
   for (int i = 0; i < kWallpaperLayoutCount; i++) {
     if (layout.compare(kWallpaperLayoutArrays[i]) == 0)
-      return static_cast<wallpaper::WallpaperLayout>(i);
+      return static_cast<ash::WallpaperLayout>(i);
   }
   // Default to use CENTER layout.
-  return wallpaper::WALLPAPER_LAYOUT_CENTER;
+  return ash::WALLPAPER_LAYOUT_CENTER;
 }
 
-void RecordCustomWallpaperLayout(const wallpaper::WallpaperLayout& layout) {
+void RecordCustomWallpaperLayout(const ash::WallpaperLayout& layout) {
   UMA_HISTOGRAM_ENUMERATION("Ash.Wallpaper.CustomLayout", layout,
-                            wallpaper::NUM_WALLPAPER_LAYOUT);
+                            ash::NUM_WALLPAPER_LAYOUT);
 }
 
 }  // namespace wallpaper_api_util

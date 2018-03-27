@@ -160,6 +160,7 @@
 #include "components/variations/service/variations_service.h"
 #include "components/variations/synthetic_trials_active_group_id_provider.h"
 #include "components/variations/variations_associated_data.h"
+#include "components/variations/variations_crash_keys.h"
 #include "components/variations/variations_http_header_provider.h"
 #include "components/variations/variations_switches.h"
 #include "components/version_info/version_info.h"
@@ -175,10 +176,10 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/service_manager_connection.h"
-#include "device/vr/features/features.h"
-#include "extensions/features/features.h"
+#include "device/vr/buildflags/buildflags.h"
+#include "extensions/buildflags/buildflags.h"
 #include "media/base/localized_strings.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "net/base/net_module.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_network_layer.h"
@@ -908,6 +909,7 @@ void ChromeBrowserMainParts::SetupFieldTrials() {
       cc::switches::kEnableGpuBenchmarking, switches::kEnableFeatures,
       switches::kDisableFeatures, unforceable_field_trials, variation_ids,
       std::move(feature_list), &browser_field_trials_);
+  variations::InitCrashKeys();
 
   // Initialize FieldTrialSynchronizer system. This is a singleton and is used
   // for posting tasks via base::Bind. Its deleted when it goes out of scope.
@@ -1342,7 +1344,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
 
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
   // Set the product channel for crash reports.
-  breakpad::SetChannelCrashKey(chrome::GetChannelString());
+  breakpad::SetChannelCrashKey(chrome::GetChannelName());
 #endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
 
 #if defined(OS_MACOSX)
@@ -2030,8 +2032,6 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     // will be initialized when the app enters foreground mode.
     variations_service->set_policy_pref_service(profile_->GetPrefs());
   }
-  translate::TranslateDownloadManager::RequestLanguageList(
-      profile_->GetPrefs());
 
 #else
   // Most general initialization is behind us, but opening a
@@ -2092,17 +2092,13 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     startup_metric_utils::RecordBrowserOpenTabsDelta(delta);
 
     // If we're running tests (ui_task is non-null), then we don't want to
-    // call RequestLanguageList or StartRepeatedVariationsSeedFetch or
-    // RequestLanguageList
+    // call StartRepeatedVariationsSeedFetch
     if (parameters().ui_task == NULL) {
       // Request new variations seed information from server.
       variations::VariationsService* variations_service =
           browser_process_->variations_service();
       if (variations_service)
         variations_service->PerformPreMainMessageLoopStartup();
-
-      translate::TranslateDownloadManager::RequestLanguageList(
-          profile_->GetPrefs());
     }
   }
   run_message_loop_ = started;

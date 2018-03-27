@@ -27,6 +27,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
+
 #include "core/frame/UseCounter.h"
 #include "core/layout/GridLayoutUtils.h"
 #include "core/layout/LayoutState.h"
@@ -37,7 +39,6 @@
 #include "core/style/GridArea.h"
 #include "platform/LengthFunctions.h"
 #include "platform/text/WritingMode.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -422,7 +423,7 @@ LayoutUnit LayoutGrid::GridGap(GridTrackSizingDirection direction) const {
   if (gap.IsNormal())
     return LayoutUnit();
 
-  if (gap.GetLength().IsPercent())
+  if (gap.GetLength().IsPercentOrCalc())
     available_size = is_row_axis
                          ? AvailableLogicalWidth()
                          : AvailableLogicalHeightForPercentageComputation();
@@ -683,14 +684,16 @@ size_t LayoutGrid::ComputeAutoRepeatTracksCount(
   if (free_space <= 0)
     return auto_repeat_track_list_length;
 
-  size_t repetitions =
-      1 + (free_space / (auto_repeat_tracks_size + gap_size)).ToInt();
+  LayoutUnit auto_repeat_size_with_gap = auto_repeat_tracks_size + gap_size;
+
+  size_t repetitions = 1 + (free_space / auto_repeat_size_with_gap).ToInt();
+  free_space -= auto_repeat_size_with_gap * (repetitions - 1);
 
   // Provided the grid container does not have a definite size or max-size in
   // the relevant axis, if the min size is definite then the number of
   // repetitions is the largest possible positive integer that fulfills that
   // minimum requirement.
-  if (needs_to_fulfill_minimum_size)
+  if (needs_to_fulfill_minimum_size && free_space)
     ++repetitions;
 
   return repetitions * auto_repeat_track_list_length;
@@ -717,7 +720,7 @@ LayoutGrid::ComputeEmptyTracksForAutoRepeat(
       first_auto_repeat_track + grid.AutoRepeatTracks(direction);
 
   if (!grid.HasGridItems()) {
-    empty_track_indexes = WTF::WrapUnique(new OrderedTrackIndexSet);
+    empty_track_indexes = std::make_unique<OrderedTrackIndexSet>();
     for (size_t track_index = first_auto_repeat_track;
          track_index < last_auto_repeat_track; ++track_index)
       empty_track_indexes->insert(track_index);
@@ -727,7 +730,7 @@ LayoutGrid::ComputeEmptyTracksForAutoRepeat(
       GridIterator iterator(grid, direction, track_index);
       if (!iterator.NextGridItem()) {
         if (!empty_track_indexes)
-          empty_track_indexes = WTF::WrapUnique(new OrderedTrackIndexSet);
+          empty_track_indexes = std::make_unique<OrderedTrackIndexSet>();
         empty_track_indexes->insert(track_index);
       }
     }
@@ -932,11 +935,11 @@ LayoutGrid::CreateEmptyGridAreaAtSpecifiedPositionsOutsideGrid(
   GridSpan cross_direction_positions = GridSpan::TranslatedDefiniteGridSpan(
       end_of_cross_direction,
       end_of_cross_direction + cross_direction_span_size);
-  return WTF::WrapUnique(new GridArea(
+  return std::make_unique<GridArea>(
       specified_direction == kForColumns ? cross_direction_positions
                                          : specified_positions,
       specified_direction == kForColumns ? specified_positions
-                                         : cross_direction_positions));
+                                         : cross_direction_positions);
 }
 
 void LayoutGrid::PlaceSpecifiedMajorAxisItemsOnGrid(

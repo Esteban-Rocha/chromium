@@ -1059,26 +1059,43 @@ void HWNDMessageHandler::HandleParentChanged() {
 }
 
 void HWNDMessageHandler::ApplyPinchZoomScale(float scale) {
-  // We fake a default ctrl+wheel event here. Offset 120 is the default scroll
-  // offset on Windows.
-  // TODO(chaopeng) Send pinch-zoom event here.
-  gfx::Vector2d offset =
-      scale > 1 ? gfx::Vector2d(120, 120) : gfx::Vector2d(-120, -120);
+  POINT cursor_pos = {0};
+  ::GetCursorPos(&cursor_pos);
+  ScreenToClient(hwnd(), &cursor_pos);
 
-  POINT root_location = {0};
-  ::GetCursorPos(&root_location);
+  ui::GestureEventDetails event_details(ui::ET_GESTURE_PINCH_UPDATE);
+  event_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
+  event_details.set_scale(scale);
 
-  POINT location = {root_location.x, root_location.y};
-  ScreenToClient(hwnd(), &root_location);
+  ui::GestureEvent event(cursor_pos.x, cursor_pos.y, ui::EF_NONE,
+                         base::TimeTicks::Now(), event_details);
+  delegate_->HandleGestureEvent(&event);
+}
 
-  gfx::Point cursor_location(location);
-  gfx::Point cursor_root_location(root_location);
+void HWNDMessageHandler::ApplyPinchZoomBegin() {
+  POINT cursor_pos = {0};
+  ::GetCursorPos(&cursor_pos);
+  ScreenToClient(hwnd(), &cursor_pos);
 
-  ui::MouseWheelEvent wheel_event(offset, cursor_location, cursor_root_location,
-                                  base::TimeTicks::Now(), ui::EF_CONTROL_DOWN,
-                                  ui::EF_PRECISION_SCROLLING_DELTA);
+  ui::GestureEventDetails event_details(ui::ET_GESTURE_PINCH_BEGIN);
+  event_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
 
-  delegate_->HandleMouseEvent(wheel_event);
+  ui::GestureEvent event(cursor_pos.x, cursor_pos.y, ui::EF_NONE,
+                         base::TimeTicks::Now(), event_details);
+  delegate_->HandleGestureEvent(&event);
+}
+
+void HWNDMessageHandler::ApplyPinchZoomEnd() {
+  POINT cursor_pos = {0};
+  ::GetCursorPos(&cursor_pos);
+  ScreenToClient(hwnd(), &cursor_pos);
+
+  ui::GestureEventDetails event_details(ui::ET_GESTURE_PINCH_END);
+  event_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
+
+  ui::GestureEvent event(cursor_pos.x, cursor_pos.y, ui::EF_NONE,
+                         base::TimeTicks::Now(), event_details);
+  delegate_->HandleGestureEvent(&event);
 }
 
 void HWNDMessageHandler::ApplyPanGestureScroll(int scroll_x, int scroll_y) {
@@ -1093,11 +1110,11 @@ void HWNDMessageHandler::ApplyPanGestureScroll(int scroll_x, int scroll_y) {
   gfx::Point cursor_location(location);
   gfx::Point cursor_root_location(root_location);
 
-  ui::MouseWheelEvent wheel_event(offset, cursor_location, cursor_root_location,
-                                  base::TimeTicks::Now(), ui::EF_NONE,
-                                  ui::EF_PRECISION_SCROLLING_DELTA);
+  ui::MouseWheelEvent wheel_event(
+      offset, cursor_location, cursor_root_location, base::TimeTicks::Now(),
+      ui::EF_PRECISION_SCROLLING_DELTA, ui::EF_NONE);
 
-  delegate_->HandleMouseEvent(wheel_event);
+  delegate_->HandleMouseEvent(&wheel_event);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2159,7 +2176,7 @@ LRESULT HWNDMessageHandler::OnScrollMessage(UINT message,
   MSG msg = {
       hwnd(), message, w_param, l_param, static_cast<DWORD>(GetMessageTime())};
   ui::ScrollEvent event(msg);
-  delegate_->HandleScrollEvent(event);
+  delegate_->HandleScrollEvent(&event);
   return 0;
 }
 
@@ -2603,8 +2620,10 @@ void HWNDMessageHandler::OnSessionChange(WPARAM status_code) {
 
 void HWNDMessageHandler::HandleTouchEvents(const TouchEvents& touch_events) {
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
-  for (size_t i = 0; i < touch_events.size() && ref; ++i)
-    delegate_->HandleTouchEvent(touch_events[i]);
+  for (size_t i = 0; i < touch_events.size() && ref; ++i) {
+    ui::TouchEvent* touch_event = const_cast<ui::TouchEvent*>(&touch_events[i]);
+    delegate_->HandleTouchEvent(touch_event);
+  }
 }
 
 void HWNDMessageHandler::ResetTouchDownContext() {
@@ -2714,15 +2733,18 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     // OnMouseEvent.
     active_mouse_tracking_flags_ = 0;
   } else if (event.type() == ui::ET_MOUSEWHEEL) {
+    ui::MouseWheelEvent mouse_wheel_event(msg);
     // Reroute the mouse wheel to the window under the pointer if applicable.
     return (ui::RerouteMouseWheel(hwnd(), w_param, l_param) ||
-            delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg))) ? 0 : 1;
+            delegate_->HandleMouseEvent(&mouse_wheel_event))
+               ? 0
+               : 1;
   }
 
   // There are cases where the code handling the message destroys the window,
   // so use the weak ptr to check if destruction occured or not.
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
-  bool handled = delegate_->HandleMouseEvent(event);
+  bool handled = delegate_->HandleMouseEvent(&event);
 
   if (!ref.get())
     return 0;
@@ -2821,7 +2843,7 @@ LRESULT HWNDMessageHandler::HandlePointerEventTypeTouch(UINT message,
   // There are cases where the code handling the message destroys the
   // window, so use the weak ptr to check if destruction occurred or not.
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
-  delegate_->HandleTouchEvent(event);
+  delegate_->HandleTouchEvent(&event);
 
   if (event_type == ui::ET_TOUCH_RELEASED)
     id_generator_.ReleaseNumber(pointer_id);
@@ -2857,9 +2879,9 @@ LRESULT HWNDMessageHandler::HandlePointerEventTypePen(UINT message,
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
   if (event) {
     if (event->IsTouchEvent()) {
-      delegate_->HandleTouchEvent(*event->AsTouchEvent());
+      delegate_->HandleTouchEvent(event->AsTouchEvent());
     } else if (event->IsMouseEvent()) {
-      delegate_->HandleMouseEvent(*event->AsMouseEvent());
+      delegate_->HandleMouseEvent(event->AsMouseEvent());
     } else {
       NOTREACHED();
     }

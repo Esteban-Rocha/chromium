@@ -19,7 +19,6 @@
 #include "components/viz/test/fake_external_begin_frame_source.h"
 #include "components/viz/test/fake_surface_observer.h"
 #include "components/viz/test/mock_compositor_frame_sink_client.h"
-#include "components/viz/test/test_frame_sink_manager_client.h"
 #include "services/viz/privileged/interfaces/compositing/frame_sink_manager.mojom.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -47,6 +46,11 @@ const base::UnguessableToken kArbitrarySourceId1 =
 const base::UnguessableToken kArbitrarySourceId2 =
     base::UnguessableToken::Deserialize(0xdead, 0xbee0);
 
+// Matches a SurfaceInfo for |surface_id|.
+MATCHER_P(SurfaceInfoWithId, surface_id, "") {
+  return arg.id() == surface_id;
+}
+
 void StubResultCallback(std::unique_ptr<CopyOutputResult> result) {}
 
 gpu::SyncToken GenTestSyncToken(int id) {
@@ -56,11 +60,35 @@ gpu::SyncToken GenTestSyncToken(int id) {
   return token;
 }
 
+class MockFrameSinkManagerClient : public mojom::FrameSinkManagerClient {
+ public:
+  MockFrameSinkManagerClient() = default;
+  ~MockFrameSinkManagerClient() override = default;
+
+  // mojom::FrameSinkManagerClient:
+  MOCK_METHOD1(OnSurfaceCreated, void(const SurfaceId&));
+  MOCK_METHOD1(OnFirstSurfaceActivation, void(const SurfaceInfo&));
+  void OnClientConnectionClosed(const FrameSinkId& frame_sink_id) override {}
+  void OnAggregatedHitTestRegionListUpdated(
+      const FrameSinkId& frame_sink_id,
+      mojo::ScopedSharedBufferHandle active_handle,
+      uint32_t active_handle_size,
+      mojo::ScopedSharedBufferHandle idle_handle,
+      uint32_t idle_handle_sizes) override {}
+  void SwitchActiveAggregatedHitTestRegionList(
+      const FrameSinkId& frame_sink_id,
+      uint8_t active_handle_index) override {}
+  void OnFrameTokenChanged(const FrameSinkId& frame_sink_id,
+                           uint32_t frame_token) override {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockFrameSinkManagerClient);
+};
+
 class CompositorFrameSinkSupportTest : public testing::Test {
  public:
   CompositorFrameSinkSupportTest()
-      : frame_sink_manager_client_(&manager_),
-        begin_frame_source_(0.f, false),
+      : begin_frame_source_(0.f, false),
         local_surface_id_(3, kArbitraryToken),
         frame_sync_token_(GenTestSyncToken(4)),
         consumer_sync_token_(GenTestSyncToken(5)) {
@@ -71,6 +99,12 @@ class CompositorFrameSinkSupportTest : public testing::Test {
         &fake_support_client_, &manager_, kArbitraryFrameSinkId, kIsRoot,
         kNeedsSyncPoints);
     support_->SetBeginFrameSource(&begin_frame_source_);
+
+    // By default drop temporary references.
+    ON_CALL(frame_sink_manager_client_, OnSurfaceCreated(_))
+        .WillByDefault(Invoke([this](const SurfaceId& surface_id) {
+          manager_.DropTemporaryReference(surface_id);
+        }));
   }
   ~CompositorFrameSinkSupportTest() override {
     manager_.InvalidateFrameSinkId(kArbitraryFrameSinkId);
@@ -152,12 +186,9 @@ class CompositorFrameSinkSupportTest : public testing::Test {
     support_->RefResources(surface->GetActiveFrame().resource_list);
   }
 
-  // testing::Test implementation:
-  void TearDown() override { frame_sink_manager_client_.Reset(); }
-
  protected:
   FrameSinkManagerImpl manager_;
-  TestFrameSinkManagerClient frame_sink_manager_client_;
+  MockFrameSinkManagerClient frame_sink_manager_client_;
   FakeCompositorFrameSinkClient fake_support_client_;
   std::unique_ptr<CompositorFrameSinkSupport> support_;
   FakeExternalBeginFrameSource begin_frame_source_;
@@ -587,18 +618,61 @@ TEST_F(CompositorFrameSinkSupportTest, EvictLastActivatedSurface) {
   manager_.InvalidateFrameSinkId(kAnotherArbitraryFrameSinkId);
 }
 
+// This test checks the case where a client submits a CompositorFrame for a
+// SurfaceId that has been evicted. The CompositorFrame resurrects the evicted
+// Surface and notifies the browser which immediately evicts the Surface again
+// because it's not needed.
+TEST_F(CompositorFrameSinkSupportTest, ResurectAndImmediatelyEvict) {
+  LocalSurfaceId local_surface_id(1, kArbitraryToken);
+  SurfaceId surface_id(kArbitraryFrameSinkId, local_surface_id);
+
+  auto frame = CompositorFrameBuilder().AddDefaultRenderPass().Build();
+  support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+
+  // The surface should be activated now.
+  EXPECT_EQ(support_->last_activated_surface_id(), surface_id);
+
+  // Evict the surface. Make surface CompositorFrameSinkSupport reflects this.
+  manager_.EvictSurfaces({surface_id});
+  EXPECT_FALSE(support_->last_activated_surface_id().is_valid());
+
+  // We don't garbage collect the evicted surface yet because either garbage
+  // collection hasn't run or something still has a reference to it.
+
+  // Call FrameSinkManagerImpl::EvictSurfaces() for |surface_id| in the same
+  // callstack as OnFirstSurfaceActivation() as that's what DelegatedFrameHost
+  // will do.
+  EXPECT_CALL(frame_sink_manager_client_,
+              OnFirstSurfaceActivation(SurfaceInfoWithId(surface_id)))
+      .WillOnce(Invoke([this](const SurfaceInfo& surface_info) {
+        manager_.EvictSurfaces({surface_info.id()});
+      }));
+
+  // Submit the late CompositorFrame which will resurrect the Surface and
+  // trigger another eviction.
+  frame = CompositorFrameBuilder().AddDefaultRenderPass().Build();
+  support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+
+  // The Surface should be evicted again immediately after it's submitted.
+  EXPECT_FALSE(support_->last_activated_surface_id().is_valid());
+}
+
 // Verify that a temporary reference blocks surface eviction and that when the
 // temporary reference is removed due to frame sink invalidation the surface
 // is deleted.
 TEST_F(CompositorFrameSinkSupportTest, EvictSurfaceWithTemporaryReference) {
   constexpr FrameSinkId parent_frame_sink_id(1234, 5678);
-  frame_sink_manager_client_.SetFrameSinkHierarchy(parent_frame_sink_id,
-                                                   support_->frame_sink_id());
 
   manager_.RegisterFrameSinkId(parent_frame_sink_id);
 
   const LocalSurfaceId local_surface_id(5, kArbitraryToken);
   const SurfaceId surface_id(support_->frame_sink_id(), local_surface_id);
+
+  EXPECT_CALL(frame_sink_manager_client_, OnSurfaceCreated(surface_id))
+      .WillOnce(
+          Invoke([this, &parent_frame_sink_id](const SurfaceId& surface_id) {
+            manager_.AssignTemporaryReference(surface_id, parent_frame_sink_id);
+          }));
 
   // When CompositorFrame is submitted, a temporary reference will be created
   // and |parent_frame_sink_id| will be assigned as the owner.
@@ -640,7 +714,7 @@ TEST_F(CompositorFrameSinkSupportTest, DuplicateCopyRequest) {
   request->set_source(kArbitrarySourceId1);
 
   support_->RequestCopyOfOutput(std::move(request));
-  GetSurfaceForId(surface_id)->OnWillBeDrawn();
+  GetSurfaceForId(surface_id)->TakeCopyOutputRequestsFromClient();
   EXPECT_FALSE(called1);
 
   bool called2 = false;
@@ -650,7 +724,7 @@ TEST_F(CompositorFrameSinkSupportTest, DuplicateCopyRequest) {
   request->set_source(kArbitrarySourceId2);
 
   support_->RequestCopyOfOutput(std::move(request));
-  GetSurfaceForId(surface_id)->OnWillBeDrawn();
+  GetSurfaceForId(surface_id)->TakeCopyOutputRequestsFromClient();
   // Callbacks have different sources so neither should be called.
   EXPECT_FALSE(called1);
   EXPECT_FALSE(called2);
@@ -662,7 +736,7 @@ TEST_F(CompositorFrameSinkSupportTest, DuplicateCopyRequest) {
   request->set_source(kArbitrarySourceId1);
 
   support_->RequestCopyOfOutput(std::move(request));
-  GetSurfaceForId(surface_id)->OnWillBeDrawn();
+  GetSurfaceForId(surface_id)->TakeCopyOutputRequestsFromClient();
   // Two callbacks are from source1, so the first should be called.
   EXPECT_TRUE(called1);
   EXPECT_FALSE(called2);
@@ -810,10 +884,11 @@ TEST_F(CompositorFrameSinkSupportTest, FrameIndexCarriedOverToNewSurface) {
   EXPECT_EQ(frame_index + 1, surface2->GetActiveFrameIndex());
 }
 
-// If the first surface is the one reported being drawn by SurfaceAggregator,
-// move CopyOutputRequest to that surface.
+// Verifies that CopyOutputRequests made at frame sink level are sent to the
+// surface that takes them first. In this test this surface is not the last
+// activated surface.
 TEST_F(CompositorFrameSinkSupportTest,
-       FirstSurfaceIsDrawnAndReceivesCopyRequest) {
+       OldSurfaceTakesCopyOutputRequestsFromClient) {
   LocalSurfaceId local_surface_id1(1, kArbitraryToken);
   LocalSurfaceId local_surface_id2(2, kArbitraryToken);
   SurfaceId id1(support_->frame_sink_id(), local_surface_id1);
@@ -837,9 +912,15 @@ TEST_F(CompositorFrameSinkSupportTest,
   EXPECT_TRUE(GetSurfaceForId(id1)->HasCopyOutputRequests());
   EXPECT_TRUE(GetSurfaceForId(id2)->HasCopyOutputRequests());
 
-  // Notify that the first surface will be drawn. Now only the first surface
-  // should report having CopyOutputRequests.
-  GetSurfaceForId(id1)->OnWillBeDrawn();
+  // First surface takes CopyOutputRequests from its client. Now only the first
+  // surface should report having CopyOutputRequests.
+  GetSurfaceForId(id1)->TakeCopyOutputRequestsFromClient();
+  EXPECT_TRUE(GetSurfaceForId(id1)->HasCopyOutputRequests());
+  EXPECT_FALSE(GetSurfaceForId(id2)->HasCopyOutputRequests());
+
+  // Calling TakeCopyOutputRequestsFromClient() on the second surface should
+  // have no effect.
+  GetSurfaceForId(id2)->TakeCopyOutputRequestsFromClient();
   EXPECT_TRUE(GetSurfaceForId(id1)->HasCopyOutputRequests());
   EXPECT_FALSE(GetSurfaceForId(id2)->HasCopyOutputRequests());
 
@@ -852,10 +933,11 @@ TEST_F(CompositorFrameSinkSupportTest,
   EXPECT_FALSE(requests_map.empty());
 }
 
-// If the second surface is the one reported being drawn by SurfaceAggregator,
-// move CopyOutputRequest to that surface.
+// Verifies that CopyOutputRequests made at frame sink level are sent to the
+// surface that takes them first. In this test this surface is the last
+// activated surface.
 TEST_F(CompositorFrameSinkSupportTest,
-       SecondSurfaceIsDrawnAndReceivesCopyRequest) {
+       LastSurfaceTakesCopyOutputRequestsFromClient) {
   LocalSurfaceId local_surface_id1(1, kArbitraryToken);
   LocalSurfaceId local_surface_id2(2, kArbitraryToken);
   SurfaceId id1(support_->frame_sink_id(), local_surface_id1);
@@ -880,9 +962,15 @@ TEST_F(CompositorFrameSinkSupportTest,
   EXPECT_TRUE(GetSurfaceForId(id1)->HasCopyOutputRequests());
   EXPECT_TRUE(GetSurfaceForId(id2)->HasCopyOutputRequests());
 
-  // Notify that the second surface will be drawn. Now only the second surface
-  // should report having CopyOutputRequests.
-  GetSurfaceForId(id2)->OnWillBeDrawn();
+  // Second surface takes CopyOutputRequests from its client. Now only the
+  // second surface should report having CopyOutputRequests.
+  GetSurfaceForId(id2)->TakeCopyOutputRequestsFromClient();
+  EXPECT_FALSE(GetSurfaceForId(id1)->HasCopyOutputRequests());
+  EXPECT_TRUE(GetSurfaceForId(id2)->HasCopyOutputRequests());
+
+  // Calling TakeCopyOutputRequestsFromClient() on the first surface should have
+  // no effect.
+  GetSurfaceForId(id1)->TakeCopyOutputRequestsFromClient();
   EXPECT_FALSE(GetSurfaceForId(id1)->HasCopyOutputRequests());
   EXPECT_TRUE(GetSurfaceForId(id2)->HasCopyOutputRequests());
 
@@ -893,97 +981,6 @@ TEST_F(CompositorFrameSinkSupportTest,
   EXPECT_TRUE(requests_map.empty());
   GetSurfaceForId(id2)->TakeCopyOutputRequests(&requests_map);
   EXPECT_FALSE(requests_map.empty());
-}
-
-// Move CopyOutputRequests to whatever surface wants it first (in this test, the
-// first surface).
-TEST_F(CompositorFrameSinkSupportTest, FirstSurfaceTakesCopyRequest) {
-  LocalSurfaceId local_surface_id1(1, kArbitraryToken);
-  LocalSurfaceId local_surface_id2(2, kArbitraryToken);
-  SurfaceId id1(support_->frame_sink_id(), local_surface_id1);
-  SurfaceId id2(support_->frame_sink_id(), local_surface_id2);
-
-  // Create the first surface.
-  support_->SubmitCompositorFrame(local_surface_id1,
-                                  MakeDefaultCompositorFrame());
-
-  // Create the second surface.
-  support_->SubmitCompositorFrame(local_surface_id2,
-                                  MakeDefaultCompositorFrame());
-
-  // Send a CopyOutputRequest.
-  auto request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
-      base::BindOnce(StubResultCallback));
-  support_->RequestCopyOfOutput(std::move(request));
-
-  // Both surfaces should report that they have a CopyOutputRequest.
-  EXPECT_TRUE(GetSurfaceForId(id1)->HasCopyOutputRequests());
-  EXPECT_TRUE(GetSurfaceForId(id2)->HasCopyOutputRequests());
-
-  // Neither surface will be reported drawn. We call TakeCopyOutputRequests()
-  // on |id1| first so it takes it.
-  Surface::CopyRequestsMap requests_map;
-  GetSurfaceForId(id1)->TakeCopyOutputRequests(&requests_map);
-  EXPECT_FALSE(requests_map.empty());
-
-  // Neither surface should report having CopyOutputRequests anymore.
-  EXPECT_FALSE(GetSurfaceForId(id1)->HasCopyOutputRequests());
-  EXPECT_FALSE(GetSurfaceForId(id2)->HasCopyOutputRequests());
-
-  // Also try TakeCopyOutputRequests, to see if its output is consistent with
-  // HasCopyOutputRequests.
-  requests_map.clear();
-  GetSurfaceForId(id2)->TakeCopyOutputRequests(&requests_map);
-  EXPECT_TRUE(requests_map.empty());
-  GetSurfaceForId(id1)->TakeCopyOutputRequests(&requests_map);
-  EXPECT_TRUE(requests_map.empty());
-}
-
-// Move CopyOutputRequests to whatever surface wants it first (in this test, the
-// second surface).
-TEST_F(CompositorFrameSinkSupportTest, SecondSurfaceTakesCopyRequest) {
-  LocalSurfaceId local_surface_id1(1, kArbitraryToken);
-  LocalSurfaceId local_surface_id2(2, kArbitraryToken);
-  SurfaceId id1(support_->frame_sink_id(), local_surface_id1);
-  SurfaceId id2(support_->frame_sink_id(), local_surface_id2);
-
-  // Create the first surface.
-  support_->SubmitCompositorFrame(local_surface_id1,
-                                  MakeDefaultCompositorFrame());
-
-  // Send a CopyOutputRequest. Note that the second surface doesn't even exist
-  // yet.
-  auto request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
-      base::BindOnce(StubResultCallback));
-  support_->RequestCopyOfOutput(std::move(request));
-
-  // Create the second surface.
-  support_->SubmitCompositorFrame(local_surface_id2,
-                                  MakeDefaultCompositorFrame());
-
-  // Both surfaces should report that they have a CopyOutputRequest.
-  EXPECT_TRUE(GetSurfaceForId(id1)->HasCopyOutputRequests());
-  EXPECT_TRUE(GetSurfaceForId(id2)->HasCopyOutputRequests());
-
-  // Neither surface will be reported drawn. We call TakeCopyOutputRequests()
-  // on |id2| first so it takes it.
-  Surface::CopyRequestsMap requests_map;
-  GetSurfaceForId(id2)->TakeCopyOutputRequests(&requests_map);
-  EXPECT_FALSE(requests_map.empty());
-
-  // Neither surface should report having CopyOutputRequests anymore.
-  EXPECT_FALSE(GetSurfaceForId(id1)->HasCopyOutputRequests());
-  EXPECT_FALSE(GetSurfaceForId(id2)->HasCopyOutputRequests());
-
-  // Also try TakeCopyOutputRequests, to see if its output is consistent with
-  // HasCopyOutputRequests.
-  requests_map.clear();
-  GetSurfaceForId(id2)->TakeCopyOutputRequests(&requests_map);
-  EXPECT_TRUE(requests_map.empty());
-  GetSurfaceForId(id1)->TakeCopyOutputRequests(&requests_map);
-  EXPECT_TRUE(requests_map.empty());
 }
 
 }  // namespace

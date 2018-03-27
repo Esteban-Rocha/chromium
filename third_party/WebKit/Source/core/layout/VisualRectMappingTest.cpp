@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "core/layout/LayoutTestHelper.h"
 #include "core/layout/LayoutView.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintPropertyTreePrinter.h"
+#include "core/testing/CoreUnitTestHelper.h"
 #include "platform/graphics/paint/GeometryMapper.h"
 #include "platform/testing/PaintTestConfigurations.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -57,12 +57,10 @@ class VisualRectMappingTest : public PaintTestConfigurations,
     FloatClipRect geometry_mapper_rect((FloatRect(local_rect)));
     const FragmentData& fragment_data = object.FirstFragment();
     if (fragment_data.HasLocalBorderBoxProperties()) {
-      geometry_mapper_rect.MoveBy(FloatPoint(fragment_data.PaintOffset()));
-      GeometryMapper::LocalToAncestorVisualRect(
-          fragment_data.LocalBorderBoxProperties(),
-          ancestor.FirstFragment().ContentsProperties(), geometry_mapper_rect);
-      geometry_mapper_rect.MoveBy(
-          -FloatPoint(ancestor.FirstFragment().PaintOffset()));
+      LayoutRect local_rect_copy(local_rect);
+      object.MapToVisualRectInAncestorSpace(&ancestor, local_rect_copy,
+                                            kUseGeometryMapper);
+      geometry_mapper_rect.SetRect(FloatRect(local_rect_copy));
     }
 
     if (expected_visual_rect_in_ancestor.IsEmpty()) {

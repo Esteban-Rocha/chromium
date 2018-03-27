@@ -78,11 +78,9 @@
 #include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/paint/PaintLayer.h"
-#include "platform/SecureTextInput.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/text/UnicodeUtilities.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/text/CString.h"
 #include "public/platform/WebScrollIntoViewParams.h"
 
@@ -470,7 +468,6 @@ bool FrameSelection::IsHidden() const {
 
 void FrameSelection::DocumentAttached(Document* document) {
   DCHECK(document);
-  use_secure_keyboard_entry_when_active_ = false;
   selection_editor_->DocumentAttached(document);
   SetContext(document);
 }
@@ -827,35 +824,10 @@ void FrameSelection::FocusedOrActiveStateChanged() {
 
   // Update for caps lock state
   frame_->GetEventHandler().CapsLockStateMayHaveChanged();
-
-  // Secure keyboard entry is set by the active frame.
-  if (use_secure_keyboard_entry_when_active_)
-    SetUseSecureKeyboardEntry(active_and_focused);
 }
 
 void FrameSelection::PageActivationChanged() {
   FocusedOrActiveStateChanged();
-}
-
-void FrameSelection::UpdateSecureKeyboardEntryIfActive() {
-  if (!FrameIsFocusedAndActive())
-    return;
-  SetUseSecureKeyboardEntry(use_secure_keyboard_entry_when_active_);
-}
-
-void FrameSelection::SetUseSecureKeyboardEntryWhenActive(
-    bool uses_secure_keyboard) {
-  if (use_secure_keyboard_entry_when_active_ == uses_secure_keyboard)
-    return;
-  use_secure_keyboard_entry_when_active_ = uses_secure_keyboard;
-  UpdateSecureKeyboardEntryIfActive();
-}
-
-void FrameSelection::SetUseSecureKeyboardEntry(bool enable) {
-  if (enable)
-    EnableSecureTextInput();
-  else
-    DisableSecureTextInput();
 }
 
 void FrameSelection::SetFrameIsFocused(bool flag) {

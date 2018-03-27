@@ -14,7 +14,6 @@
 #include "core/frame/Deprecation.h"
 #include "core/frame/UseCounter.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -905,6 +904,9 @@ CSSSelectorParser::SplitCompoundAtImplicitShadowCrossingCombinator(
   // Likewise, ::slotted() pseudo element has an implicit ShadowSlot combinator
   // to its left for finding matching slot element in other TreeScope.
   //
+  // ::part has a implicit ShadowPart combinator to it's left finding the host
+  // element in the scope of the style rule.
+  //
   // Example:
   //
   // slot[name=foo]::slotted(div) -> [ ::slotted(div), slot, [name=foo] ]
@@ -920,9 +922,7 @@ CSSSelectorParser::SplitCompoundAtImplicitShadowCrossingCombinator(
   std::unique_ptr<CSSParserSelector> second_compound =
       split_after->ReleaseTagHistory();
   second_compound->AppendTagHistory(
-      second_compound->GetPseudoType() == CSSSelector::kPseudoSlotted
-          ? CSSSelector::kShadowSlot
-          : CSSSelector::kShadowPseudo,
+      second_compound->GetImplicitShadowCombinatorForMatching(),
       std::move(compound_selector));
   return second_compound;
 }
@@ -944,6 +944,15 @@ void CSSSelectorParser::RecordUsageAndDeprecations(
         case CSSSelector::kPseudoMatches:
           DCHECK(RuntimeEnabledFeatures::CSSMatchesEnabled());
           feature = WebFeature::kCSSSelectorPseudoMatches;
+          break;
+        case CSSSelector::kPseudoFocusVisible:
+          DCHECK(RuntimeEnabledFeatures::CSSFocusVisibleEnabled());
+          if (context_->Mode() != kUASheetMode)
+            feature = WebFeature::kCSSSelectorPseudoFocusVisible;
+          break;
+        case CSSSelector::kPseudoFocus:
+          if (context_->Mode() != kUASheetMode)
+            feature = WebFeature::kCSSSelectorPseudoFocus;
           break;
         case CSSSelector::kPseudoAnyLink:
           feature = WebFeature::kCSSSelectorPseudoAnyLink;

@@ -13,11 +13,12 @@
 
 #include "base/callback.h"
 #include "base/optional.h"
+#include "content/public/browser/resource_request_info.h"
 #include "content/public/common/web_preferences.h"
 #include "headless/lib/browser/headless_network_conditions.h"
 #include "headless/public/headless_export.h"
 #include "headless/public/headless_web_contents.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/url_request/url_request_job_factory.h"
 
 namespace base {
@@ -31,6 +32,8 @@ class HeadlessBrowserContextOptions;
 // Imported into headless namespace for
 // Builder::SetOverrideWebPreferencesCallback().
 using content::WebPreferences;
+
+using DevToolsStatus = content::ResourceRequestInfo::DevToolsStatus;
 
 using ProtocolHandlerMap = std::unordered_map<
     std::string,
@@ -91,7 +94,7 @@ class HEADLESS_EXPORT HeadlessBrowserContext::Observer {
   // delivered on the IO thread.
   virtual void UrlRequestFailed(net::URLRequest* request,
                                 int net_error,
-                                bool canceled_by_devtools) {}
+                                DevToolsStatus devtools_status) {}
 
   // Indicates the HeadlessBrowserContext is about to be deleted.
   virtual void OnHeadlessBrowserContextDestruct() {}
@@ -140,7 +143,7 @@ class HEADLESS_EXPORT HeadlessBrowserContext::Builder {
   Builder& SetInitialVirtualTime(base::Time initial_virtual_time);
   Builder& SetAllowCookies(bool incognito_mode);
   Builder& SetOverrideWebPreferencesCallback(
-      base::Callback<void(WebPreferences*)> callback);
+      base::RepeatingCallback<void(WebPreferences*)> callback);
 
   HeadlessBrowserContext* Build();
 

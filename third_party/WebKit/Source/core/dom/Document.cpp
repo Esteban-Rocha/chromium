@@ -29,6 +29,8 @@
 
 #include "core/dom/Document.h"
 
+#include <memory>
+
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptController.h"
@@ -57,7 +59,7 @@
 #include "core/css/cssom/ComputedStylePropertyMap.h"
 #include "core/css/invalidation/StyleInvalidator.h"
 #include "core/css/parser/CSSParser.h"
-#include "core/css/properties/CSSProperty.h"
+#include "core/css/properties/css_property.h"
 #include "core/css/resolver/FontBuilder.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverStats.h"
@@ -85,6 +87,7 @@
 #include "core/dom/NodeComputedStyle.h"
 #include "core/dom/NodeFilter.h"
 #include "core/dom/NodeIterator.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/NodeWithIndex.h"
@@ -180,6 +183,7 @@
 #include "core/layout/LayoutEmbeddedContent.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/TextAutosizer.h"
+#include "core/leak_detector/BlinkLeakDetector.h"
 #include "core/loader/CookieJar.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameFetchContext.h"
@@ -228,7 +232,6 @@
 #include "platform/InstanceCounters.h"
 #include "platform/Language.h"
 #include "platform/LengthFunctions.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/bindings/DOMDataStore.h"
 #include "platform/bindings/Microtask.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
@@ -251,7 +254,6 @@
 #include "platform/wtf/DateMath.h"
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/HashFunctions.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/Time.h"
 #include "platform/wtf/text/CharacterNames.h"
@@ -689,6 +691,7 @@ Document::Document(const DocumentInit& initializer,
     fetcher_ = FrameFetchContext::CreateFetcherFromDocument(this);
   } else {
     fetcher_ = ResourceFetcher::Create(nullptr);
+    BlinkLeakDetector::Instance().RegisterResourceFetcher(fetcher_);
   }
   DCHECK(fetcher_);
 
@@ -2301,9 +2304,16 @@ bool Document::NeedsLayoutTreeUpdateForNode(const Node& node) const {
     return true;
   for (const ContainerNode* ancestor = LayoutTreeBuilderTraversal::Parent(node);
        ancestor; ancestor = LayoutTreeBuilderTraversal::Parent(*ancestor)) {
+    if (ShadowRoot* root = ancestor->GetShadowRoot()) {
+      if (root->NeedsStyleRecalc() || root->NeedsStyleInvalidation() ||
+          root->NeedsAdjacentStyleRecalc()) {
+        return true;
+      }
+    }
     if (ancestor->NeedsStyleRecalc() || ancestor->NeedsStyleInvalidation() ||
-        ancestor->NeedsAdjacentStyleRecalc())
+        ancestor->NeedsAdjacentStyleRecalc()) {
       return true;
+    }
   }
   return false;
 }
@@ -2329,11 +2339,8 @@ void Document::UpdateStyleAndLayout() {
   ScriptForbiddenScope forbid_script;
 
   LocalFrameView* frame_view = View();
-  if (frame_view && frame_view->IsInPerformLayout()) {
-    // View layout should not be re-entrant.
-    NOTREACHED();
-    return;
-  }
+  DCHECK(!frame_view || !frame_view->IsInPerformLayout())
+      << "View layout should not be re-entrant";
 
   if (HTMLFrameOwnerElement* owner = LocalOwner())
     owner->GetDocument().UpdateStyleAndLayout();
@@ -2343,17 +2350,17 @@ void Document::UpdateStyleAndLayout() {
   if (!IsActive())
     return;
 
-  if (frame_view->NeedsLayout())
+  if (frame_view && frame_view->NeedsLayout())
     frame_view->UpdateLayout();
 
-  if (goto_anchor_needed_after_stylesheets_load_)
+  if (frame_view && goto_anchor_needed_after_stylesheets_load_)
     frame_view->ProcessUrlFragment(url_);
 
   if (Lifecycle().GetState() < DocumentLifecycle::kLayoutClean)
     Lifecycle().AdvanceTo(DocumentLifecycle::kLayoutClean);
 
-  if (LocalFrameView* frame_view = View())
-    frame_view->PerformScrollAnchoringAdjustments();
+  if (LocalFrameView* frame_view_anchored = View())
+    frame_view_anchored->PerformScrollAnchoringAdjustments();
 }
 
 void Document::LayoutUpdated() {
@@ -2779,7 +2786,7 @@ void Document::Shutdown() {
   frame_ = nullptr;
 
   document_outlive_time_reporter_ =
-      WTF::WrapUnique(new DocumentOutliveTimeReporter(this));
+      std::make_unique<DocumentOutliveTimeReporter>(this);
 }
 
 void Document::RemoveAllEventListeners() {
@@ -2868,6 +2875,21 @@ bool Document::IsFrameSet() const {
 
 ScriptableDocumentParser* Document::GetScriptableDocumentParser() const {
   return Parser() ? Parser()->AsScriptableDocumentParser() : nullptr;
+}
+
+void Document::SetPrinting(PrintingState state) {
+  bool was_printing = Printing();
+  printing_ = state;
+  bool is_printing = Printing();
+
+  // Changing the state of Printing() can change whether layout objects are
+  // created for iframes. As such, we need to do a full reattach. See
+  // LayoutView::CanHaveChildren.
+  // https://crbug.com/819327.
+  if ((was_printing != is_printing) && documentElement() && GetFrame() &&
+      !GetFrame()->IsMainFrame()) {
+    documentElement()->LazyReattachIfAttached();
+  }
 }
 
 void Document::open(Document* entered_document,
@@ -4858,9 +4880,9 @@ Document::EventFactorySet& Document::EventFactories() {
 
 const OriginAccessEntry& Document::AccessEntryFromURL() {
   if (!access_entry_from_url_) {
-    access_entry_from_url_ = WTF::WrapUnique(
-        new OriginAccessEntry(Url().Protocol(), Url().Host(),
-                              OriginAccessEntry::kAllowRegisterableDomains));
+    access_entry_from_url_ = std::make_unique<OriginAccessEntry>(
+        Url().Protocol(), Url().Host(),
+        OriginAccessEntry::kAllowRegisterableDomains);
   }
   return *access_entry_from_url_;
 }
@@ -7316,6 +7338,7 @@ void Document::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
   // node_lists_ are traced in their corresponding NodeListsNodeData, keeping
   // them only alive for live nodes. Otherwise we would keep lists of dead
   // nodes alive that have not yet been invalidated.
+  visitor->TraceWrappers(dom_window_);
   visitor->TraceWrappers(imports_controller_);
   visitor->TraceWrappers(parser_);
   visitor->TraceWrappers(implementation_);

@@ -15,17 +15,23 @@
 #include "base/component_export.h"
 #include "base/macros.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/strong_binding_set.h"
 #include "services/network/cookie_manager.h"
 #include "services/network/http_cache_data_remover.h"
 #include "services/network/public/mojom/network_service.mojom.h"
+#include "services/network/public/mojom/tcp_socket.mojom.h"
 #include "services/network/public/mojom/udp_socket.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/websocket.mojom.h"
+#include "services/network/socket_factory.h"
 #include "services/network/url_request_context_owner.h"
 
 namespace net {
 class CertVerifier;
+class NetworkQualityEstimator;
+class StaticHttpUserAgentSettings;
 class URLRequestContext;
 }  // namespace net
 
@@ -33,8 +39,8 @@ namespace network {
 class NetworkService;
 class ResourceScheduler;
 class ResourceSchedulerClient;
-class UDPSocketFactory;
 class URLRequestContextBuilderMojo;
+class WebSocketFactory;
 
 // A NetworkContext creates and manages access to a URLRequestContext.
 //
@@ -110,8 +116,26 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
                       ClearHttpCacheCallback callback) override;
   void SetNetworkConditions(const std::string& profile_id,
                             mojom::NetworkConditionsPtr conditions) override;
+  void SetAcceptLanguage(const std::string& new_accept_language) override;
   void CreateUDPSocket(mojom::UDPSocketRequest request,
                        mojom::UDPSocketReceiverPtr receiver) override;
+  void CreateTCPServerSocket(
+      const net::IPEndPoint& local_addr,
+      uint32_t backlog,
+      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
+      mojom::TCPServerSocketRequest request,
+      CreateTCPServerSocketCallback callback) override;
+  void CreateTCPConnectedSocket(
+      const base::Optional<net::IPEndPoint>& local_addr,
+      const net::AddressList& remote_addr_list,
+      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
+      mojom::TCPConnectedSocketRequest request,
+      mojom::TCPConnectedSocketObserverPtr observer,
+      CreateTCPConnectedSocketCallback callback) override;
+  void CreateWebSocket(mojom::WebSocketRequest request,
+                       int32_t process_id,
+                       int32_t render_frame_id,
+                       const url::Origin& origin) override;
   void AddHSTSForTesting(const std::string& host,
                          base::Time expiry,
                          bool include_subdomains,
@@ -127,12 +151,16 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   void DisableQuic();
 
   // Applies the values in |network_context_params| to |builder|, and builds
-  // the URLRequestContext.
+  // the URLRequestContext. If |out_http_user_agent_settings| is non-null, it
+  // will be set to point to StaticHttpUserAgentSettings owned by the
+  // URLRequestContext.
   static URLRequestContextOwner ApplyContextParamsToBuilder(
       URLRequestContextBuilderMojo* builder,
       mojom::NetworkContextParams* network_context_params,
       bool quic_disabled,
-      net::NetLog* net_log);
+      net::NetLog* net_log,
+      net::NetworkQualityEstimator* network_quality_estimator,
+      net::StaticHttpUserAgentSettings** out_http_user_agent_settings);
 
  private:
   // Constructor only used in tests.
@@ -169,11 +197,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   std::unique_ptr<CookieManager> cookie_manager_;
 
-  std::unique_ptr<UDPSocketFactory> udp_socket_factory_;
+  SocketFactory socket_factory_;
+
+#if !defined(OS_IOS)
+  std::unique_ptr<WebSocketFactory> websocket_factory_;
+#endif  // !defined(OS_IOS)
 
   std::vector<std::unique_ptr<HttpCacheDataRemover>> http_cache_data_removers_;
 
   int current_resource_scheduler_client_id_ = 0;
+
+  // Owned by the URLRequestContext
+  net::StaticHttpUserAgentSettings* user_agent_settings_ = nullptr;
 
   // TODO(yhirano): Consult with switches::kDisableResourceScheduler.
   constexpr static bool enable_resource_scheduler_ = true;

@@ -138,7 +138,7 @@ class UpdateCheckerTest : public testing::Test,
   scoped_refptr<UpdateContext> update_context_;
 
  private:
-  scoped_refptr<UpdateContext> MakeFakeUpdateContext() const;
+  scoped_refptr<UpdateContext> MakeMockUpdateContext() const;
 
   base::test::ScopedTaskEnvironment scoped_task_environment_;
   base::OnceClosure quit_closure_;
@@ -171,7 +171,7 @@ void UpdateCheckerTest::SetUp() {
 
   error_ = 0;
   retry_after_sec_ = 0;
-  update_context_ = MakeFakeUpdateContext();
+  update_context_ = MakeMockUpdateContext();
 }
 
 void UpdateCheckerTest::TearDown() {
@@ -204,7 +204,7 @@ void UpdateCheckerTest::UpdateCheckComplete(int error, int retry_after_sec) {
   Quit();
 }
 
-scoped_refptr<UpdateContext> UpdateCheckerTest::MakeFakeUpdateContext() const {
+scoped_refptr<UpdateContext> UpdateCheckerTest::MakeMockUpdateContext() const {
   return base::MakeRefCounted<UpdateContext>(
       config_, false, std::vector<std::string>(),
       UpdateClient::CrxDataCallback(), UpdateEngine::NotifyObserversCallback(),
@@ -300,13 +300,13 @@ TEST_P(UpdateCheckerTest, UpdateCheckSuccess) {
 
   // Check the DDOS protection header values.
   const auto extra_request_headers = post_interceptor_->GetRequests()[0].second;
-  EXPECT_TRUE(extra_request_headers.HasHeader("X-GoogleUpdate-Interactivity"));
+  EXPECT_TRUE(extra_request_headers.HasHeader("X-Goog-Update-Interactivity"));
   std::string header;
-  extra_request_headers.GetHeader("X-GoogleUpdate-Interactivity", &header);
+  extra_request_headers.GetHeader("X-Goog-Update-Interactivity", &header);
   EXPECT_STREQ(GetParam() ? "fg" : "bg", header.c_str());
-  extra_request_headers.GetHeader("X-GoogleUpdate-Updater", &header);
+  extra_request_headers.GetHeader("X-Goog-Update-Updater", &header);
   EXPECT_STREQ("fake_prodid-30.0", header.c_str());
-  extra_request_headers.GetHeader("X-GoogleUpdate-AppId", &header);
+  extra_request_headers.GetHeader("X-Goog-Update-AppId", &header);
   EXPECT_STREQ("jebgalgnebhfojomionfpkfelancnnkf", header.c_str());
 }
 

@@ -89,12 +89,15 @@ v8::Local<v8::Value> ThrowStackOverflowExceptionIfNeeded(v8::Isolate* isolate) {
   v8::MicrotasksScope microtasks_scope(
       isolate, v8::MicrotasksScope::kDoNotRunMicrotasks);
   V8PerIsolateData::From(isolate)->SetIsHandlingRecursionLevelError(true);
+
+  ScriptForbiddenScope::AllowUserAgentScript allow_script;
   v8::Local<v8::Value> result =
       v8::Function::New(isolate->GetCurrentContext(),
                         ThrowStackOverflowException, v8::Local<v8::Value>(), 0,
                         v8::ConstructorBehavior::kThrow)
           .ToLocalChecked()
           ->Call(v8::Undefined(isolate), 0, nullptr);
+
   V8PerIsolateData::From(isolate)->SetIsHandlingRecursionLevelError(false);
   return result;
 }
@@ -441,9 +444,11 @@ v8::MaybeLocal<v8::Value> V8ScriptRunner::RunCompiledScript(
   DCHECK(!script.IsEmpty());
   ScopedFrameBlamer frame_blamer(
       context->IsDocument() ? ToDocument(context)->GetFrame() : nullptr);
+
+  v8::Local<v8::Value> script_name =
+      script->GetUnboundScript()->GetScriptName();
   TRACE_EVENT1("v8", "v8.run", "fileName",
-               TRACE_STR_COPY(*v8::String::Utf8Value(
-                   isolate, script->GetUnboundScript()->GetScriptName())));
+               TRACE_STR_COPY(*v8::String::Utf8Value(isolate, script_name)));
   RuntimeCallStatsScopedTracer rcs_scoped_tracer(isolate);
   RUNTIME_CALL_TIMER_SCOPE(isolate, RuntimeCallStats::CounterId::kV8);
 
@@ -461,7 +466,10 @@ v8::MaybeLocal<v8::Value> V8ScriptRunner::RunCompiledScript(
     }
     v8::MicrotasksScope microtasks_scope(isolate,
                                          v8::MicrotasksScope::kRunMicrotasks);
-    probe::ExecuteScript probe(context);
+    // ToCoreString here should be zero copy due to externalized string
+    // unpacked.
+    String script_url = ToCoreString(script_name->ToString());
+    probe::ExecuteScript probe(context, script_url);
     result = script->Run(isolate->GetCurrentContext());
   }
 

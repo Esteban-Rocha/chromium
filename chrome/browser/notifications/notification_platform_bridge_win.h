@@ -6,13 +6,17 @@
 #define CHROME_BROWSER_NOTIFICATIONS_NOTIFICATION_PLATFORM_BRIDGE_WIN_H_
 
 #include <windows.ui.notifications.h>
+
 #include <string>
 
-#include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/optional.h"
-#include "base/sequenced_task_runner.h"
 #include "chrome/browser/notifications/notification_platform_bridge.h"
+
+namespace base {
+class CommandLine;
+class SequencedTaskRunner;
+}
 
 class NotificationPlatformBridgeWinImpl;
 class NotificationTemplateBuilder;
@@ -32,18 +36,20 @@ class NotificationPlatformBridgeWin : public NotificationPlatformBridge {
                std::unique_ptr<NotificationCommon::Metadata> metadata) override;
   void Close(const std::string& profile_id,
              const std::string& notification_id) override;
-  void GetDisplayed(
-      const std::string& profile_id,
-      bool incognito,
-      const GetDisplayedNotificationsCallback& callback) const override;
+  void GetDisplayed(const std::string& profile_id,
+                    bool incognito,
+                    GetDisplayedNotificationsCallback callback) const override;
   void SetReadyCallback(NotificationBridgeReadyCallback callback) override;
 
-  // Handles notification activation given |launch_id_str| via the
-  // notification_helper process. Returns false if |launch_id_str| is invalid.
-  static bool HandleActivation(const std::string& launch_id_str);
+  // Handles notification activation encoded in |command_line| from the
+  // notification_helper process.
+  // Returns false if |command_line| does not contain a valid
+  // notification-launch-id switch.
+  static bool HandleActivation(const base::CommandLine& command_line);
 
   // Extracts the profile ID from |launch_id_str|.
-  static std::string GetProfileIdFromLaunchId(const std::string& launch_id_str);
+  static std::string GetProfileIdFromLaunchId(
+      const base::string16& launch_id_str);
 
   // Checks if native notification is enabled.
   static bool NativeNotificationEnabled();
@@ -55,8 +61,6 @@ class NotificationPlatformBridgeWin : public NotificationPlatformBridge {
   FRIEND_TEST_ALL_PREFIXES(NotificationPlatformBridgeWinUITest, GetDisplayed);
   FRIEND_TEST_ALL_PREFIXES(NotificationPlatformBridgeWinUITest, HandleEvent);
   FRIEND_TEST_ALL_PREFIXES(NotificationPlatformBridgeWinUITest, HandleSettings);
-
-  void PostTaskToTaskRunnerThread(base::OnceClosure closure) const;
 
   // Simulates a click/dismiss event. Only for use in testing.
   // Note: Ownership of |notification| and |args| is retained by the caller.

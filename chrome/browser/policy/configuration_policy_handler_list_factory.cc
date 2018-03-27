@@ -59,8 +59,8 @@
 #include "components/sync/driver/sync_policy_handler.h"
 #include "components/translate/core/browser/translate_pref_names.h"
 #include "components/variations/pref_names.h"
-#include "extensions/features/features.h"
-#include "media/media_features.h"
+#include "extensions/buildflags/buildflags.h"
+#include "media/media_buildflags.h"
 #include "ppapi/features/features.h"
 
 #if defined(OS_ANDROID)
@@ -758,6 +758,10 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kAbusiveExperienceInterventionEnforce,
     base::Value::Type::BOOLEAN },
 
+  { key::kTabUnderProtectionEnabled,
+    prefs::kTabUnderProtection,
+    base::Value::Type::BOOLEAN },
+
 #if defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)
   { key::kThirdPartyBlockingEnabled,
     prefs::kThirdPartyBlockingEnabled,
@@ -779,6 +783,10 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kAutoplayAllowed,
     prefs::kAutoplayAllowed,
     base::Value::Type::BOOLEAN },
+
+  { key::kAutoplayWhitelist,
+    prefs::kAutoplayWhitelist,
+    base::Value::Type::LIST },
 #endif  // !defined(OS_ANDROID)
 };
 // clang-format on

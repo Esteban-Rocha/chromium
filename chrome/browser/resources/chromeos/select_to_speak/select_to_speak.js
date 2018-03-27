@@ -116,7 +116,7 @@ var SelectToSpeak = function() {
   this.highlightColor_ = '#5e9bff';
 
   /** @private {boolean} */
-  this.readAfterClose_ = false;
+  this.readAfterClose_ = true;
 
   /** @private {?NodeGroupItem} */
   this.currentNode_ = null;
@@ -202,7 +202,7 @@ SelectToSpeak.prototype = {
     this.trackingMouse_ = true;
     this.didTrackMouse_ = true;
     this.mouseStart_ = {x: evt.screenX, y: evt.screenY};
-    chrome.tts.stop();
+    this.cancelIfSpeaking_(false /* don't clear the focus ring */);
 
     // Fire a hit test event on click to warm up the cache.
     this.desktop_.hitTest(evt.screenX, evt.screenY, EventType.MOUSE_PRESSED);
@@ -345,7 +345,7 @@ SelectToSpeak.prototype = {
       if (this.isSelectionKeyDown_ && this.keysPressedTogether_.size == 2 &&
           this.keysPressedTogether_.has(evt.keyCode) &&
           this.keysPressedTogether_.has(SelectToSpeak.SEARCH_KEY_CODE)) {
-        chrome.tts.isSpeaking(this.cancelIfSpeaking_.bind(this));
+        this.cancelIfSpeaking_(true /* clear the focus ring */);
         chrome.automation.getFocus(this.requestSpeakSelectedText_.bind(this));
       }
       this.isSelectionKeyDown_ = false;
@@ -367,7 +367,7 @@ SelectToSpeak.prototype = {
         this.keysPressedTogether_.has(evt.keyCode) &&
         this.keysPressedTogether_.size == 1) {
       this.trackingMouse_ = false;
-      chrome.tts.isSpeaking(this.cancelIfSpeaking_.bind(this));
+      this.cancelIfSpeaking_(true /* clear the focus ring */);
     }
 
     this.keysCurrentlyDown_.delete(evt.keyCode);
@@ -750,7 +750,7 @@ SelectToSpeak.prototype = {
    * Prepares for speech. Call once before chrome.tts.speak is called.
    */
   prepareForSpeech_: function() {
-    chrome.tts.stop();
+    this.cancelIfSpeaking_(true /* clear the focus ring */);
     if (this.intervalRef_ !== undefined) {
       clearInterval(this.intervalRef_);
     }
@@ -794,11 +794,29 @@ SelectToSpeak.prototype = {
   },
 
   /**
-   * Cancels the current speech queue if speech is in progress.
+   * Cancels the current speech queue after doing a callback to
+   * record a cancel event if speech was in progress. We must cancel
+   * before the callback (rather than in it) to avoid race conditions
+   * where cancel is called twice.
+   * @param {boolean} clearFocusRing Whether to clear the focus ring
+   *    as well.
    */
-  cancelIfSpeaking_: function(speaking) {
-    if (speaking) {
+  cancelIfSpeaking_: function(clearFocusRing) {
+    chrome.tts.isSpeaking(this.recordCancelIfSpeaking_.bind(this));
+    if (clearFocusRing) {
       this.stopAll_();
+    } else {
+      // Just stop speech
+      chrome.tts.stop();
+    }
+  },
+
+  /**
+   * Records a cancel event if speech was in progress.
+   * @param {boolean} speaking Whether speech was in progress
+   */
+  recordCancelIfSpeaking_: function(speaking) {
+    if (speaking) {
       this.recordCancelEvent_();
     }
   },
@@ -864,10 +882,7 @@ SelectToSpeak.prototype = {
     var updatePrefs =
         (function() {
           chrome.storage.sync.get(
-              [
-                'voice', 'rate', 'pitch', 'wordHighlight', 'highlightColor',
-                'readAfterClose'
-              ],
+              ['voice', 'rate', 'pitch', 'wordHighlight', 'highlightColor'],
               (function(prefs) {
                 if (prefs['voice']) {
                   this.voiceNameFromPrefs_ = prefs['voice'];
@@ -893,12 +908,6 @@ SelectToSpeak.prototype = {
                 } else {
                   chrome.storage.sync.set(
                       {'highlightColor': this.highlightColor_});
-                }
-                if (prefs['readAfterClose'] !== undefined) {
-                  this.readAfterClose_ = prefs['readAfterClose'];
-                } else {
-                  chrome.storage.sync.set(
-                      {'readAfterClose': this.readAfterClose_});
                 }
               }).bind(this));
         }).bind(this);
@@ -926,9 +935,15 @@ SelectToSpeak.prototype = {
           if (voices.length == 0)
             return;
 
-          voices.forEach((function(voice) {
-                           this.validVoiceNames_.add(voice.voiceName);
-                         }).bind(this));
+          voices.forEach((voice) => {
+            if (!voice.eventTypes.includes('start') ||
+                !voice.eventTypes.includes('end') ||
+                !voice.eventTypes.includes('word') ||
+                !voice.eventTypes.includes('cancelled')) {
+              return;
+            }
+            this.validVoiceNames_.add(voice.voiceName);
+          });
 
           voices.sort(function(a, b) {
             function score(voice) {
@@ -965,8 +980,8 @@ SelectToSpeak.prototype = {
   updateFromNodeState_: function(nodeGroupItem, inForeground) {
     switch (getNodeState(nodeGroupItem.node)) {
       case NodeState.NODE_STATE_INVALID:
-        // If the node is invalid, stop speaking entirely if the user setting
-        // is not to continue reading.
+        // If the node is invalid, continue speech unless readAfterClose_
+        // is set to true. See https://crbug.com/818835 for more.
         if (this.readAfterClose_) {
           this.clearFocusRing_();
           this.visible_ = false;

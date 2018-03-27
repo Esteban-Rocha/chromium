@@ -7,6 +7,7 @@ package org.chromium.chromecast.shell;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.KeyEvent;
@@ -40,6 +41,8 @@ public class CastWebContentsActivity extends Activity {
 
     // Tracks whether this Activity is between onCreate() and onDestroy().
     private final Controller<Unit> mCreatedState = new Controller<>();
+    // Tracks whether this Activity is between onResume() and onPause().
+    private final Controller<Unit> mResumedState = new Controller<>();
     // Tracks the most recent Intent for the Activity.
     private final Controller<Intent> mGotIntentState = new Controller<>();
     // Set this to cause the Activity to finish.
@@ -111,15 +114,17 @@ public class CastWebContentsActivity extends Activity {
         super.onCreate(savedInstanceState);
         mCreatedState.set(Unit.unit());
         mGotIntentState.set(getIntent());
+        CastAudioManager.getAudioManager(this).requestAudioFocusWhen(
+                mResumedState, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
     }
 
-    protected void handleIntent(Intent intent) {
+    private void handleIntent(Intent intent) {
         final Bundle bundle = intent.getExtras();
         if (bundle == null) {
             Log.i(TAG, "Intent without bundle received!");
             return;
         }
-        final String uriString = bundle.getString(CastWebContentsComponent.INTENT_EXTRA_URI);
+        final String uriString = CastWebContentsIntentUtils.getUriString(intent);
         if (uriString == null) {
             Log.i(TAG, "Intent without uri received!");
             return;
@@ -135,11 +140,9 @@ public class CastWebContentsActivity extends Activity {
         }
 
         bundle.setClassLoader(WebContents.class.getClassLoader());
-        final WebContents webContents = (WebContents) bundle.getParcelable(
-                CastWebContentsComponent.ACTION_EXTRA_WEB_CONTENTS);
+        final WebContents webContents = CastWebContentsIntentUtils.getWebContents(intent);
 
-        boolean touchInputEnabled =
-                bundle.getBoolean(CastWebContentsComponent.ACTION_EXTRA_TOUCH_INPUT_ENABLED, false);
+        final boolean touchInputEnabled = CastWebContentsIntentUtils.isTouchable(intent);
         mSurfaceHelper.onNewWebContents(uri, webContents, touchInputEnabled);
     }
 
@@ -159,7 +162,7 @@ public class CastWebContentsActivity extends Activity {
     protected void onPause() {
         if (DEBUG) Log.d(TAG, "onPause");
         super.onPause();
-
+        mResumedState.reset();
         if (mSurfaceHelper != null) {
             mSurfaceHelper.onPause();
         }
@@ -169,6 +172,7 @@ public class CastWebContentsActivity extends Activity {
     protected void onResume() {
         if (DEBUG) Log.d(TAG, "onResume");
         super.onResume();
+        mResumedState.set(Unit.unit());
         if (mSurfaceHelper != null) {
             mSurfaceHelper.onResume();
         }
@@ -218,7 +222,7 @@ public class CastWebContentsActivity extends Activity {
                     || keyCode == KeyEvent.KEYCODE_MEDIA_STOP
                     || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT
                     || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-                CastWebContentsComponent.onKeyDown(this, mSurfaceHelper.getInstanceId(), keyCode);
+                CastWebContentsComponent.onKeyDown(mSurfaceHelper.getInstanceId(), keyCode);
 
                 // Stop key should end the entire session.
                 if (keyCode == KeyEvent.KEYCODE_MEDIA_STOP) {

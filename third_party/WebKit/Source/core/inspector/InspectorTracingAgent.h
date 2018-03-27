@@ -18,7 +18,6 @@ namespace blink {
 
 class InspectedFrames;
 class WorkerInspectorProxy;
-class WorkerThread;
 
 class CORE_EXPORT InspectorTracingAgent final
     : public InspectorBaseAgent<protocol::Tracing::Metainfo> {
@@ -56,16 +55,13 @@ class CORE_EXPORT InspectorTracingAgent final
   void end(std::unique_ptr<EndCallback>) override;
 
   // Methods for other agents to use.
-  void SetLayerTreeId(int);
   void RootLayerCleared();
 
  private:
   void EmitMetadataEvents();
   void InnerDisable();
   bool IsStarted() const;
-  void WriteTimelineStartedEventForWorker(WorkerThread*);
 
-  int layer_tree_id_;
   Client* client_;
   String session_id_;
   Member<InspectedFrames> inspected_frames_;

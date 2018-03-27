@@ -4,7 +4,7 @@
 
 module webauth.mojom;
 
-import "mojo/common/time.mojom";
+import "mojo/public/mojom/base/time.mojom";
 import "url/mojom/url.mojom";
 
 // This file describes the communication between the WebAuthentication renderer
@@ -103,6 +103,13 @@ struct PublicKeyCredentialParameters {
   int32 algorithm_identifier;
 };
 
+// See https://w3c.github.io/webauthn/#enumdef-userverificationrequirement.
+enum UserVerificationRequirement {
+  PREFERRED,
+  REQUIRED,
+  DISCOURAGED,
+};
+
 // Parameters passed into calls to GetAssertion.
 struct PublicKeyCredentialRequestOptions {
   // An indefinite-length blob passed from the the relying party server,
@@ -111,7 +118,7 @@ struct PublicKeyCredentialRequestOptions {
 
   // Time to wait for an authenticator to complete an operation.
   // Adjusted to fall within a client-defined range.
-  mojo.common.mojom.TimeDelta adjusted_timeout;
+  mojo_base.mojom.TimeDelta adjusted_timeout;
 
   // An ASCII serialization of the origin claimed by the relying party.
   string relying_party_id;
@@ -119,6 +126,9 @@ struct PublicKeyCredentialRequestOptions {
   // A list of credentials the relying party knows about and would
   // accept as the signing credential.
   array<PublicKeyCredentialDescriptor> allow_credentials;
+
+  // Indicates the relying party's need for a user-verifying authenticator.
+  UserVerificationRequirement user_verification;
 
   // The contents of the appid extension, if any. See
   // https://w3c.github.io/webauthn/#sctn-appid-extension
@@ -130,6 +140,27 @@ enum AttestationConveyancePreference {
   NONE,
   INDIRECT,
   DIRECT,
+};
+
+// https://w3c.github.io/webauthn/#enumdef-authenticatorattachment.
+enum AuthenticatorAttachment {
+    NO_PREFERENCE,
+    PLATFORM,
+    CROSS_PLATFORM,
+};
+
+// See https://w3c.github.io/webauthn/#dictdef-authenticatorselectioncriteria.
+struct AuthenticatorSelectionCriteria {
+  // Filter authenticators by attachment type.
+  AuthenticatorAttachment authenticator_attachment;
+
+  // Whether the authenticator should store the created key so that the key
+  // can later be selected given only an RP ID (e.g. when |allow_credentials|
+  // is empty).
+  bool require_resident_key;
+
+  // Indicates the relying party's need for a user-verifying authenticator.
+  UserVerificationRequirement user_verification;
 };
 
 // Parameters passed into calls to MakeCredential.
@@ -150,18 +181,19 @@ struct PublicKeyCredentialCreationOptions {
 
   // Time to wait for an authenticator to complete an operation.
   // Adjusted to fall within a client-defined range.
-  mojo.common.mojom.TimeDelta adjusted_timeout;
+  mojo_base.mojom.TimeDelta adjusted_timeout;
 
   // A list of credentials the relying party knows about. If an
   // authenticator has one of these credentials, it should not
   // create a new one.
   array<PublicKeyCredentialDescriptor> exclude_credentials;
 
+  // Specify the relying party's authenticator attribute requirements.
+  AuthenticatorSelectionCriteria? authenticator_selection;
+
   // Specifies whether the RP wants attestation information for the created
   // credential.
   AttestationConveyancePreference attestation;
-
-  // TODO(kpaulhamus): add AuthenticatorSelectionCriteria
 };
 
 enum PublicKeyCredentialType {

@@ -104,7 +104,9 @@ MojoAsyncResourceHandler::MojoAsyncResourceHandler(
       rdh_(rdh),
       binding_(this, std::move(mojo_request)),
       url_loader_options_(url_loader_options),
-      handle_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+      handle_watcher_(FROM_HERE,
+                      mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                      base::SequencedTaskRunnerHandle::Get()),
       url_loader_client_(std::move(url_loader_client)),
       weak_factory_(this) {
   DCHECK(IsResourceTypeFrame(resource_type) ||
@@ -486,6 +488,11 @@ void MojoAsyncResourceHandler::OnResponseCompleted(
 
   network::URLLoaderCompletionStatus loader_status;
   loader_status.error_code = error_code;
+  if (error_code == net::ERR_QUIC_PROTOCOL_ERROR) {
+    net::NetErrorDetails details;
+    request()->PopulateNetErrorDetails(&details);
+    loader_status.extended_error_code = details.quic_connection_error;
+  }
   loader_status.exists_in_cache = request()->response_info().was_cached;
   loader_status.completion_time = base::TimeTicks::Now();
   loader_status.encoded_data_length = request()->GetTotalReceivedBytes();

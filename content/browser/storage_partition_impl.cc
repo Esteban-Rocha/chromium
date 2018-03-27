@@ -291,7 +291,7 @@ class StoragePartitionImpl::NetworkContextOwner {
 };
 
 class StoragePartitionImpl::URLLoaderFactoryForBrowserProcess
-    : public SharedURLLoaderFactory {
+    : public network::SharedURLLoaderFactory {
  public:
   explicit URLLoaderFactoryForBrowserProcess(
       StoragePartitionImpl* storage_partition)
@@ -316,7 +316,7 @@ class StoragePartitionImpl::URLLoaderFactoryForBrowserProcess
   }
 
   // SharedURLLoaderFactory implementation:
-  std::unique_ptr<SharedURLLoaderFactoryInfo> Clone() override {
+  std::unique_ptr<network::SharedURLLoaderFactoryInfo> Clone() override {
     NOTREACHED() << "This isn't supported. If you need a SharedURLLoaderFactory"
                     " on the IO thread, get it from URLLoaderFactoryGetter.";
     return nullptr;
@@ -708,28 +708,24 @@ StoragePartitionImpl::GetMediaURLRequestContext() {
 }
 
 network::mojom::NetworkContext* StoragePartitionImpl::GetNetworkContext() {
-  // Create the NetworkContext as needed, when the network service is disabled.
-  if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-    if (network_context_)
-      return network_context_.get();
-    DCHECK(!network_context_owner_);
-    network_context_owner_ = std::make_unique<NetworkContextOwner>();
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::BindOnce(&NetworkContextOwner::Initialize,
-                       base::Unretained(network_context_owner_.get()),
-                       MakeRequest(&network_context_), url_request_context_));
-    return network_context_.get();
-  }
-
   if (!network_context_.is_bound() || network_context_.encountered_error()) {
     network_context_ = GetContentClient()->browser()->CreateNetworkContext(
         browser_context_, is_in_memory_, relative_partition_path_);
+    if (!network_context_) {
+      DCHECK(!base::FeatureList::IsEnabled(network::features::kNetworkService));
+      DCHECK(!network_context_owner_);
+      network_context_owner_ = std::make_unique<NetworkContextOwner>();
+      BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE,
+          base::BindOnce(&NetworkContextOwner::Initialize,
+                         base::Unretained(network_context_owner_.get()),
+                         MakeRequest(&network_context_), url_request_context_));
+    }
   }
   return network_context_.get();
 }
 
-scoped_refptr<SharedURLLoaderFactory>
+scoped_refptr<network::SharedURLLoaderFactory>
 StoragePartitionImpl::GetURLLoaderFactoryForBrowserProcess() {
   if (!shared_url_loader_factory_for_browser_process_) {
     shared_url_loader_factory_for_browser_process_ =
@@ -738,7 +734,7 @@ StoragePartitionImpl::GetURLLoaderFactoryForBrowserProcess() {
   return shared_url_loader_factory_for_browser_process_;
 }
 
-std::unique_ptr<SharedURLLoaderFactoryInfo>
+std::unique_ptr<network::SharedURLLoaderFactoryInfo>
 StoragePartitionImpl::GetURLLoaderFactoryForBrowserProcessIOThread() {
   return url_loader_factory_getter_->GetNetworkFactoryInfo();
 }
@@ -957,7 +953,8 @@ void StoragePartitionImpl::QuotaManagedDataDeletionHelper::ClearDataOnIOThread(
         blink::mojom::StorageType::kSyncable, begin,
         base::Bind(&QuotaManagedDataDeletionHelper::ClearOriginsOnIOThread,
                    base::Unretained(this), base::RetainedRef(quota_manager),
-                   special_storage_policy, origin_matcher, decrement_callback));
+                   special_storage_policy, origin_matcher,
+                   std::move(decrement_callback)));
   }
 
   DecrementTaskCountOnIO();
@@ -1109,7 +1106,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
         FROM_HERE,
         base::BindOnce(&ClearPluginPrivateDataOnFileTaskRunner,
                        base::WrapRefCounted(filesystem_context), storage_origin,
-                       begin, end, decrement_callback));
+                       begin, end, std::move(decrement_callback)));
   }
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
 

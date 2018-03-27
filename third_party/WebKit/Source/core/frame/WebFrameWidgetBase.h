@@ -9,11 +9,11 @@
 #include "core/clipboard/DataObject.h"
 #include "core/dom/UserGestureIndicator.h"
 #include "platform/graphics/paint/PaintImage.h"
-#include "platform/heap/Handle.h"
-#include "platform/wtf/Assertions.h"
+#include "platform/heap/Member.h"
 #include "public/platform/WebCoalescedInputEvent.h"
 #include "public/platform/WebDragData.h"
 #include "public/platform/WebGestureCurveTarget.h"
+#include "public/platform/WebGestureDevice.h"
 #include "public/web/WebFrameWidget.h"
 
 namespace blink {
@@ -43,7 +43,8 @@ class CORE_EXPORT WebFrameWidgetBase
   virtual bool ForSubframe() const = 0;
   virtual void ScheduleAnimation() = 0;
   virtual void IntrinsicSizingInfoChanged(const IntrinsicSizingInfo&) {}
-  virtual CompositorMutatorImpl* CompositorMutator() = 0;
+  virtual base::WeakPtr<CompositorMutatorImpl> EnsureCompositorMutator(
+      scoped_refptr<base::SingleThreadTaskRunner>* mutator_task_runner) = 0;
 
   virtual WebWidgetClient* Client() const = 0;
 
@@ -171,8 +172,8 @@ class CORE_EXPORT WebFrameWidgetBase
   void CancelDrag();
 
   std::unique_ptr<WebActiveGestureAnimation> gesture_animation_;
-  WebPoint position_on_fling_start_;
-  WebPoint global_position_on_fling_start_;
+  WebFloatPoint position_on_fling_start_;
+  WebFloatPoint global_position_on_fling_start_;
   int fling_modifier_;
   WebGestureDevice fling_source_device_;
 

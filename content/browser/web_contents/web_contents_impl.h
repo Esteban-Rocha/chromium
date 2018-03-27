@@ -170,11 +170,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // TODO(creis): Remove this now that we can get to it via FrameTreeNode.
   RenderFrameHostManager* GetRenderManagerForTesting();
 
-  // Returns the outer WebContents of this WebContents if any.
-  // Note that without --site-per-process, this will return the WebContents
-  // of the BrowserPluginEmbedder, if |this| is a guest.
-  WebContentsImpl* GetOuterWebContents();
-
   // Returns guest browser plugin object, or NULL if this WebContents is not a
   // guest.
   BrowserPluginGuest* GetBrowserPluginGuest() const;
@@ -341,7 +336,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool IsWaitingForResponse() const override;
   const net::LoadStateWithParam& GetLoadState() const override;
   const base::string16& GetLoadStateHost() const override;
-  void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback) override;
+  void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback,
+                             ui::AXMode ax_mode) override;
   uint64_t GetUploadSize() const override;
   uint64_t GetUploadPosition() const override;
   const std::string& GetEncoding() const override;
@@ -372,8 +368,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void AttachToOuterWebContentsFrame(
       WebContents* outer_web_contents,
       RenderFrameHost* outer_contents_frame) override;
+  WebContentsImpl* GetOuterWebContents() override;
   void DidChangeVisibleSecurityState() override;
+
   void Stop() override;
+  void FreezePage() override;
   WebContents* Clone() override;
   void ReloadFocusedFrame(bool bypass_cache) override;
   void Undo() override;
@@ -416,9 +415,10 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void SaveFrame(const GURL& url, const Referrer& referrer) override;
   void SaveFrameWithHeaders(const GURL& url,
                             const Referrer& referrer,
-                            const std::string& headers) override;
+                            const std::string& headers,
+                            const base::string16& suggested_filename) override;
   void GenerateMHTML(const MHTMLGenerationParams& params,
-                     const base::Callback<void(int64_t)>& callback) override;
+                     base::OnceCallback<void(int64_t)> callback) override;
   const std::string& GetContentsMimeType() const override;
   bool WillNotifyDisconnection() const override;
   RendererPreferences* GetMutableRendererPrefs() override;
@@ -442,7 +442,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                     bool is_favicon,
                     uint32_t max_bitmap_size,
                     bool bypass_cache,
-                    const ImageDownloadCallback& callback) override;
+                    ImageDownloadCallback callback) override;
   bool IsSubframe() const override;
   void Find(int request_id,
             const base::string16& search_text,
@@ -450,7 +450,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void StopFinding(StopFindAction action) override;
   bool WasRecentlyAudible() override;
   bool WasEverAudible() override;
-  void GetManifest(const GetManifestCallback& callback) override;
+  void GetManifest(GetManifestCallback callback) override;
   bool IsFullscreenForCurrentTab() const override;
   void ExitFullscreen(bool will_cause_resize) override;
   void ResumeLoadingCreatedWebContents() override;
@@ -574,11 +574,9 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       override;
 #endif
   void SubresourceResponseStarted(const GURL& url,
-                                  const GURL& referrer,
-                                  const std::string& method,
-                                  ResourceType resource_type,
-                                  const std::string& ip,
                                   net::CertStatus cert_status) override;
+  void SubresourceLoadComplete(
+      mojom::SubresourceLoadInfoPtr subresource_load_information) override;
   void UpdatePictureInPictureSurfaceId(viz::SurfaceId surface_id) override;
 
   // RenderViewHostDelegate ----------------------------------------------------
@@ -726,6 +724,9 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                           bool user_gesture,
                           bool last_unlocked_by_target,
                           bool privileged) override;
+  bool RequestKeyboardLock(RenderWidgetHostImpl* render_widget_host) override;
+  void CancelKeyboardLock(RenderWidgetHostImpl* render_widget_host) override;
+  RenderWidgetHostImpl* GetKeyboardLockWidget() override;
   // The following function is already listed under WebContents overrides:
   // bool IsFullscreenForCurrentTab() const override;
   blink::WebDisplayMode GetDisplayMode(
@@ -846,8 +847,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   // Unpause the throbber if it was paused.
   void DidProceedOnInterstitial() override;
-
-  typedef base::Callback<void(WebContents*)> CreatedCallback;
 
   // Forces overscroll to be disabled (used by touch emulation).
   void SetForceDisableOverscrollContent(bool force_disable);
@@ -983,6 +982,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   FRIEND_TEST_ALL_PREFIXES(DevToolsProtocolTest, PageDisableWithOpenedDialog);
   FRIEND_TEST_ALL_PREFIXES(DevToolsProtocolTest,
                            PageDisableWithNoDialogManager);
+  FRIEND_TEST_ALL_PREFIXES(PointerLockBrowserTest,
+                           PointerLockInnerContentsCrashes);
 
   // So |find_request_manager_| can be accessed for testing.
   friend class FindRequestManagerTest;
@@ -1079,7 +1080,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void DoWasUnOccluded();
 
   // Called with the result of a DownloadImage() request.
-  void OnDidDownloadImage(const ImageDownloadCallback& callback,
+  void OnDidDownloadImage(ImageDownloadCallback callback,
                           int id,
                           const GURL& image_url,
                           int32_t http_status_code,
@@ -1348,6 +1349,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // A helper for clearing the link status bubble after navigating away.
   // See also UpdateTargetURL.
   void ClearTargetURL();
+
+  class AXTreeSnapshotCombiner;
+  void RecursiveRequestAXTreeSnapshotOnFrame(FrameTreeNode* root_node,
+                                             AXTreeSnapshotCombiner* combiner,
+                                             ui::AXMode ax_mode);
 
   // Data for core operation ---------------------------------------------------
 
@@ -1669,7 +1675,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   // Stores the RenderWidgetHost that currently holds a mouse lock or nullptr if
   // there's no RenderWidgetHost holding a lock.
-  RenderWidgetHostImpl* mouse_lock_widget_;
+  RenderWidgetHostImpl* mouse_lock_widget_ = nullptr;
+
+  // Stores the RenderWidgetHost that currently holds a keyboard lock or nullptr
+  // if no RenderWidgetHost has the keyboard locked.
+  RenderWidgetHostImpl* keyboard_lock_widget_ = nullptr;
 
 #if defined(OS_ANDROID)
   std::unique_ptr<service_manager::InterfaceProvider> java_interfaces_;
@@ -1702,6 +1712,9 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 // Dangerous methods which should never be made part of the public API, so we
 // grant their use only to an explicit friend list (c++ attorney/client idiom).
 class CONTENT_EXPORT WebContentsImpl::FriendWrapper {
+ public:
+  using CreatedCallback = base::RepeatingCallback<void(WebContents*)>;
+
  private:
   friend class TestNavigationObserver;
   friend class WebContentsAddedObserver;

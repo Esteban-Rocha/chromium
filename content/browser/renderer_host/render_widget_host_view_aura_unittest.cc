@@ -25,6 +25,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "cc/trees/render_frame_metadata.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/quads/compositor_frame.h"
@@ -39,8 +40,8 @@
 #include "components/viz/test/compositor_frame_helpers.h"
 #include "components/viz/test/fake_external_begin_frame_source.h"
 #include "components/viz/test/fake_surface_observer.h"
+#include "components/viz/test/test_latest_local_surface_id_lookup_delegate.h"
 #include "content/browser/browser_main_loop.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/compositor/test/test_image_transport_factory.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -50,6 +51,7 @@
 #include "content/browser/renderer_host/input/mouse_wheel_event_queue.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
+#include "content/browser/renderer_host/render_frame_metadata_provider_impl.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -136,8 +138,6 @@ namespace content {
 void InstallDelegatedFrameHostClient(
     RenderWidgetHostViewAura* render_widget_host_view,
     std::unique_ptr<DelegatedFrameHostClient> delegated_frame_host_client);
-
-namespace {
 
 constexpr uint64_t kFrameIndexStart =
     viz::CompositorFrameSinkSupport::kFrameIndexStart;
@@ -352,6 +352,11 @@ class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
     return event_handler()->pointer_state();
   }
 
+  void SetRenderFrameMetadata(cc::RenderFrameMetadata metadata) {
+    host()->render_frame_metadata_provider()->SetLastRenderFrameMetadataForTest(
+        metadata);
+  }
+
   bool resize_locked() const {
     return delegated_frame_host_client_->resize_locked();
   }
@@ -479,8 +484,6 @@ enum WheelScrollingMode {
   kAsyncWheelEvents,
 };
 
-}  // namespace
-
 class RenderWidgetHostViewAuraTest : public testing::Test {
  public:
   RenderWidgetHostViewAuraTest(
@@ -490,10 +493,16 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
         is_guest_view_hack_(false) {}
 
   static void InstallDelegatedFrameHostClient(
-      RenderWidgetHostViewAura* render_widget_host_view,
+      RenderWidgetHostViewAura* view,
       std::unique_ptr<DelegatedFrameHostClient> delegated_frame_host_client) {
-    render_widget_host_view->delegated_frame_host_client_ =
-        std::move(delegated_frame_host_client);
+    view->delegated_frame_host_client_ = std::move(delegated_frame_host_client);
+    const bool enable_viz =
+        base::FeatureList::IsEnabled(features::kVizDisplayCompositor);
+    view->delegated_frame_host_ = nullptr;
+    view->delegated_frame_host_ = std::make_unique<DelegatedFrameHost>(
+        view->frame_sink_id_, view->delegated_frame_host_client_.get(),
+        features::IsSurfaceSynchronizationEnabled(), enable_viz,
+        false /* should_register_frame_sink_id */);
   }
 
   void SetUpEnvironment() {
@@ -640,8 +649,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
     // First mock-focus the widget if not already.
     if (render_widget_host_delegate()->GetFocusedRenderWidgetHost(
             widget_host_) != view->GetRenderWidgetHost()) {
-      render_widget_host_delegate()->set_focused_widget(
-          view->GetRenderWidgetHostImpl());
+      render_widget_host_delegate()->set_focused_widget(view->host());
     }
 
     TextInputManager* manager =
@@ -1466,12 +1474,12 @@ TEST_F(RenderWidgetHostViewAuraTest, SetCompositionText) {
 
   // Focused segment
   composition_text.ime_text_spans.push_back(
-      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, 3, 0xff000000,
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, 3,
                       ui::ImeTextSpan::Thickness::kThick, 0x78563412));
 
   // Non-focused segment, with different background color.
   composition_text.ime_text_spans.push_back(
-      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 3, 4, 0xff000000,
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 3, 4,
                       ui::ImeTextSpan::Thickness::kThin, 0xefcdab90));
 
   const ui::ImeTextSpans& ime_text_spans = composition_text.ime_text_spans;
@@ -1524,12 +1532,12 @@ TEST_F(RenderWidgetHostViewAuraTest, FinishCompositionByMouse) {
 
   // Focused segment
   composition_text.ime_text_spans.push_back(
-      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, 3, 0xff000000,
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, 3,
                       ui::ImeTextSpan::Thickness::kThick, 0x78563412));
 
   // Non-focused segment, with different background color.
   composition_text.ime_text_spans.push_back(
-      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 3, 4, 0xff000000,
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 3, 4,
                       ui::ImeTextSpan::Thickness::kThin, 0xefcdab90));
 
   // Caret is at the end. (This emulates Japanese MSIME 2007 and later)
@@ -2048,12 +2056,12 @@ void RenderWidgetHostViewAuraTest::
   gesture_event = static_cast<const WebGestureEvent*>(
       events[1]->ToEvent()->Event()->web_event.get());
   EXPECT_EQ(WebInputEvent::kGestureScrollEnd, gesture_event->GetType());
-  EXPECT_EQ(blink::kWebGestureDeviceTouchpad, gesture_event->source_device);
+  EXPECT_EQ(blink::kWebGestureDeviceTouchpad, gesture_event->SourceDevice());
 
   gesture_event = static_cast<const WebGestureEvent*>(
       events[2]->ToEvent()->Event()->web_event.get());
   EXPECT_EQ(WebInputEvent::kGestureScrollBegin, gesture_event->GetType());
-  EXPECT_EQ(blink::kWebGestureDeviceTouchscreen, gesture_event->source_device);
+  EXPECT_EQ(blink::kWebGestureDeviceTouchscreen, gesture_event->SourceDevice());
 }
 
 TEST_F(RenderWidgetHostViewAuraWheelScrollLatchingEnabledTest,
@@ -2212,7 +2220,7 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventSyncAsync) {
   EXPECT_EQ(0U, pointer_state().GetPointerCount());
 }
 
-TEST_F(RenderWidgetHostViewAuraTest, PhysicalBackingSizeWithScale) {
+TEST_F(RenderWidgetHostViewAuraTest, CompositorViewportPixelSizeWithScale) {
   view_->InitAsChild(nullptr);
   aura::client::ParentWindowWithContext(
       view_->GetNativeView(),
@@ -2220,7 +2228,7 @@ TEST_F(RenderWidgetHostViewAuraTest, PhysicalBackingSizeWithScale) {
       gfx::Rect());
   sink_->ClearMessages();
   view_->SetSize(gfx::Size(100, 100));
-  EXPECT_EQ("100x100", view_->GetPhysicalBackingSize().ToString());
+  EXPECT_EQ("100x100", view_->GetCompositorViewportPixelSize().ToString());
   EXPECT_EQ(1u, sink_->message_count());
   EXPECT_EQ(static_cast<uint32_t>(ViewMsg_Resize::ID),
             sink_->GetMessageAt(0)->type());
@@ -2230,16 +2238,16 @@ TEST_F(RenderWidgetHostViewAuraTest, PhysicalBackingSizeWithScale) {
     ViewMsg_Resize::Param params;
     ViewMsg_Resize::Read(msg, &params);
     EXPECT_EQ("100x100", std::get<0>(params).new_size.ToString());  // dip size
-    EXPECT_EQ(
-        "100x100",
-        std::get<0>(params).physical_backing_size.ToString());  // backing size
+    EXPECT_EQ("100x100",
+              std::get<0>(params)
+                  .compositor_viewport_pixel_size.ToString());  // backing size
   }
 
   widget_host_->ResetSizeAndRepaintPendingFlags();
   sink_->ClearMessages();
 
   aura_test_helper_->test_screen()->SetDeviceScaleFactor(2.0f);
-  EXPECT_EQ("200x200", view_->GetPhysicalBackingSize().ToString());
+  EXPECT_EQ("200x200", view_->GetCompositorViewportPixelSize().ToString());
   // Extra ScreenInfoChanged message for |parent_view_|.
   // Changing the device scale factor triggers the
   // RenderWidgetHostViewAura::OnDisplayMetricsChanged() observer callback,
@@ -2256,7 +2264,7 @@ TEST_F(RenderWidgetHostViewAuraTest, PhysicalBackingSizeWithScale) {
   EXPECT_EQ(1u, sink_->message_count());
   EXPECT_EQ(static_cast<uint32_t>(ViewMsg_Resize::ID),
             sink_->GetMessageAt(0)->type());
-  EXPECT_EQ("100x100", view_->GetPhysicalBackingSize().ToString());
+  EXPECT_EQ("100x100", view_->GetCompositorViewportPixelSize().ToString());
 }
 
 // This test verifies that in AutoResize mode a new
@@ -2754,11 +2762,10 @@ TEST_F(RenderWidgetHostViewAuraTest, BackgroundColorMatchesCompositorFrame) {
       gfx::Rect());
   view_->SetSize(frame_size);
   view_->Show();
-  viz::CompositorFrame frame =
-      MakeDelegatedFrame(1.f, frame_size, gfx::Rect(frame_size));
-  frame.metadata.root_background_color = SK_ColorRED;
-  view_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr);
-
+  cc::RenderFrameMetadata metadata;
+  metadata.root_background_color = SK_ColorRED;
+  view_->SetRenderFrameMetadata(metadata);
+  view_->OnRenderFrameMetadataChanged();
   ui::Layer* parent_layer = view_->GetNativeView()->layer();
 
   EXPECT_EQ(gfx::Rect(0, 0, 100, 100), parent_layer->bounds());
@@ -4492,8 +4499,8 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
   {
     // Start over, except instead of ending the gesture with ScrollEnd, end it
     // with a FlingStart, with velocity in the reverse direction. This should
-    // initiate an overscroll, but it should be cancelled because of the fling
-    // in the opposite direction.
+    // initiate an overscroll, the overscroll mode should get reset after the
+    // first GSU event generated by the fling controller.
     overscroll_delegate()->Reset();
     SimulateGestureEvent(WebInputEvent::kGestureScrollBegin,
                          blink::kWebGestureDeviceTouchscreen);
@@ -4510,8 +4517,17 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
 
     SimulateGestureFlingStartEvent(100, 0, blink::kWebGestureDeviceTouchscreen);
     events = GetAndResetDispatchedMessages();
-    EXPECT_EQ("GestureFlingStart", GetMessageNames(events));
-    EXPECT_EQ(OVERSCROLL_NONE, overscroll_delegate()->completed_mode());
+    // The fling start event is not sent to the renderer.
+    EXPECT_EQ(0U, events.size());
+    EXPECT_EQ(OVERSCROLL_WEST, overscroll_mode());
+    EXPECT_EQ(OverscrollSource::TOUCHSCREEN, overscroll_source());
+    EXPECT_EQ(OVERSCROLL_WEST, overscroll_delegate()->current_mode());
+
+    // The overscrolling mode will reset after the first GSU from fling
+    // progress.
+    base::TimeTicks progress_time =
+        base::TimeTicks::Now() + base::TimeDelta::FromMilliseconds(17);
+    widget_host_->ProgressFling(progress_time);
     EXPECT_EQ(OVERSCROLL_NONE, overscroll_delegate()->current_mode());
   }
 }
@@ -5903,12 +5919,16 @@ TEST_F(RenderWidgetHostViewAuraTest, HitTestRegionListSubmitted) {
                                MakeDelegatedFrame(1.f, frame_size, view_rect),
                                std::move(hit_test_region_list));
 
-  const viz::mojom::HitTestRegionList* active_hit_test_region_list =
+  viz::TestLatestLocalSurfaceIdLookupDelegate delegate;
+  delegate.SetSurfaceIdMap(
+      viz::SurfaceId(view_->GetFrameSinkId(), kArbitraryLocalSurfaceId));
+  viz::FrameSinkManagerImpl* frame_sink_manager =
       view_->GetDelegatedFrameHost()
           ->GetCompositorFrameSinkSupportForTesting()
-          ->frame_sink_manager()
-          ->hit_test_manager()
-          ->GetActiveHitTestRegionList(surface_id);
+          ->frame_sink_manager();
+  const viz::mojom::HitTestRegionList* active_hit_test_region_list =
+      frame_sink_manager->hit_test_manager()->GetActiveHitTestRegionList(
+          &delegate, surface_id.frame_sink_id());
   EXPECT_EQ(active_hit_test_region_list->flags, viz::mojom::kHitTestMine);
   EXPECT_EQ(active_hit_test_region_list->bounds, view_rect);
 }
@@ -5991,6 +6011,43 @@ TEST_F(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
   view_->Show();
   viz::LocalSurfaceId id2 = view_->GetLocalSurfaceId();
   EXPECT_NE(id1, id2);
+}
+
+// If a tab was resized while it's hidden, drop the fallback so next time it's
+// visible we show blank.
+TEST_F(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
+       DropFallbackIfResizedWhileHidden) {
+  view_->InitAsChild(nullptr);
+  aura::client::ParentWindowWithContext(
+      view_->GetNativeView(), parent_view_->GetNativeView()->GetRootWindow(),
+      gfx::Rect());
+  view_->Show();
+  viz::LocalSurfaceId id1 = view_->GetLocalSurfaceId();
+  view_->delegated_frame_host_->OnFirstSurfaceActivation(viz::SurfaceInfo(
+      viz::SurfaceId(view_->GetFrameSinkId(), id1), 1, gfx::Size(20, 20)));
+  EXPECT_TRUE(view_->window_->layer()->GetFallbackSurfaceId()->is_valid());
+  view_->Hide();
+  view_->SetSize(gfx::Size(54, 32));
+  view_->Show();
+  EXPECT_FALSE(view_->window_->layer()->GetFallbackSurfaceId()->is_valid());
+}
+
+// If a tab is hidden and shown without being resized in the meantime, the
+// fallback SurfaceId has to be preserved.
+TEST_F(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
+       DontDropFallbackIfNotResizedWhileHidden) {
+  view_->InitAsChild(nullptr);
+  aura::client::ParentWindowWithContext(
+      view_->GetNativeView(), parent_view_->GetNativeView()->GetRootWindow(),
+      gfx::Rect());
+  view_->Show();
+  viz::LocalSurfaceId id1 = view_->GetLocalSurfaceId();
+  view_->delegated_frame_host_->OnFirstSurfaceActivation(viz::SurfaceInfo(
+      viz::SurfaceId(view_->GetFrameSinkId(), id1), 1, gfx::Size(20, 20)));
+  EXPECT_TRUE(view_->window_->layer()->GetFallbackSurfaceId()->is_valid());
+  view_->Hide();
+  view_->Show();
+  EXPECT_TRUE(view_->window_->layer()->GetFallbackSurfaceId()->is_valid());
 }
 
 // This class provides functionality to test a RenderWidgetHostViewAura

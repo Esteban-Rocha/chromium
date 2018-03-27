@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/views/toolbar/extension_toolbar_menu_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/test/base/interactive_test_utils.h"
+#include "chrome/test/views/scoped_macviews_browser_mode.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/feature_switch.h"
@@ -141,6 +142,8 @@ class ToolbarActionViewInteractiveUITest : public ExtensionBrowserTest {
   void TearDownOnMainThread() override;
 
  private:
+  test::ScopedMacViewsBrowserMode views_mode_{true};
+
   DISALLOW_COPY_AND_ASSIGN(ToolbarActionViewInteractiveUITest);
 };
 
@@ -275,6 +278,10 @@ IN_PROC_BROWSER_TEST_F(ToolbarActionViewInteractiveUITest,
     (defined(OS_WIN) && !defined(NDEBUG))
 // Flaky on Linux and ChromeOS; see https://crbug.com/617056.
 // Fails on Win debug; see https;//crbug.com/788112.
+#define MAYBE_DoubleClickToolbarActionToClose \
+    DISABLED_DoubleClickToolbarActionToClose
+#elif defined(OS_MACOSX)
+// Focusing or input is not completely working on Mac: http://crbug.com/824418
 #define MAYBE_DoubleClickToolbarActionToClose \
     DISABLED_DoubleClickToolbarActionToClose
 #else

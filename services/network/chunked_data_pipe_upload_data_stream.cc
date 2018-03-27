@@ -20,7 +20,9 @@ ChunkedDataPipeUploadDataStream::ChunkedDataPipeUploadDataStream(
                             resource_request_body->identifier()),
       resource_request_body_(std::move(resource_request_body)),
       chunked_data_pipe_getter_(std::move(chunked_data_pipe_getter)),
-      handle_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL) {
+      handle_watcher_(FROM_HERE,
+                      mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                      base::SequencedTaskRunnerHandle::Get()) {
   chunked_data_pipe_getter_.set_connection_error_handler(
       base::BindOnce(&ChunkedDataPipeUploadDataStream::OnDataPipeGetterClosed,
                      base::Unretained(this)));
@@ -100,8 +102,12 @@ int ChunkedDataPipeUploadDataStream::ReadInternal(net::IOBuffer* buf,
   // The pipe was closed. If the size isn't known yet, could be a success or a
   // failure.
   if (!size_) {
+    // Need to keep the buffer around because its presence is used to indicate
+    // that there's a pending UploadDataStream read.
     buf_ = buf;
     buf_len_ = buf_len;
+
+    handle_watcher_.Cancel();
     data_pipe_.reset();
     return net::ERR_IO_PENDING;
   }

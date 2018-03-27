@@ -139,7 +139,7 @@ GlassBrowserFrameView::~GlassBrowserFrameView() {
 
 gfx::Rect GlassBrowserFrameView::GetBoundsForTabStrip(
     views::View* tabstrip) const {
-  const int x = incognito_bounds_.right() + kAvatarIconPadding;
+  const int x = GetTabStripLeftInset();
   int end_x = width() - ClientBorderThickness(false);
   if (!CaptionButtonsOnLeadingEdge()) {
     end_x = std::min(MinimizeButtonX(), end_x) -
@@ -216,6 +216,10 @@ gfx::Size GlassBrowserFrameView::GetMinimumSize() const {
   }
 
   return min_size;
+}
+
+int GlassBrowserFrameView::GetTabStripLeftInset() const {
+  return incognito_bounds_.right() + GetAvatarIconPadding();
 }
 
 void GlassBrowserFrameView::OnBrowserViewInitViewsComplete() {
@@ -630,9 +634,16 @@ void GlassBrowserFrameView::PaintTitlebar(gfx::Canvas* canvas) const {
   // power consumption needed for DWM to blend the window contents.
   //
   // So the accent border also has to be opaque, but native inactive borders
-  // are #565656 with 80% alpha. We copy Edge (which also custom-draws its top
-  // border) and use #A2A2A2 instead.
-  constexpr SkColor inactive_border_color = 0xFFA2A2A2;
+  // are #494949 with 47% alpha. Against white (the most visible case) this is
+  // #AAAAAA, so we color with that normally. However, when the titlebar is dark
+  // that color sometimes stands out badly. In that case we lighten the titlebar
+  // color slightly, which creates a subtle highlight effect. This isn't exactly
+  // native but it looks good given our constraints.
+  const SkColor titlebar_color = GetTitlebarColor();
+  const SkColor inactive_border_color =
+      color_utils::IsDark(titlebar_color)
+          ? color_utils::BlendTowardOppositeLuma(titlebar_color, 0x0F)
+          : SkColorSetRGB(0xAA, 0xAA, 0xAA);
   flags.setColor(
       ShouldPaintAsActive()
           ? GetThemeProvider()->GetColor(ThemeProperties::COLOR_ACCENT_BORDER)
@@ -643,7 +654,7 @@ void GlassBrowserFrameView::PaintTitlebar(gfx::Canvas* canvas) const {
       gfx::RectF(0, y, width() * scale, tabstrip_bounds.bottom() * scale - y));
   // Paint the titlebar first so we have a background if an area isn't covered
   // by the theme image.
-  flags.setColor(GetTitlebarColor());
+  flags.setColor(titlebar_color);
   canvas->DrawRect(titlebar_rect, flags);
   const gfx::ImageSkia frame_image = GetFrameImage();
   if (!frame_image.isNull()) {
@@ -657,6 +668,15 @@ void GlassBrowserFrameView::PaintTitlebar(gfx::Canvas* canvas) const {
                          frame_overlay_image.height(), titlebar_rect.x(),
                          titlebar_rect.y(), frame_overlay_image.width() * scale,
                          frame_overlay_image.height() * scale, true);
+  }
+
+  if (ShowCustomTitle()) {
+    const SkAlpha title_alpha =
+        ShouldPaintAsActive() ? SK_AlphaOPAQUE : kInactiveTitlebarFeatureAlpha;
+    const SkColor title_color = SkColorSetA(
+        color_utils::BlendTowardOppositeLuma(titlebar_color, SK_AlphaOPAQUE),
+        title_alpha);
+    window_title_->SetEnabledColor(title_color);
   }
 }
 
@@ -754,9 +774,9 @@ void GlassBrowserFrameView::LayoutIncognitoIcon() {
                                   : 0);
   }
   const int bottom = GetTopInset(false) + browser_view()->GetTabStripHeight() -
-                     kAvatarIconPadding;
+                     GetAvatarIconPadding();
   incognito_bounds_.SetRect(
-      x + (profile_indicator_icon() ? kAvatarIconPadding : 0),
+      x + (profile_indicator_icon() ? GetAvatarIconPadding() : 0),
       bottom - size.height(), profile_indicator_icon() ? size.width() : 0,
       size.height());
   if (profile_indicator_icon())
@@ -793,6 +813,7 @@ void GlassBrowserFrameView::LayoutTitleBar() {
     const int max_text_width = std::max(0, MinimizeButtonX() - x);
     window_title_->SetBounds(x, window_icon_bounds.y(), max_text_width,
                              window_icon_bounds.height());
+    window_title_->SetAutoColorReadabilityEnabled(false);
   }
 }
 

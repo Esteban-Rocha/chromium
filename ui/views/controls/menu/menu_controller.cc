@@ -4,6 +4,9 @@
 
 #include "ui/views/controls/menu/menu_controller.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
 #include "base/macros.h"
@@ -164,7 +167,7 @@ View* GetNextFocusableView(View* ancestor, View* start_at, bool forward) {
 }
 
 #if defined(OS_WIN) || defined(OS_CHROMEOS)
-// Determines the correct cooridinates and window to repost |event| to, if it is
+// Determines the correct coordinates and window to repost |event| to, if it is
 // a mouse or touch event.
 static void RepostEventImpl(const ui::LocatedEvent* event,
                             const gfx::Point& screen_loc,
@@ -1926,8 +1929,8 @@ gfx::Rect MenuController::CalculateMenuBounds(MenuItemView* item,
     pref.set_width(std::max(pref.width(), state_.initial_bounds.width()));
 
   // Don't let the menu go too wide.
-  pref.set_width(std::min(pref.width(),
-                            item->GetDelegate()->GetMaxWidthForMenu(item)));
+  pref.set_width(
+      std::min(pref.width(), item->GetDelegate()->GetMaxWidthForMenu(item)));
   if (!state_.monitor_bounds.IsEmpty())
     pref.set_width(std::min(pref.width(), state_.monitor_bounds.width()));
 
@@ -2011,7 +2014,7 @@ gfx::Rect MenuController::CalculateMenuBounds(MenuItemView* item,
                 state_.monitor_bounds.right())
               x -= pref.width();  // Move the menu to the left of the button.
             else
-              x += state_.initial_bounds.width(); // Move the menu right.
+              x += state_.initial_bounds.width();  // Move the menu right.
           } else {
             // The menu should end with the same x coordinate as the owning
             // button.
@@ -2019,7 +2022,7 @@ gfx::Rect MenuController::CalculateMenuBounds(MenuItemView* item,
                 state_.initial_bounds.x() - pref.width())
               x = state_.initial_bounds.right();  // Move right of the button.
             else
-              x = state_.initial_bounds.x() - pref.width(); // Move left.
+              x = state_.initial_bounds.x() - pref.width();  // Move left.
           }
         }
         item->set_actual_menu_position(orientation);
@@ -2158,6 +2161,28 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
     }
     submenu->GetScrollViewContainer()->SetBubbleArrowOffset(
         pref.width() / 2 - x + x_old);
+  } else if (state_.anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_ABOVE) {
+    // Align the left edges of the menu and anchor, and the bottom of the menu
+    // with the top of the anchor.
+    x = owner_bounds.origin().x();
+    y = owner_bounds.origin().y() - pref.height();
+    // Align the right of the container with the right of the app icon.
+    if (x + pref.width() > state_.monitor_bounds.width())
+      x = owner_bounds.right() - pref.width();
+    // Align the top of the menu with the bottom of the anchor.
+    if (y < 0)
+      y = owner_bounds.bottom();
+  } else if (state_.anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_LEFT) {
+    // Align the right of the menu with the left of the anchor, and the top of
+    // the menu with the top of the anchor.
+    x = owner_bounds.origin().x() - pref.width();
+    y = owner_bounds.origin().y();
+    // Align the left of the menu with the right of the anchor.
+    if (x < 0)
+      x = owner_bounds.right();
+    // Align the bottom of the menu to the bottom of the anchor.
+    if (y + pref.height() > state_.monitor_bounds.height())
+      y = owner_bounds.bottom() - pref.height();
   } else {
     if (state_.anchor == MENU_ANCHOR_BUBBLE_RIGHT)
       x = owner_bounds.right() - kBubbleTipSizeLeftRight;
@@ -2316,7 +2341,7 @@ MenuController::SelectByCharDetails MenuController::FindChildForMnemonic(
 void MenuController::AcceptOrSelect(MenuItemView* parent,
                                     const SelectByCharDetails& details) {
   // This should only be invoked if there is a match.
-  DCHECK(details.first_match != -1);
+  DCHECK_NE(details.first_match, -1);
   DCHECK(parent->HasSubmenu());
   SubmenuView* submenu = parent->GetSubmenu();
   DCHECK(submenu);

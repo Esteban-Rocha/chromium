@@ -15,12 +15,12 @@
 #include "base/values.h"
 #include "chrome/common/extensions/api/automation_api_constants.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
-#include "chrome/common/extensions/manifest_handlers/automation.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_handlers/automation.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/renderer/extension_bindings_system.h"
 #include "extensions/renderer/script_context.h"
@@ -868,6 +868,18 @@ void AutomationInternalCustomBindings::AddRoutes() {
           result.Set(v8::String::NewFromUtf8(isolate, restriction_str.c_str()));
         }
       });
+  RouteNodeIDFunction(
+      "GetDefaultActionVerb",
+      [](v8::Isolate* isolate, v8::ReturnValue<v8::Value> result,
+         AutomationAXTreeWrapper* tree_wrapper, ui::AXNode* node) {
+        ax::mojom::DefaultActionVerb default_action_verb =
+            static_cast<ax::mojom::DefaultActionVerb>(
+                node->data().GetIntAttribute(
+                    ax::mojom::IntAttribute::kDefaultActionVerb));
+        std::string default_action_verb_str = ui::ToString(default_action_verb);
+        result.Set(
+            v8::String::NewFromUtf8(isolate, default_action_verb_str.c_str()));
+      });
 }
 
 void AutomationInternalCustomBindings::Invalidate() {
@@ -884,8 +896,8 @@ void AutomationInternalCustomBindings::Invalidate() {
 void AutomationInternalCustomBindings::OnMessageReceived(
     const IPC::Message& message){
   IPC_BEGIN_MESSAGE_MAP(AutomationInternalCustomBindings, message)
-    IPC_MESSAGE_HANDLER(ExtensionMsg_AccessibilityEvent,
-                        OnAccessibilityEvent)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_AccessibilityEvents,
+                        OnAccessibilityEvents)
     IPC_MESSAGE_HANDLER(ExtensionMsg_AccessibilityLocationChange,
                         OnAccessibilityLocationChange)
   IPC_END_MESSAGE_MAP()
@@ -1274,15 +1286,15 @@ void AutomationInternalCustomBindings::GetChildIDAtIndex(
 // Handle accessibility events from the browser process.
 //
 
-void AutomationInternalCustomBindings::OnAccessibilityEvent(
-    const ExtensionMsg_AccessibilityEventParams& params,
+void AutomationInternalCustomBindings::OnAccessibilityEvents(
+    const std::vector<ExtensionMsg_AccessibilityEventParams>& events,
     bool is_active_profile) {
   is_active_profile_ = is_active_profile;
-  int tree_id = params.tree_id;
+  int tree_id = events[0].tree_id;
   AutomationAXTreeWrapper* tree_wrapper;
   auto iter = tree_id_to_tree_wrapper_map_.find(tree_id);
   if (iter == tree_id_to_tree_wrapper_map_.end()) {
-    tree_wrapper = new AutomationAXTreeWrapper(params.tree_id, this);
+    tree_wrapper = new AutomationAXTreeWrapper(events[0].tree_id, this);
     tree_id_to_tree_wrapper_map_.insert(
         std::make_pair(tree_id, base::WrapUnique(tree_wrapper)));
     axtree_to_tree_wrapper_map_.insert(
@@ -1291,7 +1303,7 @@ void AutomationInternalCustomBindings::OnAccessibilityEvent(
     tree_wrapper = iter->second.get();
   }
 
-  if (!tree_wrapper->OnAccessibilityEvent(params, is_active_profile)) {
+  if (!tree_wrapper->OnAccessibilityEvents(events, is_active_profile)) {
     LOG(ERROR) << tree_wrapper->tree()->error();
     base::ListValue args;
     args.AppendInteger(tree_id);

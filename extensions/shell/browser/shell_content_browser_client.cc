@@ -49,8 +49,8 @@
 #include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/browser/nacl_host_message_filter.h"
 #include "components/nacl/browser/nacl_process_host.h"
-#include "components/nacl/common/nacl_process_type.h"
-#include "components/nacl/common/nacl_switches.h"
+#include "components/nacl/common/nacl_process_type.h"  // nogncheck
+#include "components/nacl/common/nacl_switches.h"      // nogncheck
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/child_process_data.h"
 #endif
@@ -298,6 +298,17 @@ bool ShellContentBrowserClient::WillCreateURLLoaderFactory(
           frame->GetProcess()->GetBrowserContext());
   return web_request_api->MaybeProxyURLLoaderFactory(frame, is_navigation,
                                                      factory_request);
+}
+
+bool ShellContentBrowserClient::HandleExternalProtocol(
+    const GURL& url,
+    content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+    int child_id,
+    content::NavigationUIData* navigation_data,
+    bool is_main_frame,
+    ui::PageTransition page_transition,
+    bool has_user_gesture) {
+  return false;
 }
 
 ShellBrowserMainParts* ShellContentBrowserClient::CreateShellBrowserMainParts(

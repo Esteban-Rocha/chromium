@@ -90,7 +90,7 @@ void MouseWheelPhaseHandler::DispatchPendingWheelEndEvent() {
 
   base::Closure task = mouse_wheel_end_dispatch_timer_.user_task();
   mouse_wheel_end_dispatch_timer_.Stop();
-  task.Run();
+  std::move(task).Run();
 }
 
 void MouseWheelPhaseHandler::IgnorePendingWheelEndEvent() {
@@ -103,14 +103,14 @@ void MouseWheelPhaseHandler::ResetScrollSequence() {
 
 void MouseWheelPhaseHandler::SendWheelEndIfNeeded() {
   if (scroll_phase_state_ == SCROLL_IN_PROGRESS) {
-    RenderWidgetHostImpl* host = host_view_->GetRenderWidgetHostImpl();
-    if (!host) {
+    RenderWidgetHostImpl* widget_host = host_view_->host();
+    if (!widget_host) {
       ResetScrollSequence();
       return;
     }
 
-    bool should_route_event =
-        host->delegate() && host->delegate()->GetInputEventRouter();
+    bool should_route_event = widget_host->delegate() &&
+                              widget_host->delegate()->GetInputEventRouter();
     SendSyntheticWheelEventWithPhaseEnded(should_route_event);
   }
 
@@ -135,11 +135,12 @@ void MouseWheelPhaseHandler::SendSyntheticWheelEventWithPhaseEnded(
       blink::WebInputEvent::DispatchType::kEventNonBlocking;
 
   if (should_route_event) {
-    RenderWidgetHostImpl* host = host_view_->GetRenderWidgetHostImpl();
-    if (!host)
+    RenderWidgetHostImpl* widget_host = host_view_->host();
+    if (!widget_host || !widget_host->delegate() ||
+        !widget_host->delegate()->GetInputEventRouter())
       return;
 
-    host->delegate()->GetInputEventRouter()->RouteMouseWheelEvent(
+    widget_host->delegate()->GetInputEventRouter()->RouteMouseWheelEvent(
         host_view_, &last_mouse_wheel_event_,
         ui::LatencyInfo(ui::SourceEventType::WHEEL));
   } else {

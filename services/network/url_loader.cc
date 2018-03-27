@@ -181,7 +181,7 @@ std::unique_ptr<net::UploadDataStream> CreateUploadDataStream(
       }
       case DataElement::TYPE_DATA_PIPE: {
         element_readers.push_back(std::make_unique<DataPipeElementReader>(
-            body, const_cast<DataElement*>(&element)->ReleaseDataPipeGetter()));
+            body, element.CloneDataPipeGetter()));
         break;
       }
       case DataElement::TYPE_CHUNKED_DATA_PIPE: {
@@ -264,6 +264,7 @@ URLLoader::URLLoader(
     mojom::URLLoaderClientPtr url_loader_client,
     const net::NetworkTrafficAnnotationTag& traffic_annotation,
     uint32_t process_id,
+    uint32_t request_id,
     scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
     base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder)
     : url_request_context_getter_(url_request_context_getter),
@@ -273,14 +274,17 @@ URLLoader::URLLoader(
       is_load_timing_enabled_(request.enable_load_timing),
       process_id_(process_id),
       render_frame_id_(request.render_frame_id),
+      request_id_(request_id),
       connected_(true),
       keepalive_(request.keepalive),
       binding_(this, std::move(url_loader_request)),
       url_loader_client_(std::move(url_loader_client)),
       writable_handle_watcher_(FROM_HERE,
-                               mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+                               mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                               base::SequencedTaskRunnerHandle::Get()),
       peer_closed_handle_watcher_(FROM_HERE,
-                                  mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+                                  mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                                  base::SequencedTaskRunnerHandle::Get()),
       report_raw_headers_(report_raw_headers),
       resource_scheduler_client_(std::move(resource_scheduler_client)),
       keepalive_statistics_recorder_(std::move(keepalive_statistics_recorder)),
@@ -304,6 +308,7 @@ URLLoader::URLLoader(
           GURL(request.url), request.priority, this, traffic_annotation);
   url_request_->set_method(request.method);
   url_request_->set_site_for_cookies(request.site_for_cookies);
+  url_request_->set_attach_same_site_cookies(request.attach_same_site_cookies);
   url_request_->SetReferrer(ComputeReferrer(request.referrer));
   url_request_->set_referrer_policy(request.referrer_policy);
   url_request_->SetExtraRequestHeaders(request.headers);
@@ -459,8 +464,8 @@ void URLLoader::OnAuthRequired(net::URLRequest* unused,
   }
 
   network_service_client_->OnAuthRequired(
-      process_id_, render_frame_id_, url_request_->url(), first_auth_attempt_,
-      auth_info,
+      process_id_, render_frame_id_, request_id_, url_request_->url(),
+      first_auth_attempt_, auth_info,
       base::BindOnce(&URLLoader::OnAuthRequiredResponse,
                      weak_ptr_factory_.GetWeakPtr()));
 
@@ -476,7 +481,7 @@ void URLLoader::OnCertificateRequested(net::URLRequest* unused,
   }
 
   network_service_client_->OnCertificateRequested(
-      process_id_, render_frame_id_, cert_info,
+      process_id_, render_frame_id_, request_id_, cert_info,
       base::BindOnce(&URLLoader::OnCertificateRequestedResponse,
                      weak_ptr_factory_.GetWeakPtr()));
 }
@@ -489,8 +494,8 @@ void URLLoader::OnSSLCertificateError(net::URLRequest* request,
     return;
   }
   network_service_client_->OnSSLCertificateError(
-      process_id_, render_frame_id_, resource_type_, url_request_->url(),
-      ssl_info, fatal,
+      process_id_, render_frame_id_, request_id_, resource_type_,
+      url_request_->url(), ssl_info, fatal,
       base::Bind(&URLLoader::OnSSLCertificateErrorResponse,
                  weak_ptr_factory_.GetWeakPtr(), ssl_info));
 }
@@ -508,6 +513,9 @@ void URLLoader::OnResponseStarted(net::URLRequest* url_request, int net_error) {
     // |this| may have been deleted.
     return;
   }
+
+  // Do not account header bytes when reporting received body bytes to client.
+  reported_total_encoded_bytes_ = url_request_->GetTotalReceivedBytes();
 
   if (resource_scheduler_client_ && url_request->was_fetched_via_proxy() &&
       url_request->was_fetched_via_spdy() &&
@@ -603,8 +611,20 @@ void URLLoader::ReadMore() {
 }
 
 void URLLoader::DidRead(int num_bytes, bool completed_synchronously) {
-  if (num_bytes > 0)
+  if (num_bytes > 0) {
     pending_write_buffer_offset_ += num_bytes;
+
+    // Only notify client of download progress in case DevTools are attached
+    // and we're done sniffing and started sending response.
+    if (report_raw_headers_ && !consumer_handle_.is_valid()) {
+      int64_t total_encoded_bytes = url_request_->GetTotalReceivedBytes();
+      int64_t delta = total_encoded_bytes - reported_total_encoded_bytes_;
+      DCHECK_LE(0, delta);
+      if (delta)
+        url_loader_client_->OnTransferSizeUpdated(delta);
+      reported_total_encoded_bytes_ = total_encoded_bytes;
+    }
+  }
   if (update_body_read_before_paused_) {
     update_body_read_before_paused_ = false;
     body_read_before_paused_ = url_request_->GetRawBodyBytes();
@@ -688,6 +708,11 @@ void URLLoader::NotifyCompleted(int error_code) {
 
   URLLoaderCompletionStatus status;
   status.error_code = error_code;
+  if (error_code == net::ERR_QUIC_PROTOCOL_ERROR) {
+    net::NetErrorDetails details;
+    url_request_->PopulateNetErrorDetails(&details);
+    status.extended_error_code = details.quic_connection_error;
+  }
   status.exists_in_cache = url_request_->response_info().was_cached;
   status.completion_time = base::TimeTicks::Now();
   status.encoded_data_length = url_request_->GetTotalReceivedBytes();

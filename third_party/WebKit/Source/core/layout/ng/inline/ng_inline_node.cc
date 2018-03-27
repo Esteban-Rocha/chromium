@@ -76,9 +76,7 @@ void CollectInlinesInternal(
       if (UNLIKELY(layout_text->IsWordBreak())) {
         builder->AppendBreakOpportunity(node->Style(), layout_text);
       } else {
-        builder->SetIsSVGText(node->IsSVGInlineText());
-        const String& text = layout_text->GetText();
-        builder->Append(text, node->Style(), layout_text);
+        builder->Append(layout_text->GetText(), node->Style(), layout_text);
       }
       ClearNeedsLayoutIfUpdatingLayout<OffsetMappingBuilder>(layout_text);
 
@@ -412,6 +410,7 @@ void NGInlineNode::ShapeTextForFirstLineIfNeeded(NGInlineNodeData* data) {
     if (item.style_) {
       DCHECK(item.layout_object_);
       item.style_ = item.layout_object_->FirstLineStyle();
+      item.SetStyleVariant(NGStyleVariant::kFirstLine);
     }
   }
 
@@ -469,7 +468,7 @@ static LayoutUnit ComputeContentSize(NGInlineNode node,
     if (!line_breaker.NextLine(opportunity, &line_info))
       break;
 
-    break_token = line_breaker.CreateBreakToken(nullptr);
+    break_token = line_breaker.CreateBreakToken(line_info, nullptr);
     LayoutUnit inline_size = line_info.TextIndent();
     for (const NGInlineItemResult item_result : line_info.Results())
       inline_size += item_result.inline_size;

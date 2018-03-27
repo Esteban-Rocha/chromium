@@ -120,9 +120,9 @@ void RenderWidgetTargeter::FindTargetAndDispatch(
          event.GetType() == blink::WebInputEvent::kMouseWheel ||
          blink::WebInputEvent::IsTouchEventType(event.GetType()) ||
          (blink::WebInputEvent::IsGestureEventType(event.GetType()) &&
-          (static_cast<const blink::WebGestureEvent&>(event).source_device ==
+          (static_cast<const blink::WebGestureEvent&>(event).SourceDevice() ==
                blink::WebGestureDevice::kWebGestureDeviceTouchscreen ||
-           static_cast<const blink::WebGestureEvent&>(event).source_device ==
+           static_cast<const blink::WebGestureEvent&>(event).SourceDevice() ==
                blink::WebGestureDevice::kWebGestureDeviceTouchpad)));
 
   if (request_in_flight_) {
@@ -178,8 +178,7 @@ void RenderWidgetTargeter::QueryClient(
   DCHECK(!request_in_flight_);
 
   request_in_flight_ = true;
-  auto* target_client =
-      target->GetRenderWidgetHostImpl()->input_target_client();
+  auto* target_client = target->host()->input_target_client();
   TracingUmaTracker tracker("Event.AsyncTargeting.ResponseTime",
                             "input,latency");
     async_hit_test_timeout_.reset(new OneShotTimeoutMonitor(

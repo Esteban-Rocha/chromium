@@ -11,13 +11,16 @@
 #include "ash/frame/caption_buttons/frame_caption_button.h"
 #include "ash/frame/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/frame/header_view.h"
+#include "ash/public/cpp/vector_icons/vector_icons.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "ash/wm/window_state.h"
+#include "ash/wm/window_state_delegate.h"
 #include "ash/wm/wm_event.h"
+#include "base/containers/flat_set.h"
 #include "services/ui/public/interfaces/window_manager_constants.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -145,9 +148,8 @@ TEST_F(CustomFrameViewAshTest, HeaderHeight) {
 
   // The header should have enough room for the window controls. The
   // header/content separator line overlays the window controls.
-  EXPECT_EQ(
-      GetAshLayoutSize(AshLayoutSize::NON_BROWSER_CAPTION_BUTTON).height(),
-      delegate->custom_frame_view()->GetHeaderView()->height());
+  EXPECT_EQ(GetAshLayoutSize(AshLayoutSize::kNonBrowserCaption).height(),
+            delegate->custom_frame_view()->GetHeaderView()->height());
 }
 
 // Verify that CustomFrameViewAsh returns the correct minimum and maximum frame
@@ -268,9 +270,8 @@ TEST_F(CustomFrameViewAshTest, FrameShownInTabletModeForNonMaximizedWindows) {
   std::unique_ptr<views::Widget> widget(CreateWidget(delegate));
 
   Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
-  EXPECT_EQ(
-      GetAshLayoutSize(AshLayoutSize::NON_BROWSER_CAPTION_BUTTON).height(),
-      delegate->GetCustomFrameViewTopBorderHeight());
+  EXPECT_EQ(GetAshLayoutSize(AshLayoutSize::kNonBrowserCaption).height(),
+            delegate->GetCustomFrameViewTopBorderHeight());
 }
 
 // Verify that if originally in fullscreen mode, and enter tablet mode, the
@@ -312,9 +313,8 @@ TEST_F(CustomFrameViewAshTest, OpeningAppsInTabletMode) {
   EXPECT_EQ(0, delegate->GetCustomFrameViewTopBorderHeight());
 
   Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(false);
-  EXPECT_EQ(
-      GetAshLayoutSize(AshLayoutSize::NON_BROWSER_CAPTION_BUTTON).height(),
-      delegate->GetCustomFrameViewTopBorderHeight());
+  EXPECT_EQ(GetAshLayoutSize(AshLayoutSize::kNonBrowserCaption).height(),
+            delegate->GetCustomFrameViewTopBorderHeight());
 }
 
 // Verify windows that are minimized and then entered into tablet mode will have
@@ -420,11 +420,51 @@ class TestTarget : public ui::AcceleratorTarget {
   DISALLOW_COPY_AND_ASSIGN(TestTarget);
 };
 
+class TestButtonModel : public CaptionButtonModel {
+ public:
+  TestButtonModel() = default;
+  ~TestButtonModel() override = default;
+
+  void set_zoom_mode(bool zoom_mode) { zoom_mode_ = zoom_mode; }
+
+  void SetVisible(CaptionButtonIcon type, bool visible) {
+    if (visible)
+      visible_buttons_.insert(type);
+    else
+      visible_buttons_.erase(type);
+  }
+
+  void SetEnabled(CaptionButtonIcon type, bool enabled) {
+    if (enabled)
+      enabled_buttons_.insert(type);
+    else
+      enabled_buttons_.erase(type);
+  }
+
+  // CaptionButtonModel::
+  bool IsVisible(CaptionButtonIcon type) const override {
+    return visible_buttons_.count(type);
+  }
+  bool IsEnabled(CaptionButtonIcon type) const override {
+    return enabled_buttons_.count(type);
+  }
+  bool InZoomMode() const override { return zoom_mode_; }
+
+ private:
+  base::flat_set<CaptionButtonIcon> visible_buttons_;
+  base::flat_set<CaptionButtonIcon> enabled_buttons_;
+  bool zoom_mode_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(TestButtonModel);
+};
+
 }  // namespace
 
 TEST_F(CustomFrameViewAshTest, BackButton) {
   ash::AcceleratorController* controller =
       ash::Shell::Get()->accelerator_controller();
+  std::unique_ptr<TestButtonModel> model = std::make_unique<TestButtonModel>();
+  TestButtonModel* model_ptr = model.get();
 
   auto* delegate = new CustomFrameTestWidgetDelegate();
   std::unique_ptr<views::Widget> widget(CreateWidget(delegate));
@@ -441,12 +481,19 @@ TEST_F(CustomFrameViewAshTest, BackButton) {
   controller->Register({accelerator_back_release}, &target_back_release);
 
   CustomFrameViewAsh* custom_frame_view = delegate->custom_frame_view();
+  custom_frame_view->SetCaptionButtonModel(std::move(model));
+
   HeaderView* header_view =
       static_cast<HeaderView*>(custom_frame_view->GetHeaderView());
-  EXPECT_FALSE(header_view->back_button());
-  custom_frame_view->SetBackButtonState(FrameBackButtonState::kVisibleDisabled);
-  EXPECT_TRUE(header_view->back_button());
-  EXPECT_FALSE(header_view->back_button()->enabled());
+  EXPECT_FALSE(header_view->GetBackButton());
+  model_ptr->SetVisible(CAPTION_BUTTON_ICON_BACK, true);
+  LOG(ERROR) << "Enabling Back";
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(header_view->GetBackButton());
+  EXPECT_FALSE(header_view->GetBackButton()->enabled());
+
+  LOG(ERROR) << "Bounds:"
+             << header_view->GetBackButton()->GetBoundsInScreen().ToString();
 
   // Back button is disabled, so clicking on it should not should
   // generate back key sequence.
@@ -456,20 +503,22 @@ TEST_F(CustomFrameViewAshTest, BackButton) {
   EXPECT_EQ(0u, target_back_press.count());
   EXPECT_EQ(0u, target_back_release.count());
 
-  custom_frame_view->SetBackButtonState(FrameBackButtonState::kVisibleEnabled);
-  EXPECT_TRUE(header_view->back_button());
-  EXPECT_TRUE(header_view->back_button()->enabled());
+  model_ptr->SetEnabled(CAPTION_BUTTON_ICON_BACK, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(header_view->GetBackButton());
+  EXPECT_TRUE(header_view->GetBackButton()->enabled());
 
   // Back button is now enabled, so clicking on it should generate
   // back key sequence.
   generator.MoveMouseTo(
-      header_view->back_button()->GetBoundsInScreen().CenterPoint());
+      header_view->GetBackButton()->GetBoundsInScreen().CenterPoint());
   generator.ClickLeftButton();
   EXPECT_EQ(1u, target_back_press.count());
   EXPECT_EQ(1u, target_back_release.count());
 
-  custom_frame_view->SetBackButtonState(FrameBackButtonState::kInvisible);
-  EXPECT_FALSE(header_view->back_button());
+  model_ptr->SetVisible(CAPTION_BUTTON_ICON_BACK, false);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_FALSE(header_view->GetBackButton());
 }
 
 // Make sure that client view occupies the entire window when the
@@ -499,10 +548,128 @@ TEST_F(CustomFrameViewAshTest, FrameVisibility) {
   EXPECT_TRUE(widget->non_client_view()->frame_view()->visible());
 }
 
+TEST_F(CustomFrameViewAshTest, CustomButtonModel) {
+  std::unique_ptr<TestButtonModel> model = std::make_unique<TestButtonModel>();
+  TestButtonModel* model_ptr = model.get();
+
+  auto* delegate = new CustomFrameTestWidgetDelegate();
+  std::unique_ptr<views::Widget> widget(CreateWidget(delegate));
+  widget->Show();
+
+  CustomFrameViewAsh* custom_frame_view = delegate->custom_frame_view();
+  custom_frame_view->SetCaptionButtonModel(std::move(model));
+
+  HeaderView* header_view =
+      static_cast<HeaderView*>(custom_frame_view->GetHeaderView());
+  FrameCaptionButtonContainerView::TestApi test_api(
+      header_view->caption_button_container());
+
+  // CLOSE buttion is always visible and enabled.
+  EXPECT_TRUE(test_api.close_button());
+  EXPECT_TRUE(test_api.close_button()->visible());
+  EXPECT_TRUE(test_api.close_button()->enabled());
+
+  EXPECT_FALSE(test_api.minimize_button()->visible());
+  EXPECT_FALSE(test_api.size_button()->visible());
+  EXPECT_FALSE(test_api.menu_button()->visible());
+
+  // Back button
+  model_ptr->SetVisible(CAPTION_BUTTON_ICON_BACK, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(header_view->GetBackButton()->visible());
+  EXPECT_FALSE(header_view->GetBackButton()->enabled());
+
+  model_ptr->SetEnabled(CAPTION_BUTTON_ICON_BACK, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(header_view->GetBackButton()->enabled());
+
+  // size button
+  model_ptr->SetVisible(CAPTION_BUTTON_ICON_MAXIMIZE_RESTORE, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(test_api.size_button()->visible());
+  EXPECT_FALSE(test_api.size_button()->enabled());
+
+  model_ptr->SetEnabled(CAPTION_BUTTON_ICON_MAXIMIZE_RESTORE, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(test_api.size_button()->enabled());
+
+  // minimize button
+  model_ptr->SetVisible(CAPTION_BUTTON_ICON_MINIMIZE, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(test_api.minimize_button()->visible());
+  EXPECT_FALSE(test_api.minimize_button()->enabled());
+
+  model_ptr->SetEnabled(CAPTION_BUTTON_ICON_MINIMIZE, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(test_api.minimize_button()->enabled());
+
+  // menu button
+  model_ptr->SetVisible(CAPTION_BUTTON_ICON_MENU, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(test_api.menu_button()->visible());
+  EXPECT_FALSE(test_api.menu_button()->enabled());
+
+  model_ptr->SetEnabled(CAPTION_BUTTON_ICON_MENU, true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_TRUE(test_api.menu_button()->enabled());
+
+// The addresses in library and in the main binary differ in
+// comoponent build.
+#if !defined(COMPONENT_BUILD)
+  // zoom button
+  EXPECT_EQ(&kWindowControlMaximizeIcon,
+            test_api.size_button()->icon_definition_for_test());
+  model_ptr->set_zoom_mode(true);
+  custom_frame_view->SizeConstraintsChanged();
+  EXPECT_EQ(&ash::kWindowControlZoomIcon,
+            test_api.size_button()->icon_definition_for_test());
+  widget->Maximize();
+  EXPECT_EQ(&ash::kWindowControlDezoomIcon,
+            test_api.size_button()->icon_definition_for_test());
+#endif
+}
+
+namespace {
+
+class CustomFrameViewAshFrameColorTest
+    : public CustomFrameViewAshTest,
+      public testing::WithParamInterface<bool> {
+ public:
+  CustomFrameViewAshFrameColorTest() = default;
+  ~CustomFrameViewAshFrameColorTest() override = default;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CustomFrameViewAshFrameColorTest);
+};
+
+class TestWidgetDelegate : public TestWidgetConstraintsDelegate {
+ public:
+  TestWidgetDelegate(bool custom) : custom_(custom) {}
+  ~TestWidgetDelegate() override = default;
+
+  // views::WidgetDelegate:
+  views::NonClientFrameView* CreateNonClientFrameView(
+      views::Widget* widget) override {
+    if (custom_) {
+      ash::wm::WindowState* window_state =
+          ash::wm::GetWindowState(widget->GetNativeWindow());
+      window_state->SetDelegate(std::make_unique<wm::WindowStateDelegate>());
+    }
+    return TestWidgetConstraintsDelegate::CreateNonClientFrameView(widget);
+  }
+
+ private:
+  bool custom_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestWidgetDelegate);
+};
+
+}  // namespace
+
 // Verify that CustomFrameViewAsh updates the active color based on the
 // ash::kFrameActiveColorKey window property.
-TEST_F(CustomFrameViewAshTest, kFrameActiveColorKey) {
-  TestWidgetConstraintsDelegate* delegate = new TestWidgetConstraintsDelegate;
+TEST_P(CustomFrameViewAshFrameColorTest, kFrameActiveColorKey) {
+  TestWidgetDelegate* delegate = new TestWidgetDelegate(GetParam());
   std::unique_ptr<views::Widget> widget(CreateWidget(delegate));
 
   SkColor active_color =
@@ -520,8 +687,8 @@ TEST_F(CustomFrameViewAshTest, kFrameActiveColorKey) {
 
 // Verify that CustomFrameViewAsh updates the inactive color based on the
 // ash::kFrameInactiveColorKey window property.
-TEST_F(CustomFrameViewAshTest, KFrameInactiveColor) {
-  TestWidgetConstraintsDelegate* delegate = new TestWidgetConstraintsDelegate;
+TEST_P(CustomFrameViewAshFrameColorTest, KFrameInactiveColor) {
+  TestWidgetDelegate* delegate = new TestWidgetDelegate(GetParam());
   std::unique_ptr<views::Widget> widget(CreateWidget(delegate));
 
   SkColor active_color =
@@ -537,5 +704,8 @@ TEST_F(CustomFrameViewAshTest, KFrameInactiveColor) {
   EXPECT_EQ(new_color,
             delegate->custom_frame_view()->GetInactiveFrameColorForTest());
 }
+
+// Run frame color tests with and without custom wm::WindowStateDelegate.
+INSTANTIATE_TEST_CASE_P(, CustomFrameViewAshFrameColorTest, testing::Bool());
 
 }  // namespace ash

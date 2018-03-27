@@ -134,13 +134,12 @@ bool ContentRendererClient::ShouldFork(blink::WebLocalFrame* frame,
   return false;
 }
 
-bool ContentRendererClient::WillSendRequest(
-    blink::WebLocalFrame* frame,
-    ui::PageTransition transition_type,
-    const blink::WebURL& url,
-    GURL* new_url) {
-  return false;
-}
+void ContentRendererClient::WillSendRequest(blink::WebLocalFrame* frame,
+                                            ui::PageTransition transition_type,
+                                            const blink::WebURL& url,
+                                            const url::Origin* initiator_origin,
+                                            GURL* new_url,
+                                            bool* attach_same_site_cookies) {}
 
 bool ContentRendererClient::IsPrefetchOnly(
     RenderFrame* render_frame,
@@ -170,6 +169,11 @@ bool ContentRendererClient::ShouldOverridePageVisibilityState(
 
 bool ContentRendererClient::IsExternalPepperPlugin(
     const std::string& module_name) {
+  return false;
+}
+
+bool ContentRendererClient::IsOriginIsolatedPepperPlugin(
+    const base::FilePath& plugin_path) {
   return false;
 }
 
@@ -209,10 +213,6 @@ ContentRendererClient::CreateMediaStreamRendererFactory() {
 bool ContentRendererClient::ShouldReportDetailedMessageForSource(
     const base::string16& source) const {
   return false;
-}
-
-bool ContentRendererClient::ShouldGatherSiteIsolationStats() const {
-  return true;
 }
 
 std::unique_ptr<blink::WebContentSettingsClient>

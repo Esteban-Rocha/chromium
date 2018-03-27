@@ -79,8 +79,10 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
                        blink::WebTouchEvent *event,
                        const ui::LatencyInfo& latency);
 
+  // |event| is in root coordinates.
   void BubbleScrollEvent(RenderWidgetHostViewBase* target_view,
-                         const blink::WebGestureEvent& event);
+                         const blink::WebGestureEvent& event,
+                         const RenderWidgetHostViewBase* resending_view);
   void CancelScrollBubbling(RenderWidgetHostViewBase* target_view);
 
   void AddFrameSinkIdOwner(const viz::FrameSinkId& id,
@@ -165,7 +167,7 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
   // in different processes for MouseEnter and MouseLeave event handlers to
   // properly fire. This method determines which RenderWidgetHostViews other
   // than the actual target require notification, and sends the appropriate
-  // events to them.
+  // events to them. |event| should be in |root_view|'s coordinate space.
   void SendMouseEnterOrLeaveEvents(const blink::WebMouseEvent& event,
                                    RenderWidgetHostViewBase* target,
                                    RenderWidgetHostViewBase* root_view);
@@ -229,6 +231,9 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
                                         const gfx::PointF& point,
                                         gfx::PointF* transformed_point,
                                         viz::EventSource source) const;
+
+  // TODO(818214): Remove once this issue no longer occurs.
+  void ReportBubblingScrollToSameView(const blink::WebGestureEvent& event);
 
   // RenderWidgetTargeter::Delegate:
   RenderWidgetTargetResult FindTargetSynchronously(

@@ -109,11 +109,13 @@ VideoRendererImpl::VideoRendererImpl(
     VideoRendererSink* sink,
     const CreateVideoDecodersCB& create_video_decoders_cb,
     bool drop_frames,
-    MediaLog* media_log)
+    MediaLog* media_log,
+    std::unique_ptr<GpuMemoryBufferVideoFramePool> gmb_pool)
     : task_runner_(media_task_runner),
       sink_(sink),
       sink_started_(false),
       client_(nullptr),
+      gpu_memory_buffer_pool_(std::move(gmb_pool)),
       media_log_(media_log),
       low_delay_(false),
       received_end_of_stream_(false),
@@ -177,6 +179,8 @@ void VideoRendererImpl::Flush(const base::Closure& callback) {
 
   // Reset |video_frame_stream_| and drop any pending read callbacks from it.
   pending_read_ = false;
+  if (gpu_memory_buffer_pool_)
+    gpu_memory_buffer_pool_->Abort();
   frame_callback_weak_factory_.InvalidateWeakPtrs();
   video_frame_stream_->Reset(
       base::Bind(&VideoRendererImpl::OnVideoFrameStreamResetDone,
@@ -207,6 +211,7 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta timestamp) {
   painted_first_frame_ = false;
   has_playback_met_watch_time_duration_requirement_ = false;
   last_render_time_ = last_frame_ready_time_ = base::TimeTicks();
+  video_frame_stream_->SkipPrepareUntil(start_timestamp_);
   AttemptRead_Locked();
 }
 
@@ -230,6 +235,12 @@ void VideoRendererImpl::Initialize(
       task_runner_, create_video_decoders_cb_, media_log_));
   video_frame_stream_->set_config_change_observer(base::Bind(
       &VideoRendererImpl::OnConfigChange, weak_factory_.GetWeakPtr()));
+  if (gpu_memory_buffer_pool_) {
+    video_frame_stream_->SetPrepareCB(base::BindRepeating(
+        &GpuMemoryBufferVideoFramePool::MaybeCreateHardwareFrame,
+        // Safe since VideoFrameStream won't issue calls after destruction.
+        base::Unretained(gpu_memory_buffer_pool_.get())));
+  }
 
   low_delay_ = ShouldUseLowDelayMode(stream);
 

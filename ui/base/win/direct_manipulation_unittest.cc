@@ -239,18 +239,20 @@ class MockDirectManipulationContent
   DISALLOW_COPY_AND_ASSIGN(MockDirectManipulationContent);
 };
 
-enum class Gesture { kScroll, kScale };
+enum class Gesture { kScroll, kScale, kScaleBegin, kScaleEnd };
 
 struct Event {
+  explicit Event(float scale) : gesture_(Gesture::kScale), scale_(scale) {}
+
+  Event(float scroll_x, float scroll_y)
+      : gesture_(Gesture::kScroll), scroll_x_(scroll_x), scroll_y_(scroll_y) {}
+
+  explicit Event(Gesture gesture) : gesture_(gesture) {}
+
   Gesture gesture_;
   float scale_ = 0;
   float scroll_x_ = 0;
   float scroll_y_ = 0;
-
-  Event(float scale) : gesture_(Gesture::kScale), scale_(scale) {}
-
-  Event(float scroll_x, float scroll_y)
-      : gesture_(Gesture::kScroll), scroll_x_(scroll_x), scroll_y_(scroll_y) {}
 };
 
 class MockWindowEventTarget : public WindowEventTarget {
@@ -261,6 +263,14 @@ class MockWindowEventTarget : public WindowEventTarget {
 
   void ApplyPinchZoomScale(float scale) override {
     events_.push_back(Event(scale));
+  }
+
+  void ApplyPinchZoomBegin() override {
+    events_.push_back(Event(Gesture::kScaleBegin));
+  }
+
+  void ApplyPinchZoomEnd() override {
+    events_.push_back(Event(Gesture::kScaleEnd));
   }
 
   void ApplyPanGestureScroll(int scroll_x, int scroll_y) override {
@@ -366,6 +376,10 @@ class DirectManipulationUnitTest : public testing::Test {
     return direct_manipulation_helper_->need_poll_events_;
   }
 
+  void SetDeviceScaleFactor(float factor) {
+    direct_manipulation_helper_->SetDeviceScaleFactorForTesting(factor);
+  }
+
  private:
   std::unique_ptr<DirectManipulationHelper> direct_manipulation_helper_;
   Microsoft::WRL::ComPtr<MockDirectManipulationViewport> viewport_;
@@ -411,9 +425,10 @@ TEST_F(DirectManipulationUnitTest, ReceiveSimpleScaleTransform) {
 
   ContentUpdated(1.1f, 0, 0);
   std::vector<Event> events = GetEvents();
-  EXPECT_EQ(1u, events.size());
-  EXPECT_EQ(Gesture::kScale, events[0].gesture_);
-  EXPECT_EQ(1.1f, events[0].scale_);
+  EXPECT_EQ(2u, events.size());
+  EXPECT_EQ(Gesture::kScaleBegin, events[0].gesture_);
+  EXPECT_EQ(Gesture::kScale, events[1].gesture_);
+  EXPECT_EQ(1.1f, events[1].scale_);
 
   // For next update, should only apply the difference.
   ContentUpdated(1.21f, 0, 0);
@@ -421,6 +436,11 @@ TEST_F(DirectManipulationUnitTest, ReceiveSimpleScaleTransform) {
   EXPECT_EQ(1u, events.size());
   EXPECT_EQ(Gesture::kScale, events[0].gesture_);
   EXPECT_EQ(1.1f, events[0].scale_);
+
+  ViewportStatusChanged(DIRECTMANIPULATION_READY, DIRECTMANIPULATION_RUNNING);
+  events = GetEvents();
+  EXPECT_EQ(1u, events.size());
+  EXPECT_EQ(Gesture::kScaleEnd, events[0].gesture_);
 }
 
 TEST_F(DirectManipulationUnitTest, ReceiveScrollTransformLessThanOne) {
@@ -472,9 +492,10 @@ TEST_F(DirectManipulationUnitTest,
   // Scale factor more than float point error, apply.
   ContentUpdated(1.00001f, 0, 0);
   events = GetEvents();
-  EXPECT_EQ(1u, events.size());
-  EXPECT_EQ(Gesture::kScale, events[0].gesture_);
-  EXPECT_EQ(1.00001f, events[0].scale_);
+  EXPECT_EQ(2u, events.size());
+  EXPECT_EQ(Gesture::kScaleBegin, events[0].gesture_);
+  EXPECT_EQ(Gesture::kScale, events[1].gesture_);
+  EXPECT_EQ(1.00001f, events[1].scale_);
 
   // Scale factor difference less than float point error, ignore.
   ContentUpdated(1.000011f, 0, 0);
@@ -487,6 +508,11 @@ TEST_F(DirectManipulationUnitTest,
   EXPECT_EQ(1u, events.size());
   EXPECT_EQ(Gesture::kScale, events[0].gesture_);
   EXPECT_EQ(1.000021f / 1.00001f, events[0].scale_);
+
+  ViewportStatusChanged(DIRECTMANIPULATION_READY, DIRECTMANIPULATION_RUNNING);
+  events = GetEvents();
+  EXPECT_EQ(1u, events.size());
+  EXPECT_EQ(Gesture::kScaleEnd, events[0].gesture_);
 }
 
 TEST_F(DirectManipulationUnitTest, InSameSequenceReceiveBothScrollAndScale) {
@@ -505,8 +531,9 @@ TEST_F(DirectManipulationUnitTest, InSameSequenceReceiveBothScrollAndScale) {
   // Second event comes with scale factor. Now the scroll offset only noise.
   ContentUpdated(1.00001f, 5, 0);
   events = GetEvents();
-  EXPECT_EQ(1u, events.size());
-  EXPECT_EQ(Gesture::kScale, events[0].gesture_);
+  EXPECT_EQ(2u, events.size());
+  EXPECT_EQ(Gesture::kScaleBegin, events[0].gesture_);
+  EXPECT_EQ(Gesture::kScale, events[1].gesture_);
 }
 
 TEST_F(DirectManipulationUnitTest,
@@ -525,6 +552,18 @@ TEST_F(DirectManipulationUnitTest,
   // Receive second ready from ZoomToRect.
   ViewportStatusChanged(DIRECTMANIPULATION_READY, DIRECTMANIPULATION_RUNNING);
   EXPECT_FALSE(NeedAnimation());
+}
+
+TEST_F(DirectManipulationUnitTest, HiDPIScroll) {
+  if (!GetDirectManipulationHelper())
+    return;
+
+  SetDeviceScaleFactor(10.0);
+  ContentUpdated(1.0f, 50, 0);
+  std::vector<Event> events = GetEvents();
+  EXPECT_EQ(1u, events.size());
+  EXPECT_EQ(Gesture::kScroll, events[0].gesture_);
+  EXPECT_EQ(5, events[0].scroll_x_);
 }
 
 }  //  namespace win

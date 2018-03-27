@@ -19,7 +19,6 @@
 #include "base/test/test_timeouts.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
-#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_capture_options.h"
@@ -602,7 +601,7 @@ class DesktopCaptureDeviceThrottledTest : public DesktopCaptureDeviceTest {
               base::TestMockTimeTaskRunner::Type::kStandalone);
 
           capture_device_->SetMockTimeForTesting(
-              task_runner, task_runner->DeprecatedGetMockTickClock());
+              task_runner, task_runner->GetMockTickClock());
         }));
 
     EXPECT_CALL(*client, OnIncomingCapturedData(_, _, _, _, _, _, _))

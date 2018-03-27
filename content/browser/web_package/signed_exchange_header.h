@@ -11,7 +11,10 @@
 #include "base/containers/span.h"
 #include "base/optional.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "content/browser/web_package/signed_exchange_header_parser.h"
 #include "content/common/content_export.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "url/gurl.h"
 
@@ -29,29 +32,25 @@ class CONTENT_EXPORT SignedExchangeHeader {
   // |kEncodedHeaderLengthInBytes|.
   static size_t ParseHeadersLength(base::span<const uint8_t> input);
 
-  // Parse headers from the new serialization format currently being discussed.
-  // 1. The first 3 bytes of the content represents the length of the CBOR
-  // encoded section, encoded in network byte (big-endian) order. 2. Then,
-  // immediately follows a CBOR-encoded array containing 2 elements: (This is
-  // derived from the section 5 of the old spec) - a map of request header field
-  // names to values, encoded as byte strings, with ":method", and ":url" pseudo
-  // header fields - a map from response header field names to values, encoded
-  // as byte strings, with a ":status" pseudo-header field containing the status
-  // code (encoded as 3 ASCII letter byte string) 3. Then, immediately follows
-  // the response body, encoded in MI.
-  // TODO(kouhei): Replace above with spec reference when we actually have spec
-  // text.
+  using HeaderMap = std::map<std::string, std::string>;
+
+  // Parse headers from the application/signed-exchange;v=b0 format.
+  // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#rfc.section.5.3
   //
-  // Note: |Parse| will only deserialize the data, and will not verify its
-  // validity.
+  // This also performs the step 3 and 4 of "Cross-origin trust" validation.
+  // https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.4
   static base::Optional<SignedExchangeHeader> Parse(
       base::span<const uint8_t> input);
   SignedExchangeHeader();
   SignedExchangeHeader(const SignedExchangeHeader&);
   SignedExchangeHeader(SignedExchangeHeader&&);
+  SignedExchangeHeader& operator=(SignedExchangeHeader&&);
   ~SignedExchangeHeader();
 
-  void AddResponseHeader(base::StringPiece name, base::StringPiece value);
+  // AddResponseHeader returns false on duplicated keys. |name| must be
+  // lower-cased.
+  bool AddResponseHeader(base::StringPiece name, base::StringPiece value);
+  scoped_refptr<net::HttpResponseHeaders> BuildHttpResponseHeaders() const;
 
   const GURL& request_url() const { return request_url_; };
   void set_request_url(GURL url) { request_url_ = std::move(url); }
@@ -64,8 +63,14 @@ class CONTENT_EXPORT SignedExchangeHeader {
   net::HttpStatusCode response_code() const { return response_code_; }
   void set_response_code(net::HttpStatusCode c) { response_code_ = c; }
 
-  const std::map<std::string, std::string>& response_headers() const {
-    return response_headers_;
+  const HeaderMap& response_headers() const { return response_headers_; }
+
+  const SignedExchangeHeaderParser::Signature& signature() const {
+    return signature_;
+  }
+  void SetSignatureForTesting(
+      const SignedExchangeHeaderParser::Signature& sig) {
+    signature_ = sig;
   }
 
  private:
@@ -73,7 +78,8 @@ class CONTENT_EXPORT SignedExchangeHeader {
   std::string request_method_;
 
   net::HttpStatusCode response_code_;
-  std::map<std::string, std::string> response_headers_;
+  HeaderMap response_headers_;
+  SignedExchangeHeaderParser::Signature signature_;
 };
 
 }  // namespace content

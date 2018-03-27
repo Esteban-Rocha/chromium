@@ -921,14 +921,7 @@ void HTMLSelectElement::OptionSelectionStateChanged(HTMLOptionElement* option,
   else if (!UsesMenuList() || IsMultiple())
     SelectOption(nullptr, IsMultiple() ? 0 : kDeselectOtherOptions);
   else
-    SelectOption(NextSelectableOption(nullptr), kDeselectOtherOptions);
-
-  if (GetDocument().IsActive()) {
-    GetDocument()
-        .GetPage()
-        ->GetChromeClient()
-        .DidChangeSelectionInSelectControl(*this);
-  }
+    ResetToDefaultSelection();
 }
 
 void HTMLSelectElement::OptionInserted(HTMLOptionElement& option,
@@ -1051,6 +1044,14 @@ void HTMLSelectElement::SelectOption(HTMLOptionElement* element,
   }
 
   NotifyFormStateChanged();
+
+  if (Frame::HasTransientUserActivation(GetDocument().GetFrame()) &&
+      GetDocument().IsActive()) {
+    GetDocument()
+        .GetPage()
+        ->GetChromeClient()
+        .DidChangeSelectionInSelectControl(*this);
+  }
 }
 
 void HTMLSelectElement::DispatchFocusEvent(
@@ -1860,9 +1861,8 @@ String HTMLSelectElement::ItemText(const Element& element) const {
 bool HTMLSelectElement::ItemIsDisplayNone(Element& element) const {
   if (auto* option = ToHTMLOptionElementOrNull(element))
     return option->IsDisplayNone();
-  if (const ComputedStyle* style = ItemComputedStyle(element))
-    return style->Display() == EDisplay::kNone;
-  return false;
+  const ComputedStyle* style = ItemComputedStyle(element);
+  return !style || style->Display() == EDisplay::kNone;
 }
 
 const ComputedStyle* HTMLSelectElement::ItemComputedStyle(

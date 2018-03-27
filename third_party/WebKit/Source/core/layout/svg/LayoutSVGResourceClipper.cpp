@@ -114,8 +114,9 @@ void LayoutSVGResourceClipper::RemoveAllClientsFromCache(
   cached_paint_record_.reset();
   local_clip_bounds_ = FloatRect();
   MarkAllClientsForInvalidation(
-      mark_for_invalidation ? kLayoutInvalidation | kBoundariesInvalidation
-                            : kParentOnlyInvalidation);
+      mark_for_invalidation ? SVGResourceClient::kLayoutInvalidation |
+                                  SVGResourceClient::kBoundariesInvalidation
+                            : SVGResourceClient::kParentOnlyInvalidation);
 }
 
 Optional<Path> LayoutSVGResourceClipper::AsPath() {
@@ -265,6 +266,12 @@ FloatRect LayoutSVGResourceClipper::ResourceBoundingBox(
     transform.ScaleNonUniform(reference_box.Width(), reference_box.Height());
   }
   return transform.MapRect(local_clip_bounds_);
+}
+
+void LayoutSVGResourceClipper::WillBeDestroyed() {
+  MarkAllClientsForInvalidation(SVGResourceClient::kBoundariesInvalidation |
+                                SVGResourceClient::kPaintInvalidation);
+  LayoutSVGResourceContainer::WillBeDestroyed();
 }
 
 }  // namespace blink

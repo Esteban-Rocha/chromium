@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "core/layout/LayoutTestHelper.h"
 #include "core/layout/LayoutTreeAsText.h"
 #include "core/layout/LayoutView.h"
 #include "core/paint/ObjectPaintProperties.h"
@@ -10,11 +9,12 @@
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintPropertyTreePrinter.h"
 #include "core/paint/PrePaintTreeWalk.h"
+#include "core/testing/CoreUnitTestHelper.h"
 #include "platform/graphics/paint/GeometryMapper.h"
 #include "platform/graphics/paint/ScrollPaintPropertyNode.h"
 #include "platform/graphics/paint/TransformPaintPropertyNode.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "platform/text/TextStream.h"
 #include "platform/wtf/HashMap.h"
 #include "testing/gtest/include/gtest/gtest.h"

@@ -168,19 +168,23 @@ UserPolicyManagerFactoryChromeOS::CreateManagerForProfile(
       chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
   CHECK(user);
 
-  // User policy exists for enterprise accounts only:
+  // User policy exists for enterprise accounts:
   // - For regular cloud-managed users (those who have a GAIA account), a
   //   |UserCloudPolicyManagerChromeOS| is created here.
   // - For Active Directory managed users, an |ActiveDirectoryPolicyManager|
   //   is created.
   // - For device-local accounts, policy is provided by
   //   |DeviceLocalAccountPolicyService|.
+  // For non-enterprise accounts only for users with type USER_TYPE_CHILD
+  //   |UserCloudPolicyManagerChromeOS| is created here.
   // All other user types do not have user policy.
   const AccountId& account_id = user->GetAccountId();
   const bool is_stub_user =
       user_manager::UserManager::Get()->IsStubAccountId(account_id);
-  if (user->IsSupervised() ||
-      BrowserPolicyConnector::IsNonEnterpriseUser(account_id.GetUserEmail())) {
+  if (user->GetType() != user_manager::USER_TYPE_CHILD &&
+      (user->GetType() == user_manager::USER_TYPE_SUPERVISED ||
+       BrowserPolicyConnector::IsNonEnterpriseUser(
+           account_id.GetUserEmail()))) {
     DLOG(WARNING) << "No policy loaded for known non-enterprise user";
     // Mark this profile as not requiring policy.
     user_manager::known_user::SetProfileRequiresPolicy(
@@ -355,7 +359,8 @@ UserPolicyManagerFactoryChromeOS::CreateManagerForProfile(
     std::unique_ptr<ActiveDirectoryPolicyManager> manager =
         ActiveDirectoryPolicyManager::CreateForUserPolicy(
             account_id, policy_refresh_timeout,
-            base::BindOnce(&chrome::AttemptUserExit), std::move(store));
+            base::BindOnce(&chrome::AttemptUserExit), std::move(store),
+            std::move(external_data_manager));
     manager->Init(
         SchemaRegistryServiceFactory::GetForContext(profile)->registry());
 
@@ -370,7 +375,6 @@ UserPolicyManagerFactoryChromeOS::CreateManagerForProfile(
             base::BindOnce(&chrome::AttemptUserExit) /* fatal_error_callback */,
             account_id, base::ThreadTaskRunnerHandle::Get(), io_task_runner);
 
-    // TODO(tnagel): Enable whitelist for Active Directory.
     bool wildcard_match = false;
     if (connector->IsEnterpriseManaged() &&
         chromeos::CrosSettings::Get()->IsUserWhitelisted(

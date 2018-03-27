@@ -20,10 +20,10 @@
 #include "core/workers/WorkerInspectorProxy.h"
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
 #include "core/workers/WorkerReportingProxy.h"
+#include "core/workers/WorkletModuleResponsesMap.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/WaitableEvent.h"
 #include "platform/WebThreadSupportingGC.h"
-#include "platform/heap/Handle.h"
 #include "platform/loader/fetch/AccessControlStatus.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/testing/TestingPlatformSupport.h"
@@ -38,19 +38,19 @@ namespace {
 
 class AnimationWorkletTestPlatform : public TestingPlatformSupport {
  public:
-  AnimationWorkletTestPlatform()
-      : thread_(old_platform_->CreateThread(
-            WebThreadCreationParams(WebThreadType::kTestThread)
-                .SetThreadName("Compositor"))) {}
-
-  WebThread* CompositorThread() const override { return thread_.get(); }
-
   WebCompositorSupport* CompositorSupport() override {
     return &compositor_support_;
   }
 
+  // Need to override the thread creating support so we can actually run
+  // Animation Worklet code that would go on a backing thread in non-test
+  // code. i.e. most tests remove the extra threads, but we need this one.
+  std::unique_ptr<WebThread> CreateThread(
+      const blink::WebThreadCreationParams& params) override {
+    return old_platform_->CreateThread(params);
+  }
+
  private:
-  std::unique_ptr<WebThread> thread_;
   TestingCompositorSupport compositor_support_;
 };
 
@@ -98,7 +98,8 @@ class AnimationWorkletThreadTest : public PageTestBase {
             document->IsSecureContext(), clients, document->AddressSpace(),
             OriginTrialContext::GetTokens(document).get(),
             base::UnguessableToken::Create(), nullptr /* worker_settings */,
-            kV8CacheOptionsDefault),
+            kV8CacheOptionsDefault,
+            new WorkletModuleResponsesMap(document->Fetcher())),
         WTF::nullopt, WorkerInspectorProxy::PauseOnWorkerStart::kDontPause,
         ParentFrameTaskRunners::Create());
     return thread;
@@ -141,8 +142,6 @@ class AnimationWorkletThreadTest : public PageTestBase {
 };
 
 TEST_F(AnimationWorkletThreadTest, Basic) {
-  ScopedTestingPlatformSupport<AnimationWorkletTestPlatform> platform;
-
   std::unique_ptr<AnimationWorkletThread> worklet =
       CreateAnimationWorkletThread();
   CheckWorkletCanExecuteScript(worklet.get());

@@ -39,10 +39,8 @@
  */
 
 #include <memory>
-#include "core/CSSPropertyNames.h"
-#include "core/CSSValueKeywords.h"
-#include "core/StyleBuilderFunctions.h"
-#include "core/StylePropertyShorthand.h"
+#include <utility>
+
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSCounterValue.h"
 #include "core/css/CSSCursorImageValue.h"
@@ -60,12 +58,14 @@
 #include "core/css/PropertyRegistration.h"
 #include "core/css/PropertyRegistry.h"
 #include "core/css/StyleRule.h"
-#include "core/css/properties/CSSProperty.h"
+#include "core/css/properties/css_property.h"
 #include "core/css/resolver/CSSVariableResolver.h"
 #include "core/css/resolver/ElementStyleResources.h"
 #include "core/css/resolver/FilterOperationResolver.h"
 #include "core/css/resolver/FontBuilder.h"
 #include "core/css/resolver/StyleBuilder.h"
+#include "core/css_property_names.h"
+#include "core/css_value_keywords.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/style/ComputedStyle.h"
@@ -77,9 +77,10 @@
 #include "core/style/StyleGeneratedImage.h"
 #include "core/style/StyleInheritedVariables.h"
 #include "core/style/StyleNonInheritedVariables.h"
+#include "core/style_builder_functions.h"
+#include "core/style_property_shorthand.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/wtf/MathExtras.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/Vector.h"
 
@@ -769,9 +770,9 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(
       const auto list_style_type =
           CssValueIDToPlatformEnum<EListStyleType>(counter_value->ListStyle());
       std::unique_ptr<CounterContent> counter =
-          WTF::WrapUnique(new CounterContent(
+          std::make_unique<CounterContent>(
               AtomicString(counter_value->Identifier()), list_style_type,
-              AtomicString(counter_value->Separator())));
+              AtomicString(counter_value->Separator()));
       next_content = ContentData::Create(std::move(counter));
     } else if (item->IsIdentifierValue()) {
       QuoteType quote_type;

@@ -1,6 +1,7 @@
 include_rules = [
     "+base/atomic_sequence_num.h",
     "+base/memory/scoped_refptr.h",
+    "+base/synchronization/waitable_event.h",
     "+base/unguessable_token.h",
     "+bindings/core",
     "+build/mac",
@@ -13,10 +14,8 @@ include_rules = [
     "-modules",
     "+mojo/public/cpp/bindings",
     "+mojo/public/cpp/system",
-    "+platform",
     "+public/common",
     "+public/mojom",
-    "+public/platform",
     "+public/public_features.h",
     "+public/web",
     "+services/metrics/public",
@@ -36,9 +35,6 @@ include_rules = [
     # we resolve the control layer.
     "!core/frame/WebLocalFrameImpl.h",
     "!core/frame/WebRemoteFrameImpl.h",
-    # We are moving from WTF_MAKE_NONCOPYABLE to DISALLOW_COPY_AND_ASSIGN. Stop
-    # new dependencies on WTF_MAKE_NONCOPYABLE.
-    "!platform/wtf/Noncopyable.h",
 ]
 
 specific_include_rules = {
@@ -48,8 +44,9 @@ specific_include_rules = {
         "+core/frame/WebRemoteFrameImpl.h",
         "+gin"
     ],
-    # Allow LocalFrame.cpp to use WebLocalFrameImpl.h
-    "LocalFrame.cpp" : [
+
+    # Allow WebLocalFrameImplFindInPage.cpp to use WebLocalFrameImpl.h
+    "WebLocalFrameImplFindInPage.cpp" : [
         "+core/frame/WebLocalFrameImpl.h",
-    ]
+    ],
 }

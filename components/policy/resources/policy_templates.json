@@ -31,7 +31,6 @@
 #   'main' - a boolean value
 #   'list' - a list of string values
 #   'dict' - a dictionary value, containing other values indexed by strings
-#     NOTE: This type is not supported yet. https://crbug.com/108992
 #   'external' - a policy that references external data.
 #     NOTE: This type is currently supported on Chrome OS only.
 #
@@ -146,7 +145,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 430
+#   For your editing convenience: highest ID currently used: 432
 #   And don't forget to also update the EnterprisePolicies enum of
 #   histograms.xml (run 'python tools/metrics/histograms/update_policies.py').
 #
@@ -175,11 +174,19 @@
 #   This setting applies to Chrome OS only. If the setting is missing, both
 #   types are assumed. The array must not be empty.
 #
-# Enterprise defaults:
+# Enterprise defaults for user policy:
 #   For managed users on Chrome OS (i.e. users receiving user policy from the
 #   cloud), if the optional key 'default_for_enterprise_users' is set, its value
 #   is applied as mandatory policy unless a different setting is received from
-#   the cloud.
+#   the cloud. This default value handling is automatically enforced by the
+#   policy stack when filling the PolicyMap (specifically, by the generated
+#   function SetEnterpriseUsersDefaults).
+#
+# Enterprise defaults for device policy:
+#   The optional key 'default_for_managed_devices_doc_only' can be used to
+#   document a differing default value for devices enrolled into enterprise
+#   management. This is for documentation only - the enrollment-dependent
+#   handling must be manually implemented.
 
   'risk_tag_definitions' : [
     # All following tags are ordered by severity of their impact.
@@ -8355,6 +8362,7 @@
         'dynamic_refresh': False,
       },
       'example_value': True,
+      'default_for_managed_devices_doc_only': False,
       'id': 219,
       'caption': '''Enable supervised users''',
       'tags': [],
@@ -11241,7 +11249,7 @@
           'caption': '''Password protection warning is triggered by password reuse on phishing page''',
         },
       ],
-      'supported_on': ['chrome.*:66-', 'chrome_os:66-'],
+      'supported_on': ['chrome.*:67-', 'chrome_os:67-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -11281,7 +11289,7 @@
           'caption': '''Password protection at-risk account flagging is triggered by password reuse on phishing page''',
         },
       ],
-      'supported_on': ['chrome.*:66-', 'chrome_os:66-'],
+      'supported_on': ['chrome.*:67-', 'chrome_os:67-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -11346,7 +11354,7 @@
       'example_value': 604800000,
       'desc': '''Allows you to set the time period over which <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> relaunch notifications are shown to apply a pending update.
 
-      This policy setting can be used to control the time period, in milliseconds, over which a user is progressively informed that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> must be relaunched (or <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> must be restarted) for an update. Over this time period, the user will be repeatedly informed of the need for an update based on the setting of the <ph name="RELAUNCH_NOTIFICATION_POLICY_NAME">RelaunchNotification</ph> policy. If not set, the default period of 604800000 milliseconds (one week) is used.''',
+      This policy setting can be used to control the time period, in milliseconds, over which a user is progressively informed that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> must be relaunched (or <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> must be restarted) for an update. Over this time period, the user will be repeatedly informed of the need for an update based on the setting of the <ph name="RELAUNCH_NOTIFICATION_POLICY_NAME">RelaunchNotification</ph> policy. If not set, the default period of 345600000 milliseconds (four days) is used for <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> and 604800000 milliseconds (one week) for all other platforms.''',
     },
     {
       'name': 'VirtualMachinesAllowed',
@@ -11358,6 +11366,7 @@
         'dynamic_refresh': True,
       },
       'example_value': True,
+      'default_for_managed_devices_doc_only': False,
       'id': 421,
       'caption': '''Allow devices to run virtual machines on Chrome OS''',
       'tags': ['system-security'],
@@ -11376,7 +11385,7 @@
         'type': 'array',
         'items': { 'type': 'string' },
       },
-      'supported_on': ['chrome.*:66-', 'chrome_os:66-'],
+      'supported_on': ['chrome.*:67-', 'chrome_os:67-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -11401,7 +11410,7 @@
         'type': 'array',
         'items': { 'type': 'string' },
       },
-      'supported_on': ['chrome.*:66-', 'chrome_os:66-'],
+      'supported_on': ['chrome.*:67-', 'chrome_os:67-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -11411,7 +11420,8 @@
       'caption': '''Configure the list of enterprise login URLs where password protection service should capture fingerprint of password.''',
       'tags': [],
       'desc': '''Configure the list of enterprise login URLs (HTTP and HTTPS schemes only). Fingerprint of password will be captured on these URLs and used for password reuse detection.
-      This setting should only be used by GSuite users using a SSO/SMAL system.
+      This setting should only be used by GSuite users using a SSO/SAML system.
+      In order for <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> to correctly capture password fingerprints, please make sure your login pages follow the guidelines on https://www.chromium.org/developers/design-documents/create-amazing-password-forms.
 
       If this setting is enabled, then password protection service will capture fingerprint of password on these URLs for password reuse detection purpose.
       If this setting is disabled or not set, then password protection service will only capture password fingerprint on https://accounts.google.com.
@@ -11421,7 +11431,7 @@
       'name': 'PasswordProtectionChangePasswordURL',
       'type': 'string',
       'schema': { 'type': 'string' },
-      'supported_on': ['chrome.*:66-', 'chrome_os:66-'],
+      'supported_on': ['chrome.*:67-', 'chrome_os:67-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -11431,7 +11441,8 @@
       'caption': '''Configure the change password URL.''',
       'tags': [],
       'desc': '''Configure the change password URL (HTTP and HTTPS schemes only). Password protection service will send users to this URL to change their passwords if they've been phished.
-      This setting should only be used by GSuite users using a SSO/SMAL system.
+      This setting should only be used by GSuite users using a SSO/SAML system.
+      In order for <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> to correctly capture the new password fingerprint on this change password page, please make sure your change password page follows the guidelines on https://www.chromium.org/developers/design-documents/create-amazing-password-forms.
 
       If this setting is enabled, then password protection service will send users to this URL to change their passwords if they've been phished.
       If this setting is disabled or not set, then password protection service will send users to https://myaccounts.google.com to change their password.
@@ -11498,11 +11509,59 @@
       'desc': '''Allows you to control if videos can play automatically (without user consent) with audio content in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
       If the policy is set to True, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is allowed to autoplay media.
-      If the policy is set to False, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is not allowed to autoplay media.
-      By default, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is not allowed to autoplay media.
+      If the policy is set to False, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is not allowed to autoplay media. The AutoplayWhitelist policy can be used to override this for certain URL patterns.
+      By default, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is not allowed to autoplay media. The AutoplayWhitelist policy can be used to override this for certain URL patterns.
 
       Note that if <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is running and this policy changes, it will be applied only to new opened tabs. Therefore some tabs might still observe the previous behavior.
       ''',
+    },
+    {
+      'name': 'AutoplayWhitelist',
+      'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
+      'supported_on': ['chrome.*:66-', 'chrome_os:66-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': ['https://example.com', 'https://www.chromium.org'],
+      'id': 431,
+      'caption': '''Allows media autoplay on a whitelist of URL patterns''',
+      'tags': [],
+      'desc': '''Controls the whitelist of URL patterns that autoplay will always be enabled on.
+
+      If autoplay is enabled then videos can play automatically (without user consent) with audio content in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
+
+      A URL pattern has to be formatted according to https://www.chromium.org/administrators/url-blacklist-filter-format.
+
+      If the AutoplayAllowed policy is set to True then this policy will have no effect.
+
+      If the AutoplayAllowed policy is set to False then any URL patterns set in this policy will still be allowed to play.
+
+      Note that if <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is running and this policy changes, it will be applied only to new opened tabs. Therefore some tabs might still observe the previous behavior.''',
+    },
+    {
+      'name': 'TabUnderProtectionEnabled',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome.*:67-', 'chrome_os:67-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': True,
+      'id': 432,
+      'caption': '''Enables tab-under protection''',
+      'tags': [],
+      'desc': '''Enables tab-under protection, which blocks navigations detected as tab-unders.
+
+      For an explanation on tab-unders, see https://www.chromestatus.com/features/5675755719622656.
+      If this policy is set to True, navigations which <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> detects are tab-unders will be blocked.
+      If this policy is set to False, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will allow sites to perform tab-under navigations.
+      By default, this policy is set to True.''',
     }
   ],
 

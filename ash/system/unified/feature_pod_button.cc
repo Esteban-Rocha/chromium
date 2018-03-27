@@ -27,6 +27,7 @@ void ConfigureFeaturePodLabel(views::Label* label) {
   label->SetMultiLine(true);
   label->SizeToFit(kUnifiedFeaturePodSize.width());
   label->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+  label->SetSubpixelRenderingEnabled(false);
 }
 
 }  // namespace
@@ -130,6 +131,21 @@ void FeaturePodButton::SetSubLabel(const base::string16& sub_label) {
 
 void FeaturePodButton::SetToggled(bool toggled) {
   icon_button_->SetToggled(toggled);
+}
+
+void FeaturePodButton::SetExpanded(bool expanded) {
+  label_->SetVisible(expanded);
+  if (sub_label_)
+    sub_label_->SetVisible(expanded);
+}
+
+void FeaturePodButton::SetVisibleByContainer(bool visible) {
+  View::SetVisible(visible);
+}
+
+void FeaturePodButton::SetVisible(bool visible) {
+  visible_preferred_ = visible;
+  View::SetVisible(visible);
 }
 
 void FeaturePodButton::ButtonPressed(views::Button* sender,

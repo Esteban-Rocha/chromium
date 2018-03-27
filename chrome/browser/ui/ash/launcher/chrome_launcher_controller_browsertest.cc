@@ -67,8 +67,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/app_list/app_list_features.h"
 #include "ui/app_list/app_list_switches.h"
-#include "ui/app_list/views/app_list_item_view.h"
-#include "ui/app_list/views/apps_grid_view.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/test/mus/change_completion_waiter.h"
 #include "ui/aura/window.h"
@@ -1011,7 +1009,7 @@ IN_PROC_BROWSER_TEST_F(ShelfAppBrowserTest, LaunchInBackground) {
 IN_PROC_BROWSER_TEST_F(ShelfAppBrowserTest, LaunchMaximized) {
   MaximizeWindow(browser()->window());
   content::WindowedNotificationObserver open_observer(
-      chrome::NOTIFICATION_BROWSER_WINDOW_READY,
+      chrome::NOTIFICATION_BROWSER_OPENED,
       content::NotificationService::AllSources());
   chrome::NewEmptyWindow(browser()->profile());
   open_observer.Wait();

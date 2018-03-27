@@ -58,7 +58,7 @@
             'device_type': 'hammerhead',
           },
         ],
-        'hard_timeout': 960,
+        'hard_timeout': 1800,
       },
       'test': 'chrome_public_test_vr_apk',
     },
@@ -74,7 +74,7 @@
             'device_type': 'hammerhead',
           },
         ],
-        'hard_timeout': 960,
+        'hard_timeout': 1800,
       },
       'test': 'chrome_public_test_vr_apk',
     },
@@ -90,7 +90,7 @@
             'device_type': 'bullhead',
           },
         ],
-        'hard_timeout': 960,
+        'hard_timeout': 1800,
       },
       'test': 'chrome_public_test_vr_apk',
     },
@@ -106,7 +106,7 @@
             'device_type': 'marlin',
           },
         ],
-        'hard_timeout': 960,
+        'hard_timeout': 1800,
       },
       'test': 'chrome_public_test_vr_apk',
     },
@@ -274,7 +274,7 @@
       # generation script is merged with this one, this should be promoted from
       # the Android-specific section.
       'android_swarming': {
-        'hard_timeout': 60,
+        'hard_timeout': 120,
       },
     },
     'mojo_test_apk': {
@@ -291,7 +291,6 @@
   },
 
   'aura_gtests': {
-    'app_shell_unittests': {},
     'aura_unittests': {},
     'compositor_unittests': {},
     'wm_unittests': {},
@@ -321,6 +320,12 @@
     }
   },
 
+  'check_network_annotation_auditor_script': {
+    'check_network_annotation_auditor': {
+      'script': 'check_network_annotation_auditor.py',
+    },
+  },
+
   'check_network_annotations_script': {
     'check_network_annotations': {
       'script': 'check_network_annotations.py',
@@ -332,6 +337,30 @@
       "args": [
         "--test-type=integration",
       ],
+    },
+  },
+
+  'chromeos_remote_device_isolated_tests': {
+    'telemetry_perf_unittests': {
+      'args': [
+        '--browser=cros-chrome',
+        '--remote=variable_chromeos_device_hostname',
+        '--xvfb',
+      ],
+      'swarming': {
+        'hard_timeout': 960,
+        'shards': 12,
+      },
+    },
+    'telemetry_unittests': {
+      'args': [
+        '--browser=cros-chrome',
+        '--remote=variable_chromeos_device_hostname',
+        '--jobs=1',
+      ],
+      'swarming': {
+        'shards': 4,
+      },
     },
   },
 
@@ -388,7 +417,6 @@
     },
     'crypto_unittests': {},
     'google_apis_unittests': {},
-    'gpu_ipc_service_unittests': {},
     'gpu_unittests': {
       'android_swarming': {
         'hard_timeout': 960,
@@ -1162,14 +1190,12 @@
     'network_service_extensions_browsertests': {
       'args': [
         '--enable-features=NetworkService',
-        '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_extensions_browsertests.filter',
       ],
       'test': 'extensions_browsertests',
     },
     'network_service_interactive_ui_tests': {
       'args': [
-        '--enable-features=NetworkService',
-        '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_interactive_ui_tests.filter',
+        '--enable-features=NetworkService'
       ],
       'test': 'interactive_ui_tests',
     },
@@ -1196,7 +1222,6 @@
   'linux_chromeos_specific_gtests': {
     'app_list_presenter_unittests': {},
     'app_list_unittests': {},
-    'app_shell_unittests': {},
     'ash_content_unittests': {},
     'ash_unittests': {},
     'aura_unittests': {},
@@ -1300,6 +1325,7 @@
   },
 
   'non_android_chromium_gtests': {
+    'app_shell_unittests': {},
     'browser_tests': {
       'swarming': {
         'shards': 10,
@@ -1620,6 +1646,10 @@
     },
   },
 
+  'components_perftests_isolated_scripts' : {
+    'components_perftests': {},
+  },
+
   'telemetry_perf_unittests_scripts': {
     'telemetry_perf_unittests': {
       'script': 'telemetry_perf_unittests.py',
@@ -1664,7 +1694,7 @@
     'viz_content_browsertests': {
       'args': [
         '--enable-features=VizDisplayCompositor',
-        '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.viz.content_browsertests.filter',
+        '--test-launcher-filter-file=../../testing/buildbot/filters/viz.content_browsertests.filter',
       ],
       'swarming': {
         'shards': 2,
@@ -1838,6 +1868,7 @@
 
   'chromium_rel_isolated_scripts': [
     'chromedriver_py_tests_isolated_scripts',
+    'components_perftests_isolated_scripts',
     'desktop_chromium_isolated_scripts',
     'telemetry_perf_unittests_isolated_scripts',
   ],
@@ -2272,6 +2303,7 @@
   ],
 
   'marshmallow_isolated_scripts': [
+    'components_perftests_isolated_scripts',
     'monochrome_apk_checker_isolated_script',
     'telemetry_perf_unittests_isolated_scripts',
   ],

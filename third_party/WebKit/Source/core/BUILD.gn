@@ -53,7 +53,14 @@ config("core_include_dirs") {
 import("//build/config/pch.gni")
 
 config("blink_core_pch") {
-  if (enable_precompiled_headers) {
+  # Add precompiled header (pch) support when enabled, possible and
+  # making sense.
+
+  # Precompiled headers are disabled for jumbo builds because they
+  # slow down the build since each pch file is only used 1-3
+  # times. Not nearly enough to make up for the long time spent
+  # creating them.
+  if (enable_precompiled_headers && !use_jumbo_build) {
     if (is_win) {
       # This is a string rather than a file GN knows about. It has to match
       # exactly what's in the /FI flag below, and what might appear in the
@@ -476,11 +483,9 @@ action("generated_testing_idls_internal_runtime_flags") {
 css_properties("make_core_generated_computed_style_initial_values") {
   script = "../build/scripts/core/style/make_computed_style_initial_values.py"
   in_files = [ "css/ComputedStyleExtraFields.json5" ]
-  other_inputs = [
-    "../build/scripts/core/style/templates/ComputedStyleInitialValues.h.tmpl",
-  ]
+  other_inputs = [ "../build/scripts/core/style/templates/computed_style_initial_values.h.tmpl" ]
   outputs = [
-    "$blink_core_output_dir/style/ComputedStyleInitialValues.h",
+    "$blink_core_output_dir/style/computed_style_initial_values.h",
   ]
 }
 
@@ -502,15 +507,15 @@ css_properties("make_core_generated_computed_style_base") {
     "../build/scripts/templates/fields/primitive.tmpl",
     "../build/scripts/templates/fields/monotonic_flag.tmpl",
     "../build/scripts/templates/fields/external.tmpl",
-    "../build/scripts/templates/ComputedStyleBase.h.tmpl",
-    "../build/scripts/templates/ComputedStyleBase.cpp.tmpl",
-    "../build/scripts/templates/ComputedStyleBaseConstants.h.tmpl",
+    "../build/scripts/templates/computed_style_base.h.tmpl",
+    "../build/scripts/templates/computed_style_base.cc.tmpl",
+    "../build/scripts/templates/computed_style_base_constants.h.tmpl",
     "../build/scripts/keyword_utils.py",
   ]
   outputs = [
-    "$blink_core_output_dir/ComputedStyleBase.h",
-    "$blink_core_output_dir/ComputedStyleBase.cpp",
-    "$blink_core_output_dir/ComputedStyleBaseConstants.h",
+    "$blink_core_output_dir/computed_style_base.h",
+    "$blink_core_output_dir/computed_style_base.cc",
+    "$blink_core_output_dir/computed_style_base_constants.h",
   ]
 }
 
@@ -518,27 +523,27 @@ css_properties("make_core_generated_css_value_id_mappings") {
   script = "../build/scripts/make_css_value_id_mappings.py"
   in_files = [ "css/CSSValueKeywords.json5" ]
   other_inputs = [
-    "../build/scripts/templates/CSSValueIDMappingsGenerated.h.tmpl",
+    "../build/scripts/templates/css_value_id_mappings_generated.h.tmpl",
     "../build/scripts/keyword_utils.py",
   ]
   outputs = [
-    "$blink_core_output_dir/CSSValueIDMappingsGenerated.h",
+    "$blink_core_output_dir/css_value_id_mappings_generated.h",
   ]
 }
 
 css_properties("make_core_generated_css_property_baseclass") {
   script = "../build/scripts/core/css/properties/make_css_property_base.py"
   other_inputs = [
-    "../build/scripts/core/css/properties/templates/CSSProperty.cpp.tmpl",
-    "../build/scripts/core/css/properties/templates/CSSProperty.h.tmpl",
-    "../build/scripts/core/css/properties/templates/CSSUnresolvedProperty.cpp.tmpl",
-    "../build/scripts/core/css/properties/templates/CSSUnresolvedProperty.h.tmpl",
+    "../build/scripts/core/css/properties/templates/css_property.cc.tmpl",
+    "../build/scripts/core/css/properties/templates/css_property.h.tmpl",
+    "../build/scripts/core/css/properties/templates/css_unresolved_property.cc.tmpl",
+    "../build/scripts/core/css/properties/templates/css_unresolved_property.h.tmpl",
   ]
   outputs = [
-    "$blink_core_output_dir/css/properties/CSSProperty.cpp",
-    "$blink_core_output_dir/css/properties/CSSProperty.h",
-    "$blink_core_output_dir/css/properties/CSSUnresolvedProperty.cpp",
-    "$blink_core_output_dir/css/properties/CSSUnresolvedProperty.h",
+    "$blink_core_output_dir/css/properties/css_property.cc",
+    "$blink_core_output_dir/css/properties/css_property.h",
+    "$blink_core_output_dir/css/properties/css_unresolved_property.cc",
+    "$blink_core_output_dir/css/properties/css_unresolved_property.h",
   ]
 }
 
@@ -548,8 +553,8 @@ css_properties("make_core_generated_css_longhand_property_classes") {
       "../build/scripts/core/css/properties/make_css_property_subclasses.py"
   in_files = [ "css/properties/CSSPropertyMethods.json5" ]
   other_inputs = [
-    "../build/scripts/core/css/properties/templates/CSSPropertySubclass.h.tmpl",
-    "../build/scripts/core/css/properties/templates/CSSPropertySubclass.cpp.tmpl",
+    "../build/scripts/core/css/properties/templates/css_property_subclass.h.tmpl",
+    "../build/scripts/core/css/properties/templates/css_property_subclass.cc.tmpl",
   ]
   outputs = [
     "$blink_core_output_dir/css/properties/longhands/align_content.h",
@@ -887,8 +892,6 @@ css_properties("make_core_generated_css_longhand_property_classes") {
     "$blink_core_output_dir/css/properties/longhands/webkit_box_decoration_break.h",
     "$blink_core_output_dir/css/properties/longhands/webkit_box_direction.h",
     "$blink_core_output_dir/css/properties/longhands/webkit_box_flex.h",
-    "$blink_core_output_dir/css/properties/longhands/webkit_box_flex_group.h",
-    "$blink_core_output_dir/css/properties/longhands/webkit_box_lines.h",
     "$blink_core_output_dir/css/properties/longhands/webkit_box_ordinal_group.h",
     "$blink_core_output_dir/css/properties/longhands/webkit_box_orient.h",
     "$blink_core_output_dir/css/properties/longhands/webkit_box_pack.h",
@@ -1017,9 +1020,7 @@ css_properties("make_core_generated_css_shorthand_property_classes") {
   script =
       "../build/scripts/core/css/properties/make_css_property_subclasses.py"
   in_files = [ "css/properties/CSSPropertyMethods.json5" ]
-  other_inputs = [
-    "../build/scripts/core/css/properties/templates/CSSPropertySubclass.h.tmpl",
-  ]
+  other_inputs = [ "../build/scripts/core/css/properties/templates/css_property_subclass.h.tmpl" ]
   outputs = [
     "$blink_core_output_dir/css/properties/shorthands/animation.h",
     "$blink_core_output_dir/css/properties/shorthands/background.h",
@@ -1102,26 +1103,26 @@ css_properties("make_core_generated_css_property_names") {
   script = "../build/scripts/make_css_property_names.py"
   other_inputs = [
     "../build/scripts/gperf.py",
-    "../build/scripts/templates/CSSPropertyNames.cpp.tmpl",
-    "../build/scripts/templates/CSSPropertyNames.h.tmpl",
+    "../build/scripts/templates/css_property_names.cc.tmpl",
+    "../build/scripts/templates/css_property_names.h.tmpl",
   ]
   outputs = [
-    "$blink_core_output_dir/CSSPropertyNames.cpp",
-    "$blink_core_output_dir/CSSPropertyNames.h",
+    "$blink_core_output_dir/css_property_names.cc",
+    "$blink_core_output_dir/css_property_names.h",
   ]
 }
 
 code_generator("make_core_generated_atrule_names") {
   script = "../build/scripts/core/css/parser/make_atrule_names.py"
-  json_inputs = [ "css/parser/AtRuleNames.json5" ]
+  json_inputs = [ "css/parser/at_rule_names.json5" ]
   other_inputs = [ "../build/scripts/gperf.py" ]
   templates = [
-    "../build/scripts/core/css/parser/templates/AtRuleDescriptors.cpp.tmpl",
-    "../build/scripts/core/css/parser/templates/AtRuleDescriptors.h.tmpl",
+    "../build/scripts/core/css/parser/templates/at_rule_descriptors.cc.tmpl",
+    "../build/scripts/core/css/parser/templates/at_rule_descriptors.h.tmpl",
   ]
   outputs = [
-    "$blink_core_output_dir/css/parser/AtRuleDescriptors.cpp",
-    "$blink_core_output_dir/css/parser/AtRuleDescriptors.h",
+    "$blink_core_output_dir/css/parser/at_rule_descriptors.cc",
+    "$blink_core_output_dir/css/parser/at_rule_descriptors.h",
   ]
   other_args = [
     "--gperf",
@@ -1132,47 +1133,47 @@ code_generator("make_core_generated_atrule_names") {
 code_generator("make_core_generated_media_features") {
   script = "../build/scripts/core/css/make_media_features.py"
   json_inputs = [ "css/media_feature_names.json5" ]
-  templates = [ "../build/scripts/core/css/templates/MediaFeatures.h.tmpl" ]
+  templates = [ "../build/scripts/core/css/templates/media_features.h.tmpl" ]
   outputs = [
-    "$blink_core_output_dir/css/MediaFeatures.h",
+    "$blink_core_output_dir/css/media_features.h",
   ]
 }
 
 css_properties("make_core_generated_style_property_shorthand") {
   script = "../build/scripts/core/css/make_style_shorthands.py"
   other_inputs = [
-    "../build/scripts/core/css/templates/StylePropertyShorthand.cpp.tmpl",
-    "../build/scripts/core/css/templates/StylePropertyShorthand.h.tmpl",
+    "../build/scripts/core/css/templates/style_property_shorthand.cc.tmpl",
+    "../build/scripts/core/css/templates/style_property_shorthand.h.tmpl",
   ]
   outputs = [
-    "$blink_core_output_dir/StylePropertyShorthand.cpp",
-    "$blink_core_output_dir/StylePropertyShorthand.h",
+    "$blink_core_output_dir/style_property_shorthand.cc",
+    "$blink_core_output_dir/style_property_shorthand.h",
   ]
 }
 
 css_properties("make_core_generated_style_builder") {
   script = "../build/scripts/make_style_builder.py"
   other_inputs = [
-    "../build/scripts/templates/StyleBuilder.cpp.tmpl",
-    "../build/scripts/templates/StyleBuilderFunctions.cpp.tmpl",
-    "../build/scripts/templates/StyleBuilderFunctions.h.tmpl",
+    "../build/scripts/templates/style_builder.cc.tmpl",
+    "../build/scripts/templates/style_builder_functions.cc.tmpl",
+    "../build/scripts/templates/style_builder_functions.h.tmpl",
   ]
   outputs = [
-    "$blink_core_output_dir/StyleBuilder.cpp",
-    "$blink_core_output_dir/StyleBuilderFunctions.h",
-    "$blink_core_output_dir/StyleBuilderFunctions.cpp",
+    "$blink_core_output_dir/style_builder.cc",
+    "$blink_core_output_dir/style_builder_functions.h",
+    "$blink_core_output_dir/style_builder_functions.cc",
   ]
 }
 
 css_properties("make_core_generated_cssom_types") {
   script = "../build/scripts/core/css/make_cssom_types.py"
   other_inputs = [
-    "../build/scripts/core/css/templates/CSSOMKeywords.cpp.tmpl",
-    "../build/scripts/core/css/templates/CSSOMTypes.cpp.tmpl",
+    "../build/scripts/core/css/templates/cssom_keywords.cc.tmpl",
+    "../build/scripts/core/css/templates/cssom_types.cc.tmpl",
   ]
   outputs = [
-    "$blink_core_output_dir/CSSOMKeywords.cpp",
-    "$blink_core_output_dir/CSSOMTypes.cpp",
+    "$blink_core_output_dir/cssom_keywords.cc",
+    "$blink_core_output_dir/cssom_types.cc",
   ]
 }
 
@@ -1184,12 +1185,12 @@ code_generator("make_core_generated_css_value_keywords") {
   ]
   other_inputs = [ "../build/scripts/gperf.py" ]
   templates = [
-    "../build/scripts/core/css/templates/CSSValueKeywords.cpp.tmpl",
-    "../build/scripts/core/css/templates/CSSValueKeywords.h.tmpl",
+    "../build/scripts/core/css/templates/css_value_keywords.cc.tmpl",
+    "../build/scripts/core/css/templates/css_value_keywords.h.tmpl",
   ]
   outputs = [
-    "$blink_core_output_dir/CSSValueKeywords.cpp",
-    "$blink_core_output_dir/CSSValueKeywords.h",
+    "$blink_core_output_dir/css_value_keywords.cc",
+    "$blink_core_output_dir/css_value_keywords.h",
   ]
   other_args = [
     "--gperf",
@@ -1201,8 +1202,8 @@ process_json5_files("make_core_generated_html_element_factory") {
   script = "../build/scripts/make_element_factory.py"
 
   in_files = [
-    "html/HTMLTagNames.json5",
-    "html/HTMLAttributeNames.json5",
+    "html/html_tag_names.json5",
+    "html/html_attribute_names.json5",
   ]
   other_inputs = make_element_factory_files
   outputs = [
@@ -1216,7 +1217,7 @@ process_json5_files("make_core_generated_html_element_factory") {
 process_json5_files("make_core_generated_html_element_type_helpers") {
   script = "../build/scripts/make_element_type_helpers.py"
 
-  in_files = [ "html/HTMLTagNames.json5" ]
+  in_files = [ "html/html_tag_names.json5" ]
   other_inputs = make_element_type_helpers_files
   outputs = [
     "$blink_core_output_dir/html_element_type_helpers.cc",
@@ -1228,8 +1229,8 @@ process_json5_files("make_core_generated_svg_names") {
   script = "../build/scripts/make_element_factory.py"
 
   in_files = [
-    "svg/SVGTagNames.json5",
-    "svg/SVGAttributeNames.json5",
+    "svg/svg_tag_names.json5",
+    "svg/svg_attribute_names.json5",
   ]
   other_inputs = make_element_factory_files
   outputs = [
@@ -1243,7 +1244,7 @@ process_json5_files("make_core_generated_svg_names") {
 process_json5_files("make_core_generated_svg_element_type_helpers") {
   script = "../build/scripts/make_element_type_helpers.py"
 
-  in_files = [ "svg/SVGTagNames.json5" ]
+  in_files = [ "svg/svg_tag_names.json5" ]
   other_inputs = make_element_type_helpers_files
   outputs = [
     "$blink_core_output_dir/svg_element_type_helpers.h",
@@ -1255,7 +1256,7 @@ process_json5_files("make_core_generated_svg_element_type_helpers") {
 make_event_factory("make_core_generated_event_factory") {
   in_files = [
     "$blink_core_output_dir/event_names.json5",
-    "events/EventAliases.json5",
+    "events/event_interface_aliases.json5",
   ]
   outputs = [
     "$blink_core_output_dir/event_factory.cc",
@@ -1317,8 +1318,8 @@ make_names("make_core_generated_input_mode_names") {
 
 make_qualified_names("make_core_generated_math_ml_names") {
   in_files = [
-    "html/parser/MathMLTagNames.json5",
-    "html/parser/MathMLAttributeNames.json5",
+    "html/parser/mathml_tag_names.json5",
+    "html/parser/mathml_attribute_names.json5",
   ]
   outputs = [
     "$blink_core_output_dir/mathml_names.cc",
@@ -1327,7 +1328,7 @@ make_qualified_names("make_core_generated_math_ml_names") {
 }
 
 make_qualified_names("make_core_generated_xlink_names") {
-  in_files = [ "svg/xlinkattrs.json5" ]
+  in_files = [ "svg/xlink_attribute_names.json5" ]
   outputs = [
     "$blink_core_output_dir/xlink_names.cc",
     "$blink_core_output_dir/xlink_names.h",
@@ -1335,7 +1336,7 @@ make_qualified_names("make_core_generated_xlink_names") {
 }
 
 make_qualified_names("make_core_generated_xml_ns_names") {
-  in_files = [ "xml/xmlnsattrs.json5" ]
+  in_files = [ "xml/xmlns_attribute_names.json5" ]
   outputs = [
     "$blink_core_output_dir/xmlns_names.cc",
     "$blink_core_output_dir/xmlns_names.h",
@@ -1343,7 +1344,7 @@ make_qualified_names("make_core_generated_xml_ns_names") {
 }
 
 make_qualified_names("make_core_generated_xml_names") {
-  in_files = [ "xml/xmlattrs.json5" ]
+  in_files = [ "xml/xml_attribute_names.json5" ]
   outputs = [
     "$blink_core_output_dir/xml_names.cc",
     "$blink_core_output_dir/xml_names.h",
@@ -1371,17 +1372,16 @@ action("make_minimized_css") {
   deps = make_core_generated_deps
 }
 
-# "HTMLEntityTable" in make_core_generated from GYP.
 action("make_core_generated_html_entity_table") {
   visibility = []  # Allow re-assignment of list.
   visibility = [ ":*" ]
   script = "html/parser/create-html-entity-table"
 
   inputs = [
-    "html/parser/HTMLEntityNames.csv",
+    "html/parser/html_entity_names.csv",
   ]
   outputs = [
-    "$blink_core_output_dir/HTMLEntityTable.cpp",
+    "$blink_core_output_dir/html_entity_table.cc",
   ]
 
   args = [ "-o" ] + rebase_path(outputs, root_build_dir)
@@ -1396,7 +1396,7 @@ action("make_core_generated_css_tokenizer_codepoints") {
   script = "../build/scripts/make_css_tokenizer_codepoints.py"
 
   outputs = [
-    "$blink_core_output_dir/CSSTokenizerCodepoints.cpp",
+    "$blink_core_output_dir/css_tokenizer_codepoints.cc",
   ]
 
   args = [
@@ -1418,13 +1418,13 @@ action("make_core_generated_css_primitive_value_unit_trie") {
   visibility = [ ":*" ]
   script = "../build/scripts/make_css_primitive_value_unit_trie.py"
 
-  input_file = "css/CSSPrimitiveValueUnits.json5"
+  input_file = "css/css_primitive_value_units.json5"
   inputs = make_trie_helpers_files + [
              input_file,
-             "../build/scripts/templates/CSSPrimitiveValueUnitTrie.cpp.tmpl",
+             "../build/scripts/templates/css_primitive_value_unit_trie.cc.tmpl",
            ]
   outputs = [
-    "$blink_core_output_dir/CSSPrimitiveValueUnitTrie.cpp",
+    "$blink_core_output_dir/css_primitive_value_unit_trie.cc",
   ]
 
   args = [
@@ -1447,7 +1447,7 @@ action("make_core_generated_html_element_lookup_trie") {
   visibility = [ ":*" ]
   script = "../build/scripts/make_element_lookup_trie.py"
 
-  input_file = "html/HTMLTagNames.json5"
+  input_file = "html/html_tag_names.json5"
   inputs = make_trie_helpers_files + [
              input_file,
              "../build/scripts/templates/element_lookup_trie.cc.tmpl",
@@ -1651,7 +1651,7 @@ jumbo_source_set("unit_tests") {
   testonly = true
   sources = [
     "animation/AnimationClockTest.cpp",
-    "animation/AnimationEffectReadOnlyTest.cpp",
+    "animation/AnimationEffectTest.cpp",
     "animation/AnimationInputHelpersTest.cpp",
     "animation/AnimationSimTest.cpp",
     "animation/AnimationTest.cpp",
@@ -1674,6 +1674,7 @@ jumbo_source_set("unit_tests") {
     "css/ActiveStyleSheetsTest.cpp",
     "css/AffectedByPseudoTest.cpp",
     "css/CSSCalculationValueTest.cpp",
+    "css/CSSComputedStyleDeclarationTest.cpp",
     "css/CSSFontFaceSourceTest.cpp",
     "css/CSSGradientValueTest.cpp",
     "css/CSSPageRuleTest.cpp",
@@ -1705,6 +1706,7 @@ jumbo_source_set("unit_tests") {
     "css/cssom/CSSResourceValueTest.cpp",
     "css/cssom/CSSStyleImageValueTest.cpp",
     "css/cssom/CSSUnitValueTest.cpp",
+    "css/cssom/CSSUnparsedValueTest.cpp",
     "css/cssom/PrepopulatedComputedStylePropertyMapTest.cpp",
     "css/invalidation/InvalidationSetTest.cpp",
     "css/invalidation/StyleInvalidatorTest.cpp",
@@ -1805,6 +1807,7 @@ jumbo_source_set("unit_tests") {
     "fetch/ReadableStreamBytesConsumerTest.cpp",
     "fetch/RequestTest.cpp",
     "fetch/ResponseTest.cpp",
+    "frame/AdTrackerTest.cpp",
     "frame/BrowserControlsTest.cpp",
     "frame/DOMTimerTest.cpp",
     "frame/DeferredLoadingTest.cpp",
@@ -1922,8 +1925,6 @@ jumbo_source_set("unit_tests") {
     "layout/LayoutTableRowTest.cpp",
     "layout/LayoutTableSectionTest.cpp",
     "layout/LayoutTableTest.cpp",
-    "layout/LayoutTestHelper.cpp",
-    "layout/LayoutTestHelper.h",
     "layout/LayoutTextControlTest.cpp",
     "layout/LayoutTextFragmentTest.cpp",
     "layout/LayoutTextTest.cpp",
@@ -2081,6 +2082,8 @@ jumbo_source_set("unit_tests") {
     "svg/SVGTextContentElementTest.cpp",
     "svg/UnsafeSVGAttributeSanitizationTest.cpp",
     "svg/graphics/SVGImageTest.cpp",
+    "testing/CoreUnitTestHelper.cpp",
+    "testing/CoreUnitTestHelper.h",
     "testing/PageTestBase.cpp",
     "testing/PageTestBase.h",
     "testing/sim/SimCanvas.cpp",
@@ -2109,6 +2112,8 @@ jumbo_source_set("unit_tests") {
     "workers/DedicatedWorkerTest.cpp",
     "workers/MainThreadWorkletTest.cpp",
     "workers/ThreadedWorkletTest.cpp",
+    "workers/WorkerFetchTestHelper.h",
+    "workers/WorkerModuleFetchCoordinatorTest.cpp",
     "workers/WorkerThreadTest.cpp",
     "workers/WorkerThreadTestHelper.h",
     "workers/WorkletModuleResponsesMapTest.cpp",

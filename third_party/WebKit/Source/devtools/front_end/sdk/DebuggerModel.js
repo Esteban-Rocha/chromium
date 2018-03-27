@@ -63,6 +63,7 @@ SDK.DebuggerModel = class extends SDK.SDKModel {
     Common.moduleSetting('pauseOnExceptionEnabled').addChangeListener(this._pauseOnExceptionStateChanged, this);
     Common.moduleSetting('pauseOnCaughtException').addChangeListener(this._pauseOnExceptionStateChanged, this);
     Common.moduleSetting('disableAsyncStackTraces').addChangeListener(this._asyncStackTracesStateChanged, this);
+    Common.moduleSetting('breakpointsActive').addChangeListener(this._breakpointsActiveChanged, this);
 
     if (!target.suspended())
       this._enableDebugger();
@@ -119,6 +120,8 @@ SDK.DebuggerModel = class extends SDK.SDKModel {
     enablePromise.then(this._registerDebugger.bind(this));
     this._pauseOnExceptionStateChanged();
     this._asyncStackTracesStateChanged();
+    if (!Common.moduleSetting('breakpointsActive').get())
+      this._breakpointsActiveChanged();
     if (SDK.DebuggerModel._scheduledPauseOnAsyncCall)
       this._pauseOnAsyncCall(SDK.DebuggerModel._scheduledPauseOnAsyncCall);
     this.dispatchEventToListeners(SDK.DebuggerModel.Events.DebuggerWasEnabled, this);
@@ -200,6 +203,10 @@ SDK.DebuggerModel = class extends SDK.SDKModel {
     this._agent.setAsyncCallStackDepth(enabled ? maxAsyncStackChainDepth : 0);
   }
 
+  _breakpointsActiveChanged() {
+    this._agent.setBreakpointsActive(Common.moduleSetting('breakpointsActive').get());
+  }
+
   stepInto() {
     this._agent.stepInto();
   }
@@ -233,13 +240,6 @@ SDK.DebuggerModel = class extends SDK.SDKModel {
    */
   _pauseOnAsyncCall(parentStackTraceId) {
     return this._agent.invoke_pauseOnAsyncCall({parentStackTraceId: parentStackTraceId});
-  }
-
-  /**
-   * @param {boolean} active
-   */
-  setBreakpointsActive(active) {
-    this._agent.setBreakpointsActive(active);
   }
 
   /**
@@ -1292,6 +1292,12 @@ SDK.DebuggerModel.CallFrame = class {
    * @return {!Promise<!SDK.RuntimeModel.EvaluationResult>}
    */
   async evaluate(options) {
+    const runtimeModel = this.debuggerModel.runtimeModel();
+    if (options.throwOnSideEffect &&
+        (runtimeModel.hasSideEffectSupport() === false ||
+         (runtimeModel.hasSideEffectSupport() === null && !await runtimeModel.checkSideEffectSupport())))
+      return {error: 'Side-effect checks not supported by backend.'};
+
     const response = await this.debuggerModel._agent.invoke_evaluateOnCallFrame({
       callFrameId: this.id,
       expression: options.expression,
@@ -1300,17 +1306,14 @@ SDK.DebuggerModel.CallFrame = class {
       silent: options.silent,
       returnByValue: options.returnByValue,
       generatePreview: options.generatePreview,
-      throwOnSideEffect: false
+      throwOnSideEffect: options.throwOnSideEffect
     });
     const error = response[Protocol.Error];
     if (error) {
       console.error(error);
       return {error: error};
     }
-    return {
-      object: this.debuggerModel.runtimeModel().createRemoteObject(response.result),
-      exceptionDetails: response.exceptionDetails
-    };
+    return {object: runtimeModel.createRemoteObject(response.result), exceptionDetails: response.exceptionDetails};
   }
 
   async restart() {

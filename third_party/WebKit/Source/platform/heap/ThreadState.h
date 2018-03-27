@@ -35,6 +35,7 @@
 
 #include "base/macros.h"
 #include "platform/PlatformExport.h"
+#include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/heap/BlinkGC.h"
 #include "platform/heap/ThreadingTraits.h"
 #include "platform/wtf/AddressSanitizer.h"
@@ -155,6 +156,18 @@ class PLATFORM_EXPORT ThreadState {
     kSweepingAndPreciseGCScheduled,
   };
 
+  // The phase that the GC is in. The GCPhase will not return kNone for mutators
+  // running during incremental marking and lazy sweeping. See SetGCPhase() for
+  // possible state transitions.
+  enum class GCPhase {
+    // GC is doing nothing.
+    kNone,
+    // GC is in marking phase.
+    kMarking,
+    // GC is in sweeping phase.
+    kSweeping,
+  };
+
   // The NoAllocationScope class is used in debug mode to catch unwanted
   // allocations. E.g. allocations during GC.
   class NoAllocationScope final {
@@ -253,7 +266,9 @@ class PLATFORM_EXPORT ThreadState {
   void WillStartV8GC(BlinkGC::V8GCType);
   void SetGCState(GCState);
   GCState GcState() const { return gc_state_; }
+  void SetGCPhase(GCPhase);
   bool IsInGC() const { return GcState() == kGCRunning; }
+  bool IsMarkingInProgress() const { return gc_phase_ == GCPhase::kMarking; }
   bool IsSweepingInProgress() const {
     return GcState() == kSweeping ||
            GcState() == kSweepingAndPreciseGCScheduled ||
@@ -292,20 +307,24 @@ class PLATFORM_EXPORT ThreadState {
   // - isSweepingInProgress() returns true while any sweeping operation is
   //   running.
   void MarkPhasePrologue(BlinkGC::StackState,
-                         BlinkGC::GCType,
+                         BlinkGC::MarkingType,
                          BlinkGC::GCReason);
   void MarkPhaseVisitRoots();
   bool MarkPhaseAdvanceMarking(double deadline_seconds);
-  void MarkPhaseEpilogue(BlinkGC::GCType);
-  void VerifyMarking(BlinkGC::GCType);
+  void MarkPhaseEpilogue(BlinkGC::MarkingType);
+  void VerifyMarking(BlinkGC::MarkingType);
 
   void CompleteSweep();
-  void PreSweep(BlinkGC::GCType);
+  void PreSweep(BlinkGC::MarkingType, BlinkGC::SweepingType);
   void PostSweep();
 
   // Support for disallowing allocation. Mainly used for sanity
   // checks asserts.
-  bool IsAllocationAllowed() const { return !no_allocation_count_; }
+  bool IsAllocationAllowed() const {
+    // Allocation is not allowed during atomic marking pause, but it is allowed
+    // during atomic sweeping pause.
+    return !InAtomicMarkingPause() && !no_allocation_count_;
+  }
   void EnterNoAllocationScope() { no_allocation_count_++; }
   void LeaveNoAllocationScope() { no_allocation_count_--; }
   bool IsWrapperTracingForbidden() { return IsMixinInConstruction(); }
@@ -335,6 +354,21 @@ class PLATFORM_EXPORT ThreadState {
     DCHECK(object_resurrection_forbidden_);
     object_resurrection_forbidden_ = false;
   }
+  bool in_atomic_pause() const { return in_atomic_pause_; }
+  void EnterAtomicPause() {
+    DCHECK(!in_atomic_pause_);
+    in_atomic_pause_ = true;
+  }
+  void LeaveAtomicPause() {
+    DCHECK(in_atomic_pause_);
+    in_atomic_pause_ = false;
+  }
+  bool InAtomicMarkingPause() const {
+    return in_atomic_pause() && IsMarkingInProgress();
+  }
+  bool InAtomicSweepingPause() const {
+    return in_atomic_pause() && IsSweepingInProgress();
+  }
 
   bool WrapperTracingInProgress() const { return wrapper_tracing_in_progress_; }
   void SetWrapperTracingInProgress(bool value) {
@@ -343,8 +377,6 @@ class PLATFORM_EXPORT ThreadState {
 
   bool IsIncrementalMarking() const { return incremental_marking_; }
   void SetIncrementalMarking(bool value) { incremental_marking_ = value; }
-
-  void CheckObjectNotInCallbackStacks(const void*);
 
   class MainThreadGCForbiddenScope final {
     STACK_ALLOCATED();
@@ -372,6 +404,21 @@ class PLATFORM_EXPORT ThreadState {
 
    private:
     ThreadState* const thread_state_;
+  };
+
+  // Used to mark when we are in an atomic pause for GC.
+  class AtomicPauseScope final {
+   public:
+    explicit AtomicPauseScope(ThreadState* thread_state)
+        : thread_state_(thread_state), gc_forbidden_scope(thread_state) {
+      thread_state_->EnterAtomicPause();
+    }
+    ~AtomicPauseScope() { thread_state_->LeaveAtomicPause(); }
+
+   private:
+    ThreadState* const thread_state_;
+    ScriptForbiddenScope script_forbidden_scope;
+    GCForbiddenScope gc_forbidden_scope;
   };
 
   void FlushHeapDoesNotContainCacheIfNeeded();
@@ -501,7 +548,10 @@ class PLATFORM_EXPORT ThreadState {
 
   BlinkGC::StackState GetStackState() const { return stack_state_; }
 
-  void CollectGarbage(BlinkGC::StackState, BlinkGC::GCType, BlinkGC::GCReason);
+  void CollectGarbage(BlinkGC::StackState,
+                      BlinkGC::MarkingType,
+                      BlinkGC::SweepingType,
+                      BlinkGC::GCReason);
   void CollectAllGarbage();
 
   // Register the pre-finalizer for the |self| object. The class T must have
@@ -639,10 +689,12 @@ class PLATFORM_EXPORT ThreadState {
   size_t mixins_being_constructed_count_;
   double accumulated_sweeping_time_;
   bool object_resurrection_forbidden_;
+  bool in_atomic_pause_;
 
   GarbageCollectedMixinConstructorMarkerBase* gc_mixin_marker_;
 
   GCState gc_state_;
+  GCPhase gc_phase_;
 
   using PreFinalizerCallback = bool (*)(void*);
   using PreFinalizer = std::pair<void*, PreFinalizerCallback>;
@@ -682,7 +734,7 @@ class PLATFORM_EXPORT ThreadState {
 
   struct GCData {
     BlinkGC::StackState stack_state;
-    BlinkGC::GCType gc_type;
+    BlinkGC::MarkingType marking_type;
     BlinkGC::GCReason reason;
     double marking_time_in_milliseconds;
     size_t marked_object_size;

@@ -22,7 +22,9 @@ public class TestVrShellDelegate extends VrShellDelegate {
     // running into crbug.com/762724
     private static final int DON_CANCEL_DELAY_MS = 200;
     private boolean mOnResumeCalled;
+    private Runnable mOnVSyncPausedCallback;
     private static TestVrShellDelegate sInstance;
+    private boolean mDisableVrBrowsing;
 
     protected TestVrShellDelegate(ChromeActivity activity) {
         super(activity, VrShellDelegate.getVrClassesWrapper());
@@ -91,6 +93,20 @@ public class TestVrShellDelegate extends VrShellDelegate {
         super.acceptDoffPromptForTesting();
     }
 
+    @Override
+    protected boolean isVrBrowsingEnabled() {
+        if (mDisableVrBrowsing) return false;
+        return super.isVrBrowsingEnabled();
+    }
+
+    public void setVrBrowsingDisabled(boolean disabled) {
+        mDisableVrBrowsing = disabled;
+    }
+
+    public void setVrShellOnVSyncPausedCallback(Runnable callback) {
+        mOnVSyncPausedCallback = callback;
+    }
+
     /**
      * Wait a short period of time before running if we think the DON flow was cancelled.
      *
@@ -126,5 +142,20 @@ public class TestVrShellDelegate extends VrShellDelegate {
         Assert.assertTrue(mOnResumeCalled);
         mOnResumeCalled = false;
         super.onPause();
+    }
+
+    /**
+     * If we need to know when the normal VSync gets paused, we have a small window between when
+     * the VrShell is created and we actually enter VR to set the callback. So, do it immediately
+     * after creation here.
+     */
+    @Override
+    protected boolean createVrShell() {
+        boolean result = super.createVrShell();
+        if (result && mOnVSyncPausedCallback != null) {
+            ((VrShellImpl) getVrShellForTesting())
+                    .setOnVSyncPausedForTesting(mOnVSyncPausedCallback);
+        }
+        return result;
     }
 }

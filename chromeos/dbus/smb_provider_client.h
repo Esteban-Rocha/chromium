@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
+#include "base/memory/weak_ptr.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/smbprovider/directory_entry.pb.h"
@@ -19,7 +20,9 @@ namespace chromeos {
 // SmbProviderClient is used to communicate with the org.chromium.SmbProvider
 // service. All methods should be called from the origin thread (UI thread)
 // which initializes the DBusThreadManager instance.
-class CHROMEOS_EXPORT SmbProviderClient : public DBusClient {
+class CHROMEOS_EXPORT SmbProviderClient
+    : public DBusClient,
+      public base::SupportsWeakPtr<SmbProviderClient> {
  public:
   using GetMetdataEntryCallback =
       base::OnceCallback<void(smbprovider::ErrorType error,
@@ -34,6 +37,9 @@ class CHROMEOS_EXPORT SmbProviderClient : public DBusClient {
   using StatusCallback = base::OnceCallback<void(smbprovider::ErrorType error)>;
   using ReadFileCallback = base::OnceCallback<void(smbprovider::ErrorType error,
                                                    const base::ScopedFD& fd)>;
+  using GetDeleteListCallback =
+      base::OnceCallback<void(smbprovider::ErrorType error,
+                              const smbprovider::DeleteListProto& delete_list)>;
 
   ~SmbProviderClient() override;
 
@@ -143,6 +149,19 @@ class CHROMEOS_EXPORT SmbProviderClient : public DBusClient {
                          const base::FilePath& source_path,
                          const base::FilePath& target_path,
                          StatusCallback callback) = 0;
+
+  // Calls GetDeleteList. Using the corresponding |mount_id|, this generates an
+  // ordered list of individual entries that must be deleted in order to delete
+  // |entry_path|. This operations does not modify the filesystem.
+  virtual void GetDeleteList(int32_t mount_id,
+                             const base::FilePath& entry_path,
+                             GetDeleteListCallback callback) = 0;
+
+  // Calls GetShares. This gets the shares from |server_url| and calls
+  // |callback| when shares are found. The DirectoryEntryListProto will contain
+  // no entries if there are no shares found.
+  virtual void GetShares(const base::FilePath& server_url,
+                         ReadDirectoryCallback callback) = 0;
 
  protected:
   // Create() should be used instead.

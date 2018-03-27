@@ -73,6 +73,13 @@ class ChromeAppListItem {
   void SetFolderId(const std::string& folder_id);
   void SetPosition(const syncer::StringOrdinal& position);
 
+  // The following methods won't make changes to Ash and it should be called
+  // by this item itself or the model updater.
+  void SetChromeFolderId(const std::string& folder_id);
+  void SetChromeIsFolder(bool is_folder);
+  void SetChromeName(const std::string& name);
+  void SetChromePosition(const syncer::StringOrdinal& position);
+
   // Activates (opens) the item. Does nothing by default.
   virtual void Activate(int event_flags);
 
@@ -108,8 +115,6 @@ class ChromeAppListItem {
     model_updater_ = model_updater;
   }
 
-  void SetIsFolder(bool is_folder) { metadata_->is_folder = is_folder; }
-
   // Updates item position and name from |sync_item|. |sync_item| must be valid.
   void UpdateFromSync(
       const app_list::AppListSyncableService::SyncItem* sync_item);
@@ -120,10 +125,6 @@ class ChromeAppListItem {
   // Get the context menu of a certain app. This could be different for
   // different kinds of items.
   virtual app_list::AppContextMenu* GetAppContextMenu();
-
-  void set_chrome_folder_id(const std::string& folder_id) {
-    metadata_->folder_id = folder_id;
-  }
 
  private:
   ash::mojom::AppListItemMetadataPtr metadata_;

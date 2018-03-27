@@ -222,15 +222,6 @@ function timelineThumb(videoElement) {
     return thumb;
 }
 
-function timelineThumbCurrentTime(videoElement) {
-    const controlID = '-internal-media-controls-thumb-current-time';
-    const timeline = timelineElement(videoElement);
-    const thumb = mediaControlsElement(window.internals.shadowRoot(timeline).firstChild, controlID);
-    if (!thumb)
-        throw 'Failed to find timeline current time';
-    return thumb;
-}
-
 function scrubbingMessageElement(videoElement) {
     var controlID = '-internal-media-controls-scrubbing-message';
     var button = mediaControlsElement(window.internals.shadowRoot(videoElement).firstChild, controlID);
@@ -386,6 +377,23 @@ function singleTapAtCoordinates(xPos, yPos, callback) {
   chrome.gpuBenchmarking.pointerActionSequence([
     {
       source: 'mouse',
+      actions: [
+        { name: 'pointerDown', x: xPos, y: yPos },
+        { name: 'pointerUp' }
+      ]
+    }
+  ], callback);
+}
+
+function singleTapOnControl(control, callback) {
+  const coordinates = elementCoordinates(control);
+  singleTapAtCoordinates(coordinates[0], coordinates[1], callback);
+}
+
+function singleTouchAtCoordinates(xPos, yPos, callback) {
+  chrome.gpuBenchmarking.pointerActionSequence([
+    {
+      source: 'touch',
       actions: [
         { name: 'pointerDown', x: xPos, y: yPos },
         { name: 'pointerUp' }

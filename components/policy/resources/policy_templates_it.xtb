@@ -60,6 +60,9 @@
 
       Se questa norma non viene impostata, la frequenza predefinita è pari a tre ore. La frequenza minima consentita è pari a 60 secondi.</translation>
 <translation id="1204263402976895730">Stampanti aziendali attive</translation>
+<translation id="1219695476179627719">Consente di specificare se il dispositivo deve eseguire il rollback alla versione impostata da <ph name="DEVICE_TARGET_VERSION_PREFIX_POLICY_NAME" /> nel caso in cui sia già in esecuzione una versione successiva.
+
+      L'impostazione predefinita è RollbackDisabled.</translation>
 <translation id="1221359380862872747">Carica gli URL specificati all'accesso demo</translation>
 <translation id="123081309365616809">Attiva la trasmissione di contenuti al dispositivo</translation>
 <translation id="1257550411839719984">Imposta directory di download predefinita</translation>
@@ -144,6 +147,11 @@ Se la norma non viene impostata, la modalità ad alto contrasto viene disattivat
 <translation id="1503487916067509762">Attiva blocco inserimento da software di terze parti</translation>
 <translation id="1504431521196476721">Attestazione da remoto</translation>
 <translation id="1509692106376861764">Questa norma non è più supportata a partire dalla versione 29 di <ph name="PRODUCT_NAME" />.</translation>
+<translation id="1519337829779572350">Questa impostazione è obsoleta. Utilizza invece SafeBrowsingExtendedReportingEnabled. L'attivazione o la disattivazione di SafeBrowsingExtendedReportingEnabled equivale a impostare SafeBrowsingExtendedReportingOptInAllowed su false.
+
+      L'impostazione di questa norma su false impedisce agli utenti di decidere di inviare ai server di Google alcune informazioni di sistema e i contenuti della pagina. Se questa impostazione viene configurata su true o non viene configurata, gli utenti potranno inviare alcune informazioni di sistema e i contenuti della pagina a Navigazione sicura per contribuire a rilevare app e siti pericolosi.
+
+      Visita il sito https://developers.google.com/safe-browsing per avere ulteriori informazioni sulla funzione Navigazione sicura.</translation>
 <translation id="1522425503138261032">Consenti ai siti di monitorare la posizione fisica degli utenti</translation>
 <translation id="152657506688053119">Elenco di URL alternativi per il fornitore del servizio di ricerca predefinito</translation>
 <translation id="1530812829012954197">Visualizza sempre i seguenti schemi URL nel browser host</translation>
@@ -313,9 +321,6 @@ Questa norma viene rispettata soltanto se la norma "DefaultSearchProviderEnabled
       Se questa impostazione viene configurata, gli utenti che usano lo sblocco rapido devono inserire le proprie password nella schermata di blocco in base a questa impostazione.
 
       Se questa impostazione non viene configurata, gli utenti che usano lo sblocco rapido devono inserire ogni giorno la propria password nella schermata di blocco.</translation>
-<translation id="2188722565665306629">Ti consente di impostare il periodo di tempo durante il quale vengono visualizzate le notifiche di riavvio di <ph name="PRODUCT_NAME" /> per applicare un aggiornamento in attesa.
-
-      Questa impostazione della norma può essere utilizzata per controllare il periodo di tempo, in millisecondi, durante il quale un utente viene informato progressivamente che <ph name="PRODUCT_NAME" /> deve essere riavviato (o <ph name="PRODUCT_OS_NAME" /> deve essere riavviato) per un aggiornamento. Durante questo periodo, l'utente verrà ripetutamente informato della necessità di un aggiornamento in base all'impostazione della norma <ph name="RELAUNCH_NOTIFICATION_POLICY_NAME" />. Se non impostata, viene utilizzato il periodo predefinito di 604800000 millisecondi (una settimana).</translation>
 <translation id="2194470398825717446">Questa norma è stata ritirata in M61. Usa la norma EcryptfsMigrationStrategy.
 
       Consente di specificare come deve comportarsi un dispositivo con ecryptfs e come deve passare alla crittografia ext4.
@@ -488,6 +493,11 @@ Se attivi o disattivi questa impostazione, gli utenti non potranno cambiarla o i
 Se questa norma non viene impostata, l'utente potrà scegliere se utilizzare o meno la funzione proxy di compressione dei dati.</translation>
 <translation id="2587719089023392205">Imposta <ph name="PRODUCT_NAME" /> come browser predefinito</translation>
 <translation id="2592091433672667839">Durata inattività prima della visualizzazione dello screensaver nella schermata di accesso in modalità retail</translation>
+<translation id="2596260130957832043">Consente di stabilire se attivare o meno l'autenticazione NTLMv2.
+
+          Tutte le versioni recenti dei server Samba e Windows supportano l'autenticazione NTLMv2, che deve essere disattivata solo per garantire la compatibilità con le versioni precedenti, in quanto riduce la sicurezza dell'autenticazione.
+
+          Se questa norma non viene impostata, l'impostazione predefinita è true e l'autenticazione NTLMv2 è attivata.</translation>
 <translation id="2623014935069176671">Attesa dell'attività iniziale dell'utente</translation>
 <translation id="262740370354162807">Attiva l'invio di documenti a <ph name="CLOUD_PRINT_NAME" /></translation>
 <translation id="2633084400146331575">Attiva la funzione di lettura vocale</translation>
@@ -502,6 +512,7 @@ Se questa norma non viene impostata, l'utente potrà scegliere se utilizzare o m
 <translation id="267596348720209223">Consente di specificare le codifiche dei caratteri supportate dal provider di ricerca. Le codifiche sono nomi di pagine codificati come UTF-8, GB2312 e ISO-8859-1. Vengono provate nell'ordine indicato. Questa norma è facoltativa. Se non viene impostata viene utilizzato il valore predefinito UTF-8. Questa norma viene rispettata soltanto se è attiva la norma "DefaultSearchProviderEnabled".</translation>
 <translation id="2682225790874070339">Consente di disattivare Drive nell'app File di <ph name="PRODUCT_OS_NAME" /></translation>
 <translation id="268577405881275241">Attiva la funzione proxy di compressione dei dati</translation>
+<translation id="2693108589792503178">Configura l'URL di modifica della password.</translation>
 <translation id="2731627323327011390">Disattiva l'utilizzo dei certificati <ph name="PRODUCT_OS_NAME" /> per le app ARC</translation>
 <translation id="2742843273354638707">Consente di nascondere l'app Chrome Web Store e il link nel piè di pagina nella pagina Nuova scheda e in Avvio applicazioni di <ph name="PRODUCT_OS_NAME" />.
 
@@ -559,6 +570,7 @@ Se questa norma non viene impostata, l'utente potrà scegliere se utilizzare o m
       Se disattivi o non configuri questa impostazione, in Anteprima di stampa viene indicata la stampante utilizzata più di recente come destinazione predefinita.
 
       Se attivi questa impostazione, in Anteprima di stampa viene usata la stampante predefinita del sistema operativo come destinazione predefinita.</translation>
+<translation id="2867699958489427143">Esegui il rollback alla versione target se la versione del sistema operativo è più nuova del target. Esegui un powerwash completo durante la procedura.</translation>
 <translation id="2872961005593481000">Spegni</translation>
 <translation id="2874209944580848064">Nota per i dispositivi <ph name="PRODUCT_OS_NAME" /> che supportano le app Android:</translation>
 <translation id="2877225735001246144">Disabilita ricerca CNAME durante la negoziazione con Kerberos</translation>
@@ -594,6 +606,7 @@ Il valore della norma deve essere specificato in millisecondi. I valori devono e
 <translation id="2987155890997901449">Attiva ARC</translation>
 <translation id="2987227569419001736">Controlla l'utilizzo dell'API Web Bluetooth</translation>
 <translation id="3016255526521614822">Autorizza l'uso di app per scrivere note nella schermata di blocco di <ph name="PRODUCT_OS_NAME" /></translation>
+<translation id="3021562480854470924">Numero di obiettivi consentiti per il rollback</translation>
 <translation id="3030000825273123558">Attiva rapporti sulle metriche</translation>
 <translation id="3034580675120919256">Permette di stabilire se consentire o meno l'esecuzione di JavaScript nei siti web. L'esecuzione di JavaScript può essere consentita o negata per tutti i siti web. Se questa norma non viene impostata, verrà utilizzato il valore "AllowJavaScript", che potrà essere modificato dagli utenti.</translation>
 <translation id="3038323923255997294">Continua a eseguire applicazioni in background dopo la chiusura di <ph name="PRODUCT_NAME" /></translation>
@@ -700,7 +713,7 @@ Il valore della norma deve essere specificato in millisecondi. I valori devono e
       </translation>
 <translation id="3414260318408232239">Se questa norma non viene configurata, <ph name="PRODUCT_NAME" /> utilizza una versione minima predefinita, ossia TLS 1.0.
 
-      In caso contrario, la norma potrebbe essere impostata su uno dei seguenti valori: "tls1", "tls1.1" o "tls1.2". Se questa norma viene impostata, <ph name="PRODUCT_NAME" /> non utilizzerà versioni SSL/TLS precedenti a quella specificata. I valori non riconosciuti verranno ignorati.</translation>
+      In caso contrario, la norma potrebbe essere impostata su uno dei seguenti valori: "tls1", "tls1.1" o "tls1.2". Se questa norma viene impostata, <ph name="PRODUCT_NAME" /> non utilizzerà versioni SSL/TLS precedenti alla versione specificata. I valori non riconosciuti verranno ignorati.</translation>
 <translation id="3417418267404583991">Se questa norma viene impostata su true o non viene configurata, in <ph name="PRODUCT_OS_NAME" /> verranno attivati gli accessi come ospite. Gli accessi come ospite sono sessioni utente anonime che non richiedono password.
 
       Se questa norma viene impostata su false, in <ph name="PRODUCT_OS_NAME" /> non sarà possibile avviare sessioni Ospite.</translation>
@@ -806,7 +819,7 @@ Questa norma viene rispettata soltanto se viene attivata la norma "DefaultSearch
 
           Se questa norma non viene impostata, inizialmente la tastiera sullo schermo è disattivata, ma l'utente la può attivare in qualsiasi momento.</translation>
 <translation id="382476126209906314">Configura il prefisso TalkGadget per gli host di accesso remoto</translation>
-<translation id="3831376478177535007">Se questa impostazione viene attivata, <ph name="PRODUCT_NAME" /> consente di ritenere attendibili i certificati emessi dal team addetto alle operazioni dell'infrastruttura PKI precedente di Symantec Corporation se convalidano e collegano correttamente a un certificato CA riconosciuto.
+<translation id="3831376478177535007">Se questa impostazione viene attivata, <ph name="PRODUCT_NAME" /> consente di ritenere attendibili i certificati emessi dal team addetto alle operazioni dell'infrastruttura PKI precedente di Symantec Corporation se sono correttamente convalidati e collegati a un certificato CA riconosciuto.
 
       Tieni presente che questa norma dipende dal riconoscimento da parte del sistema operativo dei certificati dell'infrastruttura precedente di Symantec. Se un aggiornamento del sistema operativo cambia la modalità di gestione di tali certificati da parte del sistema, questa norma non viene più applicata. Inoltre, questa norma è intesa come soluzione alternativa temporanea per dare alle aziende più tempo per ritirare i certificati Symantec precedenti. Questa norma verrà rimossa il 1° gennaio 2019 o in una data successiva.
 
@@ -992,6 +1005,8 @@ Questa norma viene rispettata soltanto se la norma "DefaultSearchProviderEnabled
 <translation id="4418726081189202489">Se questa norma viene impostata su false, <ph name="PRODUCT_NAME" /> non può più inviare query occasionali a un server di Google per recuperare un timestamp preciso. Queste query vengono attivate se questa norma viene impostata su True o non viene configurata.</translation>
 <translation id="4423597592074154136">Specifica manualmente le impostazioni proxy</translation>
 <translation id="4429220551923452215">Attiva o disattiva la scorciatoia per le app nella barra dei Preferiti. Se questa norma non è impostata, l'utente può scegliere di mostrare o nascondere la scorciatoia per le app dal menu contestuale della barra dei Preferiti. Se la norma è configurata, l'utente non può modificarla e la scorciatoia per le app viene mostrata sempre oppure non viene mostrata mai.</translation>
+<translation id="4432762137771104529">Attiva rapporti estesi su Navigazione sicura</translation>
+<translation id="443454694385851356">Precedente (non sicuro)</translation>
 <translation id="443665821428652897">Cancella i dati del sito alla chiusura del browser (obsoleta)</translation>
 <translation id="4439336120285389675">Consente di specificare un elenco di funzioni ritirate della piattaforma web da riattivare temporaneamente.
 
@@ -1010,6 +1025,13 @@ Questa norma viene rispettata soltanto se la norma "DefaultSearchProviderEnabled
 <translation id="4482640907922304445">Consente di visualizzare il pulsante Pagina iniziale sulla barra degli strumenti di <ph name="PRODUCT_NAME" />. Se attivi questa impostazione il pulsante Pagina iniziale verrà sempre visualizzato, in caso contrario non verrà mai visualizzato. Se questa impostazione viene attivata o disattivata, gli utenti non potranno modificarla o sostituirla in <ph name="PRODUCT_NAME" />. Se non imposti questa norma gli utenti potranno scegliere se visualizzare o meno il pulsante Pagina iniziale.</translation>
 <translation id="4485425108474077672">Configura l'URL per la pagina Nuova scheda</translation>
 <translation id="4492287494009043413">Disabilita l'acquisizione di screenshot</translation>
+<translation id="4497968613298501984">Configura l'elenco di URL di accesso aziendale (solo schemi HTTP e HTTPS). L'impronta digitale della password sarà acquisita su questi URL e utilizzata successivamente per il rilevamento del riutilizzo della password.
+      Questa impostazione deve essere usata solo da utenti G Suite che adoperano un sistema SSO/SMAL.
+      Affinché <ph name="PRODUCT_NAME" /> possa acquisire correttamente le impronte digitali delle password, assicurati che le pagine di accesso rispettino le linee guida all'indirizzo https://www.chromium.org/developers/design-documents/create-amazing-password-forms.
+
+      Se questa impostazione è attiva, il servizio di protezione tramite password acquisisce l'impronta della password su questi URL ai fini del rilevamento del riutilizzo della password.
+      Se questa impostazione è disattiva o non configurata, il servizio di protezione tramite password acquisirà l'impronta della password solo sulla pagina https://accounts.google.com.
+      Questa norma non è disponibile su istanze Windows che non fanno parte di un dominio <ph name="MS_AD_NAME" />.</translation>
 <translation id="450537894712826981">Consente di configurare le dimensioni della cache che verranno utilizzate da <ph name="PRODUCT_NAME" /> per archiviare sul disco i file multimediali memorizzati nella cache.
 
 Se questa norma viene impostata, <ph name="PRODUCT_NAME" /> utilizzerà le dimensioni della cache indicate a prescindere dalla specifica o meno da parte dell'utente del flag "--media-cache-size". Il valore specificato in questa norma non è un limite rigido ma un suggerimento per il sistema di memorizzazione nella cache. I valori inferiori ad alcuni megabyte sono troppo piccoli e verranno arrotondati a un valore minimo ragionevole.
@@ -1124,6 +1146,13 @@ Viene visualizzato un errore appropriato se un utente tenta di accedere con un n
 
 Se questa norma non viene impostata o viene lasciata vuota, qualsiasi utente potrà accedere a <ph name="PRODUCT_NAME" />.</translation>
 <translation id="4858735034935305895">Consenti modalità a schermo intero</translation>
+<translation id="4868249328547841081">Configura l'URL di modifica della password (solo modelli HTTP e HTTPS). Il servizio di protezione tramite password invia gli utenti a questo URL per modificare le password se queste sono state oggetto di phishing.
+      Questa impostazione deve essere usata solo da utenti G Suite che adoperano un sistema SSO/SMAL.
+      Affinché <ph name="PRODUCT_NAME" /> possa acquisire correttamente le impronte digitali delle password, assicurati che la pagina di modifica della password rispetti le linee guida all'indirizzo https://www.chromium.org/developers/design-documents/create-amazing-password-forms.
+
+      Se questa impostazione è attiva, il servizio di protezione tramite password invia gli utenti a questo URL per modificare le password se queste sono state oggetto di phishing.
+      Se questa impostazione è disattivata o non configurata, il servizio di protezione tramite password invia gli utenti alla pagina https://myaccounts.google.com per modificare la password.
+      Questa norma non è disponibile su istanze Windows che non fanno parte di un dominio <ph name="MS_AD_NAME" />.</translation>
 <translation id="4869787217450099946">Specifica se sono consentiti i Wakelock dello schermo. I Wakelock dello schermo possono essere richiesti dalle estensioni tramite l'API dell'estensione di gestione dell'alimentazione.
 
           Se questa norma è impostata su True o non è impostata, verranno rispettati i Wakelock dello schermo nella gestione dell'alimentazione.
@@ -1183,7 +1212,29 @@ Questa norma viene rispettata soltanto se la norma "DefaultSearchProviderEnabled
 <translation id="5068140065960598044">La norma cloud di <ph name="PRODUCT_NAME" /> prevale sulla norma della macchina.</translation>
 <translation id="5085647276663819155">Disattiva anteprima di stampa</translation>
 <translation id="5090209345759901501">Applica l'impostazione dei contenuti Flash a tutti i contenuti</translation>
+<translation id="5093540029655764852">Consente di specificare la frequenza (in giorni) alla quale un client modifica la password dell'account del computer. La password è generata in modo casuale dal client e non è visibile all'utente.
+
+      Come per le password dell'utente, anche le password del computer andrebbero modificate regolarmente. Se disattivi questa norma o imposti un numero di giorni elevato, la sicurezza ne risentirà negativamente poiché in questo modo concederai più tempo ai potenziali utenti malintenzionati per trovare la password dell'account del computer e utilizzarla.
+
+      Se la norma non viene impostata, la password dell'account del computer viene modificata ogni 30 giorni.
+
+      Se la norma è impostata su 0, la modifica della password dell'account del computer è disattivata.
+
+      Tieni presente che le password potrebbero durare più a lungo rispetto ai giorni specificati se il client è offline per un periodo più lungo di tempo.</translation>
 <translation id="5105313908130842249">Ritardo blocco schermo in caso di utilizzo della batteria</translation>
+<translation id="5106504910236139235">Attiva i rapporti estesi su Navigazione sicura di <ph name="PRODUCT_NAME" /> e impedisce agli utenti di modificare questa impostazione.
+
+      I rapporti estesi inviano ai server di Google alcune informazioni di sistema e i contenuti della pagina per contribuire a rilevare app e siti pericolosi.
+
+      Se l'impostazione è configurata su true, i rapporti verranno creati e inviati a seconda delle necessità (ad esempio, quando viene mostrato un annuncio interstitial di sicurezza).
+
+      Se l'impostazione è configurata su false, i rapporti non vengono inviati.
+
+      Se la norma è impostata su true o false, l'utente non potrà modificare l'impostazione.
+
+      Se la norma non viene impostata, l'utente potrà modificare l'impostazione e decidere se inviare rapporti o meno.
+
+      Visita il sito https://developers.google.com/safe-browsing per avere ulteriori informazioni sulla funzione Navigazione sicura.</translation>
 <translation id="5108031557082757679">Stampanti aziendali associate ai dispositivi disattivate</translation>
 <translation id="5130288486815037971">Attiva o meno i pacchetti di crittografia RC4 in TLS</translation>
 <translation id="5141670636904227950">Impostazione tipo di ingrandimento dello schermo predefinito attivato nella schermata di accesso</translation>
@@ -1203,6 +1254,7 @@ Se questa norma non viene impostata viene utilizzata la riga di comando predefin
       Se la norma non viene impostata, l'intervallo predefinito è pari a tre minuti. L'intervallo minimo è pari a 30 secondi, il massimo a 24 ore. I valori che non rientrano in questo intervallo verranno fatti rientrare.</translation>
 <translation id="5182055907976889880">Configura Google Drive in <ph name="PRODUCT_OS_NAME" />.</translation>
 <translation id="5183383917553127163">Consente di specificare le estensioni da non includere nella blacklist. Un valore di * riportato nella blacklist indica che tutte le estensioni sono state inserite nella blacklist e che gli utenti possono installare solo quelle elencate nella whitelist. Per impostazione predefinita, tutte le estensioni si trovano nella whitelist, ma se in base alla norma applicata tutte le estensioni sono state inserite nella blacklist, la whitelist può essere utilizzata per annullare tale norma.</translation>
+<translation id="519247340330463721">Configura le norme relative alla Navigazione sicura.</translation>
 <translation id="5192837635164433517">Consente di attivare l'utilizzo di pagine di errore alternative integrate in <ph name="PRODUCT_NAME" /> (come "pagina non trovata") e di impedire agli utenti di modificare questa impostazione. Se attivi questa impostazione, vengono utilizzate le pagine di errore alternative. Se la disattivi, le pagine di errore alternative non vengono mai utilizzate. Se l'impostazione viene attivata o disattivata, gli utenti non potranno modificarla o sostituirla in <ph name="PRODUCT_NAME" />. Se questa norma non viene impostata, l'impostazione verrà attivata ma gli utenti potranno modificarla.</translation>
 <translation id="5196805177499964601">Blocca la modalità sviluppatore.
 
@@ -1213,6 +1265,15 @@ Se questa norma non viene impostata viene utilizzata la riga di comando predefin
 <translation id="5219844027738217407">Nell'ambito delle app Android, la norma influisce solo sul microfono. Se la norma viene impostata su true, il microfono viene disattivato per tutte le app Android, senza alcuna eccezione.</translation>
 <translation id="523505283826916779">Impostazioni di accessibilità</translation>
 <translation id="5247006254130721952">Blocca download pericolosi</translation>
+<translation id="5248863213023520115">Permette di impostare i tipi di crittografia consentiti quando vengono richiesti ticket Kerberos a un server <ph name="MS_AD_NAME" />.
+
+      Se la norma viene impostata su "Tutto", sono consentiti sia i tipi di crittografia AES "aes256-cts-hmac-sha1-96" e "aes128-cts-hmac-sha1-96" sia il tipo di crittografia RC4 "rc4-hmac". Se il server supporta entrambi i tipi, viene usata preferibilmente la crittografia AES. Tieni presente che la crittografia RC4 è considerata debole e, se possibile, il server dovrebbe essere riconfigurato per supportare la crittografia AES.
+
+      Se la norma viene impostata su "Avanzata" o se non viene impostata, sono consentiti soltanto i tipi di crittografia AES.
+
+      Se la norma viene impostata su "Precedente", è consentito soltanto il tipo di crittografia RC4. Questa opzione non è sicura e dovrebbe essere necessaria soltanto in casi molto specifici.
+
+      Visita anche la pagina https://wiki.samba.org/index.php/Samba_4.6_Features_added/changed#Kerberos_client_encryption_types.</translation>
 <translation id="5255162913209987122">Può essere consigliata</translation>
 <translation id="527237119693897329">Consente di specificare gli host di messaggi nativi che non devono essere caricati.
 
@@ -1294,6 +1355,7 @@ Se questa impostazione viene disattivata o non viene impostata, sia gli utenti l
       Se questa norma è impostata, verrà eseguito l'accesso automatico alla sessione specificata dopo che è trascorso un periodo di tempo senza interazioni dell'utente nella schermata di accesso. La sessione pubblica deve essere già configurata (vedi |DeviceLocalAccounts|).
 
       Se questa norma non è impostata, non avverrà l'accesso automatico.</translation>
+<translation id="5526701598901867718">Tutto (non sicuro)</translation>
 <translation id="5529037166721644841">Consente di specificare in millisecondi il periodo di tempo per cui vengono richieste informazioni sulle norme relative al dispositivo al servizio di gestione del dispositivo.
 
       Se questa norma viene impostata, il valore predefinito di tre ore viene ignorato. L'intervallo dei valori validi per questa norma è compreso tra 1800000 (30 minuti) e 86400000 (un giorno). I valori non compresi in questo intervallo verranno bloccati al relativo limite.
@@ -1360,6 +1422,19 @@ Se questa norma viene impostata, consente di specificare il periodo di tempo per
 Se questa norma non viene impostata, viene utilizzato un periodo di tempo predefinito.
 
 Il valore della norma deve essere specificato in millisecondi.</translation>
+<translation id="5784370777704871674">Abilita la funzione Navigazione sicura di <ph name="PRODUCT_NAME" /> e impedisce agli utenti di modificare questa impostazione.
+
+      Se attivi questa impostazione, la Navigazione sicura è sempre attiva.
+
+      Se la disattivi, la Navigazione sicura non è mai attiva.
+
+      Se attivi o disattivi l'impostazione, gli utenti non possono modificare o sostituire l'impostazione "Attiva protezione contro phishing e malware" in <ph name="PRODUCT_NAME" />.
+
+      Se questa norma non viene impostata, l'impostazione verrà attivata ma gli utenti potranno modificarla.
+
+      Visita il sito https://developers.google.com/safe-browsing per avere ulteriori informazioni sulla funzione Navigazione sicura.
+
+      Questa norma non è disponibile su istanze di Windows che non fanno parte di un dominio <ph name="MS_AD_NAME" />.</translation>
 <translation id="5795001131770861387">Consente di attivare il supporto HTTP/0.9 sulle porte non predefinite</translation>
 <translation id="5809728392451418079">Imposta il nome visualizzato per gli account del dispositivo</translation>
 <translation id="5814301096961727113">Impostazione stato predefinito della lettura vocale nella schermata di accesso</translation>
@@ -1578,6 +1653,7 @@ Questa norma viene rispettata soltanto se la norma "DefaultSearchProviderEnabled
           Se si decide di rilevare automaticamente il server proxy, alle app Android viene fornito l'URL script "http://wpad/wpad.dat". Non viene utilizzata nessun'altra parte del protocollo di rilevamento automatico del server proxy.
 
           Se si decide di utilizzare uno script proxy .pac, alle app Android viene fornito l'URL script.</translation>
+<translation id="6473623140202114570">Configura l'elenco di domini sui quali Navigazione sicura non attiverà avvisi.</translation>
 <translation id="6491139795995924304">Consenti Bluetooth sul dispositivo</translation>
 <translation id="6520802717075138474">Importa motori di ricerca dal browser predefinito alla prima esecuzione</translation>
 <translation id="6525955212636890608">Se attivi questa impostazione, verranno eseguiti tutti i contenuti Flash incorporati nei siti web per cui è stato consentito Flash nelle impostazioni dei contenuti (dall'utente o in base a una norma aziendale), inclusi i contenuti di altre origini o contenuti ridotti.
@@ -1669,7 +1745,11 @@ Se questa norma non viene impostata o se l'elenco è vuoto, sarà possibile acce
 <translation id="6810445994095397827">Blocca Javascript in questi siti</translation>
 <translation id="681446116407619279">Schemi di autenticazione supportati</translation>
 <translation id="6835883744948188639">Mostra un messaggio ricorrente all'utente in cui indica che è consigliato eseguire un riavvio</translation>
+<translation id="6856743875250214792">Questa norma è obsoleta ed è stata rimossa su M66, poiché era utilizzata solo per test interni e rappresenta un rischio per la sicurezza.
+
+      Consente di specificare i flag da applicare all'avvio di <ph name="PRODUCT_NAME" />. I flag specificati vengono applicati soltanto alla schermata di accesso. I flag impostati tramite questa norma non vengono applicati anche alle sessioni utente.</translation>
 <translation id="685769593149966548">Imponi Livello massimo della Modalità con restrizioni per YouTube</translation>
+<translation id="686079137349561371">Microsoft Windows 7 o versioni successive</translation>
 <translation id="687046793986382807">Questa norma è stata ritirata a partire dalla versione 35 di <ph name="PRODUCT_NAME" />.
 
       Le informazioni sulla memoria sono comunque riportate sulla pagina, indipendentemente dal valore opzione, ma le dimensioni segnalate presentano
@@ -1750,6 +1830,7 @@ Se la norma non viene configurata, la lettura vocale viene inizialmente disattiv
 <translation id="7053678646221257043">Se è attiva, questa norma impone l'importazione dei Preferiti dal browser predefinito corrente. Se la norma è attiva incide anche sulla finestra di dialogo di importazione. Se non è attiva, i Preferiti non vengono importati. Se non viene impostata, all'utente potrebbe essere chiesto se desidera effettuare l'importazione, oppure l'importazione potrebbe avvenire automaticamente.</translation>
 <translation id="7063895219334505671">Consenti popup su questi siti</translation>
 <translation id="706669471845501145">Consenti la visualizzazione di notifiche desktop da parte dei siti</translation>
+<translation id="7072208053150563108">Frequenza di modifica della password del computer</translation>
 <translation id="7072406291414141328">Attiva la limitazione della larghezza di banda</translation>
 <translation id="7079519252486108041">Blocca popup su questi siti</translation>
 <translation id="7106631983877564505">Consente di attivare il blocco quando lo stato dei dispositivi <ph name="PRODUCT_OS_NAME" /> diventa inattivo o sospeso.
@@ -1768,6 +1849,7 @@ Se la norma non viene configurata, la lettura vocale viene inizialmente disattiv
       Se questa norma viene impostata su false, la modalità in background viene disattivata e non può essere controllata dall'utente tramite le impostazioni del browser.
 
       Se la norma non viene impostata, la modalità in background viene inizialmente disattivata e può essere controllata dall'utente tramite le impostazioni del browser.</translation>
+<translation id="7127892035367404455">Rollback alla versione target</translation>
 <translation id="7128918109610518786">Consente di elencare gli ID delle applicazioni da visualizzare in <ph name="PRODUCT_OS_NAME" /> sotto forma di applicazioni bloccate nella barra Avvio applicazioni.
 
 Se questa norma viene configurata, il gruppo di applicazioni è fisso e non può essere modificato dagli utenti.
@@ -1853,6 +1935,7 @@ Il valore della norma deve essere specificato in millisecondi. I valori devono e
 
       Se questa norma non viene impostata, la pulizia automatica utilizza la strategia incorporata predefinita, che al momento è "RemoveLRUIfDormant".</translation>
 <translation id="7336878834592315572">Conserva cookie per tutta la durata della sessione</translation>
+<translation id="733838170182967492">Consente la riproduzione automatica dei contenuti multimediali</translation>
 <translation id="7340034977315324840">Indicazione tempi di attività del dispositivo</translation>
 <translation id="7343497214039883642">File di configurazione delle stampanti aziendali per i dispositivi</translation>
 <translation id="7384999953864505698">Consente il protocollo QUIC</translation>
@@ -1868,6 +1951,7 @@ Il valore della norma deve essere specificato in millisecondi. I valori devono e
       Se questa norma viene disattivata, l'utente non può usare il controllo ortografico. Se questa norma viene disattivata, viene ignorata anche la norma SpellcheckLanguage.
       </translation>
 <translation id="7443616896860707393">Richieste di autenticazione di base HTTP tra origini</translation>
+<translation id="7458437477941640506">Non eseguire il rollback alla versione target se la versione del sistema operativo è più nuova del target. Anche gli aggiornamenti sono disattivati.</translation>
 <translation id="7469554574977894907">Attiva suggerimenti di ricerca</translation>
 <translation id="7474249562477552702">Specifica se i certificati SHA-1 firmati emessi dai trust anchor locali sono consentiti</translation>
 <translation id="7485481791539008776">Regole di selezione della stampante predefinita</translation>
@@ -1896,6 +1980,7 @@ Se questa norma viene impostata, <ph name="PRODUCT_NAME" /> utilizzerà le dimen
 Se il valore di questa norma è 0, verranno utilizzate le dimensioni della cache predefinite, che l'utente non potrà modificare.
 
 Se questa norma non viene impostata, verranno utilizzate le dimensioni predefinite, che l'utente potrà sostituire con il flag --disk-cache-size.</translation>
+<translation id="759957074386651883">Impostazioni di Navigazione sicura</translation>
 <translation id="7604169113182304895">Le app Android potrebbero decidere volontariamente se rispettare o meno questo elenco. Non è possibile imporre il rispetto dell'elenco.</translation>
 <translation id="7612157962821894603">Contrassegni a livello di sistema da applicare all'avvio di <ph name="PRODUCT_NAME" /></translation>
 <translation id="7614663184588396421">Elenco degli schemi di protocollo disabilitati</translation>
@@ -2144,6 +2229,7 @@ Se questa norma non viene impostata, le pagine saranno sottoposte a scansione pe
 <translation id="841977920223099909">Attivazione dell'avviso di protezione tramite password</translation>
 <translation id="8424255554404582727">Imposta la rotazione predefinita dello schermo, riapplicata a ogni riavvio</translation>
 <translation id="8426231401662877819">Ruota lo schermo in senso orario di 90°</translation>
+<translation id="8433423491036718210">Configura l'elenco di URL di accesso aziendale in cui il servizio di protezione tramite password deve acquisire l'impronta della password.</translation>
 <translation id="8451988835943702790">Usa la pagina Nuova scheda come Pagina iniziale</translation>
 <translation id="8459216513698220096">Consente di specificare se e come devono essere elaborate le norme relative agli utenti del GPO del computer.
 
@@ -2162,6 +2248,16 @@ Se questa norma non viene impostata, le pagine saranno sottoposte a scansione pe
           Per avere pattern di esempio, visita il sito https://www.chromium.org/developers/how-tos/chrome-frame-getting-started.</translation>
 <translation id="8493645415242333585">Disabilita salvataggio della cronologia del browser</translation>
 <translation id="8499172469244085141">Impostazioni predefinite (gli utenti possono ignorarle)</translation>
+<translation id="8507835864888987300">Consente di impostare una versione target per gli Aggiornamenti automatici.
+
+      Consente di specificare il prefisso della versione target a cui <ph name="PRODUCT_OS_NAME" /> deve aggiornarsi. Se sul dispositivo viene eseguita una versione precedente a quella del prefisso specificato, il dispositivo si aggiornerà all'ultima versione con il prefisso dato. Se il dispositivo ha già l'ultima versione, gli effetti dipendono dal valore di <ph name="DEVICE_ROLLBACK_TO_TARGET_VERSION_POLICY_NAME" />. Il formato del prefisso funziona in relazione al componente, come mostrato nell'esempio seguente:
+
+      "" (o non configurata): aggiornamento all'ultima versione disponibile.
+      "1412.": aggiornamento a qualsiasi versione secondaria di 1412 (ad es. 1412.24.34 o 1412.60.2)
+      "1412.2.": aggiornamento a qualsiasi versione secondaria di 1412.2 (ad es. 1412.2.34 o 1412.2.2)
+      "1412.24.34": aggiornamento soltanto a questa versione specifica
+
+      Avviso: non è consigliabile configurare restrizioni alle versioni, poiché potrebbero impedire agli utenti di ricevere aggiornamenti software e correzioni di sicurezza fondamentali. Limitare gli aggiornamenti a uno specifico prefisso per la versione potrebbe mettere a rischio gli utenti.</translation>
 <translation id="8519264904050090490">URL delle eccezioni manuali per gli utenti gestiti</translation>
 <translation id="8527932539502116028">Consente di specificare le stampanti non utilizzabili dagli utenti.
 
@@ -2365,6 +2461,13 @@ Il valore della norma deve essere specificato in millisecondi. I valori devono e
 <translation id="924557436754151212">Importa password salvate dal browser predefinito alla prima esecuzione</translation>
 <translation id="930930237275114205">Imposta la directory dei dati utente di <ph name="PRODUCT_FRAME_NAME" /></translation>
 <translation id="934390688529359269">Consente di attivare l'accesso forzato per <ph name="PRODUCT_NAME" /></translation>
+<translation id="938916311528680351">Ti consente di controllare se le macchine virtuali possono essere eseguite su Chrome OS.
+
+      Se la norma viene impostata su true, al dispositivo è consentito eseguire le macchine virtuali.
+      Se la norma viene impostata su false, al dispositivo non è consentito eseguire le macchine virtuali.
+      Quando l'impostazione di questa norma viene modificata in false, la norma consente di avviare le nuove macchine virtuali, ma non determina l'arresto delle macchine virtuali già in esecuzione.
+      Quando questa norma non è impostata su un dispositivo gestito, il dispositivo potrà eseguire macchine virtuali.
+      I dispositivi non gestiti sono autorizzati a eseguire macchine virtuali.</translation>
 <translation id="944817693306670849">Imposta dimensioni cache su disco</translation>
 <translation id="982497069985795632">Attiva il controllo ortografico</translation>
 </translationbundle>

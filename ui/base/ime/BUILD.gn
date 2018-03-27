@@ -96,8 +96,21 @@ jumbo_component("ime") {
     "ui_base_ime_export.h",
     "win/imm32_manager.cc",
     "win/imm32_manager.h",
+    "win/on_screen_keyboard_display_manager_stub.cc",
+    "win/on_screen_keyboard_display_manager_stub.h",
+    "win/on_screen_keyboard_display_manager_tab_tip.cc",
+    "win/on_screen_keyboard_display_manager_tab_tip.h",
+    "win/osk_display_manager.cc",
+    "win/osk_display_manager.h",
+    "win/osk_display_observer.h",
+    "win/tsf_bridge.cc",
+    "win/tsf_bridge.h",
+    "win/tsf_event_router.cc",
+    "win/tsf_event_router.h",
     "win/tsf_input_scope.cc",
     "win/tsf_input_scope.h",
+    "win/tsf_text_store.cc",
+    "win/tsf_text_store.h",
   ]
 
   # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -112,6 +125,7 @@ jumbo_component("ime") {
     "//net",
     "//third_party/icu",
     "//ui/base",
+    "//ui/base/ime/chromeos/public/interfaces",
     "//ui/display",
     "//ui/events",
     "//ui/gfx",
@@ -179,7 +193,20 @@ jumbo_component("ime") {
     cflags = [ "/wd4324" ]  # Structure was padded due to __declspec(align()), which is
                             # uninteresting.
 
+    sources += [
+      "input_method_win_base.cc",
+      "input_method_win_base.h",
+      "input_method_win_tsf.cc",
+      "input_method_win_tsf.h",
+    ]
     libs = [ "imm32.lib" ]
+
+    jumbo_excluded_sources = [
+      # tsf_text_store.cc needs INITGUID to be defined before
+      # including any header to properly generate GUID objects. That
+      # is not guaranteed when included in a jumbo build.
+      "win/tsf_text_store.cc",
+    ]
   }
 
   if (is_mac) {

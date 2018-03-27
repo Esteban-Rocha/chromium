@@ -15,33 +15,108 @@ std::unique_ptr<MarkingVisitor> MarkingVisitor::Create(ThreadState* state,
 }
 
 MarkingVisitor::MarkingVisitor(ThreadState* state, MarkingMode marking_mode)
-    : Visitor(state), marking_mode_(marking_mode) {
-  // See ThreadState::runScheduledGC() why we need to already be in a
-  // GCForbiddenScope before any safe point is entered.
-  DCHECK(state->IsGCForbidden());
+    : Visitor(state),
+      marking_worklist_(Heap().GetMarkingWorklist(),
+                        WorklistTaskId::MainThread),
+      not_fully_constructed_worklist_(Heap().GetNotFullyConstructedWorklist(),
+                                      WorklistTaskId::MainThread),
+      post_marking_worklist_(Heap().GetPostMarkingWorklist(),
+                             WorklistTaskId::MainThread),
+      weak_callback_worklist_(Heap().GetWeakCallbackWorklist(),
+                              WorklistTaskId::MainThread),
+      marking_mode_(marking_mode) {
+  DCHECK(state->InAtomicMarkingPause());
 #if DCHECK_IS_ON()
   DCHECK(state->CheckThread());
-#endif
+#endif  // DCHECK_IS_ON
 }
 
 MarkingVisitor::~MarkingVisitor() = default;
 
-void MarkingVisitor::MarkNoTracingCallback(Visitor* visitor, void* object) {
-  // TODO(mlippautz): Remove cast;
-  reinterpret_cast<MarkingVisitor*>(visitor)->MarkNoTracing(object);
+void MarkingVisitor::ConservativelyMarkAddress(BasePage* page,
+                                               Address address) {
+#if DCHECK_IS_ON()
+  DCHECK(page->Contains(address));
+#endif
+  HeapObjectHeader* const header =
+      page->IsLargeObjectPage()
+          ? static_cast<LargeObjectPage*>(page)->GetHeapObjectHeader()
+          : static_cast<NormalPage*>(page)->FindHeaderFromAddress(address);
+  if (!header)
+    return;
+  ConservativelyMarkHeader(header);
 }
 
-void MarkingVisitor::RegisterWeakCallback(void* closure,
-                                          WeakCallback callback) {
-  DCHECK(GetMarkingMode() != kWeakProcessing);
-  // We don't want to run weak processings when taking a snapshot.
-  if (GetMarkingMode() == kSnapshotMarking)
+#if DCHECK_IS_ON()
+void MarkingVisitor::ConservativelyMarkAddress(
+    BasePage* page,
+    Address address,
+    MarkedPointerCallbackForTesting callback) {
+  DCHECK(page->Contains(address));
+  HeapObjectHeader* const header =
+      page->IsLargeObjectPage()
+          ? static_cast<LargeObjectPage*>(page)->GetHeapObjectHeader()
+          : static_cast<NormalPage*>(page)->FindHeaderFromAddress(address);
+  if (!header)
     return;
-  Heap().PushWeakCallback(closure, callback);
+  if (!callback(header))
+    ConservativelyMarkHeader(header);
+}
+#endif  // DCHECK_IS_ON
+
+namespace {
+
+#if DCHECK_IS_ON()
+bool IsUninitializedMemory(void* object_pointer, size_t object_size) {
+  // Scan through the object's fields and check that they are all zero.
+  Address* object_fields = reinterpret_cast<Address*>(object_pointer);
+  for (size_t i = 0; i < object_size / sizeof(Address); ++i) {
+    if (object_fields[i])
+      return false;
+  }
+  return true;
+}
+#endif
+
+}  // namespace
+
+void MarkingVisitor::ConservativelyMarkHeader(HeapObjectHeader* header) {
+  const GCInfo* gc_info = ThreadHeap::GcInfo(header->GcInfoIndex());
+  if (gc_info->HasVTable() && !VTableInitialized(header->Payload())) {
+    // We hit this branch when a GC strikes before GarbageCollected<>'s
+    // constructor runs.
+    //
+    // class A : public GarbageCollected<A> { virtual void f() = 0; };
+    // class B : public A {
+    //   B() : A(foo()) { };
+    // };
+    //
+    // If foo() allocates something and triggers a GC, the vtable of A
+    // has not yet been initialized. In this case, we should mark the A
+    // object without tracing any member of the A object.
+    MarkHeaderNoTracing(header);
+#if DCHECK_IS_ON()
+    DCHECK(IsUninitializedMemory(header->Payload(), header->PayloadSize()));
+#endif
+  } else {
+    MarkHeader(header, gc_info->trace_);
+  }
+}
+
+void MarkingVisitor::MarkNoTracingCallback(Visitor* visitor, void* object) {
+  reinterpret_cast<MarkingVisitor*>(visitor)->MarkHeaderNoTracing(
+      HeapObjectHeader::FromPayload(object));
+}
+
+void MarkingVisitor::RegisterWeakCallback(void* object, WeakCallback callback) {
+  // We don't want to run weak processings when taking a snapshot.
+  if (marking_mode_ == kSnapshotMarking)
+    return;
+  weak_callback_worklist_.Push({object, callback});
 }
 
 void MarkingVisitor::RegisterBackingStoreReference(void* slot) {
-  if (GetMarkingMode() != kGlobalMarkingWithCompaction)
+  if (marking_mode_ != kGlobalMarkingWithCompaction)
     return;
   Heap().RegisterMovingObjectReference(
       reinterpret_cast<MovableReference*>(slot));
@@ -50,27 +125,17 @@ void MarkingVisitor::RegisterBackingStoreReference(void* slot) {
 void MarkingVisitor::RegisterBackingStoreCallback(void* backing_store,
                                                   MovingObjectCallback callback,
                                                   void* callback_data) {
-  if (GetMarkingMode() != kGlobalMarkingWithCompaction)
+  if (marking_mode_ != kGlobalMarkingWithCompaction)
     return;
   Heap().RegisterMovingObjectCallback(
       reinterpret_cast<MovableReference>(backing_store), callback,
       callback_data);
 }
 
-bool MarkingVisitor::RegisterWeakTable(
-    const void* closure,
-    EphemeronCallback iteration_callback,
-    EphemeronCallback iteration_done_callback) {
-  DCHECK(GetMarkingMode() != kWeakProcessing);
-  Heap().RegisterWeakTable(const_cast<void*>(closure), iteration_callback,
-                           iteration_done_callback);
+bool MarkingVisitor::RegisterWeakTable(const void* closure,
+                                       EphemeronCallback iteration_callback) {
+  Heap().RegisterWeakTable(const_cast<void*>(closure), iteration_callback);
   return true;
 }
-
-#if DCHECK_IS_ON()
-bool MarkingVisitor::WeakTableRegistered(const void* closure) {
-  return Heap().WeakTableRegistered(closure);
-}
-#endif
 
 }  // namespace blink

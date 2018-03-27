@@ -78,7 +78,6 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableScrollTopLeftInterop(bool);
   BLINK_PLATFORM_EXPORT static void EnableDatabase(bool);
   BLINK_PLATFORM_EXPORT static void EnableDecodeToYUV(bool);
-  BLINK_PLATFORM_EXPORT static void EnableExperimentalCanvasFeatures(bool);
   BLINK_PLATFORM_EXPORT static void EnableFastMobileScrolling(bool);
   BLINK_PLATFORM_EXPORT static void EnableFileSystem(bool);
   BLINK_PLATFORM_EXPORT static void EnableForceTallerSelectPopup(bool);
@@ -115,6 +114,7 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnablePictureInPicture(bool);
   BLINK_PLATFORM_EXPORT static void EnablePreciseMemoryInfo(bool);
   BLINK_PLATFORM_EXPORT static void EnablePreloadDefaultIsMetadata(bool);
+  BLINK_PLATFORM_EXPORT static void EnablePreloadImageSrcSetEnabled(bool);
   BLINK_PLATFORM_EXPORT static void EnablePrintBrowser(bool);
   BLINK_PLATFORM_EXPORT static void EnablePresentationAPI(bool);
   BLINK_PLATFORM_EXPORT static void EnablePushMessaging(bool);

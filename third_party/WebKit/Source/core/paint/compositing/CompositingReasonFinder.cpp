@@ -4,7 +4,7 @@
 
 #include "core/paint/compositing/CompositingReasonFinder.h"
 
-#include "core/CSSPropertyNames.h"
+#include "core/css_property_names.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
@@ -163,10 +163,7 @@ CompositingReasons CompositingReasonFinder::NonStyleDeterminedDirectReasons(
   if (layer->NeedsCompositedScrolling())
     direct_reasons |= CompositingReason::kOverflowScrollingTouch;
 
-  // When RLS is disabled, the root layer may be the root scroller but
-  // the FrameView/Compositor handles its scrolling so there's no need to
-  // composite it.
-  if (RootScrollerUtil::IsGlobal(*layer) && !layer->IsScrolledByFrameView())
+  if (RequiresCompositingForRootScroller(*layer))
     direct_reasons |= CompositingReason::kRootScroller;
 
   // Composite |layer| if it is inside of an ancestor scrolling layer, but that
@@ -231,6 +228,16 @@ bool CompositingReasonFinder::RequiresCompositingForTransformAnimation(
   return style.SubtreeWillChangeContents()
              ? style.IsRunningTransformAnimationOnCompositor()
              : style.HasCurrentTransformAnimation();
+}
+
+bool CompositingReasonFinder::RequiresCompositingForRootScroller(
+    const PaintLayer& layer) {
+  // The root scroller needs composited scrolling layers even if it doesn't
+  // actually have scrolling since CC has these assumptions baked in for the
+  // viewport. If we're in non-RootLayerScrolling mode, the root layer will be
+  // the global root scroller (by default) but it doesn't actually handle
+  // scrolls itself so we don't need composited scrolling for it.
+  return RootScrollerUtil::IsGlobal(layer) && !layer.IsScrolledByFrameView();
 }
 
 bool CompositingReasonFinder::RequiresCompositingForScrollDependentPosition(

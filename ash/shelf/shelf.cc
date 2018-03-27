@@ -6,7 +6,7 @@
 
 #include <memory>
 
-#include "ash/app_list/presenter/app_list.h"
+#include "ash/app_list/app_list_controller_impl.h"
 #include "ash/public/cpp/config.h"
 #include "ash/public/cpp/shelf_item_delegate.h"
 #include "ash/public/cpp/shelf_model.h"
@@ -76,6 +76,7 @@ void Shelf::CreateShelfWidget(aura::Window* root) {
   aura::Window* shelf_container =
       root->GetChildById(kShellWindowId_ShelfContainer);
   shelf_widget_.reset(new ShelfWidget(shelf_container, this));
+  shelf_widget_->Initialize();
 
   DCHECK(!shelf_layout_manager_);
   shelf_layout_manager_ = shelf_widget_->shelf_layout_manager();
@@ -90,12 +91,11 @@ void Shelf::CreateShelfWidget(aura::Window* root) {
 }
 
 void Shelf::ShutdownShelfWidget() {
-  if (shelf_widget_)
-    shelf_widget_->Shutdown();
+  shelf_widget_->Shutdown();
 }
 
 void Shelf::DestroyShelfWidget() {
-  // May be called multiple times during shutdown.
+  DCHECK(shelf_widget_);
   shelf_widget_.reset();
 }
 
@@ -274,7 +274,7 @@ bool Shelf::ProcessGestureEvent(const ui::GestureEvent& event) {
 }
 
 void Shelf::ProcessMouseWheelEvent(const ui::MouseWheelEvent& event) {
-  Shell::Get()->app_list()->ProcessMouseWheelEvent(event);
+  Shell::Get()->app_list_controller()->ProcessMouseWheelEvent(event);
 }
 
 void Shelf::AddObserver(ShelfObserver* observer) {
@@ -334,11 +334,6 @@ LoginShelfView* Shelf::GetLoginShelfViewForTesting() {
 }
 
 void Shelf::WillDeleteShelfLayoutManager() {
-  if (Shell::GetAshConfig() == Config::MASH) {
-    // TODO(sky): this should be removed once Shell is used everywhere.
-    ShutdownShelfWidget();
-  }
-
   // Clear event handlers that might forward events to the destroyed instance.
   auto_hide_event_handler_.reset();
   bezel_event_handler_.reset();

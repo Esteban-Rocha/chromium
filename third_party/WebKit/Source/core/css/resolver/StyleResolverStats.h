@@ -32,9 +32,10 @@
 #define StyleResolverStats_h
 
 #include <memory>
+
+#include "base/memory/ptr_util.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -43,7 +44,7 @@ class StyleResolverStats {
 
  public:
   static std::unique_ptr<StyleResolverStats> Create() {
-    return WTF::WrapUnique(new StyleResolverStats);
+    return base::WrapUnique(new StyleResolverStats);
   }
 
   void Reset();

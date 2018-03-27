@@ -126,6 +126,19 @@ class SendAlarmDelegate : public QuicAlarm::Delegate {
   DISALLOW_COPY_AND_ASSIGN(SendAlarmDelegate);
 };
 
+class PathDegradingAlarmDelegate : public QuicAlarm::Delegate {
+ public:
+  explicit PathDegradingAlarmDelegate(QuicConnection* connection)
+      : connection_(connection) {}
+
+  void OnAlarm() override { connection_->OnPathDegradingTimeout(); }
+
+ private:
+  QuicConnection* connection_;
+
+  DISALLOW_COPY_AND_ASSIGN(PathDegradingAlarmDelegate);
+};
+
 class TimeoutAlarmDelegate : public QuicAlarm::Delegate {
  public:
   explicit TimeoutAlarmDelegate(QuicConnection* connection)
@@ -263,6 +276,9 @@ QuicConnection::QuicConnection(
       retransmittable_on_wire_alarm_(alarm_factory_->CreateAlarm(
           arena_.New<RetransmittableOnWireAlarmDelegate>(this),
           &arena_)),
+      path_degrading_alarm_(alarm_factory_->CreateAlarm(
+          arena_.New<PathDegradingAlarmDelegate>(this),
+          &arena_)),
       visitor_(nullptr),
       debug_visitor_(nullptr),
       packet_generator_(connection_id_, &framer_, random_generator_, this),
@@ -291,8 +307,14 @@ QuicConnection::QuicConnection(
       fill_up_link_during_probing_(false),
       probing_retransmission_pending_(false),
       last_control_frame_id_(kInvalidControlFrameId),
-      use_control_frame_manager_(
-          GetQuicReloadableFlag(quic_use_control_frame_manager)) {
+      negotiate_version_early_(
+          GetQuicReloadableFlag(quic_server_early_version_negotiation)),
+      always_discard_packets_after_close_(
+          GetQuicReloadableFlag(quic_always_discard_packets_after_close)),
+      handle_write_results_for_connectivity_probe_(GetQuicReloadableFlag(
+          quic_handle_write_results_for_connectivity_probe)),
+      use_path_degrading_alarm_(
+          GetQuicReloadableFlag(quic_path_degrading_alarm)) {
   QUIC_DLOG(INFO) << ENDPOINT
                   << "Created connection with connection_id: " << connection_id
                   << " and version: "
@@ -522,6 +544,7 @@ bool QuicConnection::OnProtocolVersionMismatch(
   const bool set_version_early =
       GetQuicReloadableFlag(quic_store_version_before_signalling);
   if (set_version_early) {
+    QUIC_FLAG_COUNT(quic_reloadable_flag_quic_store_version_before_signalling);
     // Store the new version.
     framer_.set_version(received_version);
   }
@@ -529,8 +552,7 @@ bool QuicConnection::OnProtocolVersionMismatch(
   version_negotiation_state_ = NEGOTIATED_VERSION;
   visitor_->OnSuccessfulVersionNegotiation(received_version);
   if (debug_visitor_ != nullptr) {
-    debug_visitor_->OnSuccessfulVersionNegotiation(
-        received_version.transport_version);
+    debug_visitor_->OnSuccessfulVersionNegotiation(received_version);
   }
   QUIC_DLOG(INFO) << ENDPOINT << "version negotiated "
                   << ParsedQuicVersionToString(received_version);
@@ -656,6 +678,31 @@ bool QuicConnection::OnUnauthenticatedHeader(const QuicPacketHeader& header) {
     }
     ++stats_.packets_dropped;
     return false;
+  }
+
+  if (negotiate_version_early_ &&
+      version_negotiation_state_ != NEGOTIATED_VERSION &&
+      perspective_ == Perspective::IS_SERVER) {
+    QUIC_FLAG_COUNT(quic_reloadable_flag_quic_server_early_version_negotiation);
+    if (!header.version_flag) {
+      // Packets should have the version flag till version negotiation is
+      // done.
+      QuicString error_details =
+          QuicStrCat(ENDPOINT, "Packet ", header.packet_number,
+                     " without version flag before version negotiated.");
+      QUIC_DLOG(WARNING) << error_details;
+      CloseConnection(QUIC_INVALID_VERSION, error_details,
+                      ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+      return false;
+    } else {
+      DCHECK_EQ(header.version, version());
+      version_negotiation_state_ = NEGOTIATED_VERSION;
+      visitor_->OnSuccessfulVersionNegotiation(version());
+      if (debug_visitor_ != nullptr) {
+        debug_visitor_->OnSuccessfulVersionNegotiation(version());
+      }
+    }
+    DCHECK_EQ(NEGOTIATED_VERSION, version_negotiation_state_);
   }
 
   return true;
@@ -789,9 +836,14 @@ bool QuicConnection::OnAckFrame(const QuicAckFrame& incoming_ack) {
   if (send_alarm_->IsSet()) {
     send_alarm_->Cancel();
   }
+
+  if (LargestAcked(incoming_ack) > sent_packet_manager_.GetLargestObserved()) {
+    visitor_->OnForwardProgressConfirmed();
+  }
+
   largest_seen_packet_with_ack_ = last_header_.packet_number;
-  sent_packet_manager_.OnIncomingAck(incoming_ack,
-                                     time_of_last_received_packet_);
+  bool acked_new_packet = sent_packet_manager_.OnIncomingAck(
+      incoming_ack, time_of_last_received_packet_);
   // If the incoming ack's packets set expresses missing packets: peer is still
   // waiting for a packet lower than a packet that we are no longer planning to
   // send.
@@ -799,7 +851,8 @@ bool QuicConnection::OnAckFrame(const QuicAckFrame& incoming_ack) {
   // acking packets which we never care about.
   // Send an ack to raise the high water mark.
   PostProcessAfterAckFrame(!incoming_ack.packets.Empty() &&
-                           GetLeastUnacked() > incoming_ack.packets.Min());
+                               GetLeastUnacked() > incoming_ack.packets.Min(),
+                           acked_new_packet);
 
   return connected_;
 }
@@ -831,7 +884,9 @@ bool QuicConnection::OnAckFrameStart(QuicPacketNumber largest_acked,
     return false;
   }
 
-  if (largest_acked < sent_packet_manager_.GetLargestObserved()) {
+  if (largest_acked > sent_packet_manager_.GetLargestObserved()) {
+    visitor_->OnForwardProgressConfirmed();
+  } else if (largest_acked < sent_packet_manager_.GetLargestObserved()) {
     QUIC_LOG(INFO) << ENDPOINT << "Peer's largest_observed packet decreased:"
                    << largest_acked << " vs "
                    << sent_packet_manager_.GetLargestObserved()
@@ -867,7 +922,8 @@ bool QuicConnection::OnAckRange(QuicPacketNumber start,
   if (!last_range) {
     return true;
   }
-  sent_packet_manager_.OnAckFrameEnd(time_of_last_received_packet_);
+  bool acked_new_packet =
+      sent_packet_manager_.OnAckFrameEnd(time_of_last_received_packet_);
   if (send_alarm_->IsSet()) {
     send_alarm_->Cancel();
   }
@@ -878,7 +934,7 @@ bool QuicConnection::OnAckRange(QuicPacketNumber start,
   // If the incoming ack's packets set expresses received packets: peer is still
   // acking packets which we never care about.
   // Send an ack to raise the high water mark.
-  PostProcessAfterAckFrame(GetLeastUnacked() > start);
+  PostProcessAfterAckFrame(GetLeastUnacked() > start, acked_new_packet);
 
   return connected_;
 }
@@ -1279,7 +1335,7 @@ void QuicConnection::SendVersionNegotiationPacket() {
       version_packet->data(), version_packet->length(), self_address().host(),
       peer_address(), per_packet_options_);
 
-  if (result.status == WRITE_STATUS_ERROR) {
+  if (IsWriteError(result.status)) {
     OnWriteError(result.error_code);
     return;
   }
@@ -1314,7 +1370,6 @@ QuicConsumedData QuicConnection::SendStreamData(QuicStreamId id,
 }
 
 bool QuicConnection::SendControlFrame(const QuicFrame& frame) {
-  DCHECK(use_control_frame_manager_);
   if (!CanWrite(HAS_RETRANSMITTABLE_DATA) && frame.type != PING_FRAME) {
     QUIC_DVLOG(1) << ENDPOINT << "Failed to send control frame: " << frame;
     // Do not check congestion window for ping.
@@ -1333,18 +1388,6 @@ bool QuicConnection::SendControlFrame(const QuicFrame& frame) {
     stats_.blocked_frames_sent++;
   }
   return true;
-}
-
-void QuicConnection::SendRstStream(QuicStreamId id,
-                                   QuicRstStreamErrorCode error,
-                                   QuicStreamOffset bytes_written) {
-  DCHECK(!use_control_frame_manager_);
-  // Opportunistically bundle an ack with this outgoing packet.
-  ScopedPacketFlusher flusher(this, SEND_ACK_IF_PENDING);
-  packet_generator_.AddControlFrame(QuicFrame(new QuicRstStreamFrame(
-      ++last_control_frame_id_, id, error, bytes_written)));
-
-  OnStreamReset(id, error);
 }
 
 void QuicConnection::OnStreamReset(QuicStreamId id,
@@ -1382,24 +1425,6 @@ void QuicConnection::OnStreamReset(QuicStreamId id,
   }
   // TODO(ianswett): Consider checking for 3 RTOs when the last stream is
   // cancelled as well.
-}
-
-void QuicConnection::SendWindowUpdate(QuicStreamId id,
-                                      QuicStreamOffset byte_offset) {
-  DCHECK(!use_control_frame_manager_);
-  // Opportunistically bundle an ack with this outgoing packet.
-  ScopedPacketFlusher flusher(this, SEND_ACK_IF_PENDING);
-  packet_generator_.AddControlFrame(QuicFrame(
-      new QuicWindowUpdateFrame(++last_control_frame_id_, id, byte_offset)));
-}
-
-void QuicConnection::SendBlocked(QuicStreamId id) {
-  DCHECK(!use_control_frame_manager_);
-  // Opportunistically bundle an ack with this outgoing packet.
-  ScopedPacketFlusher flusher(this, SEND_ACK_IF_PENDING);
-  packet_generator_.AddControlFrame(
-      QuicFrame(new QuicBlockedFrame(++last_control_frame_id_, id)));
-  stats_.blocked_frames_sent++;
 }
 
 const QuicConnectionStats& QuicConnection::GetStats() {
@@ -1446,7 +1471,7 @@ void QuicConnection::ProcessUdpPacket(const QuicSocketAddress& self_address,
   stats_.bytes_received += packet.length();
   ++stats_.packets_received;
 
-  // Ensure the time coming from the packet reader is within a minute of now.
+  // Ensure the time coming from the packet reader is within 2 minutes of now.
   if (std::abs((packet.receipt_time() - clock_->ApproximateNow()).ToSeconds()) >
       2 * 60) {
     QUIC_BUG << "Packet receipt time:"
@@ -1618,7 +1643,17 @@ bool QuicConnection::ProcessValidatedPacket(const QuicPacketHeader& header) {
   }
 
   if (version_negotiation_state_ != NEGOTIATED_VERSION) {
-    if (perspective_ == Perspective::IS_SERVER) {
+    if (perspective_ == Perspective::IS_CLIENT) {
+      DCHECK(!header.version_flag);
+      // If the client gets a packet without the version flag from the server
+      // it should stop sending version since the version negotiation is done.
+      packet_generator_.StopSendingVersion();
+      version_negotiation_state_ = NEGOTIATED_VERSION;
+      visitor_->OnSuccessfulVersionNegotiation(version());
+      if (debug_visitor_ != nullptr) {
+        debug_visitor_->OnSuccessfulVersionNegotiation(version());
+      }
+    } else if (!negotiate_version_early_) {
       if (!header.version_flag) {
         // Packets should have the version flag till version negotiation is
         // done.
@@ -1634,23 +1669,11 @@ bool QuicConnection::ProcessValidatedPacket(const QuicPacketHeader& header) {
         version_negotiation_state_ = NEGOTIATED_VERSION;
         visitor_->OnSuccessfulVersionNegotiation(version());
         if (debug_visitor_ != nullptr) {
-          debug_visitor_->OnSuccessfulVersionNegotiation(transport_version());
+          debug_visitor_->OnSuccessfulVersionNegotiation(version());
         }
-      }
-    } else {
-      DCHECK(!header.version_flag);
-      // If the client gets a packet without the version flag from the server
-      // it should stop sending version since the version negotiation is done.
-      packet_generator_.StopSendingVersion();
-      version_negotiation_state_ = NEGOTIATED_VERSION;
-      visitor_->OnSuccessfulVersionNegotiation(version());
-      if (debug_visitor_ != nullptr) {
-        debug_visitor_->OnSuccessfulVersionNegotiation(transport_version());
       }
     }
   }
-
-  DCHECK_EQ(NEGOTIATED_VERSION, version_negotiation_state_);
 
   if (last_size_ > largest_received_packet_size_) {
     largest_received_packet_size_ = last_size_;
@@ -1673,12 +1696,42 @@ void QuicConnection::WriteQueuedPackets() {
 
   UMA_HISTOGRAM_COUNTS_1000("Net.QuicSession.NumQueuedPacketsBeforeWrite",
                             queued_packets_.size());
-  QueuedPacketList::iterator packet_iterator = queued_packets_.begin();
-  while (packet_iterator != queued_packets_.end() &&
-         WritePacket(&(*packet_iterator))) {
-    delete[] packet_iterator->encrypted_buffer;
-    ClearSerializedPacket(&(*packet_iterator));
-    packet_iterator = queued_packets_.erase(packet_iterator);
+  if (GetQuicReloadableFlag(quic_fix_write_out_of_order_queued_packet_crash)) {
+    while (!queued_packets_.empty()) {
+      QUIC_FLAG_COUNT(
+          quic_reloadable_flag_quic_fix_write_out_of_order_queued_packet_crash);
+      // WritePacket() can potentially clear all queued packets, so we need to
+      // save the first queued packet to a local variable before calling it.
+      SerializedPacket packet(std::move(queued_packets_.front()));
+      queued_packets_.pop_front();
+
+      const bool write_result = WritePacket(&packet);
+
+      if (connected_ && !write_result) {
+        // Write failed but connection is open, re-insert |packet| into the
+        // front of the queue, it will be retried later.
+        queued_packets_.emplace_front(std::move(packet));
+        break;
+      }
+
+      delete[] packet.encrypted_buffer;
+      ClearSerializedPacket(&packet);
+      if (!connected_) {
+        DCHECK(queued_packets_.empty()) << "Queued packets should have been "
+                                           "cleared while closing connection";
+        break;
+      }
+
+      // Continue to send the next packet in queue.
+    }
+  } else {
+    QueuedPacketList::iterator packet_iterator = queued_packets_.begin();
+    while (packet_iterator != queued_packets_.end() &&
+           WritePacket(&(*packet_iterator))) {
+      delete[] packet_iterator->encrypted_buffer;
+      ClearSerializedPacket(&(*packet_iterator));
+      packet_iterator = queued_packets_.erase(packet_iterator);
+    }
   }
 }
 
@@ -1797,6 +1850,12 @@ bool QuicConnection::CanWrite(HasRetransmittableData retransmittable) {
 }
 
 bool QuicConnection::WritePacket(SerializedPacket* packet) {
+  if (always_discard_packets_after_close_ && ShouldDiscardPacket(*packet)) {
+    QUIC_FLAG_COUNT_N(
+        quic_reloadable_flag_quic_always_discard_packets_after_close, 1, 2);
+    ++stats_.packets_discarded;
+    return true;
+  }
   if (packet->packet_number < sent_packet_manager_.GetLargestSentPacket()) {
     QUIC_BUG << "Attempt to write packet:" << packet->packet_number
              << " after:" << sent_packet_manager_.GetLargestSentPacket();
@@ -1807,7 +1866,7 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
     RecordInternalErrorLocation(QUIC_CONNECTION_WRITE_PACKET);
     return true;
   }
-  if (ShouldDiscardPacket(*packet)) {
+  if (!always_discard_packets_after_close_ && ShouldDiscardPacket(*packet)) {
     ++stats_.packets_discarded;
     return true;
   }
@@ -1829,8 +1888,8 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
     }
     // Copy the buffer so it's owned in the future.
     char* buffer_copy = CopyBuffer(*packet);
-    termination_packets_->push_back(std::unique_ptr<QuicEncryptedPacket>(
-        new QuicEncryptedPacket(buffer_copy, encrypted_length, true)));
+    termination_packets_->emplace_back(
+        new QuicEncryptedPacket(buffer_copy, encrypted_length, true));
     // This assures we won't try to write *forced* packets when blocked.
     // Return true to stop processing.
     if (writer_->IsWriteBlocked()) {
@@ -1879,9 +1938,7 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
 
   // In some cases, an MTU probe can cause EMSGSIZE. This indicates that the
   // MTU discovery is permanently unsuccessful.
-  if (result.status == WRITE_STATUS_ERROR &&
-      result.error_code == kMessageTooBigErrorCode &&
-      packet->retransmittable_frames.empty() &&
+  if (IsMsgTooBig(result) && packet->retransmittable_frames.empty() &&
       packet->encrypted_length > long_term_mtu_) {
     mtu_discovery_target_ = 0;
     mtu_discovery_alarm_->Cancel();
@@ -1889,7 +1946,7 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
     return true;
   }
 
-  if (result.status == WRITE_STATUS_ERROR) {
+  if (IsWriteError(result.status)) {
     OnWriteError(result.error_code);
     QUIC_LOG_FIRST_N(ERROR, 10)
         << ENDPOINT << "failed writing " << encrypted_length
@@ -1899,7 +1956,7 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
     return false;
   }
 
-  if (result.status != WRITE_STATUS_ERROR && debug_visitor_ != nullptr) {
+  if (debug_visitor_ != nullptr) {
     // Pass the write result to the visitor.
     debug_visitor_->OnPacketSent(*packet, packet->original_packet_number,
                                  packet->transmission_type, packet_send_time);
@@ -1908,6 +1965,14 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
     // A retransmittable packet has been put on the wire, so no need for the
     // |retransmittable_on_wire_alarm_| to possibly send a PING.
     retransmittable_on_wire_alarm_->Cancel();
+    if (use_path_degrading_alarm_) {
+      if (!path_degrading_alarm_->IsSet()) {
+        // This is the first retransmittable packet on the wire after having
+        // none on the wire. Start the path degrading alarm.
+        SetPathDegradingAlarm();
+      }
+    }
+
     // Only adjust the last sent time (for the purpose of tracking the idle
     // timeout) if this is the first retransmittable packet sent after a
     // packet is received. If it were updated on every sent packet, then
@@ -1943,6 +2008,12 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
   }
 
   return true;
+}
+
+bool QuicConnection::IsMsgTooBig(const WriteResult& result) {
+  return (result.status == WRITE_STATUS_MSG_TOO_BIG) ||
+         (IsWriteError(result.status) &&
+          result.error_code == kMessageTooBigErrorCode);
 }
 
 bool QuicConnection::ShouldDiscardPacket(const SerializedPacket& packet) {
@@ -2038,7 +2109,10 @@ void QuicConnection::OnCongestionChange() {
   }
 }
 
+// TODO(wangyix): remove this method once
+// FLAGS_quic_reloadable_flag_quic_path_degrading_alarm is deprecated.
 void QuicConnection::OnPathDegrading() {
+  DCHECK(!use_path_degrading_alarm_);
   visitor_->OnPathDegrading();
 }
 
@@ -2078,23 +2152,7 @@ void QuicConnection::SendOrQueuePacket(SerializedPacket* packet) {
 
 void QuicConnection::OnPingTimeout() {
   if (!retransmission_alarm_->IsSet()) {
-    if (use_control_frame_manager_) {
-      visitor_->SendPing();
-    } else {
-      SendPing();
-    }
-  }
-}
-
-void QuicConnection::SendPing() {
-  DCHECK(!use_control_frame_manager_);
-  ScopedPacketFlusher flusher(this, SEND_ACK_IF_QUEUED);
-  packet_generator_.AddControlFrame(
-      QuicFrame(QuicPingFrame(++last_control_frame_id_)));
-  // Send PING frame immediately, without checking for congestion window bounds.
-  packet_generator_.FlushAllQueuedFrames();
-  if (debug_visitor_ != nullptr) {
-    debug_visitor_->OnPingSent();
+    visitor_->SendPing();
   }
 }
 
@@ -2118,13 +2176,11 @@ void QuicConnection::SendAck() {
   }
 
   visitor_->OnAckNeedsRetransmittableFrame();
-  if (!use_control_frame_manager_) {
-    if (!packet_generator_.HasRetransmittableFrames()) {
-      // Visitor did not add a retransmittable frame, add a ping frame.
-      packet_generator_.AddControlFrame(
-          QuicFrame(QuicPingFrame(++last_control_frame_id_)));
-    }
-  }
+}
+
+void QuicConnection::OnPathDegradingTimeout() {
+  QUIC_FLAG_COUNT_N(quic_reloadable_flag_quic_path_degrading_alarm, 2, 4);
+  visitor_->OnPathDegrading();
 }
 
 void QuicConnection::OnRetransmissionTimeout() {
@@ -2326,19 +2382,10 @@ void QuicConnection::CancelAllAlarms() {
   timeout_alarm_->Cancel();
   mtu_discovery_alarm_->Cancel();
   retransmittable_on_wire_alarm_->Cancel();
-}
-
-void QuicConnection::SendGoAway(QuicErrorCode error,
-                                QuicStreamId last_good_stream_id,
-                                const QuicString& reason) {
-  DCHECK(!use_control_frame_manager_);
-  QUIC_DLOG(INFO) << ENDPOINT << "Going away with error "
-                  << QuicErrorCodeToString(error) << " (" << error << ")";
-
-  // Opportunistically bundle an ack with this outgoing packet.
-  ScopedPacketFlusher flusher(this, SEND_ACK_IF_PENDING);
-  packet_generator_.AddControlFrame(QuicFrame(new QuicGoAwayFrame(
-      ++last_control_frame_id_, error, last_good_stream_id, reason)));
+  if (use_path_degrading_alarm_) {
+    QUIC_FLAG_COUNT_N(quic_reloadable_flag_quic_path_degrading_alarm, 4, 4);
+    path_degrading_alarm_->Cancel();
+  }
 }
 
 QuicByteCount QuicConnection::max_packet_length() const {
@@ -2475,6 +2522,14 @@ void QuicConnection::SetRetransmissionAlarm() {
   }
   QuicTime retransmission_time = sent_packet_manager_.GetRetransmissionTime();
   retransmission_alarm_->Update(retransmission_time,
+                                QuicTime::Delta::FromMilliseconds(1));
+}
+
+void QuicConnection::SetPathDegradingAlarm() {
+  DCHECK(use_path_degrading_alarm_);
+  QUIC_FLAG_COUNT_N(quic_reloadable_flag_quic_path_degrading_alarm, 1, 4);
+  const QuicTime::Delta delay = sent_packet_manager_.GetPathDegradingDelay();
+  path_degrading_alarm_->Update(clock_->ApproximateNow() + delay,
                                 QuicTime::Delta::FromMilliseconds(1));
 }
 
@@ -2666,9 +2721,13 @@ bool QuicConnection::SendConnectivityProbingPacket(
     QuicPacketWriter* probing_writer,
     const QuicSocketAddress& peer_address) {
   DCHECK(peer_address.IsInitialized());
-  // TODO(zhongyi): remove this histogram once the cause of the INTERNAL_ERROR
-  // increase is determined.
-  UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.SentConnectivityProbe", true);
+  if (always_discard_packets_after_close_ && !connected_) {
+    QUIC_FLAG_COUNT_N(
+        quic_reloadable_flag_quic_always_discard_packets_after_close, 2, 2);
+    QUIC_BUG << "Not sending connectivity probing packet as connection is "
+             << "disconnected.";
+    return false;
+  }
   if (perspective_ == Perspective::IS_SERVER && probing_writer == nullptr) {
     // Server can use default packet writer to write probing packet.
     probing_writer = writer_;
@@ -2676,8 +2735,29 @@ bool QuicConnection::SendConnectivityProbingPacket(
   DCHECK(probing_writer);
 
   if (probing_writer->IsWriteBlocked()) {
-    QUIC_DLOG(INFO) << "Writer blocked when send connectivity probing packet";
+    QUIC_DLOG(INFO) << ENDPOINT
+                    << "Writer blocked when send connectivity probing packet.";
+    if (!handle_write_results_for_connectivity_probe_) {
+      visitor_->OnWriteBlocked();
+    } else {
+      QUIC_FLAG_COUNT_N(
+          quic_reloadable_flag_quic_handle_write_results_for_connectivity_probe,
+          1, 3);
+      if (probing_writer == writer_) {
+        // Visitor should not be write blocked if the probing writer is not the
+        // default packet writer.
+        visitor_->OnWriteBlocked();
+      }
+    }
     return true;
+  }
+
+  if (GetQuicReloadableFlag(quic_fix_write_out_of_order_queued_packet_crash) &&
+      GetQuicReloadableFlag(
+          quic_clear_queued_packets_before_sending_connectivity_probing)) {
+    QUIC_FLAG_COUNT(
+        quic_reloadable_flag_quic_clear_queued_packets_before_sending_connectivity_probing);  // NOLINT
+    ClearQueuedPackets();
   }
 
   QUIC_DLOG(INFO) << ENDPOINT << "Sending connectivity probing packet for "
@@ -2692,23 +2772,42 @@ bool QuicConnection::SendConnectivityProbingPacket(
       probing_packet->encrypted_buffer, probing_packet->encrypted_length,
       self_address().host(), peer_address, per_packet_options_);
 
-  if (result.status == WRITE_STATUS_ERROR) {
-    QUIC_DLOG(INFO) << "Write probing packet not finished with error = "
+  if (IsWriteError(result.status)) {
+    if (!handle_write_results_for_connectivity_probe_) {
+      OnWriteError(result.error_code);
+    } else {
+      QUIC_FLAG_COUNT_N(
+          quic_reloadable_flag_quic_handle_write_results_for_connectivity_probe,
+          2, 3);
+      // Write error for any connectivity probe should not affect the connection
+      // as it is sent on a different path.
+    }
+    QUIC_DLOG(INFO) << ENDPOINT << "Write probing packet failed with error = "
                     << result.error_code;
     return false;
   }
 
-  // Call OnPacketSent regardless of the write result. This treats a blocked
-  // write the same as a packet loss.
+  // Call OnPacketSent regardless of the write result.
   sent_packet_manager_.OnPacketSent(
       probing_packet.get(), probing_packet->original_packet_number,
       packet_send_time, probing_packet->transmission_type,
       NO_RETRANSMITTABLE_DATA);
 
   if (result.status == WRITE_STATUS_BLOCKED) {
-    visitor_->OnWriteBlocked();
+    if (!handle_write_results_for_connectivity_probe_) {
+      visitor_->OnWriteBlocked();
+    } else {
+      QUIC_FLAG_COUNT_N(
+          quic_reloadable_flag_quic_handle_write_results_for_connectivity_probe,
+          3, 3);
+      if (probing_writer == writer_) {
+        // Visitor should not be write blocked if the probing writer is not the
+        // default packet writer.
+        visitor_->OnWriteBlocked();
+      }
+    }
     if (probing_writer->IsWriteBlockedDataBuffered()) {
-      QUIC_BUG << "Write probing packet blocked";
+      QUIC_DLOG(INFO) << ENDPOINT << "Write probing packet blocked";
     }
   }
 
@@ -2912,15 +3011,15 @@ void QuicConnection::MaybeEnableSessionDecidesWhatToWrite() {
   // because it needs the receiver to allow receiving overlapping stream data.
   const bool enable_session_decides_what_to_write =
       transport_version() > QUIC_VERSION_41 &&
-      GetQuicReloadableFlag(quic_streams_unblocked_by_session2) &&
-      use_control_frame_manager_;
+      GetQuicReloadableFlag(quic_streams_unblocked_by_session2);
   sent_packet_manager_.SetSessionDecideWhatToWrite(
       enable_session_decides_what_to_write);
   packet_generator_.SetCanSetTransmissionType(
       enable_session_decides_what_to_write);
 }
 
-void QuicConnection::PostProcessAfterAckFrame(bool send_stop_waiting) {
+void QuicConnection::PostProcessAfterAckFrame(bool send_stop_waiting,
+                                              bool acked_new_packet) {
   if (no_stop_waiting_frames_) {
     received_packet_manager_.DontWaitForPacketsBefore(
         sent_packet_manager_.largest_packet_peer_knows_is_acked());
@@ -2929,9 +3028,24 @@ void QuicConnection::PostProcessAfterAckFrame(bool send_stop_waiting) {
   // have a better estimate of the current rtt than when it was set.
   SetRetransmissionAlarm();
 
-  if (!sent_packet_manager_.HasUnackedPackets() &&
-      !retransmittable_on_wire_alarm_->IsSet()) {
-    SetRetransmittableOnWireAlarm();
+  if (!sent_packet_manager_.HasUnackedPackets()) {
+    // There are no retransmittable packets on the wire, so it may be
+    // necessary to send a PING to keep a retransmittable packet on the wire.
+    if (!retransmittable_on_wire_alarm_->IsSet()) {
+      SetRetransmittableOnWireAlarm();
+    }
+    // There are no retransmittable packets on the wire, so it's impossible to
+    // say if the connection has degraded.
+    if (use_path_degrading_alarm_) {
+      QUIC_FLAG_COUNT_N(quic_reloadable_flag_quic_path_degrading_alarm, 3, 4);
+      path_degrading_alarm_->Cancel();
+    }
+  } else if (acked_new_packet) {
+    // A previously-unacked packet has been acked, which means forward progress
+    // has been made. Push back the path degrading alarm.
+    if (use_path_degrading_alarm_) {
+      SetPathDegradingAlarm();
+    }
   }
 
   if (send_stop_waiting) {

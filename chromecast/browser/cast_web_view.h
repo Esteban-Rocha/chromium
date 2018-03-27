@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <string>
 
+#include "base/macros.h"
+#include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "chromecast/browser/cast_content_window.h"
@@ -16,6 +18,8 @@
 namespace chromecast {
 
 class CastWindowManager;
+
+using shell::VisibilityPriority;
 
 // A simplified interface for loading and displaying WebContents in cast_shell.
 class CastWebView {
@@ -40,6 +44,17 @@ class CastWebView {
         const base::string16& message,
         int32_t line_no,
         const base::string16& source_id) = 0;
+  };
+
+  // Observer interface for tracking CastWebView lifetime.
+  class Observer {
+   public:
+    // Notifies that |web_view| is being destroyed. |web_view| should be assumed
+    // invalid after this method returns.
+    virtual void OnPageDestroyed(CastWebView* web_view) {}
+
+   protected:
+    virtual ~Observer() {}
   };
 
   // The parameters used to create a CastWebView instance. Passed to
@@ -69,7 +84,8 @@ class CastWebView {
     bool enabled_for_dev = false;
   };
 
-  virtual ~CastWebView() {}
+  CastWebView();
+  virtual ~CastWebView();
 
   virtual shell::CastContentWindow* window() const = 0;
 
@@ -88,7 +104,17 @@ class CastWebView {
   // Adds the page to the window manager and makes it visible to the user if
   // |is_visible| is true.
   virtual void CreateWindow(CastWindowManager* window_manager,
-                            bool is_visible) = 0;
+                            bool is_visible,
+                            VisibilityPriority initial_priority) = 0;
+
+  // Observer interface:
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
+ private:
+  base::ObserverList<Observer> observer_list_;
+
+  DISALLOW_COPY_AND_ASSIGN(CastWebView);
 };
 
 }  // namespace chromecast

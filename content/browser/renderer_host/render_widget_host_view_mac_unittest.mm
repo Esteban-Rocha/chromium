@@ -21,14 +21,15 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
+#import "content/browser/renderer_host/render_widget_host_view_cocoa.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/common/input_messages.h"
 #include "content/common/text_input_state.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_widget_host_view_mac_delegate.h"
 #include "content/public/common/content_features.h"
@@ -46,6 +47,7 @@
 #include "testing/gtest_mac.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
 #import "third_party/ocmock/ocmock_extensions.h"
+#include "ui/base/cocoa/secure_password_input.h"
 #import "ui/base/test/cocoa_helper.h"
 #import "ui/base/test/scoped_fake_nswindow_focus.h"
 #include "ui/events/base_event_utils.h"
@@ -366,6 +368,9 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     RenderViewHostImplTestHarness::SetUp();
     gpu::ImageTransportSurface::SetAllowOSMesaForTesting(true);
 
+    browser_context_ = std::make_unique<TestBrowserContext>();
+    process_host_ =
+        std::make_unique<MockRenderProcessHost>(browser_context_.get());
     process_host_->Init();
     host_ = MockRenderWidgetHostImpl::Create(&delegate_, process_host_.get(),
                                              process_host_->GetNextRoutingID());
@@ -380,6 +385,7 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     rwhv_cocoa_.reset();
     host_->ShutdownAndDestroyWidget(true);
     process_host_.reset();
+    browser_context_.reset();
     RecycleAndWait();
     RenderViewHostImplTestHarness::TearDown();
   }
@@ -432,9 +438,8 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
 
   MockRenderWidgetHostDelegate delegate_;
 
-  TestBrowserContext browser_context_;
-  std::unique_ptr<MockRenderProcessHost> process_host_ =
-      std::make_unique<MockRenderProcessHost>(&browser_context_);
+  std::unique_ptr<TestBrowserContext> browser_context_;
+  std::unique_ptr<MockRenderProcessHost> process_host_;
   MockRenderWidgetHostImpl* host_ = nullptr;
   RenderWidgetHostViewMac* rwhv_mac_ = nullptr;
   base::scoped_nsobject<RenderWidgetHostViewCocoa> rwhv_cocoa_;
@@ -486,7 +491,8 @@ TEST_F(RenderWidgetHostViewMacTest, NSTextInputClientConformance) {
   EXPECT_EQ(0u, actualRange.length);
 }
 
-TEST_F(RenderWidgetHostViewMacTest, Fullscreen) {
+// Disabled to see if InitAsFullscreen is ever reached.
+TEST_F(RenderWidgetHostViewMacTest, Fullscreen_DISABLED) {
   rwhv_mac_->InitAsFullscreen(nullptr);
   EXPECT_TRUE(rwhv_mac_->pepper_fullscreen_window());
 
@@ -498,7 +504,8 @@ TEST_F(RenderWidgetHostViewMacTest, Fullscreen) {
 
 // Verify that escape key down in fullscreen mode suppressed the keyup event on
 // the parent.
-TEST_F(RenderWidgetHostViewMacTest, FullscreenCloseOnEscape) {
+// Disabled to see if InitAsFullscreen is ever reached.
+TEST_F(RenderWidgetHostViewMacTest, FullscreenCloseOnEscape_DISABLED) {
   // Use our own RWH since we need to destroy it.
   MockRenderWidgetHostDelegate delegate;
   int32_t routing_id = process_host_->GetNextRoutingID();
@@ -512,24 +519,31 @@ TEST_F(RenderWidgetHostViewMacTest, FullscreenCloseOnEscape) {
   WindowedNotificationObserver observer(
       NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
       Source<RenderWidgetHost>(rwh));
-  EXPECT_FALSE([rwhv_mac_->cocoa_view() suppressNextEscapeKeyUp]);
+  EXPECT_TRUE([rwhv_mac_->cocoa_view() suppressNextKeyUpForTesting:53]);
+  [rwhv_mac_->cocoa_view() keyEvent:cocoa_test_event_utils::KeyEventWithKeyCode(
+                                        53, 27, NSKeyDown, 0)];
+  EXPECT_FALSE([rwhv_mac_->cocoa_view() suppressNextKeyUpForTesting:53]);
+  [rwhv_mac_->cocoa_view()
+      keyEvent:cocoa_test_event_utils::KeyEventWithKeyCode(53, 27, NSKeyUp, 0)];
+  EXPECT_TRUE([rwhv_mac_->cocoa_view() suppressNextKeyUpForTesting:53]);
 
-  // Escape key down. Should close window and set |suppressNextEscapeKeyUp| on
-  // the parent.
+  // Escape key down. Should close window, but the key up for the escape
+  // should not affect the parent.
   [view->cocoa_view() keyEvent:
       cocoa_test_event_utils::KeyEventWithKeyCode(53, 27, NSKeyDown, 0)];
   observer.Wait();
-  EXPECT_TRUE([rwhv_mac_->cocoa_view() suppressNextEscapeKeyUp]);
+  EXPECT_TRUE([rwhv_mac_->cocoa_view() suppressNextKeyUpForTesting:53]);
 
-  // Escape key up on the parent should clear |suppressNextEscapeKeyUp|.
-  [rwhv_mac_->cocoa_view() keyEvent:
-      cocoa_test_event_utils::KeyEventWithKeyCode(53, 27, NSKeyUp, 0)];
-  EXPECT_FALSE([rwhv_mac_->cocoa_view() suppressNextEscapeKeyUp]);
+  // Escape key down on the parent should clear the suppression.
+  [rwhv_mac_->cocoa_view() keyEvent:cocoa_test_event_utils::KeyEventWithKeyCode(
+                                        53, 27, NSKeyDown, 0)];
+  EXPECT_FALSE([rwhv_mac_->cocoa_view() suppressNextKeyUpForTesting:53]);
 }
 
 // Test that command accelerators which destroy the fullscreen window
 // don't crash when forwarded via the window's responder machinery.
-TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy) {
+// Disabled to see if InitAsFullscreen is ever reached.
+TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy_DISABLED) {
   // Use our own RWH since we need to destroy it.
   MockRenderWidgetHostDelegate delegate;
   TestBrowserContext browser_context;
@@ -1754,14 +1768,18 @@ class InputMethodMacTest : public RenderWidgetHostViewMacTest {
 
   void SetUp() override {
     RenderWidgetHostViewMacTest::SetUp();
-    process_host_ = new MockRenderProcessHost(&browser_context_);
+
+    browser_context_ = std::make_unique<TestBrowserContext>();
+    process_host_ = new MockRenderProcessHost(browser_context_.get());
     process_host_->Init();
     widget_ = MockRenderWidgetHostImpl::Create(
         &delegate_, process_host_, process_host_->GetNextRoutingID());
     view_ = new RenderWidgetHostViewMac(widget_, false);
 
     // Initializing a child frame's view.
-    child_process_host_ = new MockRenderProcessHost(&child_browser_context_);
+    child_browser_context_ = std::make_unique<TestBrowserContext>();
+    child_process_host_ =
+        new MockRenderProcessHost(child_browser_context_.get());
     child_process_host_->Init();
     child_widget_ = MockRenderWidgetHostImpl::Create(
         &delegate_, child_process_host_,
@@ -1773,6 +1791,9 @@ class InputMethodMacTest : public RenderWidgetHostViewMacTest {
   void TearDown() override {
     widget_->ShutdownAndDestroyWidget(true);
     child_widget_->ShutdownAndDestroyWidget(true);
+
+    child_browser_context_.reset();
+    browser_context_.reset();
 
     RenderWidgetHostViewMacTest::TearDown();
   }
@@ -1804,8 +1825,8 @@ class InputMethodMacTest : public RenderWidgetHostViewMacTest {
   TestRenderWidgetHostView* child_view_;
 
  private:
-  TestBrowserContext browser_context_;
-  TestBrowserContext child_browser_context_;
+  std::unique_ptr<TestBrowserContext> browser_context_;
+  std::unique_ptr<TestBrowserContext> child_browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodMacTest);
 };
@@ -1929,6 +1950,38 @@ TEST_F(InputMethodMacTest, FinishComposingText) {
   base::RunLoop().RunUntilIdle();
   events = widget_->GetAndResetDispatchedMessages();
   EXPECT_EQ("SetComposition FinishComposingText", GetMessageNames(events));
+}
+
+TEST_F(InputMethodMacTest, SecurePasswordInput) {
+  ASSERT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+  ASSERT_EQ(text_input_manager(), view_->GetTextInputManager());
+
+  base::scoped_nsobject<CocoaTestHelperWindow> window(
+      [[CocoaTestHelperWindow alloc] init]);
+  [[window contentView] addSubview:view_->cocoa_view()];
+
+  // RenderWidgetHostViewMacTest.BlurAndFocusOnSetActive checks the
+  // Focus()/Blur() rules, just silence the warnings here.
+  EXPECT_CALL(*widget_, Focus()).Times(::testing::AnyNumber());
+  EXPECT_CALL(*widget_, Blur()).Times(::testing::AnyNumber());
+
+  [window makeFirstResponder:view_->cocoa_view()];
+
+  // Shouldn't enable secure input if it's not a password textfield.
+  view_->SetActive(true);
+  EXPECT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  SetTextInputType(child_view_, ui::TEXT_INPUT_TYPE_PASSWORD);
+  ASSERT_EQ(child_widget_, text_input_manager()->GetActiveWidget());
+  ASSERT_EQ(text_input_manager(), view_->GetTextInputManager());
+  ASSERT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, view_->GetTextInputType());
+
+  // Single matched calls immediately update IsPasswordInputEnabled().
+  view_->SetActive(true);
+  EXPECT_TRUE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
+
+  view_->SetActive(false);
+  EXPECT_FALSE(ui::ScopedPasswordInputEnabler::IsPasswordInputEnabled());
 }
 
 // This test creates a test view to mimic a child frame's view and verifies that

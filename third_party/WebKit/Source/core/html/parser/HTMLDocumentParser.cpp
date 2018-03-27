@@ -26,6 +26,8 @@
 #include "core/html/parser/HTMLDocumentParser.h"
 
 #include <memory>
+#include <utility>
+
 #include "core/css/MediaValuesCached.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/DocumentFragment.h"
@@ -48,7 +50,6 @@
 #include "platform/CrossThreadFunctional.h"
 #include "platform/Histogram.h"
 #include "platform/SharedBuffer.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/bindings/RuntimeCallStats.h"
 #include "platform/bindings/V8PerIsolateData.h"
 #include "platform/heap/Handle.h"
@@ -56,7 +57,6 @@
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/wtf/AutoReset.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
 #include "public/platform/WebLoadingBehaviorFlag.h"
@@ -128,7 +128,7 @@ HTMLDocumentParser::HTMLDocumentParser(Document& document,
       options_(&document),
       reentry_permit_(HTMLParserReentryPermit::Create()),
       token_(sync_policy == kForceSynchronousParsing
-                 ? WTF::WrapUnique(new HTMLToken)
+                 ? std::make_unique<HTMLToken>()
                  : nullptr),
       tokenizer_(sync_policy == kForceSynchronousParsing
                      ? HTMLTokenizer::Create(options_)
@@ -224,7 +224,7 @@ void HTMLDocumentParser::PrepareToStopParsing() {
   DCHECK(!HasInsertionPoint() || have_background_parser_);
 
   // NOTE: This pump should only ever emit buffered character tokens.
-  if (tokenizer_) {
+  if (tokenizer_ && !GetDocument()->IsPrefetchOnly()) {
     DCHECK(!have_background_parser_);
     PumpTokenizerIfPossible();
   }
@@ -448,7 +448,7 @@ void HTMLDocumentParser::DiscardSpeculationsAndResumeFrom(
   queued_preloads_.clear();
 
   std::unique_ptr<BackgroundHTMLParser::Checkpoint> checkpoint =
-      WTF::WrapUnique(new BackgroundHTMLParser::Checkpoint);
+      std::make_unique<BackgroundHTMLParser::Checkpoint>();
   checkpoint->parser = weak_factory_.GetWeakPtr();
   checkpoint->token = std::move(token);
   checkpoint->tokenizer = std::move(tokenizer);
@@ -638,6 +638,7 @@ void HTMLDocumentParser::ForcePlaintextForTextDocument() {
 }
 
 void HTMLDocumentParser::PumpTokenizer() {
+  DCHECK(!GetDocument()->IsPrefetchOnly());
   DCHECK(!IsStopped());
   DCHECK(tokenizer_);
   DCHECK(token_);
@@ -713,6 +714,7 @@ void HTMLDocumentParser::PumpTokenizer() {
 }
 
 void HTMLDocumentParser::ConstructTreeFromHTMLToken() {
+  DCHECK(!GetDocument()->IsPrefetchOnly());
   AtomicHTMLToken atomic_token(Token());
 
   // We clear the m_token in case constructTreeFromAtomicToken
@@ -743,6 +745,7 @@ void HTMLDocumentParser::ConstructTreeFromHTMLToken() {
 
 void HTMLDocumentParser::ConstructTreeFromCompactHTMLToken(
     const CompactHTMLToken& compact_token) {
+  DCHECK(!GetDocument()->IsPrefetchOnly());
   AtomicHTMLToken token(compact_token);
   tree_builder_->ConstructTree(&token);
   CheckIfBodyStylesheetAdded();
@@ -767,7 +770,7 @@ void HTMLDocumentParser::insert(const String& source) {
   if (!tokenizer_) {
     DCHECK(!InPumpSession());
     DCHECK(have_background_parser_ || WasCreatedByScript());
-    token_ = WTF::WrapUnique(new HTMLToken);
+    token_ = std::make_unique<HTMLToken>();
     tokenizer_ = HTMLTokenizer::Create(options_);
   }
 
@@ -803,10 +806,10 @@ void HTMLDocumentParser::StartBackgroundParser() {
     GetDocument()->EnsureStyleResolver();
 
   std::unique_ptr<BackgroundHTMLParser::Configuration> config =
-      WTF::WrapUnique(new BackgroundHTMLParser::Configuration);
+      std::make_unique<BackgroundHTMLParser::Configuration>();
   config->options = options_;
   config->parser = weak_factory_.GetWeakPtr();
-  config->xss_auditor = WTF::WrapUnique(new XSSAuditor);
+  config->xss_auditor = std::make_unique<XSSAuditor>();
   config->xss_auditor->Init(GetDocument(), &xss_auditor_delegate_);
 
   config->decoder = TakeDecoder();
@@ -986,7 +989,7 @@ void HTMLDocumentParser::Finish() {
     DCHECK(!token_);
     // We're finishing before receiving any data. Rather than booting up the
     // background parser just to spin it down, we finish parsing synchronously.
-    token_ = WTF::WrapUnique(new HTMLToken);
+    token_ = std::make_unique<HTMLToken>();
     tokenizer_ = HTMLTokenizer::Create(options_);
   }
 
@@ -1202,7 +1205,7 @@ void HTMLDocumentParser::Flush() {
     // Fallback to synchronous parsing in that case.
     if (!have_background_parser_) {
       should_use_threading_ = false;
-      token_ = WTF::WrapUnique(new HTMLToken);
+      token_ = std::make_unique<HTMLToken>();
       tokenizer_ = HTMLTokenizer::Create(options_);
       DecodedDataDocumentParser::Flush();
       return;

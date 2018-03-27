@@ -397,6 +397,7 @@ void RenderViewTest::OnLeakDetectionComplete(const Result& result) {
   EXPECT_EQ(0u, result.number_of_live_frames);
   EXPECT_EQ(0u, result.number_of_live_v8_per_context_data);
   EXPECT_EQ(0u, result.number_of_worker_global_scopes);
+  EXPECT_EQ(0u, result.number_of_live_resource_fetchers);
 }
 
 void RenderViewTest::SendNativeKeyEvent(
@@ -527,13 +528,12 @@ void RenderViewTest::SimulatePointRightClick(const gfx::Point& point) {
 void RenderViewTest::SimulateRectTap(const gfx::Rect& rect) {
   WebGestureEvent gesture_event(
       WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
-      ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
-  gesture_event.x = rect.CenterPoint().x();
-  gesture_event.y = rect.CenterPoint().y();
+      ui::EventTimeStampToSeconds(ui::EventTimeForNow()),
+      blink::kWebGestureDeviceTouchscreen);
+  gesture_event.SetPositionInWidget(gfx::PointF(rect.CenterPoint()));
   gesture_event.data.tap.tap_count = 1;
   gesture_event.data.tap.width = rect.width();
   gesture_event.data.tap.height = rect.height();
-  gesture_event.source_device = blink::kWebGestureDeviceTouchpad;
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
   impl->OnMessageReceived(InputMsg_HandleInputEvent(
       0, &gesture_event, std::vector<const WebInputEvent*>(), ui::LatencyInfo(),
@@ -569,7 +569,7 @@ void RenderViewTest::Resize(gfx::Size new_size,
   ResizeParams params;
   params.screen_info = ScreenInfo();
   params.new_size = new_size;
-  params.physical_backing_size = new_size;
+  params.compositor_viewport_pixel_size = new_size;
   params.top_controls_height = 0.f;
   params.browser_controls_shrink_blink_size = false;
   params.is_fullscreen_granted = is_fullscreen_granted;

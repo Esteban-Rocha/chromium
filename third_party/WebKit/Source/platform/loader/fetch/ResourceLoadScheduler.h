@@ -6,7 +6,7 @@
 #define ResourceLoadScheduler_h
 
 #include <set>
-#include "platform/WebFrameScheduler.h"
+#include "platform/FrameScheduler.h"
 #include "platform/heap/GarbageCollected.h"
 #include "platform/heap/HeapAllocator.h"
 #include "platform/loader/fetch/Resource.h"
@@ -77,7 +77,7 @@ class PLATFORM_EXPORT ResourceLoadSchedulerClient
 //      is less than |kMedium|.
 class PLATFORM_EXPORT ResourceLoadScheduler final
     : public GarbageCollectedFinalized<ResourceLoadScheduler>,
-      public WebFrameScheduler::Observer {
+      public FrameScheduler::Observer {
   WTF_MAKE_NONCOPYABLE(ResourceLoadScheduler);
 
  public:
@@ -178,6 +178,10 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   // TrafficReportHints::InvalidInstance() can be used to omit reporting.
   bool Release(ClientId, ReleaseOption, const TrafficReportHints&);
 
+  // Checks if the specified client was already scheduled to call Run(), but
+  // haven't call Release() yet.
+  bool IsRunning(ClientId id) { return running_requests_.Contains(id); }
+
   // Sets outstanding limit for testing.
   void SetOutstandingLimitForTesting(size_t limit) {
     SetOutstandingLimitForTesting(limit, limit);
@@ -190,8 +194,8 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   // This function returns false when RendererSideResourceScheduler is disabled.
   bool IsThrottablePriority(ResourceLoadPriority) const;
 
-  // WebFrameScheduler::Observer overrides:
-  void OnThrottlingStateChanged(WebFrameScheduler::ThrottlingState) override;
+  // FrameScheduler::Observer overrides:
+  void OnThrottlingStateChanged(FrameScheduler::ThrottlingState) override;
 
  private:
   class TrafficMonitor;
@@ -289,8 +293,8 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
     kStopped,
   };
   ThrottlingHistory throttling_history_ = ThrottlingHistory::kInitial;
-  WebFrameScheduler::ThrottlingState frame_scheduler_throttling_state_ =
-      WebFrameScheduler::ThrottlingState::kNotThrottled;
+  FrameScheduler::ThrottlingState frame_scheduler_throttling_state_ =
+      FrameScheduler::ThrottlingState::kNotThrottled;
 
   // Holds clients that haven't been granted, and are waiting for a grant.
   HeapHashMap<ClientId, Member<ClientWithPriority>> pending_request_map_;
@@ -301,11 +305,11 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   // Holds an internal class instance to monitor and report traffic.
   std::unique_ptr<TrafficMonitor> traffic_monitor_;
 
-  // Holds FetchContext reference to contact WebFrameScheduler.
+  // Holds FetchContext reference to contact FrameScheduler.
   Member<FetchContext> context_;
 
   // Handle to throttling observer.
-  std::unique_ptr<WebFrameScheduler::ThrottlingObserverHandle>
+  std::unique_ptr<FrameScheduler::ThrottlingObserverHandle>
       scheduler_observer_handle_;
 };
 

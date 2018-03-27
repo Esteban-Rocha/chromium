@@ -646,12 +646,11 @@ bool ChildProcessSecurityPolicyImpl::CanRequestURL(
   // Blob and filesystem URLs require special treatment, since they embed an
   // inner origin.
   if (url.SchemeIsBlob() || url.SchemeIsFileSystem()) {
-    if (IsMalformedBlobUrl(url))
-      return false;
-
-    url::Origin origin = url::Origin::Create(url);
-    return origin.unique() || IsWebSafeScheme(origin.scheme()) ||
-           CanCommitURL(child_id, GURL(origin.Serialize()));
+    // These resources may only be requested from processes that could have a
+    // same-origin page already: "Cross-origin requests of Blob URLs must return
+    // a network error." -- https://www.w3.org/TR/FileAPI/#originOfBlobURL . In
+    // practice, these requests should already be blocked by blink.
+    return CanCommitURL(child_id, url);
   }
 
   if (IsWebSafeScheme(scheme))
@@ -805,6 +804,10 @@ bool ChildProcessSecurityPolicyImpl::CanReadRequestBody(
       case network::DataElement::TYPE_BLOB:
         // No need to validate - the unguessability of the uuid of the blob is a
         // sufficient defense against access from an unrelated renderer.
+        break;
+
+      case network::DataElement::TYPE_DATA_PIPE:
+        // Data is self-contained within |body| - no need to check access.
         break;
 
       case network::DataElement::TYPE_UNKNOWN:

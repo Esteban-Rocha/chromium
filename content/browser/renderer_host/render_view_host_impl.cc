@@ -58,6 +58,7 @@
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
@@ -424,6 +425,9 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
 
   prefs.history_entry_requires_user_gesture =
       command_line.HasSwitch(switches::kHistoryEntryRequiresUserGesture);
+
+  prefs.disable_pushstate_throttle =
+      command_line.HasSwitch(switches::kDisablePushStateThrottle);
 
 #if defined(OS_ANDROID)
   prefs.use_solid_color_scrollbars = true;

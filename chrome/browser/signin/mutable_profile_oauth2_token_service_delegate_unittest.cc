@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -672,6 +673,49 @@ TEST_F(MutableProfileOAuth2TokenServiceDelegateTest, RevokeOnUpdate) {
   EXPECT_TRUE(oauth2_service_delegate_->server_revokes_.empty());
 }
 
+TEST_F(MutableProfileOAuth2TokenServiceDelegateTest, UpdateInvalidToken) {
+  // Add the invalid token.
+  CreateOAuth2ServiceDelegate(signin::AccountConsistencyMethod::kDisabled);
+  ASSERT_TRUE(oauth2_service_delegate_->server_revokes_.empty());
+  oauth2_service_delegate_->UpdateCredentials(
+      "account_id",
+      MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken);
+  EXPECT_TRUE(oauth2_service_delegate_->server_revokes_.empty());
+  ExpectOneTokenAvailableNotification();
+
+  // The account is in authentication error.
+  EXPECT_EQ(
+      GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS),
+      signin_error_controller_.auth_error());
+
+  // Update the token: authentication error is fixed, no actual server
+  // revocation.
+  oauth2_service_delegate_->UpdateCredentials("account_id", "refresh_token");
+  EXPECT_TRUE(oauth2_service_delegate_->server_revokes_.empty());
+  ExpectOneTokenAvailableNotification();
+  EXPECT_EQ(GoogleServiceAuthError::AuthErrorNone(),
+            signin_error_controller_.auth_error());
+}
+
+TEST_F(MutableProfileOAuth2TokenServiceDelegateTest, LoadInvalidToken) {
+  CreateOAuth2ServiceDelegate(signin::AccountConsistencyMethod::kDice);
+  std::map<std::string, std::string> tokens;
+  tokens["AccountId-account_id"] =
+      MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken;
+
+  oauth2_service_delegate_->LoadAllCredentialsIntoMemory(tokens);
+
+  EXPECT_EQ(1u, oauth2_service_delegate_->GetAccounts().size());
+  EXPECT_TRUE(oauth2_service_delegate_->RefreshTokenIsAvailable("account_id"));
+  EXPECT_STREQ(MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken,
+               oauth2_service_delegate_->GetRefreshToken("account_id").c_str());
+
+  // The account is in authentication error.
+  EXPECT_EQ(
+      GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS),
+      signin_error_controller_.auth_error());
+}
+
 TEST_F(MutableProfileOAuth2TokenServiceDelegateTest, PersistenceNotifications) {
   CreateOAuth2ServiceDelegate(signin::AccountConsistencyMethod::kDisabled);
   oauth2_service_delegate_->UpdateCredentials("account_id", "refresh_token");
@@ -1046,4 +1090,42 @@ TEST_F(MutableProfileOAuth2TokenServiceDelegateTest,
       oauth2_service_delegate_->RefreshTokenIsAvailable(primary_account));
   EXPECT_TRUE(
       oauth2_service_delegate_->RefreshTokenIsAvailable(secondary_account));
+}
+
+// Regression test for https://crbug.com/823707
+// Checks that OnErrorChanged() is called during UpdateCredentials(), and that
+// RefreshTokenIsAvailable() can be used at this time.
+TEST_F(MutableProfileOAuth2TokenServiceDelegateTest, OnErrorChanged) {
+  class ErrorObserver : public SigninErrorController::Observer {
+   public:
+    explicit ErrorObserver(MutableProfileOAuth2TokenServiceDelegate* delegate)
+        : delegate_(delegate) {}
+
+    void OnErrorChanged() override {
+      error_changed_ = true;
+      EXPECT_TRUE(delegate_->RefreshTokenIsAvailable("account_id"));
+    }
+
+    MutableProfileOAuth2TokenServiceDelegate* delegate_;
+    bool error_changed_ = false;
+
+    DISALLOW_COPY_AND_ASSIGN(ErrorObserver);
+  };
+
+  CreateOAuth2ServiceDelegate(signin::AccountConsistencyMethod::kDisabled);
+
+  // Start with the SigninErrorController in error state, so that it calls
+  // OnErrorChanged() from AddProvider().
+  oauth2_service_delegate_->UpdateCredentials(
+      "error_account_id",
+      MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken);
+
+  ErrorObserver observer(oauth2_service_delegate_.get());
+  signin_error_controller_.AddObserver(&observer);
+
+  ASSERT_FALSE(observer.error_changed_);
+  oauth2_service_delegate_->UpdateCredentials("account_id", "token");
+  EXPECT_TRUE(observer.error_changed_);
+
+  signin_error_controller_.RemoveObserver(&observer);
 }

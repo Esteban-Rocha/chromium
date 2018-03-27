@@ -29,7 +29,7 @@
 #include "net/log/test_net_log.h"
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/socket/socket_test_util.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
@@ -261,7 +261,7 @@ TEST(URLRequestHttpJobWithProxy, TestSuccessfulWithOneProxy) {
 
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
       ProxyResolutionService::CreateFixedFromPacResult(
-          proxy_server.ToPacString());
+          proxy_server.ToPacString(), TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockWrite writes[] = {MockWrite(kSimpleProxyGetMockWrite)};
   MockRead reads[] = {MockRead(SYNCHRONOUS, ERR_CONNECTION_RESET)};
@@ -310,7 +310,8 @@ TEST(URLRequestHttpJobWithProxy,
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
       ProxyResolutionService::CreateFixedFromPacResult(
           proxy_server.ToPacString() + "; " +
-          ProxyServer::Direct().ToPacString());
+              ProxyServer::Direct().ToPacString(),
+          TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
   MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"

@@ -10,7 +10,18 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
+#include "base/win/windows_version.h"
 #include "chrome/browser/conflicts/module_database_observer_win.h"
+
+#if defined(GOOGLE_CHROME_BUILD)
+#include "base/feature_list.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/conflicts/third_party_conflicts_manager_win.h"
+#include "chrome/common/chrome_features.h"
+#include "chrome/common/pref_names.h"
+#include "components/prefs/pref_registry_simple.h"
+#include "components/prefs/pref_service.h"
+#endif
 
 namespace {
 
@@ -44,14 +55,11 @@ ModuleDatabase::ModuleDatabase(
       // base::Unretained().
       module_inspector_(base::Bind(&ModuleDatabase::OnModuleInspected,
                                    base::Unretained(this))),
-#if defined(GOOGLE_CHROME_BUILD)
-      third_party_conflicts_manager_(this),
-#endif
       weak_ptr_factory_(this) {
   AddObserver(&third_party_metrics_);
 
 #if defined(GOOGLE_CHROME_BUILD)
-  AddObserver(&third_party_conflicts_manager_);
+  MaybeInitializeThirdPartyConflictsManager();
 #endif
 }
 
@@ -139,9 +147,6 @@ void ModuleDatabase::OnModuleLoad(content::ProcessType process_type,
     return;
   }
 
-  has_started_processing_ = true;
-  idle_timer_.Reset();
-
   auto* module_info =
       FindOrCreateModuleInfo(module_path, module_size, module_time_date_stamp);
 
@@ -173,6 +178,15 @@ void ModuleDatabase::IncreaseInspectionPriority() {
   module_inspector_.IncreaseInspectionPriority();
 }
 
+#if defined(GOOGLE_CHROME_BUILD)
+// static
+void ModuleDatabase::RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
+  // Register the pref used to disable the Incompatible Applications warning
+  // using group policy.
+  registry->RegisterBooleanPref(prefs::kThirdPartyBlockingEnabled, true);
+}
+#endif
+
 // static
 uint32_t ModuleDatabase::ProcessTypeToBit(content::ProcessType process_type) {
   uint32_t bit_index =
@@ -199,8 +213,12 @@ ModuleDatabase::ModuleInfo* ModuleDatabase::FindOrCreateModuleInfo(
       std::forward_as_tuple());
 
   // New modules must be inspected.
-  if (result.second)
+  if (result.second) {
+    has_started_processing_ = true;
+    idle_timer_.Reset();
+
     module_inspector_.AddModule(result.first->first);
+  }
 
   return &(*result.first);
 }
@@ -255,3 +273,23 @@ void ModuleDatabase::NotifyLoadedModules(ModuleDatabaseObserver* observer) {
       observer->OnNewModuleFound(module.first, module.second);
   }
 }
+
+#if defined(GOOGLE_CHROME_BUILD)
+void ModuleDatabase::MaybeInitializeThirdPartyConflictsManager() {
+  // Early exit if disabled via group policy.
+  const PrefService::Preference* third_party_blocking_enabled_pref =
+      g_browser_process->local_state()->FindPreference(
+          prefs::kThirdPartyBlockingEnabled);
+  if (third_party_blocking_enabled_pref->IsManaged() &&
+      !third_party_blocking_enabled_pref->GetValue()->GetBool())
+    return;
+
+  if (base::FeatureList::IsEnabled(
+          features::kIncompatibleApplicationsWarning) &&
+      base::win::GetVersion() >= base::win::VERSION_WIN10) {
+    third_party_conflicts_manager_ =
+        std::make_unique<ThirdPartyConflictsManager>(this);
+    AddObserver(third_party_conflicts_manager_.get());
+  }
+}
+#endif

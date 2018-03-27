@@ -12,13 +12,13 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/shared_url_loader_factory.h"
 #include "content/renderer/service_worker/controller_service_worker_connector.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/redirect_util.h"
 #include "net/url_request/url_request.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "ui/base/page_transition_types.h"
 
 namespace content {
@@ -46,8 +46,9 @@ class HeaderRewritingURLLoaderClient : public network::mojom::URLLoaderClient {
   static network::mojom::URLLoaderClientPtr CreateAndBind(
       network::mojom::URLLoaderClientPtr url_loader_client,
       RewriteHeaderCallback rewrite_header_callback) {
-    return (new HeaderRewritingURLLoaderClient(std::move(url_loader_client),
-                                               rewrite_header_callback))
+    return (new HeaderRewritingURLLoaderClient(
+                std::move(url_loader_client),
+                std::move(rewrite_header_callback)))
         ->CreateInterfacePtrAndBind();
   }
 
@@ -171,7 +172,7 @@ ServiceWorkerSubresourceLoader::ServiceWorkerSubresourceLoader(
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<SharedURLLoaderFactory> network_loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory)
     : redirect_limit_(net::URLRequest::kMaxRedirects),
       url_loader_client_(std::move(client)),
       url_loader_binding_(this, std::move(request)),
@@ -543,7 +544,7 @@ void ServiceWorkerSubresourceLoader::OnBlobReadingComplete(int net_error) {
 
 ServiceWorkerSubresourceLoaderFactory::ServiceWorkerSubresourceLoaderFactory(
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<SharedURLLoaderFactory> network_loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory)
     : controller_connector_(std::move(controller_connector)),
       network_loader_factory_(std::move(network_loader_factory)) {
   DCHECK(network_loader_factory_);

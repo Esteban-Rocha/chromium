@@ -42,7 +42,6 @@ class CC_EXPORT LayerTreeSettings {
   int damaged_frame_limit = 3;
   bool enable_latency_recovery = true;
   bool can_use_lcd_text = true;
-  bool use_distance_field_text = false;
   bool gpu_rasterization_forced = false;
   int gpu_rasterization_msaa_sample_count = 0;
   float gpu_rasterization_skewport_target_time_in_seconds = 0.2f;
@@ -71,6 +70,9 @@ class CC_EXPORT LayerTreeSettings {
   double background_animation_rate = 1.0;
   gfx::Size default_tile_size;
   gfx::Size max_untiled_layer_size;
+  // If set, indicates the largest tile size we will use for GPU Raster. If not
+  // set, no limit is enforced.
+  gfx::Size max_gpu_raster_tile_size;
   gfx::Size minimum_occlusion_tracking_size;
   // 3000 pixels should give sufficient area for prepainting.
   // Note this value is specified with an ideal contents scale in mind. That

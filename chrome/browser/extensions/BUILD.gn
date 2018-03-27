@@ -6,7 +6,7 @@ import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
 import("//components/nacl/features.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//rlz/features/features.gni")
@@ -833,8 +833,6 @@ static_library("extensions") {
     "//components/policy:generated",
     "//components/policy/core/browser",
     "//components/pref_registry",
-    "//components/proximity_auth",
-    "//components/proximity_auth/logging",
     "//components/proxy_config",
     "//components/rappor",
     "//components/resources",
@@ -843,6 +841,7 @@ static_library("extensions") {
     "//components/safe_browsing/common:safe_browsing_prefs",
     "//components/safe_browsing/db:database_manager",
     "//components/search_engines",
+    "//components/services/unzip/public/cpp",
     "//components/sessions",
     "//components/signin/core/browser",
     "//components/spellcheck/browser",
@@ -866,12 +865,12 @@ static_library("extensions") {
     "//extensions:extensions_resources",
     "//extensions/browser",
     "//extensions/browser/api:api_registration",
+    "//extensions/buildflags",
     "//extensions/common",
     "//extensions/common/api",
-    "//extensions/features",
     "//extensions/strings",
     "//google_apis",
-    "//media:media_features",
+    "//media:media_buildflags",
     "//net",
     "//ppapi/features",
     "//printing/features",
@@ -991,6 +990,8 @@ static_library("extensions") {
       "//components/chrome_apps",
       "//components/constrained_window",
       "//components/drive",
+      "//components/proximity_auth",
+      "//components/proximity_auth/logging",
       "//components/user_manager",
       "//remoting/base",
       "//remoting/host",
@@ -1142,7 +1143,6 @@ static_library("extensions") {
     deps += [
       "//ui/aura",
       "//ui/keyboard",
-      "//ui/keyboard:keyboard_with_content",
       "//ui/keyboard:resources",
     ]
   }

@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/app_list/app_list_test_util.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_test.h"
 #include "chrome/browser/ui/app_list/search/arc/arc_playstore_search_result.h"
+#include "chrome/browser/ui/app_list/search/arc/icon_decode_request.h"
 #include "chrome/browser/ui/app_list/test/test_app_list_controller_delegate.h"
 #include "chrome/test/base/testing_profile.h"
 #include "extensions/common/extension_builder.h"
@@ -74,7 +75,7 @@ TEST_F(ArcPlayStoreSearchProviderTest, Basic) {
   std::unique_ptr<ArcPlayStoreSearchProvider> provider =
       CreateSearch(kMaxResults);
   EXPECT_TRUE(provider->results().empty());
-  ArcPlayStoreSearchResult::DisableSafeDecodingForTesting();
+  IconDecodeRequest::DisableSafeDecodingForTesting();
 
   AddExtension(CreateExtension(extension_misc::kGmailAppId).get());
 
@@ -91,14 +92,14 @@ TEST_F(ArcPlayStoreSearchProviderTest, Basic) {
     SCOPED_TRACE(base::StringPrintf("Testing result %zu", i));
     EXPECT_EQ(base::UTF16ToUTF8(results[i]->title()),
               base::StringPrintf("%s %zu", kQuery, i));
-    EXPECT_EQ(results[i]->display_type(), SearchResult::DISPLAY_TILE);
+    EXPECT_EQ(results[i]->display_type(), ash::SearchResultDisplayType::kTile);
     EXPECT_EQ(base::UTF16ToUTF8(results[i]->formatted_price()),
               base::StringPrintf("$%zu.22", i));
     EXPECT_EQ(results[i]->rating(), i);
     const bool is_instant_app = i % 2 == 0;
     EXPECT_EQ(results[i]->result_type(),
-              is_instant_app ? SearchResult::RESULT_INSTANT_APP
-                             : SearchResult::RESULT_PLAYSTORE_APP);
+              is_instant_app ? ash::SearchResultType::kInstantApp
+                             : ash::SearchResultType::kPlayStoreApp);
   }
 }
 

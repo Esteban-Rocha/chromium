@@ -18,10 +18,14 @@ namespace {
 // The names of dump providers whitelisted for background tracing. Dump
 // providers can be added here only if the background mode dump has very
 // little processor and memory overhead.
+// TODO(ssid): Some dump providers do not create ownership edges on background
+// dump. So, the effective size will not be correct.
 const char* const kDumpProviderWhitelist[] = {
     "android::ResourceManagerImpl",
+    "AutocompleteController",
     "BlinkGC",
     "BlinkObjectCounters",
+    "BlobStorageContext",
     "ClientDiscardableSharedMemoryManager",
     "DOMStorage",
     "DownloadService",
@@ -29,7 +33,9 @@ const char* const kDumpProviderWhitelist[] = {
     "gpu::BufferManager",
     "gpu::RenderbufferManager",
     "gpu::TextureManager",
+    "FontCaches",
     "HistoryReport",
+    "IPCChannel",
     "IndexedDBBackingStore",
     "InMemoryURLIndex",
     "JavaHeap",
@@ -42,41 +48,7 @@ const char* const kDumpProviderWhitelist[] = {
     "MojoLevelDB",
     "PartitionAlloc",
     "ProcessMemoryMetrics",
-    "Skia",
-    "SharedMemoryTracker",
-    "Sql",
-    "URLRequestContext",
-    "V8Isolate",
-    "WinHeap",
-    "SyncDirectory",
-    "TabRestoreServiceHelper",
-    nullptr  // End of list marker.
-};
-
-// The names of dump providers whitelisted for summary tracing.
-// TODO(ssid): Some dump providers do not create ownership edges on background
-// dump. So, the effective size will not be correct.
-const char* const kDumpProviderSummaryWhitelist[] = {
-    "android::ResourceManagerImpl",
-    "BlinkGC",
-    "BlinkObjectCounters",
-    "ClientDiscardableSharedMemoryManager",
-    "DiscardableSharedMemoryManager",
-    "gpu::BufferManager",
-    "gpu::RenderbufferManager",
-    "gpu::TextureManager",
-    "HistoryReport",
-    "IndexedDBBackingStore",
-    "JavaHeap",
-    "LevelDB",
-    "LeveldbValueStore",
-    "LocalStorage",
-    "Malloc",
-    "MemoryCache",
-    "MojoHandleTable",
-    "MojoLevelDB",
-    "PartitionAlloc",
-    "ProcessMemoryMetrics",
+    "RenderProcessHost",
     "SharedMemoryTracker",
     "Skia",
     "Sql",
@@ -107,6 +79,7 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "blink_objects/V8PerContextData",
     "blink_objects/WorkerGlobalScope",
     "blink_objects/UACSSResource",
+    "blink_objects/ResourceFetcher",
     "components/download/controller_0x?",
     "discardable",
     "discardable/child_0x?",
@@ -116,6 +89,8 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "extensions/value_store/Extensions.Database.Open/0x?",
     "extensions/value_store/Extensions.Database.Restore/0x?",
     "extensions/value_store/Extensions.Database.Value.Restore/0x?",
+    "font_caches/font_platform_data_cache",
+    "font_caches/shape_caches",
     "gpu/gl/buffers/share_group_0x?",
     "gpu/gl/renderbuffers/share_group_0x?",
     "gpu/gl/textures/share_group_0x?",
@@ -138,6 +113,8 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "mojo/data_pipe_producer",
     "mojo/message_pipe",
     "mojo/platform_handle",
+    "mojo/queued_ipc_channel_message/0x?",
+    "mojo/render_process_host/0x?",
     "mojo/shared_buffer",
     "mojo/unknown",
     "mojo/watcher",
@@ -202,7 +179,8 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "net/url_request_context/unknown/0x?/http_cache/memory_backend",
     "net/url_request_context/unknown/0x?/http_cache/simple_backend",
     "net/url_request_context/unknown/0x?/http_network_session",
-    "omnibox/in_memory_url_index_0x?",
+    "omnibox/autocomplete_controller/0x?",
+    "omnibox/in_memory_url_index/0x?",
     "web_cache/Image_resources",
     "web_cache/CSS stylesheet_resources",
     "web_cache/Script_resources",
@@ -229,15 +207,15 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "v8/isolate_0x?/heap_spaces/new_space",
     "v8/isolate_0x?/heap_spaces/old_space",
     "v8/isolate_0x?/heap_spaces/other_spaces",
+    "v8/isolate_0x?/heap_spaces/read_only_space",
     "v8/isolate_0x?/malloc",
     "v8/isolate_0x?/zapped_for_debug",
-    "winheap",
-    "winheap/allocated_objects",
+    "site_storage/blob_storage/0x?",
     "site_storage/index_db/0x?",
-    "site_storage/localstorage_0x?/cache_size",
-    "site_storage/localstorage_0x?/leveldb",
-    "site_storage/session_storage_0x?",
-    "site_storage/session_storage_0x?/cache_size",
+    "site_storage/localstorage/0x?/cache_size",
+    "site_storage/localstorage/0x?/leveldb",
+    "site_storage/session_storage/0x?",
+    "site_storage/session_storage/0x?/cache_size",
     "sync/0x?/kernel",
     "sync/0x?/store",
     "sync/0x?/model_type/APP",
@@ -287,8 +265,6 @@ const char* const kAllocatorDumpNameWhitelist[] = {
 };
 
 const char* const* g_dump_provider_whitelist = kDumpProviderWhitelist;
-const char* const* g_dump_provider_whitelist_for_summary =
-    kDumpProviderSummaryWhitelist;
 const char* const* g_allocator_dump_name_whitelist =
     kAllocatorDumpNameWhitelist;
 
@@ -304,11 +280,6 @@ bool IsMemoryDumpProviderInList(const char* mdp_name, const char* const* list) {
 
 bool IsMemoryDumpProviderWhitelisted(const char* mdp_name) {
   return IsMemoryDumpProviderInList(mdp_name, g_dump_provider_whitelist);
-}
-
-bool IsMemoryDumpProviderWhitelistedForSummary(const char* mdp_name) {
-  return IsMemoryDumpProviderInList(mdp_name,
-                                    g_dump_provider_whitelist_for_summary);
 }
 
 bool IsMemoryAllocatorDumpNameWhitelisted(const std::string& name) {
@@ -356,10 +327,6 @@ bool IsMemoryAllocatorDumpNameWhitelisted(const std::string& name) {
 
 void SetDumpProviderWhitelistForTesting(const char* const* list) {
   g_dump_provider_whitelist = list;
-}
-
-void SetDumpProviderSummaryWhitelistForTesting(const char* const* list) {
-  g_dump_provider_whitelist_for_summary = list;
 }
 
 void SetAllocatorDumpNameWhitelistForTesting(const char* const* list) {

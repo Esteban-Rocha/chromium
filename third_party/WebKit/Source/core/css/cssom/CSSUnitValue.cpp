@@ -14,7 +14,7 @@
 #include "core/css/cssom/CSSMathProduct.h"
 #include "core/css/cssom/CSSMathSum.h"
 #include "core/css/cssom/CSSNumericSumValue.h"
-#include "core/css/properties/CSSProperty.h"
+#include "core/css/properties/css_property.h"
 #include "platform/wtf/MathExtras.h"
 
 namespace blink {
@@ -44,6 +44,18 @@ bool IsValueOutOfRangeForProperty(CSSPropertyID property_id, double value) {
 
   // For non-length properties and special cases.
   switch (property_id) {
+    case CSSPropertyBlockSize:
+    case CSSPropertyFlexGrow:
+    case CSSPropertyFlexShrink:
+    case CSSPropertyFontSize:
+    case CSSPropertyFontSizeAdjust:
+    case CSSPropertyFontStretch:
+    case CSSPropertyInlineSize:
+    case CSSPropertyMaxBlockSize:
+    case CSSPropertyMaxInlineSize:
+    case CSSPropertyMinBlockSize:
+    case CSSPropertyMinInlineSize:
+      return value < 0;
     case CSSPropertyFontWeight:
       return value < 0 || value > 1000;
     default:

@@ -4,7 +4,7 @@
 
 #include "modules/animationworklet/WorkletAnimation.h"
 
-#include "bindings/modules/v8/animation_effect_read_only_or_animation_effect_read_only_sequence.h"
+#include "bindings/modules/v8/animation_effect_or_animation_effect_sequence.h"
 #include "core/animation/ElementAnimations.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/animation/ScrollTimeline.h"
@@ -20,29 +20,29 @@ namespace blink {
 
 namespace {
 bool ConvertAnimationEffects(
-    const AnimationEffectReadOnlyOrAnimationEffectReadOnlySequence& effects,
-    HeapVector<Member<KeyframeEffectReadOnly>>& keyframe_effects,
+    const AnimationEffectOrAnimationEffectSequence& effects,
+    HeapVector<Member<KeyframeEffect>>& keyframe_effects,
     String& error_string) {
   DCHECK(keyframe_effects.IsEmpty());
 
-  // Currently we only support KeyframeEffectReadOnly (and its subclasses).
-  if (effects.IsAnimationEffectReadOnly()) {
-    const auto& effect = effects.GetAsAnimationEffectReadOnly();
-    if (!effect->IsKeyframeEffectReadOnly()) {
-      error_string = "Effect must be a KeyframeEffectReadOnly object";
+  // Currently we only support KeyframeEffect.
+  if (effects.IsAnimationEffect()) {
+    const auto& effect = effects.GetAsAnimationEffect();
+    if (!effect->IsKeyframeEffect()) {
+      error_string = "Effect must be a KeyframeEffect object";
       return false;
     }
-    keyframe_effects.push_back(ToKeyframeEffectReadOnly(effect));
+    keyframe_effects.push_back(ToKeyframeEffect(effect));
   } else {
-    const HeapVector<Member<AnimationEffectReadOnly>>& effect_sequence =
-        effects.GetAsAnimationEffectReadOnlySequence();
+    const HeapVector<Member<AnimationEffect>>& effect_sequence =
+        effects.GetAsAnimationEffectSequence();
     keyframe_effects.ReserveInitialCapacity(effect_sequence.size());
     for (const auto& effect : effect_sequence) {
-      if (!effect->IsKeyframeEffectReadOnly()) {
-        error_string = "Effects must all be KeyframeEffectReadOnly objects";
+      if (!effect->IsKeyframeEffect()) {
+        error_string = "Effects must all be KeyframeEffect objects";
         return false;
       }
-      keyframe_effects.push_back(ToKeyframeEffectReadOnly(effect));
+      keyframe_effects.push_back(ToKeyframeEffect(effect));
     }
   }
 
@@ -149,13 +149,20 @@ std::unique_ptr<CompositorScrollTimeline> ToCompositorScrollTimeline(
 
 WorkletAnimation* WorkletAnimation::Create(
     String animator_name,
-    const AnimationEffectReadOnlyOrAnimationEffectReadOnlySequence& effects,
+    const AnimationEffectOrAnimationEffectSequence& effects,
     DocumentTimelineOrScrollTimeline timeline,
     scoped_refptr<SerializedScriptValue> options,
     ExceptionState& exception_state) {
   DCHECK(IsMainThread());
 
-  HeapVector<Member<KeyframeEffectReadOnly>> keyframe_effects;
+  if (!Platform::Current()->IsThreadedAnimationEnabled()) {
+    exception_state.ThrowDOMException(
+        kInvalidStateError,
+        "AnimationWorklet requires threaded animations to be enabled");
+    return nullptr;
+  }
+
+  HeapVector<Member<KeyframeEffect>> keyframe_effects;
   String error_string;
   if (!ConvertAnimationEffects(effects, keyframe_effects, error_string)) {
     exception_state.ThrowDOMException(kNotSupportedError, error_string);
@@ -177,7 +184,7 @@ WorkletAnimation* WorkletAnimation::Create(
 WorkletAnimation::WorkletAnimation(
     const String& animator_name,
     Document& document,
-    const HeapVector<Member<KeyframeEffectReadOnly>>& effects,
+    const HeapVector<Member<KeyframeEffect>>& effects,
     DocumentTimelineOrScrollTimeline timeline,
     scoped_refptr<SerializedScriptValue> options)
     : animator_name_(animator_name),
@@ -203,7 +210,7 @@ void WorkletAnimation::play() {
   document_->GetWorkletAnimationController().AttachAnimation(*this);
   play_state_ = Animation::kPending;
 
-  KeyframeEffectReadOnly* target_effect = effects_.at(0);
+  KeyframeEffect* target_effect = effects_.at(0);
   Element* target = target_effect->target();
   if (!target)
     return;
@@ -220,7 +227,7 @@ void WorkletAnimation::cancel() {
   document_->GetWorkletAnimationController().DetachAnimation(*this);
   play_state_ = Animation::kIdle;
 
-  KeyframeEffectReadOnly* target_effect = effects_.at(0);
+  KeyframeEffect* target_effect = effects_.at(0);
   Element* target = target_effect->target();
   if (!target)
     return;
@@ -232,7 +239,7 @@ void WorkletAnimation::cancel() {
 
 bool WorkletAnimation::StartOnCompositor(String* failure_message) {
   DCHECK(IsMainThread());
-  KeyframeEffectReadOnly* target_effect = effects_.at(0);
+  KeyframeEffect* target_effect = effects_.at(0);
   Element& target = *target_effect->target();
 
   // CheckCanStartAnimationOnCompositor requires that the property-specific

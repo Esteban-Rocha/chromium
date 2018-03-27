@@ -100,6 +100,7 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
 
     // Initialization guarded by mAwInit.getLock()
     private Statics mStaticsAdapter;
+    private Object mServiceWorkerControllerAdapter;
 
     /**
      * Thread-safe way to set the one and only WebViewChromiumFactoryProvider.
@@ -161,6 +162,12 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
 
     @TargetApi(Build.VERSION_CODES.N) // For getSystemService() and isUserUnlocked().
     private void initialize(WebViewDelegate webViewDelegate) {
+        // The package is used to locate the services for copying crash minidumps and requesting
+        // variatinos seeds. So it must be set before initializing variations and before a renderer
+        // has a chance to crash.
+        PackageInfo packageInfo = WebViewFactory.getLoadedPackageInfo();
+        AwBrowserProcess.setWebViewPackageName(packageInfo.packageName);
+
         mAwInit = createAwInit();
         mWebViewDelegate = webViewDelegate;
         Context ctx = mWebViewDelegate.getApplication().getApplicationContext();
@@ -197,7 +204,6 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
         }
 
         ThreadUtils.setWillOverrideUiThread();
-        final PackageInfo packageInfo = WebViewFactory.getLoadedPackageInfo();
         BuildInfo.setBrowserPackageInfo(packageInfo);
 
         // Load chromium library.
@@ -229,10 +235,10 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
         } finally {
             StrictMode.setThreadPolicy(oldPolicy);
         }
+        // Now safe to use WebView data directory.
 
         mShouldDisableThreadChecking =
                 shouldDisableThreadChecking(ContextUtils.getApplicationContext());
-        // Now safe to use WebView data directory.
 
         setSingleton(this);
     }
@@ -417,7 +423,13 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
 
     @Override
     public ServiceWorkerController getServiceWorkerController() {
-        return mAwInit.getServiceWorkerController();
+        synchronized (mAwInit.getLock()) {
+            if (mServiceWorkerControllerAdapter == null) {
+                mServiceWorkerControllerAdapter =
+                        new ServiceWorkerControllerAdapter(mAwInit.getServiceWorkerController());
+            }
+        }
+        return (ServiceWorkerController) mServiceWorkerControllerAdapter;
     }
 
     @Override

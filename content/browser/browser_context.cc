@@ -39,6 +39,7 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
+#include "content/public/browser/webrtc_event_logger.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
@@ -58,9 +59,6 @@
 #include "storage/browser/database/database_tracker.h"
 #include "storage/browser/fileapi/external_mount_points.h"
 
-#if BUILDFLAG(ENABLE_WEBRTC)
-#include "content/browser/webrtc/webrtc_event_log_manager.h"
-#endif
 
 using base::UserDataAdapter;
 
@@ -384,6 +382,14 @@ void BrowserContext::DeliverPushMessage(
 
 // static
 void BrowserContext::NotifyWillBeDestroyed(BrowserContext* browser_context) {
+  // Make sure NotifyWillBeDestroyed is idempotent.  This helps facilitate the
+  // pattern where NotifyWillBeDestroyed is called from *both*
+  // ShellBrowserContext and its derived classes (e.g.
+  // LayoutTestBrowserContext).
+  if (browser_context->was_notify_will_be_destroyed_called_)
+    return;
+  browser_context->was_notify_will_be_destroyed_called_ = true;
+
   // Service Workers must shutdown before the browser context is destroyed,
   // since they keep render process hosts alive and the codebase assumes that
   // render process hosts die before their profile (browser context) dies.
@@ -531,9 +537,9 @@ void BrowserContext::Initialize(
 
 #if BUILDFLAG(ENABLE_WEBRTC)
   if (!browser_context->IsOffTheRecord()) {
-    auto* webrtc_event_log_manager = WebRtcEventLogManager::GetInstance();
-    if (webrtc_event_log_manager) {
-      webrtc_event_log_manager->EnableForBrowserContext(browser_context);
+    WebRtcEventLogger* const logger = WebRtcEventLogger::Get();
+    if (logger) {
+      logger->EnableForBrowserContext(browser_context);
     }
   }
 #endif
@@ -587,11 +593,12 @@ BrowserContext::~BrowserContext() {
   DCHECK(!GetUserData(kStoragePartitionMapKeyName))
       << "StoragePartitionMap is not shut down properly";
 
+  DCHECK(was_notify_will_be_destroyed_called_);
+
 #if BUILDFLAG(ENABLE_WEBRTC)
-  auto* webrtc_event_log_manager = WebRtcEventLogManager::GetInstance();
-  if (webrtc_event_log_manager) {
-    const auto id = WebRtcEventLogManager::GetBrowserContextId(this);
-    webrtc_event_log_manager->DisableForBrowserContext(id);
+  WebRtcEventLogger* const logger = WebRtcEventLogger::Get();
+  if (logger) {
+    logger->DisableForBrowserContext(this);
   }
 #endif
 

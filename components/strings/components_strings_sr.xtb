@@ -21,13 +21,13 @@
 <translation id="1113869188872983271">&amp;Опозови промену редоследа</translation>
 <translation id="1126551341858583091">Величина у локалном меморијском простору је <ph name="CRASH_SIZE" />.</translation>
 <translation id="112840717907525620">Кеш смерница је у реду</translation>
-<translation id="1132774398110320017">Подешавања Chrome аутоматског попуњавања...</translation>
 <translation id="1150979032973867961">Овај сервер не може да докаже да је <ph name="DOMAIN" />; оперативни систем рачунара нема поверења у његов безбедносни сертификат. Узрок томе је можда погрешна конфигурација или нападач који је прекинуо везу.</translation>
 <translation id="1151972924205500581">Лозинка је обавезна</translation>
 <translation id="1152921474424827756">Приступите <ph name="BEGIN_LINK" />кешираној копији<ph name="END_LINK" /> странице <ph name="URL" /></translation>
 <translation id="1158211211994409885">Хост <ph name="HOST_NAME" /> је неочекивано прекинуо везу.</translation>
 <translation id="1161325031994447685">поново да се повежете са Wi-Fi мрежом</translation>
 <translation id="1165039591588034296">Грешка</translation>
+<translation id="1173894706177603556">Преименуј</translation>
 <translation id="1175364870820465910">&amp;Одштампај...</translation>
 <translation id="1181037720776840403">Уклони</translation>
 <translation id="1184214524891303587"><ph name="BEGIN_WHITEPAPER_LINK" />Аутоматски пријави<ph name="END_WHITEPAPER_LINK" /> Google-у детаље о могућим безбедносним инцидентима. <ph name="PRIVACY_PAGE_LINK" /></translation>
@@ -57,7 +57,6 @@
         <ph name="END_LIST" /></translation>
 <translation id="1339601241726513588">Домен уписнице:</translation>
 <translation id="1340482604681802745">Адреса преузимања</translation>
-<translation id="1344588688991793829">Подешавања Chromium аутоматског попуњавања...</translation>
 <translation id="1348198688976932919">Сајт који ћете посетити садржи опасне апликације</translation>
 <translation id="1374468813861204354">предлози</translation>
 <translation id="1375198122581997741">О верзији</translation>
@@ -283,7 +282,6 @@
 <translation id="301521992641321250">Аутоматски је блокирано</translation>
 <translation id="3024663005179499861">Погрешан тип смерница</translation>
 <translation id="3037605927509011580">О, не!</translation>
-<translation id="3039538478787849737">Желите ли да сачувате картицу на Google-у?</translation>
 <translation id="3041612393474885105">Информације о сертификату</translation>
 <translation id="3063697135517575841">Chrome није успео да потврди картицу. Пробајте поново касније.</translation>
 <translation id="3064966200440839136">Напустићете режим без архивирања да бисте платили у спољној апликацији. Желите ли да наставите?</translation>
@@ -432,6 +430,7 @@
 <translation id="4103249731201008433">Серијски број уређаја је неважећи</translation>
 <translation id="410351446219883937">Аутоплеј</translation>
 <translation id="4103763322291513355">Посетите &lt;strong&gt;chrome://policy&lt;/strong&gt; да бисте видели листу URL-ова стављених на црну листу и друге смернице које је наметнуо администратор система.</translation>
+<translation id="4110652170750985508">Прегледајте уплату</translation>
 <translation id="4116663294526079822">Увек дозволи на овом сајту</translation>
 <translation id="4117700440116928470">Опсег смерница није подржан.</translation>
 <translation id="4129401438321186435">{COUNT,plural, =1{још 1}one{још #}few{још #}other{још #}}</translation>
@@ -666,6 +665,7 @@
 <translation id="5989320800837274978">Нису наведени ни фиксни прокси сервери нити URL адреса .pac скрипте.</translation>
 <translation id="5990559369517809815">Додатак је блокирао захтеве упућене серверу.</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="6015796118275082299">Година</translation>
 <translation id="6016158022840135739">{COUNT,plural, =1{1. страница}one{#. страница}few{#. страница}other{#. страница}}</translation>
 <translation id="6017850046339264347">Нападачи који су на <ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> могу да инсталирају обмањујуће апликације које се претварају да су нешто друго или да прикупљају податке који могу да се користе за праћење. <ph name="BEGIN_LEARN_MORE_LINK" />Сазнајте више<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="6025416945513303461"><ph name="TYPE_1" />, <ph name="TYPE_2" />, <ph name="TYPE_3" /> (синхронизовано)</translation>
@@ -803,6 +803,7 @@
 <translation id="7275334191706090484">Обележивачи којим се управља</translation>
 <translation id="7298195798382681320">Препоручено</translation>
 <translation id="7309308571273880165">Извештај о отказивању је снимљен <ph name="CRASH_TIME" /> (корисник треба да га отпреми, још увек није отпремљен)</translation>
+<translation id="7320336641823683070">Помоћ при повезивању</translation>
 <translation id="7334320624316649418">&amp;Понови промену редоследа</translation>
 <translation id="733923710415886693">Сертификат сервера није откривен помоћу Транспарентности сертификата.</translation>
 <translation id="7353601530677266744">Командна линија</translation>
@@ -887,6 +888,7 @@
 <translation id="782886543891417279">Wi-Fi мрежа коју користите (<ph name="WIFI_NAME" />) ће можда захтевати да посетите страницу за пријављивање.</translation>
 <translation id="785549533363645510">Али, нисте невидљиви. Преласком у режим без архивирања нећете сакрити прегледање од послодавца, интернет провајдера или веб-сајтова које посећујете.</translation>
 <translation id="7855695075675558090"><ph name="TOTAL_LABEL" />: <ph name="FORMATTED_TOTAL_AMOUNT" /> <ph name="CURRENCY_CODE" /></translation>
+<translation id="7862185352068345852">Желите ли да напустите сајт?</translation>
 <translation id="7878176543348854470">Прихватају се дебитне и припејд картице.</translation>
 <translation id="7878562273885520351">Лозинка је можда компромитована</translation>
 <translation id="7887683347370398519">Проверите CVC и покушајте поново</translation>
@@ -909,6 +911,7 @@
 <translation id="8041940743680923270">Користи глобалну подразумевану вредност (Питај)</translation>
 <translation id="8042918947222776840">Одаберите начин преузимања</translation>
 <translation id="8057711352706143257">Софтвер „<ph name="SOFTWARE_NAME" />“ није правилно конфигурисан. Деинсталирање софтвера „<ph name="SOFTWARE_NAME" />“ обично решава проблем. <ph name="FURTHER_EXPLANATION" /></translation>
+<translation id="8079031581361219619">Желите ли поново да учитате сајт?</translation>
 <translation id="8088680233425245692">Прегледање чланка није успело.</translation>
 <translation id="8091372947890762290">Активација је на чекању на серверу</translation>
 <translation id="8094917007353911263">Мрежа коју користите ће можда захтевати да посетите <ph name="BEGIN_BOLD" /><ph name="LOGIN_URL" /><ph name="END_BOLD" />.</translation>
@@ -924,6 +927,7 @@
 <translation id="8201077131113104583">Неважећи URL за ажурирање за додатак са ИД-ом „<ph name="EXTENSION_ID" />“.</translation>
 <translation id="8202097416529803614">Резиме поруџбине</translation>
 <translation id="8205463626947051446">Сајт приказује огласе који ометају</translation>
+<translation id="8211406090763984747">Веза је безбедна</translation>
 <translation id="8218327578424803826">Додељена локација:</translation>
 <translation id="8225771182978767009">Особа која је подесила овај рачунар је одлучила да блокира овај сајт.</translation>
 <translation id="822964464349305906"><ph name="TYPE_1" />, <ph name="TYPE_2" /></translation>
@@ -1009,6 +1013,7 @@
 <translation id="8957210676456822347">Овлашћење на улазном порталу</translation>
 <translation id="8971063699422889582">Сертификат сервера је истекао.</translation>
 <translation id="8978053250194585037">Google безбедно прегледање је недавно <ph name="BEGIN_LINK" />открило „пецање“<ph name="END_LINK" /> на <ph name="SITE" />. Сајтови са „пецањем“ се представљају као неки други веб-сајтови да би вас преварили.</translation>
+<translation id="8987927404178983737">Месец</translation>
 <translation id="8989148748219918422"><ph name="ORGANIZATION" /> [<ph name="COUNTRY" />]</translation>
 <translation id="8996941253935762404">Сајт који ћете посетити садржи штетне програме</translation>
 <translation id="8997023839087525404">Сервер је приказао сертификат који није јавно откривен помоћу смерница Транспарентност сертификата. То је обавезно за неке сертификате да бисмо се уверили да су поуздани и да штите од нападача.</translation>

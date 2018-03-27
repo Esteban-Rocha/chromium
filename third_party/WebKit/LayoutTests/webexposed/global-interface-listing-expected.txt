@@ -190,7 +190,7 @@ interface Animation : EventTarget
     setter onfinish
     setter playbackRate
     setter startTime
-interface AnimationEffectReadOnly
+interface AnimationEffect
     attribute @@toStringTag
     getter timing
     method constructor
@@ -418,7 +418,11 @@ interface AudioWorklet : Worklet
     method constructor
 interface AudioWorkletNode : AudioNode
     attribute @@toStringTag
+    getter onprocessorerror
+    getter parameters
+    getter port
     method constructor
+    setter onprocessorerror
 interface AuthenticatorAssertionResponse : AuthenticatorResponse
     attribute @@toStringTag
     getter authenticatorData
@@ -1113,14 +1117,21 @@ interface ConvolverNode : AudioNode
     method constructor
     setter buffer
     setter normalize
-interface CookieStore
+interface CookieChangeEvent : Event
     attribute @@toStringTag
+    getter changed
+    getter deleted
+    method constructor
+interface CookieStore : EventTarget
+    attribute @@toStringTag
+    getter onchange
     method constructor
     method delete
     method get
     method getAll
     method has
     method set
+    setter onchange
 interface CountQueuingStrategy
     method constructor
     method size
@@ -4002,6 +4013,11 @@ interface IntersectionObserverEntry
     getter target
     getter time
     method constructor
+interface Keyboard
+    attribute @@toStringTag
+    method constructor
+    method lock
+    method unlock
 interface KeyboardEvent : UIEvent
     attribute @@toStringTag
     attribute DOM_KEY_LOCATION_LEFT
@@ -4022,18 +4038,14 @@ interface KeyboardEvent : UIEvent
     method constructor
     method getModifierState
     method initKeyboardEvent
-interface KeyframeEffect : KeyframeEffectReadOnly
-    attribute @@toStringTag
-    getter composite
-    method constructor
-    method setKeyframes
-    setter composite
-interface KeyframeEffectReadOnly : AnimationEffectReadOnly
+interface KeyframeEffect : AnimationEffect
     attribute @@toStringTag
     getter composite
     getter target
     method constructor
     method getKeyframes
+    method setKeyframes
+    setter composite
 interface LinearAccelerationSensor : Accelerometer
     attribute @@toStringTag
     method constructor
@@ -4552,6 +4564,7 @@ interface Navigator
     getter doNotTrack
     getter geolocation
     getter hardwareConcurrency
+    getter keyboard
     getter language
     getter languages
     getter locks
@@ -4584,8 +4597,6 @@ interface Navigator
     method getUserMedia
     method getVRDisplays
     method javaEnabled
-    method keyboardLock
-    method keyboardUnlock
     method registerProtocolHandler
     method requestMIDIAccess
     method requestMediaKeySystemAccess
@@ -5389,7 +5400,9 @@ interface RTCRtpSender
     getter dtmf
     getter track
     method constructor
+    method getParameters
     method replaceTrack
+    method setParameters
 interface RTCSessionDescription
     attribute @@toStringTag
     getter sdp

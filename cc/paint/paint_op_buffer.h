@@ -90,6 +90,7 @@ enum class PaintOpType : uint8_t {
 };
 
 CC_PAINT_EXPORT std::string PaintOpTypeToString(PaintOpType type);
+CC_PAINT_EXPORT std::ostream& operator<<(std::ostream&, PaintOpType);
 
 struct CC_PAINT_EXPORT PlaybackParams {
   using CustomDataRasterCallback =
@@ -893,6 +894,25 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     AnalyzeAddedOp(op);
   }
 
+  void UpdateSaveLayerBounds(size_t offset, const SkRect& bounds) {
+    CHECK_LT(offset, used_);
+    CHECK_LE(offset + sizeof(PaintOp), used_);
+
+    auto* op = reinterpret_cast<PaintOp*>(data_.get() + offset);
+    switch (op->GetType()) {
+      case SaveLayerOp::kType:
+        CHECK_LE(offset + sizeof(SaveLayerOp), used_);
+        static_cast<SaveLayerOp*>(op)->bounds = bounds;
+        break;
+      case SaveLayerAlphaOp::kType:
+        CHECK_LE(offset + sizeof(SaveLayerAlphaOp), used_);
+        static_cast<SaveLayerAlphaOp*>(op)->bounds = bounds;
+        break;
+      default:
+        NOTREACHED();
+    }
+  }
+
   template <typename T>
   void AnalyzeAddedOp(const T* op) {
     static_assert(!std::is_same<T, PaintOp>::value,
@@ -907,6 +927,16 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     has_discardable_images_ |= op->HasDiscardableImagesFromFlags();
 
     subrecord_bytes_used_ += op->AdditionalBytesUsed();
+  }
+
+  template <typename T>
+  const T* GetOpAtForTesting(size_t index) const {
+    size_t i = 0;
+    for (PaintOpBuffer::Iterator it(this); it && i <= index; ++it, ++i) {
+      if (i == index && (*it)->GetType() == T::kType)
+        return static_cast<const T*>(*it);
+    }
+    return nullptr;
   }
 
   class CC_PAINT_EXPORT Iterator {

@@ -23,7 +23,6 @@
 #include "ash/sticky_keys/sticky_keys_controller.h"
 #include "ash/system/power/backlights_forced_off_setter.h"
 #include "ash/system/power/scoped_backlights_forced_off.h"
-#include "ash/touch/touch_devices_controller.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_change_registrar.h"
@@ -319,23 +318,9 @@ void AccessibilityController::PlaySpokenFeedbackToggleCountdown(
     client_->PlaySpokenFeedbackToggleCountdown(tick_count);
 }
 
-void AccessibilityController::NotifyAccessibilityStatusChanged(
-    AccessibilityNotificationVisibility notify) {
+void AccessibilityController::NotifyAccessibilityStatusChanged() {
   for (auto& observer : observers_)
-    observer.OnAccessibilityStatusChanged(notify);
-}
-
-void AccessibilityController::SetAccessibilityPanelFullscreen(bool fullscreen) {
-  // The accessibility panel is only shown on the primary display.
-  aura::Window* root = Shell::GetPrimaryRootWindow();
-  aura::Window* container =
-      Shell::GetContainer(root, kShellWindowId_AccessibilityPanelContainer);
-  // TODO(jamescook): Avoid this cast by moving ash::AccessibilityObserver
-  // ownership to this class and notifying it on ChromeVox fullscreen updates.
-  AccessibilityPanelLayoutManager* layout =
-      static_cast<AccessibilityPanelLayoutManager*>(
-          container->layout_manager());
-  layout->SetPanelFullscreen(fullscreen);
+    observer.OnAccessibilityStatusChanged();
 }
 
 void AccessibilityController::SetClient(
@@ -356,7 +341,8 @@ void AccessibilityController::BrailleDisplayStateChanged(bool connected) {
   braille_display_connected_ = connected;
   if (braille_display_connected_)
     SetSpokenFeedbackEnabled(true, A11Y_NOTIFICATION_SHOW);
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_SHOW);
+  NotifyAccessibilityStatusChanged();
+  NotifyShowAccessibilityNotification();
 }
 
 void AccessibilityController::SetFocusHighlightRect(
@@ -364,6 +350,19 @@ void AccessibilityController::SetFocusHighlightRect(
   if (!accessibility_highlight_controller_)
     return;
   accessibility_highlight_controller_->SetFocusHighlightRect(bounds_in_screen);
+}
+
+void AccessibilityController::SetAccessibilityPanelFullscreen(bool fullscreen) {
+  // The accessibility panel is only shown on the primary display.
+  aura::Window* root = Shell::GetPrimaryRootWindow();
+  aura::Window* container =
+      Shell::GetContainer(root, kShellWindowId_AccessibilityPanelContainer);
+  // TODO(jamescook): Avoid this cast by moving ash::AccessibilityObserver
+  // ownership to this class and notifying it on ChromeVox fullscreen updates.
+  AccessibilityPanelLayoutManager* layout =
+      static_cast<AccessibilityPanelLayoutManager*>(
+          container->layout_manager());
+  layout->SetPanelFullscreen(fullscreen);
 }
 
 void AccessibilityController::OnSigninScreenPrefServiceInitialized(
@@ -467,7 +466,7 @@ void AccessibilityController::UpdateAutoclickFromPref() {
 
   autoclick_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
 
   if (Shell::GetAshConfig() == Config::MASH) {
     if (!connector_)  // Null in tests.
@@ -512,7 +511,7 @@ void AccessibilityController::UpdateCaretHighlightFromPref() {
 
   caret_highlight_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
   UpdateAccessibilityHighlightingFromPrefs();
 }
 
@@ -526,7 +525,7 @@ void AccessibilityController::UpdateCursorHighlightFromPref() {
 
   cursor_highlight_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
   UpdateAccessibilityHighlightingFromPrefs();
 }
 
@@ -544,7 +543,7 @@ void AccessibilityController::UpdateFocusHighlightFromPref() {
 
   focus_highlight_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
   UpdateAccessibilityHighlightingFromPrefs();
 }
 
@@ -558,7 +557,7 @@ void AccessibilityController::UpdateHighContrastFromPref() {
 
   high_contrast_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
 
   // Under mash the UI service (window server) handles high contrast mode.
   if (Shell::GetAshConfig() == Config::MASH) {
@@ -590,7 +589,7 @@ void AccessibilityController::UpdateLargeCursorFromPref() {
   large_cursor_enabled_ = enabled;
   large_cursor_size_in_dip_ = size;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
 
   ShellPort::Get()->SetCursorSize(
       large_cursor_enabled_ ? ui::CursorSize::kLarge : ui::CursorSize::kNormal);
@@ -607,7 +606,7 @@ void AccessibilityController::UpdateMonoAudioFromPref() {
 
   mono_audio_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
   chromeos::CrasAudioHandler::Get()->SetOutputMonoEnabled(enabled);
 }
 
@@ -621,7 +620,10 @@ void AccessibilityController::UpdateSpokenFeedbackFromPref() {
 
   spoken_feedback_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(spoken_feedback_notification_);
+  NotifyAccessibilityStatusChanged();
+  if (spoken_feedback_notification_ != A11Y_NOTIFICATION_NONE)
+    NotifyShowAccessibilityNotification();
+
   // TODO(warx): ChromeVox loading/unloading requires browser process started,
   // thus it is still handled on Chrome side.
 
@@ -657,7 +659,7 @@ void AccessibilityController::UpdateSelectToSpeakFromPref() {
 
   select_to_speak_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
 }
 
 void AccessibilityController::UpdateStickyKeysFromPref() {
@@ -670,17 +672,9 @@ void AccessibilityController::UpdateStickyKeysFromPref() {
 
   sticky_keys_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
 
   Shell::Get()->sticky_keys_controller()->Enable(enabled);
-}
-
-void AccessibilityController::SetTapDraggingEnabled(bool enabled) {
-  Shell::Get()->touch_devices_controller()->SetTapDraggingEnabled(enabled);
-}
-
-bool AccessibilityController::IsTapDraggingEnabled() const {
-  return Shell::Get()->touch_devices_controller()->GetTapDraggingEnabled();
 }
 
 void AccessibilityController::UpdateVirtualKeyboardFromPref() {
@@ -693,7 +687,7 @@ void AccessibilityController::UpdateVirtualKeyboardFromPref() {
 
   virtual_keyboard_enabled_ = enabled;
 
-  NotifyAccessibilityStatusChanged(A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged();
 
   keyboard::SetAccessibilityKeyboardEnabled(enabled);
 
@@ -713,6 +707,11 @@ void AccessibilityController::UpdateVirtualKeyboardFromPref() {
     Shell::Get()->CreateKeyboard();
   else
     Shell::Get()->DestroyKeyboard();
+}
+
+void AccessibilityController::NotifyShowAccessibilityNotification() {
+  for (auto& observer : observers_)
+    observer.ShowAccessibilityNotification();
 }
 
 }  // namespace ash

@@ -15,24 +15,6 @@ const RadioButtonNames = {
 };
 
 /**
- * Names of the individual data type properties to be cached from
- * settings.SyncPrefs when the user checks 'Sync All'.
- * @type {!Array<string>}
- */
-const SyncPrefsIndividualDataTypes = [
-  'appsSynced',
-  'extensionsSynced',
-  'preferencesSynced',
-  'autofillSynced',
-  'typedUrlsSynced',
-  'themesSynced',
-  'bookmarksSynced',
-  'passwordsSynced',
-  'tabsSynced',
-  'paymentsIntegrationEnabled',
-];
-
-/**
  * @fileoverview
  * 'settings-sync-page' is the settings page containing sync settings.
  */
@@ -70,6 +52,14 @@ Polymer({
     syncPrefs: {
       type: Object,
     },
+
+    // <if expr="not chromeos">
+    /** @private */
+    setupInProgress: {
+      type: Boolean,
+      value: false,
+    },
+    // </if>
 
     /**
      * Whether the "create passphrase" inputs should be shown. These inputs
@@ -117,16 +107,19 @@ Polymer({
    * The unload callback is needed because the sign-in flow needs to know
    * if the user has closed the tab with the sync settings. This property is
    * non-null if the user is currently navigated on the sync settings route.
+   *
+   * TODO(scottchen): We had to change from unload to beforeunload due to
+   *     crbug.com/501292. Change back to unload once it's fixed.
+   *
    * @private {?Function}
    */
-  unloadCallback_: null,
+  beforeunloadCallback_: null,
 
   /**
-   * Caches the individually selected synced data types. This is used to
-   * be able to restore the selections after checking and unchecking Sync All.
-   * @private {?Object}
+   * Whether the user decided to abort sync.
+   * @private {boolean}
    */
-  cachedSyncPrefs_: null,
+  didAbort_: false,
 
   /** @override */
   created: function() {
@@ -148,6 +141,11 @@ Polymer({
   detached: function() {
     if (settings.getCurrentRoute() == settings.routes.SYNC)
       this.onNavigateAwayFromPage_();
+
+    if (this.beforeunloadCallback_) {
+      window.removeEventListener('beforeunload', this.beforeunloadCallback_);
+      this.beforeunloadCallback_ = null;
+    }
   },
 
   /** @protected */
@@ -171,7 +169,7 @@ Polymer({
   onNavigateToPage_: function() {
     assert(settings.getCurrentRoute() == settings.routes.SYNC);
 
-    if (this.unloadCallback_)
+    if (this.beforeunloadCallback_)
       return;
 
     // Display loading page until the settings have been retrieved.
@@ -179,23 +177,24 @@ Polymer({
 
     this.browserProxy_.didNavigateToSyncPage();
 
-    this.unloadCallback_ = this.onNavigateAwayFromPage_.bind(this);
-    window.addEventListener('unload', this.unloadCallback_);
+    this.beforeunloadCallback_ = this.onNavigateAwayFromPage_.bind(this);
+    window.addEventListener('beforeunload', this.beforeunloadCallback_);
   },
 
   /** @private */
   onNavigateAwayFromPage_: function() {
-    if (!this.unloadCallback_)
+    if (!this.beforeunloadCallback_)
       return;
 
     // Reset the status to CONFIGURE such that the searching algorithm can
     // search useful content when the page is not visible to the user.
     this.pageStatus_ = settings.PageStatus.CONFIGURE;
 
-    this.browserProxy_.didNavigateAwayFromSyncPage();
+    this.browserProxy_.didNavigateAwayFromSyncPage(this.didAbort_);
+    this.didAbort_ = false;
 
-    window.removeEventListener('unload', this.unloadCallback_);
-    this.unloadCallback_ = null;
+    window.removeEventListener('beforeunload', this.beforeunloadCallback_);
+    this.beforeunloadCallback_ = null;
   },
 
   /**
@@ -231,25 +230,8 @@ Polymer({
    * @private
    */
   onSyncAllDataTypesChanged_: function(event) {
-    if (event.target.checked) {
-      this.set('syncPrefs.syncAllDataTypes', true);
-
-      // Cache the previously selected preference before checking every box.
-      this.cachedSyncPrefs_ = {};
-      for (const dataType of SyncPrefsIndividualDataTypes) {
-        // These are all booleans, so this shallow copy is sufficient.
-        this.cachedSyncPrefs_[dataType] = this.syncPrefs[dataType];
-
-        this.set(['syncPrefs', dataType], true);
-      }
-    } else if (this.cachedSyncPrefs_) {
-      // Restore the previously selected preference.
-      for (const dataType of SyncPrefsIndividualDataTypes) {
-        this.set(['syncPrefs', dataType], this.cachedSyncPrefs_[dataType]);
-      }
-    }
-
-    this.onSingleSyncDataTypeChanged_();
+    this.browserProxy_.setSyncEverything(event.target.checked)
+        .then(this.handlePageStatusChanged_.bind(this));
   },
 
   /**
@@ -439,7 +421,13 @@ Polymer({
       // checkboxes or radio buttons won't change the value.
       event.stopPropagation();
     }
-  }
+  },
+
+  /** @private */
+  onCancelSyncClick_: function() {
+    this.didAbort_ = true;
+    settings.navigateTo(settings.routes.BASIC);
+  },
 });
 
 })();

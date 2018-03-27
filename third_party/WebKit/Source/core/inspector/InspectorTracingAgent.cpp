@@ -13,6 +13,7 @@
 #include "core/loader/FrameLoader.h"
 #include "core/workers/WorkerInspectorProxy.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
+#include "public/platform/WebLayerTreeView.h"
 
 namespace blink {
 
@@ -30,9 +31,7 @@ const char kDevtoolsMetadataEventCategory[] =
 
 InspectorTracingAgent::InspectorTracingAgent(Client* client,
                                              InspectedFrames* inspected_frames)
-    : layer_tree_id_(0),
-      client_(client),
-      inspected_frames_(inspected_frames) {}
+    : client_(client), inspected_frames_(inspected_frames) {}
 
 InspectorTracingAgent::~InspectorTracingAgent() {}
 
@@ -43,7 +42,10 @@ void InspectorTracingAgent::Trace(blink::Visitor* visitor) {
 
 void InspectorTracingAgent::Restore() {
   state_->getString(TracingAgentState::kSessionId, &session_id_);
-  EmitMetadataEvents();
+  if (IsStarted()) {
+    instrumenting_agents_->addInspectorTracingAgent(this);
+    EmitMetadataEvents();
+  }
 }
 
 void InspectorTracingAgent::FrameStartedLoading(LocalFrame* frame,
@@ -59,7 +61,16 @@ void InspectorTracingAgent::FrameStoppedLoading(LocalFrame* frame) {
 }
 
 void InspectorTracingAgent::DidStartWorker(WorkerInspectorProxy* proxy, bool) {
-  WriteTimelineStartedEventForWorker(proxy->GetWorkerThread());
+  // For now we assume this is document. TODO(kinuko): Fix this.
+  DCHECK(proxy->GetExecutionContext()->IsDocument());
+  LocalFrame* frame = ToDocument(proxy->GetExecutionContext())->GetFrame();
+  if (proxy->GetWorkerThread() && frame && inspected_frames_->Contains(frame)) {
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                         "TracingSessionIdForWorker", TRACE_EVENT_SCOPE_THREAD,
+                         "data",
+                         InspectorTracingSessionIdForWorkerEvent::Data(
+                             frame, proxy->GetWorkerThread()));
+  }
 }
 
 void InspectorTracingAgent::start(Maybe<String> categories,
@@ -106,34 +117,8 @@ void InspectorTracingAgent::EmitMetadataEvents() {
                        TRACE_EVENT_SCOPE_THREAD, "data",
                        InspectorTracingStartedInFrame::Data(
                            session_id_, inspected_frames_->Root()));
-  if (layer_tree_id_)
-    SetLayerTreeId(layer_tree_id_);
-  for (WorkerInspectorProxy* proxy : WorkerInspectorProxy::AllProxies()) {
-    // For now we assume this is document. TODO(kinuko): Fix this.
-    DCHECK(proxy->GetExecutionContext()->IsDocument());
-    Document* document = ToDocument(proxy->GetExecutionContext());
-    if (proxy->GetWorkerThread() && document->GetFrame() &&
-        inspected_frames_->Contains(document->GetFrame())) {
-      WriteTimelineStartedEventForWorker(proxy->GetWorkerThread());
-    }
-  }
-}
-
-void InspectorTracingAgent::WriteTimelineStartedEventForWorker(
-    WorkerThread* worker_thread) {
-  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
-                       "TracingSessionIdForWorker", TRACE_EVENT_SCOPE_THREAD,
-                       "data",
-                       InspectorTracingSessionIdForWorkerEvent::Data(
-                           session_id_, worker_thread));
-}
-
-void InspectorTracingAgent::SetLayerTreeId(int layer_tree_id) {
-  layer_tree_id_ = layer_tree_id;
-  TRACE_EVENT_INSTANT1(
-      kDevtoolsMetadataEventCategory, "SetLayerTreeId",
-      TRACE_EVENT_SCOPE_THREAD, "data",
-      InspectorSetLayerTreeId::Data(session_id_, layer_tree_id_));
+  for (WorkerInspectorProxy* proxy : WorkerInspectorProxy::AllProxies())
+    DidStartWorker(proxy, false);
 }
 
 void InspectorTracingAgent::RootLayerCleared() {

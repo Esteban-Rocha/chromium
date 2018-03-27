@@ -4,6 +4,9 @@
 
 #include "core/layout/ScrollAnchor.h"
 
+#include <algorithm>
+#include <memory>
+
 #include "core/css/CSSMarkup.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NthIndexCache.h"
@@ -96,8 +99,7 @@ static LayoutRect RelativeBounds(const LayoutObject* layout_object,
     }
   } else if (layout_object->IsText()) {
     // TODO(skobes): Use first and last InlineTextBox only?
-    for (InlineTextBox* box = ToLayoutText(layout_object)->FirstTextBox(); box;
-         box = box->NextTextBox())
+    for (InlineTextBox* box : ToLayoutText(layout_object)->TextBoxes())
       local_bounds.Unite(box->FrameRect());
   } else {
     // Only LayoutBox and LayoutText are supported.
@@ -140,7 +142,7 @@ static bool IsOnlySiblingWithTagName(Element* element) {
 static const AtomicString UniqueClassnameAmongSiblings(Element* element) {
   DCHECK(element);
 
-  auto classname_filter = WTF::WrapUnique(new ClassnameFilter());
+  auto classname_filter = std::make_unique<ClassnameFilter>();
 
   Element* parent_element = ElementTraversal::FirstAncestor(*element->ToNode());
   Element* sibling_element =

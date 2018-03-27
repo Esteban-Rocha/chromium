@@ -80,6 +80,9 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // Returns whether the ModernMediaControlsEnabled runtime flag is on.
   static bool IsModern();
 
+  // Returns whether the event is considered a touch event.
+  static bool IsTouchEvent(Event*);
+
   // Node override.
   Node::InsertionNotificationRequest InsertedInto(ContainerNode*) override;
   void RemovedFrom(ContainerNode*) override;
@@ -110,6 +113,10 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // Called by the fullscreen buttons to toggle fulllscreen on/off.
   void EnterFullscreen();
   void ExitFullscreen();
+
+  // Called by the MediaControlOverlayPlayButtonElement to check if toggling
+  // fullscreen is allowed.
+  bool IsFullscreenEnabled() const;
 
   // Text track related methods exposed to components handling closed captions.
   void ToggleTextTrackList();
@@ -226,6 +233,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   };
 
   bool ShouldHideMediaControls(unsigned behavior_flags = 0) const;
+  bool AreVideoControlsHovered() const;
   void HideMediaControlsTimerFired(TimerBase*);
   void StartHideMediaControlsIfNecessary();
   void StartHideMediaControlsTimer();
@@ -257,6 +265,8 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   bool ShouldActAsAudioControls() const;
   void StartActingAsAudioControls();
   void StopActingAsAudioControls();
+
+  bool ShouldShowDisabledControls() const;
 
   // Node
   bool IsMediaControls() const override { return true; }

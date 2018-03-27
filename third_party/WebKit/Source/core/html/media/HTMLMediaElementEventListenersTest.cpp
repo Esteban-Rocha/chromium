@@ -4,6 +4,9 @@
 
 #include "core/html/media/HTMLMediaElement.h"
 
+#include <algorithm>
+#include <memory>
+
 #include "core/dom/UserGestureIndicator.h"
 #include "core/event_type_names.h"
 #include "core/fullscreen/Fullscreen.h"
@@ -13,10 +16,10 @@
 #include "core/loader/EmptyClients.h"
 #include "core/testing/PageTestBase.h"
 #include "platform/testing/EmptyWebMediaPlayer.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/TestingPlatformSupport.h"
 #include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/platform/wtf/Time.h"
@@ -85,7 +88,7 @@ class MediaStubLocalFrameClient : public EmptyLocalFrameClient {
       const WebMediaPlayerSource&,
       WebMediaPlayerClient* client,
       WebLayerTreeView*) override {
-    return WTF::WrapUnique(new FakeWebMediaPlayer(client));
+    return std::make_unique<FakeWebMediaPlayer>(client);
   }
 };
 

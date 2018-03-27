@@ -7,10 +7,10 @@
 
 #include "build/build_config.h"
 #include "platform/heap/Heap.h"
-#include "platform/heap/HeapFlags.h"
 #include "platform/heap/MarkingVisitor.h"
 #include "platform/heap/Persistent.h"
 #include "platform/heap/TraceTraits.h"
+#include "platform/heap/heap_flags.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/ConstructTraits.h"
@@ -130,7 +130,10 @@ class PLATFORM_EXPORT HeapAllocator {
 
   static void BackingWriteBarrier(void* address) {
 #if BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
-    ThreadState::Current()->Heap().WriteBarrier(address);
+    if (!address)
+      return;
+    ThreadState* state = PageFromObject(address)->Arena()->GetThreadState();
+    state->Heap().WriteBarrier(address);
 #endif
   }
 
@@ -171,11 +174,6 @@ class PLATFORM_EXPORT HeapAllocator {
     return ThreadHeap::IsHeapObjectAlive(object);
   }
 
-  template <typename VisitorDispatcher>
-  static void MarkNoTracing(VisitorDispatcher visitor, const void* t) {
-    visitor->MarkNoTracing(t);
-  }
-
   template <typename VisitorDispatcher, typename T, typename Traits>
   static void Trace(VisitorDispatcher visitor, T& t) {
     TraceCollectionIfEnabled<Traits::kWeakHandlingFlag, T, Traits>::Trace(
@@ -192,19 +190,9 @@ class PLATFORM_EXPORT HeapAllocator {
   template <typename VisitorDispatcher>
   static bool RegisterWeakTable(VisitorDispatcher visitor,
                                 const void* closure,
-                                EphemeronCallback iteration_callback,
-                                EphemeronCallback iteration_done_callback) {
-    return visitor->RegisterWeakTable(closure, iteration_callback,
-                                      iteration_done_callback);
+                                EphemeronCallback iteration_callback) {
+    return visitor->RegisterWeakTable(closure, iteration_callback);
   }
-
-#if DCHECK_IS_ON()
-  template <typename VisitorDispatcher>
-  static bool WeakTableRegistered(VisitorDispatcher visitor,
-                                  const void* closure) {
-    return visitor->WeakTableRegistered(closure);
-  }
-#endif
 
   template <typename T, typename VisitorDispatcher>
   static void RegisterBackingStoreCallback(VisitorDispatcher visitor,

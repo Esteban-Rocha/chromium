@@ -13,8 +13,8 @@ import("//build/config/features.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/ui.gni")
 import("//components/nacl/features.gni")
-import("//device/vr/features/features.gni")
-import("//extensions/features/features.gni")
+import("//device/vr/buildflags/buildflags.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//media/gpu/args.gni")
 import("//remoting/remoting_enable.gni")
@@ -92,15 +92,14 @@ group("gn_all") {
   if (!is_ios && !is_android && !is_chromecast && !is_fuchsia) {
     deps += [
       "//chrome",
-      "//chrome/browser/resources/media_router/extension:all",
-      "//chrome/installer/zucchini:zucchini",
-      "//chrome/installer/zucchini:zucchini_unittests",
       "//chrome/test:browser_tests",
       "//chrome/test:interactive_ui_tests",
       "//chrome/test:sync_integration_tests",
       "//chrome/test/chromedriver:chromedriver_unittests",
       "//components/sync/tools:sync_client",
       "//components/sync/tools:sync_listen_notifications",
+      "//components/zucchini:zucchini",
+      "//components/zucchini:zucchini_unittests",
       "//gpu/gles2_conform_support:gles2_conform_test",
       "//gpu/khronos_glcts_support:khronos_glcts_test",
       "//jingle:jingle_unittests",
@@ -157,7 +156,6 @@ group("gn_all") {
       "//content/test:content_perftests",
       "//content/test:content_unittests",
       "//gpu:gpu_unittests",
-      "//gpu/ipc/service:gpu_ipc_service_unittests",
       "//ipc:ipc_tests",
       "//media:media_unittests",
       "//media/midi:midi_unittests",
@@ -180,8 +178,7 @@ group("gn_all") {
     ]
   }
 
-  # TODO(https://crbug.com/812268): Fix Windows build, and enable it.
-  if (!is_ios && !is_android && !is_win) {
+  if (!is_ios && !is_android) {
     deps += [
       "//components/cronet:cronet_tests",
       "//components/cronet:cronet_unittests",
@@ -374,6 +371,7 @@ group("gn_all") {
       "//chromeos:chromeos_unittests",
       "//chromeos/components:chromeos_components_unittests",
       "//chromeos/services:chromeos_services_unittests",
+      "//components/proximity_auth:proximity_auth_unittests",
       "//components/session_manager/core",
       "//ui/app_list:app_list_demo",
       "//ui/app_list:app_list_unittests",
@@ -481,6 +479,9 @@ group("gn_all") {
         "//extensions/shell:app_shell",
         "//extensions/shell/installer:app_shell_installer",
       ]
+      if (is_desktop_linux && is_official_build) {
+        deps += [ "//extensions/shell:app_shell_linux_symbols" ]
+      }
     }
 
     if (enable_nacl) {
@@ -563,13 +564,13 @@ group("gn_all") {
       "//chrome/install_static:install_static_unittests",
       "//chrome/installer/gcapi",
       "//chrome/installer/setup:setup_unittests",
-      "//chrome/installer/zucchini",
       "//chrome/tools/build/win/syzygy:chrome_dll_syzygy",
       "//chrome_elf:chrome_elf_import_unittests",
       "//chrome_elf:chrome_elf_unittests",
       "//chrome_elf:dll_hash_main",
       "//cloud_print:cloud_print_unittests",
       "//components/wifi:wifi_test",
+      "//components/zucchini",
       "//net:quic_client",
       "//net:quic_server",
       "//notification_helper:notification_helper_unittests",
@@ -590,8 +591,7 @@ group("gn_all") {
     # TODO(thakis): Enable this in cross builds, https://crbug.com/799827
     if (!(is_component_build && is_debug && target_cpu == "x86") &&
         host_os == "win") {
-      deps +=
-          [ "//chrome/installer/mini_installer:next_version_mini_installer" ]
+      deps += [ "//chrome/test/mini_installer:mini_installer_tests" ]
     }
   } else if (!is_android && !is_ios && !is_fuchsia) {
     deps += [ "//third_party/breakpad:symupload($host_toolchain)" ]
@@ -625,10 +625,6 @@ group("gn_all") {
     deps += [ "//content/browser/bluetooth/tools:bluetooth_metrics_hash" ]
   }
 
-  if (!is_android && !is_ios && !is_chromeos && !is_fuchsia) {
-    deps += [ "//components/proximity_auth:proximity_auth_unittests" ]
-  }
-
   if (is_win || is_linux) {
     deps += [
       "//mash:all",
@@ -658,10 +654,10 @@ group("gn_all") {
       "//chrome/installer/util:strings",
       "//chrome/tools/convert_dict",
       "//components/constrained_window:unit_tests",
-      "//components/filesystem:filesystem_service_unittests",
-      "//components/leveldb:leveldb_service_unittests",
       "//components/metrics:serialization",
       "//components/rappor:unit_tests",
+      "//components/services/filesystem:filesystem_service_unittests",
+      "//components/services/leveldb:leveldb_service_unittests",
       "//components/sessions:unit_tests",
       "//media/blink:media_blink_unittests",
       "//media/cast:udp_proxy",
@@ -762,10 +758,10 @@ if (is_win) {
       "//chrome/common/win:eventlog_provider",
       "//chrome/installer/gcapi",
       "//chrome/installer/mini_installer",
-      "//chrome/installer/zucchini",
       "//cloud_print",
       "//cloud_print/virtual_driver/win/port_monitor:copy_gcp_portmon_binaries",
       "//components/policy:pack_policy_templates",
+      "//components/zucchini",
       "//courgette",
       "//courgette:copy_courgette_binaries",
       "//remoting/webapp",
@@ -859,7 +855,7 @@ group("gn_visibility") {
 
   if (!is_ios) {
     deps += [ "//v8:postmortem-metadata" ]
-    if (v8_use_snapshot) {
+    if (v8_use_snapshot && !v8_use_external_startup_data) {
       deps += [ "//v8:v8_snapshot" ]
     }
   }
@@ -1076,7 +1072,10 @@ group("chromium_builder_perf") {
           [ "//third_party/breakpad:minidump_stackwalk($host_toolchain)" ]
     }
     if (is_win || is_android) {
-      data_deps += [ "//chrome/test:angle_perftests" ]
+      data_deps += [
+        "//components:components_perftests",
+        "//chrome/test:angle_perftests",
+      ]
     }
   }
 }

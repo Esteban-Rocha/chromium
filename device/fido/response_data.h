@@ -10,19 +10,21 @@
 #include <string>
 #include <vector>
 
+#include "base/component_export.h"
 #include "base/macros.h"
 
 namespace device {
 
 // Base class for RegisterResponseData and SignResponseData.
-class ResponseData {
+class COMPONENT_EXPORT(DEVICE_FIDO) ResponseData {
  public:
   std::string GetId() const;
-  const std::vector<uint8_t>& raw_id() const { return raw_id_; }
+  const std::vector<uint8_t>& raw_credential_id() const {
+    return raw_credential_id_;
+  }
 
  protected:
-  explicit ResponseData(std::vector<uint8_t> credential_id);
-
+  explicit ResponseData(std::vector<uint8_t> raw_credential_id);
   ResponseData();
 
   // Moveable.
@@ -31,7 +33,7 @@ class ResponseData {
 
   ~ResponseData();
 
-  std::vector<uint8_t> raw_id_;
+  std::vector<uint8_t> raw_credential_id_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ResponseData);

@@ -74,7 +74,6 @@
 #include "platform/geometry/DoubleRect.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/FloatRoundedRect.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebScrollIntoViewParams.h"
 
@@ -671,8 +670,7 @@ void LayoutBox::ScrollRectToVisibleRecursive(
   bool restricted_by_line_clamp = false;
   if (ContainingBlock()) {
     parent_box = ContainingBlock();
-    restricted_by_line_clamp =
-        !ContainingBlock()->Style()->LineClamp().IsNone();
+    restricted_by_line_clamp = ContainingBlock()->Style()->HasLineClamp();
   }
 
   if (!IsLayoutView() && HasOverflowClip() && !restricted_by_line_clamp) {
@@ -687,22 +685,13 @@ void LayoutBox::ScrollRectToVisibleRecursive(
     if (LocalFrameView* frame_view = GetFrameView()) {
       HTMLFrameOwnerElement* owner_element = GetDocument().LocalOwner();
       if (!IsDisallowedAutoscroll(owner_element, frame_view)) {
-        if (params.make_visible_in_visual_viewport) {
-          // RootFrameViewport::ScrollIntoView expects a rect in layout
-          // viewport content coordinates.
-          if (IsLayoutView() && GetFrame()->IsMainFrame() &&
-              RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-            absolute_rect_to_scroll.Move(
-                LayoutSize(GetScrollableArea()->GetScrollOffset()));
-          }
-          absolute_rect_to_scroll =
-              frame_view->GetScrollableArea()->ScrollIntoView(
-                  absolute_rect_to_scroll, params);
-        } else {
-          absolute_rect_to_scroll =
-              frame_view->LayoutViewportScrollableArea()->ScrollIntoView(
-                  absolute_rect_to_scroll, params);
-        }
+        ScrollableArea* area_to_scroll =
+            params.make_visible_in_visual_viewport
+                ? frame_view->GetScrollableArea()
+                : frame_view->LayoutViewportScrollableArea();
+        absolute_rect_to_scroll =
+            area_to_scroll->ScrollIntoView(absolute_rect_to_scroll, params);
+
         if (params.is_for_scroll_sequence)
           absolute_rect_to_scroll.Move(PendingOffsetToScroll());
         if (owner_element && owner_element->GetLayoutObject()) {
@@ -1068,10 +1057,10 @@ void LayoutBox::Autoscroll(const IntPoint& position_in_root_frame) {
   if (!frame_view)
     return;
 
-  IntPoint position_in_content =
-      frame_view->RootFrameToContents(position_in_root_frame);
+  IntPoint absolute_position =
+      frame_view->RootFrameToAbsolute(position_in_root_frame);
   ScrollRectToVisibleRecursive(
-      LayoutRect(position_in_content, LayoutSize(1, 1)),
+      LayoutRect(absolute_position, LayoutSize(1, 1)),
       WebScrollIntoViewParams(ScrollAlignment::kAlignToEdgeIfNeeded,
                               ScrollAlignment::kAlignToEdgeIfNeeded,
                               kUserScroll));
@@ -1086,8 +1075,9 @@ bool LayoutBox::CanAutoscroll() const {
   return CanBeScrolledAndHasScrollableArea();
 }
 
-// If specified point is in border belt, returned offset denotes direction of
-// scrolling.
+// If specified point is outside the border-belt-excluded box (the border box
+// inset by the autoscroll activation threshold), returned offset denotes
+// direction of scrolling.
 IntSize LayoutBox::CalculateAutoscrollDirection(
     const IntPoint& point_in_root_frame) const {
   if (!GetFrame())
@@ -1097,34 +1087,36 @@ IntSize LayoutBox::CalculateAutoscrollDirection(
   if (!frame_view)
     return IntSize();
 
-  LayoutRect box(AbsoluteBoundingBoxRect());
-  // TODO(bokan): This is wrong. Subtracting the scroll offset would get you to
-  // frame coordinates (pre-RLS) but *adding* the scroll offset to an absolute
-  // location never makes sense (and we assume below it's in content
-  // coordinates).
-  box.Move(View()->GetFrameView()->ScrollOffsetInt());
+  LayoutRect absolute_scrolling_box;
 
-  // Exclude scrollbars so the border belt (activation area) starts from the
-  // scrollbar-content edge rather than the window edge.
-  ExcludeScrollbars(box, kExcludeOverlayScrollbarSizeForHitTesting);
+  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled() && IsLayoutView()) {
+    absolute_scrolling_box =
+        LayoutRect(frame_view->VisibleContentRect(kExcludeScrollbars));
+  } else {
+    absolute_scrolling_box = LayoutRect(AbsoluteBoundingBoxRect());
 
-  IntRect window_box =
-      View()->GetFrameView()->ContentsToRootFrame(PixelSnappedIntRect(box));
-  IntPoint window_autoscroll_point = point_in_root_frame;
+    // Exclude scrollbars so the border belt (activation area) starts from the
+    // scrollbar-content edge rather than the window edge.
+    ExcludeScrollbars(absolute_scrolling_box,
+                      kExcludeOverlayScrollbarSizeForHitTesting);
+  }
 
-  if (window_autoscroll_point.X() < window_box.X() + kAutoscrollBeltSize)
-    window_autoscroll_point.Move(-kAutoscrollBeltSize, 0);
-  else if (window_autoscroll_point.X() >
-           window_box.MaxX() - kAutoscrollBeltSize)
-    window_autoscroll_point.Move(kAutoscrollBeltSize, 0);
+  IntRect belt_box = View()->GetFrameView()->AbsoluteToRootFrame(
+      PixelSnappedIntRect(absolute_scrolling_box));
+  belt_box.Inflate(-kAutoscrollBeltSize);
+  IntPoint point = point_in_root_frame;
 
-  if (window_autoscroll_point.Y() < window_box.Y() + kAutoscrollBeltSize)
-    window_autoscroll_point.Move(0, -kAutoscrollBeltSize);
-  else if (window_autoscroll_point.Y() >
-           window_box.MaxY() - kAutoscrollBeltSize)
-    window_autoscroll_point.Move(0, kAutoscrollBeltSize);
+  if (point.X() < belt_box.X())
+    point.Move(-kAutoscrollBeltSize, 0);
+  else if (point.X() > belt_box.MaxX())
+    point.Move(kAutoscrollBeltSize, 0);
 
-  return window_autoscroll_point - point_in_root_frame;
+  if (point.Y() < belt_box.Y())
+    point.Move(0, -kAutoscrollBeltSize);
+  else if (point.Y() > belt_box.MaxY())
+    point.Move(0, kAutoscrollBeltSize);
+
+  return point - point_in_root_frame;
 }
 
 LayoutBox* LayoutBox::FindAutoscrollable(LayoutObject* layout_object) {
@@ -1163,7 +1155,7 @@ void LayoutBox::ScrollByRecursively(const ScrollOffset& delta) {
 
   bool restricted_by_line_clamp = false;
   if (Parent())
-    restricted_by_line_clamp = !Parent()->Style()->LineClamp().IsNone();
+    restricted_by_line_clamp = Parent()->Style()->HasLineClamp();
 
   if (HasOverflowClip() && !restricted_by_line_clamp) {
     PaintLayerScrollableArea* scrollable_area = GetScrollableArea();
@@ -1220,11 +1212,10 @@ IntSize LayoutBox::ScrolledContentOffset() const {
   DCHECK(HasLayer());
   // FIXME: Return DoubleSize here. crbug.com/414283.
   PaintLayerScrollableArea* scrollable_area = GetScrollableArea();
-  IntSize result =
-      scrollable_area->ScrollOffsetInt() + OriginAdjustmentForScrollbars();
-  if (IsHorizontalWritingMode() &&
-      ShouldPlaceBlockDirectionScrollbarOnLogicalLeft())
-    result.Expand(-VerticalScrollbarWidth(), 0);
+  if (!UNLIKELY(HasFlippedBlocksWritingMode()))
+    return scrollable_area->ScrollOffsetInt();
+  IntSize result = scrollable_area->ScrollOffsetInt();
+  result.Expand(VerticalScrollbarWidth(), 0);
   return result;
 }
 
@@ -2047,38 +2038,25 @@ LayoutUnit LayoutBox::ShrinkLogicalWidthToAvoidFloats(
   LayoutUnit logical_top_position = LogicalTop();
   LayoutUnit start_offset_for_content = cb->StartOffsetForContent();
   LayoutUnit end_offset_for_content = cb->EndOffsetForContent();
+
+  // NOTE: This call to LogicalHeightForChild is bad, as it may contain data
+  // from a previous layout.
   LayoutUnit logical_height = cb->LogicalHeightForChild(*this);
-  LayoutUnit start_offset_for_line = cb->StartOffsetForLine(
-      logical_top_position, kDoNotIndentText, logical_height);
-  LayoutUnit end_offset_for_line = cb->EndOffsetForLine(
-      logical_top_position, kDoNotIndentText, logical_height);
+  LayoutUnit start_offset_for_avoiding_floats =
+      cb->StartOffsetForAvoidingFloats(logical_top_position, logical_height);
+  LayoutUnit end_offset_for_avoiding_floats =
+      cb->EndOffsetForAvoidingFloats(logical_top_position, logical_height);
 
   // If there aren't any floats constraining us then allow the margins to
   // shrink/expand the width as much as they want.
-  if (start_offset_for_content == start_offset_for_line &&
-      end_offset_for_content == end_offset_for_line)
-    return cb->AvailableLogicalWidthForLine(logical_top_position,
-                                            kDoNotIndentText, logical_height) -
+  if (start_offset_for_content == start_offset_for_avoiding_floats &&
+      end_offset_for_content == end_offset_for_avoiding_floats)
+    return cb->AvailableLogicalWidthForAvoidingFloats(logical_top_position,
+                                                      logical_height) -
            child_margin_start - child_margin_end;
 
-  LayoutUnit width = cb->AvailableLogicalWidthForLine(
-      logical_top_position, kDoNotIndentText, logical_height);
-
-  // This section of code is just for a use counter. It counts if something
-  // that avoids floats may have been affected by a float with shape-outside.
-  // NOTE(ikilpatrick): This isn't the only code-path which uses
-  // AvailableLogicalWidthForLine, if we switch this over we need to inspect
-  // other usages.
-  if (!ShapeOutsideInfo::IsEmpty()) {
-    LayoutUnit alternate_width = cb->AvailableLogicalWidthForAvoidingFloats(
-        logical_top_position, logical_height);
-
-    if (alternate_width != width) {
-      UseCounter::Count(GetDocument(),
-                        WebFeature::kShapeOutsideMaybeAffectedInlineSize);
-    }
-  }
-
+  LayoutUnit width = cb->AvailableLogicalWidthForAvoidingFloats(
+      logical_top_position, logical_height);
   width -= std::max(LayoutUnit(), child_margin_start);
   width -= std::max(LayoutUnit(), child_margin_end);
 
@@ -2090,10 +2068,11 @@ LayoutUnit LayoutBox::ShrinkLogicalWidthToAvoidFloats(
   // can use the line offset, but we need to grow it by the margin to reflect
   // the fact that the margin was "consumed" by the float. Negative margins
   // aren't consumed by the float, and so we ignore them.
+  width += PortionOfMarginNotConsumedByFloat(child_margin_start,
+                                             start_offset_for_content,
+                                             start_offset_for_avoiding_floats);
   width += PortionOfMarginNotConsumedByFloat(
-      child_margin_start, start_offset_for_content, start_offset_for_line);
-  width += PortionOfMarginNotConsumedByFloat(
-      child_margin_end, end_offset_for_content, end_offset_for_line);
+      child_margin_end, end_offset_for_content, end_offset_for_avoiding_floats);
   return width;
 }
 
@@ -2132,10 +2111,10 @@ LayoutUnit LayoutBox::ContainingBlockLogicalHeightForContent(
 
 LayoutUnit LayoutBox::ContainingBlockAvailableLineWidth() const {
   LayoutBlock* cb = ContainingBlock();
-  if (cb->IsLayoutBlockFlow())
-    return ToLayoutBlockFlow(cb)->AvailableLogicalWidthForLine(
-        LogicalTop(), kDoNotIndentText,
-        AvailableLogicalHeight(kIncludeMarginBorderPadding));
+  if (cb->IsLayoutBlockFlow()) {
+    return ToLayoutBlockFlow(cb)->AvailableLogicalWidthForAvoidingFloats(
+        LogicalTop(), AvailableLogicalHeight(kIncludeMarginBorderPadding));
+  }
   return LayoutUnit();
 }
 
@@ -2816,10 +2795,16 @@ LayoutUnit LayoutBox::FillAvailableMeasure(LayoutUnit available_logical_width,
                                            LayoutUnit& margin_start,
                                            LayoutUnit& margin_end) const {
   DCHECK_GE(available_logical_width, 0);
-  margin_start =
-      MinimumValueForLength(Style()->MarginStart(), available_logical_width);
-  margin_end =
-      MinimumValueForLength(Style()->MarginEnd(), available_logical_width);
+
+  bool isOrthogonalElement =
+      IsHorizontalWritingMode() != ContainingBlock()->IsHorizontalWritingMode();
+  LayoutUnit available_size_for_resolving_margin =
+      isOrthogonalElement ? ContainingBlockLogicalWidthForContent()
+                          : available_logical_width;
+  margin_start = MinimumValueForLength(Style()->MarginStart(),
+                                       available_size_for_resolving_margin);
+  margin_end = MinimumValueForLength(Style()->MarginEnd(),
+                                     available_size_for_resolving_margin);
   LayoutUnit available = available_logical_width - margin_start - margin_end;
   available = std::max(available, LayoutUnit());
   return available;
@@ -5199,8 +5184,7 @@ void LayoutBox::AddLayoutOverflow(const LayoutRect& rect) {
   }
 
   if (!overflow_) {
-    overflow_ =
-        WTF::WrapUnique(new BoxOverflowModel(client_box, BorderBoxRect()));
+    overflow_ = std::make_unique<BoxOverflowModel>(client_box, BorderBoxRect());
   }
 
   overflow_->AddLayoutOverflow(overflow_rect);
@@ -5216,7 +5200,7 @@ void LayoutBox::AddSelfVisualOverflow(const LayoutRect& rect) {
 
   if (!overflow_) {
     overflow_ =
-        WTF::WrapUnique(new BoxOverflowModel(NoOverflowRect(), border_box));
+        std::make_unique<BoxOverflowModel>(NoOverflowRect(), border_box);
   }
 
   overflow_->AddSelfVisualOverflow(rect);
@@ -5237,7 +5221,7 @@ void LayoutBox::AddContentsVisualOverflow(const LayoutRect& rect) {
 
   if (!overflow_) {
     overflow_ =
-        WTF::WrapUnique(new BoxOverflowModel(NoOverflowRect(), border_box));
+        std::make_unique<BoxOverflowModel>(NoOverflowRect(), border_box);
   }
   overflow_->AddContentsVisualOverflow(rect);
 }
@@ -5994,6 +5978,9 @@ void LayoutBox::AddCustomLayoutChildIfNeeded() {
 void LayoutBox::ClearCustomLayoutChild() {
   if (!rare_data_)
     return;
+
+  if (rare_data_->layout_child_)
+    rare_data_->layout_child_->ClearLayoutBox();
 
   rare_data_->layout_child_ = nullptr;
 }

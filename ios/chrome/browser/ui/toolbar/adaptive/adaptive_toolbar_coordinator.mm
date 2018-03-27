@@ -71,6 +71,13 @@
       toolbarButton:self.viewController.toolsMenuButton];
 }
 
+- (void)stop {
+  [super stop];
+  self.toolsMenuButtonObserverBridge = nil;
+  [self.mediator disconnect];
+  self.mediator = nil;
+}
+
 #pragma mark - SideSwipeToolbarSnapshotProviding
 
 - (UIImage*)toolbarSideSwipeSnapshotForWebState:(web::WebState*)webState {
@@ -85,9 +92,9 @@
   return toolbarSnapshot;
 }
 
-#pragma mark - ToolbarCoordinating
+#pragma mark - NewTabPageControllerDelegate
 
-- (void)setToolbarBackgroundAlpha:(CGFloat)alpha {
+- (void)setToolbarBackgroundToIncognitoNTPColorWithAlpha:(CGFloat)alpha {
   // TODO(crbug.com/803379): Implement that.
 }
 
@@ -99,6 +106,12 @@
 
 - (void)triggerToolsMenuButtonAnimation {
   [self.viewController.toolsMenuButton triggerAnimation];
+}
+
+#pragma mark - ToolbarCoordinatee
+
+- (id<TabHistoryUIUpdater>)tabHistoryUIUpdater {
+  return self.viewController;
 }
 
 #pragma mark - Protected
@@ -120,9 +133,7 @@
   BOOL isNTP = IsVisibleUrlNewTabPage(webState);
 
   [self.mediator updateConsumerForWebState:webState];
-  if (webState != self.webStateList->GetActiveWebState() || isNTP) {
-    [self.viewController updateForSideSwipeSnapshotOnNTP:isNTP];
-  }
+  [self.viewController updateForSideSwipeSnapshotOnNTP:isNTP];
 }
 
 - (void)resetToolbarAfterSideSwipeSnapshot {

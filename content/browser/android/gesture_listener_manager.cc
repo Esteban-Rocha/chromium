@@ -167,7 +167,8 @@ bool GestureListenerManager::FilterInputEvent(const WebInputEvent& event) {
   int gesture_type = ToGestureEventType(event.GetType());
   float dip_scale = web_contents_->GetNativeView()->GetDipScale();
   return Java_GestureListenerManagerImpl_filterTapOrPressEvent(
-      env, j_obj, gesture_type, gesture.x * dip_scale, gesture.y * dip_scale);
+      env, j_obj, gesture_type, gesture.PositionInWidget().x * dip_scale,
+      gesture.PositionInWidget().y * dip_scale);
 }
 
 // All positions and sizes (except |top_shown_pix|) are in CSS pixels.
@@ -192,6 +193,15 @@ void GestureListenerManager::UpdateScrollInfo(
       env, obj, scroll_offset.x(), scroll_offset.y(), page_scale_factor,
       min_page_scale, max_page_scale, content.width(), content.height(),
       viewport.width(), viewport.height(), top_shown_pix, top_changed);
+}
+
+void GestureListenerManager::UpdateOnTouchDown() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  Java_GestureListenerManagerImpl_updateOnTouchDown(env, obj);
 }
 
 void GestureListenerManager::UpdateRenderProcessConnection(

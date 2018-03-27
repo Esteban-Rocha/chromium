@@ -4,8 +4,8 @@
 
 #include "platform/scheduler/renderer/frame_status.h"
 
-#include "platform/WebFrameScheduler.h"
-#include "platform/scheduler/renderer/web_view_scheduler.h"
+#include "platform/FrameScheduler.h"
+#include "platform/scheduler/renderer/page_scheduler.h"
 
 namespace blink {
 namespace scheduler {
@@ -33,15 +33,15 @@ enum class FrameOriginState {
 };
 
 FrameThrottlingState GetFrameThrottlingState(
-    const WebFrameScheduler& frame_scheduler) {
+    const FrameScheduler& frame_scheduler) {
   if (frame_scheduler.IsPageVisible()) {
     if (frame_scheduler.IsFrameVisible())
       return FrameThrottlingState::kVisible;
     return FrameThrottlingState::kHidden;
   }
 
-  WebViewScheduler* web_view_scheduler = frame_scheduler.GetWebViewScheduler();
-  if (web_view_scheduler && web_view_scheduler->IsPlayingAudio()) {
+  PageScheduler* page_scheduler = frame_scheduler.GetPageScheduler();
+  if (page_scheduler && page_scheduler->IsPlayingAudio()) {
     if (frame_scheduler.IsFrameVisible())
       return FrameThrottlingState::kVisibleService;
     return FrameThrottlingState::kHiddenService;
@@ -50,16 +50,14 @@ FrameThrottlingState GetFrameThrottlingState(
   if (frame_scheduler.IsExemptFromBudgetBasedThrottling())
     return FrameThrottlingState::kBackgroundExemptSelf;
 
-  if (web_view_scheduler &&
-      web_view_scheduler->IsExemptFromBudgetBasedThrottling())
+  if (page_scheduler && page_scheduler->IsExemptFromBudgetBasedThrottling())
     return FrameThrottlingState::kBackgroundExemptOther;
 
   return FrameThrottlingState::kBackground;
 }
 
-FrameOriginState GetFrameOriginState(const WebFrameScheduler& frame_scheduler) {
-  if (frame_scheduler.GetFrameType() ==
-      WebFrameScheduler::FrameType::kMainFrame) {
+FrameOriginState GetFrameOriginState(const FrameScheduler& frame_scheduler) {
+  if (frame_scheduler.GetFrameType() == FrameScheduler::FrameType::kMainFrame) {
     return FrameOriginState::kMainFrame;
   }
   if (frame_scheduler.IsCrossOrigin())
@@ -69,7 +67,7 @@ FrameOriginState GetFrameOriginState(const WebFrameScheduler& frame_scheduler) {
 
 }  // namespace
 
-FrameStatus GetFrameStatus(WebFrameScheduler* frame_scheduler) {
+FrameStatus GetFrameStatus(FrameScheduler* frame_scheduler) {
   if (!frame_scheduler)
     return FrameStatus::kNone;
   FrameThrottlingState throttling_state =

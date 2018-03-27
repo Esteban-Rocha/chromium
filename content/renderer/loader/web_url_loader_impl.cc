@@ -359,7 +359,7 @@ StreamOverrideParameters::~StreamOverrideParameters() {
 
 WebURLLoaderFactoryImpl::WebURLLoaderFactoryImpl(
     base::WeakPtr<ResourceDispatcher> resource_dispatcher,
-    scoped_refptr<SharedURLLoaderFactory> loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory> loader_factory)
     : resource_dispatcher_(std::move(resource_dispatcher)),
       loader_factory_(std::move(loader_factory)) {}
 
@@ -399,7 +399,7 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   Context(WebURLLoaderImpl* loader,
           ResourceDispatcher* resource_dispatcher,
           scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-          scoped_refptr<SharedURLLoaderFactory> factory,
+          scoped_refptr<network::SharedURLLoaderFactory> factory,
           mojom::KeepAliveHandlePtr keep_alive_handle);
 
   ResourceDispatcher* resource_dispatcher() { return resource_dispatcher_; }
@@ -463,7 +463,7 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   DeferState defers_loading_;
   int request_id_;
 
-  scoped_refptr<SharedURLLoaderFactory> url_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
 };
 
 // A thin wrapper class for Context to ensure its lifetime while it is
@@ -526,7 +526,7 @@ WebURLLoaderImpl::Context::Context(
     WebURLLoaderImpl* loader,
     ResourceDispatcher* resource_dispatcher,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     mojom::KeepAliveHandlePtr keep_alive_handle_ptr)
     : loader_(loader),
       use_stream_on_response_(false),
@@ -604,7 +604,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
       // This is a sync load. Do the work now.
       sync_load_response->url = url_;
       sync_load_response->error_code =
-          GetInfoFromDataURL(sync_load_response->url, sync_load_response,
+          GetInfoFromDataURL(sync_load_response->url, &sync_load_response->info,
                              &sync_load_response->data);
     } else {
       task_runner_->PostTask(FROM_HERE,
@@ -739,9 +739,9 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
 
     resource_dispatcher_->StartSync(
         std::move(resource_request), request.RequestorID(),
-        extra_data->frame_origin(), GetTrafficAnnotationTag(request),
-        sync_load_response, url_loader_factory_,
-        extra_data->TakeURLLoaderThrottles());
+        GetTrafficAnnotationTag(request), sync_load_response,
+        url_loader_factory_, extra_data->TakeURLLoaderThrottles(),
+        request.TimeoutInterval());
     return;
   }
 
@@ -760,9 +760,8 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   base::OnceClosure continue_navigation_function;
   request_id_ = resource_dispatcher_->StartAsync(
       std::move(resource_request), request.RequestorID(), task_runner_,
-      extra_data->frame_origin(), GetTrafficAnnotationTag(request),
-      false /* is_sync */, std::move(peer), url_loader_factory_,
-      extra_data->TakeURLLoaderThrottles(),
+      GetTrafficAnnotationTag(request), false /* is_sync */, std::move(peer),
+      url_loader_factory_, extra_data->TakeURLLoaderThrottles(),
       std::move(url_loader_client_endpoints), &continue_navigation_function);
   extra_data->set_continue_navigation_function(
       std::move(continue_navigation_function));
@@ -968,7 +967,8 @@ void WebURLLoaderImpl::Context::OnCompletedRequest(
       client_->DidFail(
           status.cors_error_status
               ? WebURLError(*status.cors_error_status, has_copy_in_cache, url_)
-              : WebURLError(status.error_code, has_copy_in_cache,
+              : WebURLError(status.error_code, status.extended_error_code,
+                            has_copy_in_cache,
                             WebURLError::IsWebSecurityViolation::kFalse, url_),
           total_transfer_size, encoded_body_size, status.decoded_body_length);
     } else {
@@ -1141,7 +1141,7 @@ void WebURLLoaderImpl::RequestPeerImpl::OnCompletedRequest(
 WebURLLoaderImpl::WebURLLoaderImpl(
     ResourceDispatcher* resource_dispatcher,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    scoped_refptr<SharedURLLoaderFactory> url_loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
     : WebURLLoaderImpl(resource_dispatcher,
                        std::move(task_runner),
                        std::move(url_loader_factory),
@@ -1150,7 +1150,7 @@ WebURLLoaderImpl::WebURLLoaderImpl(
 WebURLLoaderImpl::WebURLLoaderImpl(
     ResourceDispatcher* resource_dispatcher,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     mojom::KeepAliveHandlePtr keep_alive_handle)
     : context_(new Context(this,
                            resource_dispatcher,
@@ -1298,12 +1298,14 @@ void WebURLLoaderImpl::PopulateURLResponse(
   }
 }
 
-void WebURLLoaderImpl::LoadSynchronously(const WebURLRequest& request,
-                                         WebURLResponse& response,
-                                         base::Optional<WebURLError>& error,
-                                         WebData& data,
-                                         int64_t& encoded_data_length,
-                                         int64_t& encoded_body_length) {
+void WebURLLoaderImpl::LoadSynchronously(
+    const WebURLRequest& request,
+    WebURLResponse& response,
+    base::Optional<WebURLError>& error,
+    WebData& data,
+    int64_t& encoded_data_length,
+    int64_t& encoded_body_length,
+    base::Optional<int64_t>& downloaded_file_length) {
   TRACE_EVENT0("loading", "WebURLLoaderImpl::loadSynchronously");
   SyncLoadResponse sync_load_response;
   context_->Start(request, &sync_load_response);
@@ -1326,16 +1328,18 @@ void WebURLLoaderImpl::LoadSynchronously(const WebURLRequest& request,
           error_code == net::ERR_ABORTED
               ? WebURLError::IsWebSecurityViolation::kTrue
               : WebURLError::IsWebSecurityViolation::kFalse;
-      error = WebURLError(error_code, WebURLError::HasCopyInCache::kFalse,
+      error = WebURLError(error_code, sync_load_response.extended_error_code,
+                          WebURLError::HasCopyInCache::kFalse,
                           is_web_security_violation, final_url);
     }
     return;
   }
 
-  PopulateURLResponse(final_url, sync_load_response, &response,
+  PopulateURLResponse(final_url, sync_load_response.info, &response,
                       request.ReportRawHeaders());
-  encoded_data_length = sync_load_response.encoded_data_length;
-  encoded_body_length = sync_load_response.encoded_body_length;
+  encoded_data_length = sync_load_response.info.encoded_data_length;
+  encoded_body_length = sync_load_response.info.encoded_body_length;
+  downloaded_file_length = sync_load_response.downloaded_file_length;
 
   data.Assign(sync_load_response.data.data(), sync_load_response.data.size());
 }

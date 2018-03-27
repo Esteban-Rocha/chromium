@@ -14,6 +14,7 @@
 
 namespace blink {
 
+class HeapObjectHeader;
 class MarkingVisitor;
 class Visitor;
 class ScriptWrappableVisitor;
@@ -29,6 +30,12 @@ using WeakCallback = VisitorCallback;
 using EphemeronCallback = VisitorCallback;
 using MissedWriteBarrierCallback = void (*)();
 using NameCallback = const char* (*)(const void* self);
+
+// Callback used for unit testing the marking of conservative pointers
+// (|CheckAndMarkPointer|). For each pointer that has been discovered to point
+// to a heap object, the callback is invoked with a pointer to its header. If
+// the callback returns true, the object will not be marked.
+using MarkedPointerCallbackForTesting = bool (*)(HeapObjectHeader*);
 
 // Simple alias to avoid heap compaction type signatures turning into
 // a sea of generic |void*|s.
@@ -57,6 +64,11 @@ using MovingObjectCallback = void (*)(void* callback_data,
 
 #define TypedArenaEnumName(Type) k##Type##ArenaIndex,
 
+class PLATFORM_EXPORT WorklistTaskId {
+ public:
+  static constexpr int MainThread = 0;
+};
+
 class PLATFORM_EXPORT BlinkGC final {
   STATIC_ONLY(BlinkGC);
 
@@ -67,17 +79,21 @@ class PLATFORM_EXPORT BlinkGC final {
   // whether or not they have pointers on the stack.
   enum StackState { kNoHeapPointersOnStack, kHeapPointersOnStack };
 
-  enum GCType {
-    // Both of the marking task and the sweeping task run in
-    // ThreadHeap::collectGarbage().
-    kGCWithSweep,
-    // Only the marking task runs in ThreadHeap::collectGarbage().
-    // The sweeping task is split into chunks and scheduled lazily.
-    kGCWithoutSweep,
-    // Only the marking task runs just to take a heap snapshot.
-    // The sweeping task doesn't run. The marks added in the marking task
-    // are just cleared.
+  enum MarkingType {
+    // The marking completes synchronously.
+    kAtomicMarking,
+    // The marking task is split and executed in chunks.
+    kIncrementalMarking,
+    // We run marking to take a heap snapshot. Sweeping should do nothing and
+    // just clear the mark flags.
     kTakeSnapshot,
+  };
+
+  enum SweepingType {
+    // The sweeping task is split into chunks and scheduled lazily.
+    kLazySweeping,
+    // The sweeping task executs synchronously right after marking.
+    kEagerSweeping,
   };
 
   enum GCReason {
@@ -112,6 +128,9 @@ class PLATFORM_EXPORT BlinkGC final {
     kV8MinorGC,
     kV8MajorGC,
   };
+
+  // Sentinel used to mark not-fully-constructed during mixins.
+  static constexpr void* kNotFullyConstructedObject = nullptr;
 };
 
 }  // namespace blink

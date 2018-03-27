@@ -33,8 +33,8 @@
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptEventListener.h"
-#include "core/CSSPropertyNames.h"
 #include "core/css/StyleChangeReason.h"
+#include "core/css_property_names.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/Document.h"
 #include "core/dom/IdTargetObserver.h"
@@ -342,11 +342,6 @@ void HTMLInputElement::EndEditing() {
   frame->GetPage()->GetChromeClient().DidEndEditingOnTextField(*this);
 }
 
-void HTMLInputElement::HandleFocusEvent(Element* old_focused_element,
-                                        WebFocusType type) {
-  input_type_->EnableSecureTextInput();
-}
-
 void HTMLInputElement::DispatchFocusInEvent(
     const AtomicString& event_type,
     Element* old_focused_element,
@@ -359,7 +354,6 @@ void HTMLInputElement::DispatchFocusInEvent(
 }
 
 void HTMLInputElement::HandleBlurEvent() {
-  input_type_->DisableSecureTextInput();
   input_type_view_->HandleBlurEvent();
 }
 

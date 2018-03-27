@@ -18,7 +18,7 @@ void PreviewModeClient::Invalidate(const pp::Rect& rect) {
   NOTREACHED();
 }
 
-void PreviewModeClient::Scroll(const pp::Point& point) {
+void PreviewModeClient::DidScroll(const pp::Point& point) {
   NOTREACHED();
 }
 
@@ -166,6 +166,10 @@ bool PreviewModeClient::IsPrintPreview() {
 }
 
 void PreviewModeClient::CancelBrowserDownload() {}
+
+float PreviewModeClient::GetToolbarHeightInScreenCoords() {
+  return 0.0f;
+}
 
 uint32_t PreviewModeClient::GetBackgroundColor() {
   NOTREACHED();

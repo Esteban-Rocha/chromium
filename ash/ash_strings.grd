@@ -183,6 +183,9 @@ This file contains the strings for ash.
       <message name="IDS_ASH_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
         Add Person
       </message>
+      <message name="IDS_ASH_SHOW_WEBUI_LOGIN_BUTTON" desc="Button on login/lock screen which reverts to the previous implementation.">
+        (TEMP) Show webui login; if used file bug (crbug.com) or feedback (alt+shift+i)
+      </message>
 
       <message name="IDS_ASH_KEYBOARD_OVERLAY_TITLE" desc="The title of the keyboard overlay.">
         Keyboard overlay
@@ -436,6 +439,9 @@ This file contains the strings for ash.
       <message name="IDS_ASH_ENTERPRISE_DEVICE_MANAGED" desc="Text for notifications showing that this device is enterprise managed. Used when the organization's domain name is not available (e.g. Active Directory).">
         This device is enterprise managed
       </message>
+      <message name="IDS_ASH_ENTERPRISE_DEVICE_MANAGED_SHORT" desc="Short text showing that the device is enterprise managed.">
+        Managed
+      </message>
 
       <!-- Status tray supervised users. -->
       <message name="IDS_ASH_STATUS_TRAY_SUPERVISED_LABEL" desc="Label shown instead of email for supervised users">
@@ -533,6 +539,11 @@ This file contains the strings for ash.
       </message>
       <message name="IDS_ASH_OVERVIEW_NO_RECENT_ITEMS" desc="The message that is displayed on overview mode when the user enters it with no open windows.">
         No recent items
+      </message>
+
+      <!-- Window Selector -->
+      <message name="IDS_ASH_WINDOW_SELECTOR_INPUT_FILTER_ACCESSIBLE_NAME" desc="The accessible name for the window selector filter search input box.">
+        Type the name of an app or document
       </message>
 
       <!-- Status tray charging strings. -->
@@ -871,6 +882,9 @@ This file contains the strings for ash.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_BATTERY_CHARGING_UNRELIABLE_ACCESSIBLE" desc="The message used by accessibility to indicate that battery charging is unreliable.">
         Plugged in to a low-power charger. Battery charging may not be reliable.
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_STATUS_SEPARATOR" desc="The separator symbol between battery percentage string and battery remaining time string">
+        ''' - '''
       </message>
       <message name="IDS_ASH_STATUS_TRAY_BUBBLE_SESSION_LENGTH_LIMIT" desc="Tray bubble item shown to inform the user that the session length is limited.">
         Session ends in <ph name="session_time_remaining">$1<ex>4 minutes 23 seconds</ex></ph>.
@@ -1302,7 +1316,7 @@ Subsequent notifications, windows and dialogs may be split between desktops.
         It may be attempting to steal your keystrokes
       </message>
       <message name="IDS_ASH_DETACHABLE_BASE_NOTIFICATION_UPDATE_NEEDED_TITLE" desc="Title for the notification shown to the user when the detachable base (keyboard) connected to the device has to be updated.">
-        Your detachable keybaord needs a critical update
+        Your detachable keyboard needs a critical update
       </message>
       <message name="IDS_ASH_DETACHABLE_BASE_NOTIFICATION_UPDATE_NEEDED_MESSAGE" desc="Body for the notification shown to the user when the detachable base (keyboard) connected to the device has to be updated. This notification is shown if the keyboard is usable without the update.">
         To get the update, restart your Chromebook with the keyboard attached.

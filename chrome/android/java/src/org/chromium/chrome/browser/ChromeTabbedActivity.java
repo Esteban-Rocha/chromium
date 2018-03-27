@@ -130,7 +130,6 @@ import org.chromium.chrome.browser.widget.OverviewListLayout;
 import org.chromium.chrome.browser.widget.ViewHighlighter;
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet;
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet.StateChangeReason;
-import org.chromium.chrome.browser.widget.bottomsheet.ChromeHomeIphMenuHeader;
 import org.chromium.chrome.browser.widget.emptybackground.EmptyBackgroundViewWrapper;
 import org.chromium.chrome.browser.widget.textbubble.TextBubble;
 import org.chromium.components.feature_engagement.EventConstants;
@@ -572,9 +571,6 @@ public class ChromeTabbedActivity
                 isShowingPromo = SigninPromoUtil.launchSigninPromoIfNeeded(this)
                         || DataReductionPromoScreen.launchDataReductionPromo(
                                    this, mTabModelSelectorImpl.getCurrentModel().isIncognito());
-                if (!isShowingPromo && getBottomSheet() != null) {
-                    getBottomSheet().showColdStartHelpBubble();
-                }
             } else {
                 preferenceManager.setPromosSkippedOnFirstStart(true);
             }
@@ -803,8 +799,6 @@ public class ChromeTabbedActivity
             mLayoutManager.setEnableAnimations(DeviceClassManager.enableAnimations());
             mLayoutManager.addOverviewModeObserver(this);
 
-            if (getBottomSheet() != null) getBottomSheet().setLayoutManagerChrome(mLayoutManager);
-
             // TODO(yusufo): get rid of findViewById(R.id.url_bar).
             initializeCompositorContent(mLayoutManager, findViewById(R.id.url_bar),
                     mContentContainer, mControlContainer);
@@ -887,10 +881,6 @@ public class ChromeTabbedActivity
         int accessibilityStringId = R.string.iph_download_home_accessibility_text;
         if (FeatureUtilities.isChromeHomeEnabled()) {
             accessibilityStringId = R.string.iph_download_home_accessibility_text_chrome_home;
-            if (getBottomSheet().isUsingExpandButton()) {
-                accessibilityStringId =
-                        R.string.iph_download_home_accessibility_text_chrome_home_expand;
-            }
         }
 
         View anchorView = getToolbarAnchorViewForDownloadHomeTextBubble();
@@ -905,47 +895,26 @@ public class ChromeTabbedActivity
 
         turnOnHighlightForDownloadHomeTextBubble();
 
-        boolean isChromeHomeExpandButtonEnabled =
-                FeatureUtilities.isChromeHomeEnabled() && getBottomSheet().isUsingExpandButton();
-
         int yInsetPx =
                 getResources().getDimensionPixelOffset(R.dimen.text_bubble_menu_anchor_y_inset);
-        rectProvider.setInsetPx(0, isChromeHomeExpandButtonEnabled ? yInsetPx : 0, 0,
-                FeatureUtilities.isChromeHomeEnabled() ? 0 : yInsetPx);
+        rectProvider.setInsetPx(0, 0, 0, yInsetPx);
         textBubble.show();
     }
 
     private View getToolbarAnchorViewForDownloadHomeTextBubble() {
         if (FeatureUtilities.isChromeHomeEnabled()) {
-            return getBottomSheet().isUsingExpandButton()
-                    ? mControlContainer.findViewById(R.id.expand_sheet_button)
-                    : mControlContainer.findViewById(R.id.toolbar_handle);
+            return mControlContainer.findViewById(R.id.toolbar_handle);
         } else {
             return getToolbarManager().getMenuButton();
         }
     }
 
     private void turnOnHighlightForDownloadHomeTextBubble() {
-        if (FeatureUtilities.isChromeHomeEnabled()) {
-            getBottomSheetContentController().setHighlightItemId(R.id.action_downloads);
-            if (getBottomSheet().isUsingExpandButton()) {
-                ViewHighlighter.turnOnHighlight(findViewById(R.id.expand_sheet_button), true);
-            }
-        } else {
-            getAppMenuHandler().setMenuHighlight(R.id.downloads_menu_id);
-        }
+        getAppMenuHandler().setMenuHighlight(R.id.downloads_menu_id);
     }
 
     private void turnOffHighlightForDownloadHomeTextBubble() {
-        if (FeatureUtilities.isChromeHomeEnabled()) {
-            if (getBottomSheetContentController() == null) return;
-            getBottomSheetContentController().setHighlightItemId(null);
-            if (getBottomSheet().isUsingExpandButton()) {
-                ViewHighlighter.turnOffHighlight(findViewById(R.id.expand_sheet_button));
-            }
-        } else {
-            getAppMenuHandler().setMenuHighlight(null);
-        }
+        getAppMenuHandler().setMenuHighlight(null);
     }
 
     private boolean isMainIntentFromLauncher(Intent intent) {
@@ -975,33 +944,6 @@ public class ChromeTabbedActivity
         assert isMainIntentFromLauncher(intent);
 
         if (!mIntentHandler.isIntentUserVisible()) return false;
-
-        if (FeatureUtilities.isChromeHomeEnabled()
-                && ChromeFeatureList.isEnabled(
-                           ChromeFeatureList.CHROME_HOME_INACTIVITY_SHEET_EXPANSION)) {
-            BottomSheet bottomSheet = getBottomSheet();
-            assert bottomSheet != null;
-
-            int timeoutMinsFieldTrialValue = ChromeFeatureList.getFieldTrialParamByFeatureAsInt(
-                    ChromeFeatureList.CHROME_HOME_INACTIVITY_SHEET_EXPANSION,
-                    TIME_SINCE_BACKGROUNDED_IN_MINS_PARAM,
-                    TIME_SINCE_BACKGROUNDED_TO_SHOW_BOTTOM_SHEET_HALF_MINS);
-            long timeoutExpandBottomSheet = TimeUnit.MINUTES.toMillis(timeoutMinsFieldTrialValue);
-            if (bottomSheet.isSheetOpen()
-                    || (getTimeSinceLastBackgroundedMs() < timeoutExpandBottomSheet)) {
-                return false;
-            }
-
-            if (isInOverviewMode()) return false;
-
-            boolean hasTabs = getCurrentTabModel().getCount() > 0
-                    || mTabModelSelectorImpl.getRestoredTabCount() > 0;
-            if (hasTabs) {
-                bottomSheet.setSheetState(
-                        BottomSheet.SHEET_STATE_HALF, true, StateChangeReason.STARTUP);
-            }
-            return false;
-        }
 
         if (!ChromeFeatureList.isEnabled(ChromeFeatureList.NTP_LAUNCH_AFTER_INACTIVITY)) {
             return false;
@@ -1582,21 +1524,9 @@ public class ChromeTabbedActivity
     @Override
     protected AppMenuPropertiesDelegate createAppMenuPropertiesDelegate() {
         return new AppMenuPropertiesDelegate(this) {
-            private ChromeHomeIphMenuHeader mChromeHomeIphMenuHeader;
-
             private boolean showDataSaverFooter() {
                 return DataReductionProxySettings.getInstance()
                         .shouldUseDataReductionMainMenuItem();
-            }
-
-            @Override
-            public void onMenuDismissed() {
-                super.onMenuDismissed();
-
-                if (mChromeHomeIphMenuHeader != null) {
-                    mChromeHomeIphMenuHeader.onMenuDismissed();
-                    mChromeHomeIphMenuHeader = null;
-                }
             }
 
             @Override
@@ -1622,14 +1552,6 @@ public class ChromeTabbedActivity
                 LayoutInflater inflater = LayoutInflater.from(ChromeTabbedActivity.this);
                 Tracker tracker = TrackerFactory.getTrackerForProfile(Profile.getLastUsedProfile());
 
-                // Show the Chrome Home menu header if the Tracker allows it.
-                if (tracker.shouldTriggerHelpUI(FeatureConstants.CHROME_HOME_MENU_HEADER_FEATURE)) {
-                    mChromeHomeIphMenuHeader = (ChromeHomeIphMenuHeader) inflater.inflate(
-                            R.layout.chrome_home_iph_header, null);
-                    mChromeHomeIphMenuHeader.initialize(ChromeTabbedActivity.this);
-                    return mChromeHomeIphMenuHeader;
-                }
-
                 // Default is no header.
                 return null;
             }
@@ -1647,9 +1569,6 @@ public class ChromeTabbedActivity
                 if (getBottomSheet() == null) return super.shouldShowHeader(maxMenuHeight);
 
                 Tracker tracker = TrackerFactory.getTrackerForProfile(Profile.getLastUsedProfile());
-                if (tracker.wouldTriggerHelpUI(FeatureConstants.CHROME_HOME_MENU_HEADER_FEATURE)) {
-                    return true;
-                }
 
                 if (DataReductionProxySettings.getInstance().shouldUseDataReductionMainMenuItem()) {
                     return canShowDataReductionItem(maxMenuHeight);
@@ -1959,6 +1878,17 @@ public class ChromeTabbedActivity
                 // If there is no next tab to open, enter overview mode.
                 if (!hasNextTab) mLayoutManager.showOverview(false);
             }, CLOSE_TAB_ON_MINIMIZE_DELAY_MS);
+        }
+    }
+
+    @Override
+    public boolean moveTaskToBack(boolean nonRoot) {
+        try {
+            return super.moveTaskToBack(nonRoot);
+        } catch (NullPointerException e) {
+            // Work around framework bug described in https://crbug.com/817567.
+            finish();
+            return true;
         }
     }
 

@@ -346,7 +346,7 @@ bool Scrollbar::GestureEvent(const WebGestureEvent& evt,
       scroll_pos_ = pressed_pos_;
       return true;
     case WebInputEvent::kGestureScrollBegin:
-      switch (evt.source_device) {
+      switch (evt.SourceDevice()) {
         case kWebGestureDeviceSyntheticAutoscroll:
         case kWebGestureDeviceTouchpad:
           // Update the state on GSB for touchpad since GestureTapDown
@@ -366,7 +366,7 @@ bool Scrollbar::GestureEvent(const WebGestureEvent& evt,
       }
       break;
     case WebInputEvent::kGestureScrollUpdate:
-      switch (evt.source_device) {
+      switch (evt.SourceDevice()) {
         case kWebGestureDeviceSyntheticAutoscroll:
         case kWebGestureDeviceTouchpad:
           return false;
@@ -476,7 +476,7 @@ void Scrollbar::MouseUp(const WebMouseEvent& mouse_event) {
 
   if (scrollable_area_) {
     if (is_captured)
-      scrollable_area_->MouseReleasedScrollbar();
+      scrollable_area_->MouseReleasedScrollbar(orientation_);
 
     ScrollbarPart part = GetTheme().HitTest(
         *this, FlooredIntPoint(mouse_event.PositionInRootFrame()));
@@ -524,9 +524,9 @@ void Scrollbar::MouseDown(const WebMouseEvent& evt) {
   AutoscrollPressedPart(GetTheme().InitialAutoscrollTimerDelay());
 }
 
-void Scrollbar::SetScrollbarsHidden(bool hidden) {
+void Scrollbar::SetScrollbarsHiddenIfOverlay(bool hidden) {
   if (scrollable_area_)
-    scrollable_area_->SetScrollbarsHidden(hidden);
+    scrollable_area_->SetScrollbarsHiddenIfOverlay(hidden);
 }
 
 void Scrollbar::SetEnabled(bool e) {
@@ -538,7 +538,7 @@ void Scrollbar::SetEnabled(bool e) {
   // We can skip thumb/track repaint when hiding an overlay scrollbar, but not
   // when showing (since the proportions may have changed while hidden).
   bool skipPartsRepaint = IsOverlayScrollbar() && scrollable_area_ &&
-                          scrollable_area_->ScrollbarsHidden();
+                          scrollable_area_->ScrollbarsHiddenIfOverlay();
   SetNeedsPaintInvalidation(skipPartsRepaint ? kNoPart : kAllParts);
 }
 
@@ -557,7 +557,7 @@ bool Scrollbar::ShouldParticipateInHitTesting() {
   // Non-overlay scrollbars should always participate in hit testing.
   if (!IsOverlayScrollbar())
     return true;
-  return !scrollable_area_->ScrollbarsHidden();
+  return !scrollable_area_->ScrollbarsHiddenIfOverlay();
 }
 
 bool Scrollbar::IsWindowActive() const {

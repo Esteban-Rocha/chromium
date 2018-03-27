@@ -54,7 +54,6 @@
 #include "core/paint/ScrollbarManager.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -265,7 +264,6 @@ class CORE_EXPORT PaintLayerScrollableArea final
   GraphicsLayer* LayerForVerticalScrollbar() const override;
   GraphicsLayer* LayerForScrollCorner() const override;
 
-  bool UsesCompositedScrolling() const override;
   bool ShouldScrollOnMainThread() const override;
   bool ShouldUseIntegerScrollOffset() const override;
   bool IsActive() const override;
@@ -488,7 +486,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
   void InvalidateStickyConstraintsFor(PaintLayer*,
                                       bool needs_compositing_update = true);
   void InvalidatePaintForStickyDescendants();
-  void UpdateLayerPositionForStickyDescendants();
+  bool HasStickyDescendants() const;
   bool HasNonCompositedStickyDescendants() const;
   uint32_t GetNonCompositedMainThreadScrollingReasons() {
     return non_composited_main_thread_scrolling_reasons_;
@@ -538,6 +536,8 @@ class CORE_EXPORT PaintLayerScrollableArea final
   // Returns true iff scrollbar existence changed.
   bool SetHasHorizontalScrollbar(bool has_scrollbar);
   bool SetHasVerticalScrollbar(bool has_scrollbar);
+
+  void SnapAfterScrollbarDragging(ScrollbarOrientation) override;
 
   void UpdateScrollCornerStyle();
   LayoutSize MinimumSizeForResizing(float zoom_factor);

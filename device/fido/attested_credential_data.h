@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/component_export.h"
 #include "base/containers/span.h"
 #include "base/macros.h"
 #include "base/optional.h"
@@ -18,8 +19,11 @@ namespace device {
 class PublicKey;
 
 // https://www.w3.org/TR/2017/WD-webauthn-20170505/#sec-attestation-data
-class AttestedCredentialData {
+class COMPONENT_EXPORT(DEVICE_FIDO) AttestedCredentialData {
  public:
+  static base::Optional<AttestedCredentialData> DecodeFromCtapResponse(
+      base::span<const uint8_t> buffer);
+
   static base::Optional<AttestedCredentialData> CreateFromU2fRegisterResponse(
       base::span<const uint8_t> u2f_data,
       std::vector<uint8_t> aaguid,
@@ -36,7 +40,11 @@ class AttestedCredentialData {
 
   ~AttestedCredentialData();
 
-  const std::vector<uint8_t>& credential_id() { return credential_id_; }
+  const std::vector<uint8_t>& credential_id() const { return credential_id_; }
+
+  // Invoked when sending "none" attestation statement to the relying party.
+  // Replaces AAGUID with zero bytes.
+  void DeleteAaguid();
 
   // Produces a byte array consisting of:
   // * AAGUID (16 bytes)

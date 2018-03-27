@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env vpython
 # Copyright 2016 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -136,9 +136,10 @@ def get_waterfall_config():
          ('gpu_perftests', 'build73-b1--device2'),
          #  ('cc_perftests', 'build73-b1--device2'),  # crbug.com/721757
          ('media_perftests', 'build74-b1--device7'),
+         ('components_perftests', 'build74-b1--device1'),
        ],
        'perf_tests_with_args': [
-         ('angle_perftests', 'build73-b1--device4', ['--shard-timeout=180'],
+         ('angle_perftests', 'build73-b1--device4', ['--shard-timeout=300'],
            'angle_perftests'),
        ]
       }
@@ -164,6 +165,7 @@ def get_waterfall_config():
          ('tracing_perftests', 'build13-b1--device2'),
          ('gpu_perftests', 'build13-b1--device2'),
          ('cc_perftests', 'build13-b1--device2'),
+         ('components_perftests', 'build48-b1--device5'),
         ]
       }
     ])
@@ -294,7 +296,7 @@ def get_waterfall_config():
     swarming=[
       {
        'gpu': '8086:1616',
-       'os': 'Windows-10-16299.248',
+       'os': 'Windows-10',
        'pool': 'Chrome-perf',
        'device_ids': [
            'build117-b1', 'build118-b1',
@@ -307,16 +309,17 @@ def get_waterfall_config():
     waterfall, 'Win 10 Perf', 'chromium-rel-win10', 'win',
     swarming=[
       {
-       'gpu': '102b:0534',
-       'os': 'Windows-10-10240',
+       'gpu': '8086:5912',
+       'os': 'Windows-10',
        'pool': 'Chrome-perf',
        'device_ids': [
-           'build132-m1', 'build133-m1',
-           'build134-m1', 'build135-m1', 'build136-m1'
+           'build189-a9', 'build190-a9',
+           'build191-a9', 'build192-a9', 'build193-a9'
           ],
        'perf_tests': [
-         ('media_perftests', 'build134-m1'),
-         ('views_perftests', 'build135-m1')]
+         ('media_perftests', 'build189-a9'),
+         ('views_perftests', 'build190-a9'),
+         ('components_perftests', 'build191-a9')]
       }
     ])
   waterfall = add_tester(
@@ -352,7 +355,8 @@ def get_waterfall_config():
          ('load_library_perf_tests', 'build187-m1'),
          # crbug.com/735679
          # ('performance_browser_tests', 'build187-m1'),
-         ('media_perftests', 'build188-m1')]
+         ('media_perftests', 'build188-m1'),
+         ('components_perftests', 'build189-m1')]
       }
     ])
   waterfall = add_tester(
@@ -508,8 +512,9 @@ def get_waterfall_config():
          ('load_library_perf_tests', 'build29-a9'),
          ('net_perftests', 'build29-a9'),
          ('tracing_perftests', 'build29-a9'),
-         ('media_perftests', 'build30-a9'),
-         ('views_perftests', 'build31-a9')
+         ('media_perftests', 'build30-a9')
+         # crbug.com/811766
+         # ('views_perftests', 'build31-a9')
        ]
       }
     ])
@@ -905,7 +910,9 @@ NON_TELEMETRY_BENCHMARKS = {
     'performance_browser_tests': BenchmarkMetadata(
         'miu@chromium.org', None, False),
     'views_perftests': BenchmarkMetadata(
-        'tapted@chromium.org', 'Internals>Views', False)
+        'tapted@chromium.org', 'Internals>Views', False),
+    'components_perftests': BenchmarkMetadata(
+        'csharrison@chromium.org', None, False)
 }
 
 
@@ -1050,6 +1057,152 @@ def validate_tests(waterfall, waterfall_file, benchmark_file):
   return up_to_date
 
 
+# This section is how we will generate json with the new perf recipe.
+# We will only be generating one entry per isolate in the new world.
+# Right now this is simply adding and/or updating chromium.perf.fyi.json
+# until migration is complete.  See crbug.com/757933 for more info.
+NEW_PERF_RECIPE_FYI_TESTERS = {
+  'testers' : {
+    'One Buildbot Step Test Builder': {
+      'isolate': 'telemetry_perf_tests_experimental',
+      'platform': 'linux',
+      'dimension': {
+        'pool': 'Chrome-perf-fyi',
+        'os': 'Linux',
+      },
+      'testing': True,
+      'device_ids': [
+          'swarm823-c4',
+          'swarm846-c4',
+          'swarm847-c4'
+      ],
+    },
+    'Mac 10.12 Laptop Low End': {
+      'isolate': 'performance_test_suite',
+      'platform': 'mac',
+      'dimension': {
+        'pool': 'Chrome-perf-fyi',
+        'os': 'Mac-10.12',
+        'gpu': '8086:1626'
+      },
+      'device_ids': [
+          'build195-a9', 'build196-a9', 'build197-a9', 'build198-a9',
+          'build199-a9', 'build200-a9', 'build201-a9', 'build202-a9',
+          'build203-a9', 'build204-a9', 'build205-a9', 'build206-a9',
+          'build207-a9', 'build208-a9', 'build209-a9', 'build210-a9',
+          'build211-a9', 'build212-a9', 'build213-a9', 'build214-a9',
+          'build215-a9', 'build216-a9', 'build217-a9', 'build218-a9',
+          'build219-a9', 'build220-a9'
+      ],
+    }
+  }
+}
+
+
+def add_common_test_properties(test, tester_config):
+  dimensions = []
+  for device_id in tester_config['device_ids']:
+    dimensions.append({'id': device_id})
+  test['trigger_script'] = {
+      'script': '//testing/trigger_scripts/perf_device_trigger.py',
+      'args': [
+          '--multiple-trigger-configs',
+          json.dumps(dimensions),
+          '--multiple-dimension-script-verbose',
+          'True'
+      ],
+  }
+  test['merge'] = {
+      'script': '//tools/perf/process_perf_results.py',
+      'args': [
+        '--service-account-file',
+        '/creds/service_accounts/service-account-chromium-perf-histograms.json'
+      ],
+  }
+  return len(dimensions)
+
+
+def generate_performance_test_suite(tester_config):
+  # First determine the browser that you need based on the tester
+  browser_name = ''
+  # For trybot testing we always use the reference build
+  if tester_config.get('testing', False):
+    browser_name = 'reference'
+  elif tester_config['platform'] == 'android':
+    if tester_config.get('replace_system_webview', False):
+      browser_name = 'android-webview'
+    else:
+      browser_name = 'android-chromium'
+  elif (tester_config['platform'] == 'win'
+    and tester_config['target_bits'] == 64):
+    browser_name = 'release_x64'
+  else:
+    browser_name ='release'
+
+  test_args = [
+    '-v',
+    '--xvfb',
+    '--browser=%s' % browser_name
+  ]
+
+  # Appending testing=true if we only want to run a subset of benchmarks
+  # for quicker testing
+  if tester_config.get('testing', False):
+    test_args.append('--testing=true')
+
+  isolate_name = tester_config['isolate']
+  if browser_name == 'android-webview':
+    test_args.append(
+        '--webview-embedder-apk=../../out/Release/apks/SystemWebViewShell.apk')
+    isolate_name = 'telemetry_perf_webview_tests'
+
+  result = {
+    'args': test_args,
+    'isolate_name': isolate_name,
+    'name': isolate_name,
+    'override_compile_targets': [
+      isolate_name
+    ]
+  }
+  shards = add_common_test_properties(result, tester_config)
+  result['swarming'] = {
+    # Always say this is true regardless of whether the tester
+    # supports swarming. It doesn't hurt.
+    'can_use_on_swarming_builders': True,
+    'expiration': 10 * 60 * 60, # 10 hour timeout
+    'hard_timeout': 10 * 60 * 60, # 10 hours for full suite
+    'ignore_task_failure': False,
+    'io_timeout': 30 * 60, # 30 minutes
+    'dimension_sets': [
+      tester_config['dimension']
+    ],
+    'upload_test_results': True,
+    'shards': shards,
+  }
+  return result
+
+
+def load_and_update_new_recipe_json():
+  tests = {}
+  filename = 'chromium.perf.fyi.json'
+  buildbot_dir = os.path.join(
+      path_util.GetChromiumSrcDir(), 'testing', 'buildbot')
+  fyi_filepath = os.path.join(buildbot_dir, filename)
+  with open(fyi_filepath) as fp_r:
+    tests = json.load(fp_r)
+  with open(fyi_filepath, 'w') as fp:
+    # We have loaded what is there, we want to update or add
+    # what we have listed here
+    testers = NEW_PERF_RECIPE_FYI_TESTERS
+    for tester, tester_config in testers['testers'].iteritems():
+      isolated_scripts = [generate_performance_test_suite(tester_config)]
+      tests[tester] = {
+        'isolated_scripts': sorted(isolated_scripts, key=lambda x: x['name'])
+      }
+    json.dump(tests, fp, indent=2, separators=(',', ': '), sort_keys=True)
+    fp.write('\n')
+
+
 def main(args):
   parser = argparse.ArgumentParser(
       description=('Generate perf test\' json config and benchmark.csv. '
@@ -1079,6 +1232,7 @@ def main(args):
              'configs and benchmark.csv.') % sys.argv[0]
       return 1
   else:
+    load_and_update_new_recipe_json()
     update_all_tests(get_waterfall_config(), waterfall_file)
     update_benchmark_csv(benchmark_file)
   return 0

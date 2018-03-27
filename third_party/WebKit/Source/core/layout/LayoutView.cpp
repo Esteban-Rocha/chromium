@@ -22,6 +22,7 @@
 #include "core/layout/LayoutView.h"
 
 #include <inttypes.h>
+
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/editing/FrameSelection.h"
@@ -34,7 +35,6 @@
 #include "core/layout/LayoutCounter.h"
 #include "core/layout/LayoutEmbeddedContent.h"
 #include "core/layout/LayoutGeometryMap.h"
-#include "core/layout/LayoutView.h"
 #include "core/layout/ViewFragmentationContext.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/page/ChromeClient.h"
@@ -50,7 +50,6 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
@@ -217,6 +216,10 @@ bool LayoutView::CanHaveChildren() const {
     return true;
   if (!RuntimeEnabledFeatures::DisplayNoneIFrameCreatesNoLayoutObjectEnabled())
     return true;
+  // Although it is not spec compliant, many websites intentionally call
+  // Window.print() on display:none iframes. https://crbug.com/819327.
+  if (GetDocument().Printing())
+    return true;
   // A PluginDocument needs a layout tree during loading, even if it is inside a
   // display: none iframe.  This is because WebLocalFrameImpl::DidFinish expects
   // the PluginDocument's <embed> element to have an EmbeddedContentView, which
@@ -305,7 +308,7 @@ void LayoutView::UpdateLayout() {
         LogicalWidth();
     if (!fragmentation_context_) {
       fragmentation_context_ =
-          WTF::WrapUnique(new ViewFragmentationContext(*this));
+          std::make_unique<ViewFragmentationContext>(*this);
       pagination_state_changed_ = true;
     }
   } else if (fragmentation_context_) {
@@ -489,6 +492,10 @@ bool LayoutView::MapToVisualRectInAncestorSpace(
     LayoutRect& rect,
     MapCoordinatesFlags mode,
     VisualRectFlags visual_rect_flags) const {
+  if (MapToVisualRectInAncestorSpaceInternalFastPath(ancestor, rect,
+                                                     visual_rect_flags))
+    return !rect.IsEmpty();
+
   TransformState transform_state(TransformState::kApplyTransformDirection,
                                  FloatQuad(FloatRect(rect)));
   bool retval = MapToVisualRectInAncestorSpaceInternal(
@@ -839,7 +846,7 @@ bool LayoutView::UsesCompositing() const {
 
 PaintLayerCompositor* LayoutView::Compositor() {
   if (!compositor_)
-    compositor_ = WTF::WrapUnique(new PaintLayerCompositor(*this));
+    compositor_ = std::make_unique<PaintLayerCompositor>(*this);
 
   return compositor_.get();
 }
@@ -913,6 +920,12 @@ LayoutRect LayoutView::DebugRect() const {
   rect.SetHeight(LayoutUnit(ViewHeight(kIncludeScrollbars)));
 
   return rect;
+}
+
+IntSize LayoutView::ScrolledContentOffset() const {
+  DCHECK(HasOverflowClip());
+  // FIXME: Return DoubleSize here. crbug.com/414283.
+  return GetScrollableArea()->ScrollOffsetInt();
 }
 
 bool LayoutView::UpdateLogicalWidthAndColumnWidth() {

@@ -53,15 +53,10 @@ FrameSinkManagerImpl::~FrameSinkManagerImpl() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   video_capturers_.clear();
 
-  // Delete any remaining owned CompositorFrameSinks.
-  sink_map_.clear();
-
-  // All BeginFrameSources should be deleted before FrameSinkManagerImpl
-  // destruction.
+  // All mojom::CompositorFrameSinks and BeginFrameSources should be deleted by
+  // this point.
+  DCHECK(sink_map_.empty());
   DCHECK(registered_sources_.empty());
-
-  // TODO(kylechar): Enforce that all CompositorFrameSinks are destroyed before
-  // ~FrameSinkManagerImpl() runs.
 
   surface_manager_.RemoveObserver(this);
   surface_manager_.RemoveObserver(&hit_test_manager_);
@@ -92,11 +87,18 @@ void FrameSinkManagerImpl::RegisterFrameSinkId(
   surface_manager_.RegisterFrameSinkId(frame_sink_id);
   if (video_detector_)
     video_detector_->OnFrameSinkIdRegistered(frame_sink_id);
+
+  for (auto& observer : observer_list_)
+    observer.OnRegisteredFrameSinkId(frame_sink_id);
 }
 
 void FrameSinkManagerImpl::InvalidateFrameSinkId(
     const FrameSinkId& frame_sink_id) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+
+  for (auto& observer : observer_list_)
+    observer.OnInvalidatedFrameSinkId(frame_sink_id);
+
   surface_manager_.InvalidateFrameSinkId(frame_sink_id);
   if (video_detector_)
     video_detector_->OnFrameSinkIdInvalidated(frame_sink_id);
@@ -204,6 +206,11 @@ void FrameSinkManagerImpl::RegisterFrameSinkHierarchy(
 
   DCHECK_EQ(registered_sources_.count(parent_source), 1u);
   RecursivelyAttachBeginFrameSource(child_frame_sink_id, parent_source);
+
+  for (auto& observer : observer_list_) {
+    observer.OnRegisteredFrameSinkHierarchy(parent_frame_sink_id,
+                                            child_frame_sink_id);
+  }
 }
 
 void FrameSinkManagerImpl::UnregisterFrameSinkHierarchy(
@@ -214,6 +221,12 @@ void FrameSinkManagerImpl::UnregisterFrameSinkHierarchy(
   // in time. This makes it possible to invalidate parent and child FrameSinkIds
   // independently of each other and not have an ordering dependency of
   // unregistering the hierarchy first before either of them.
+
+  for (auto& observer : observer_list_) {
+    observer.OnUnregisteredFrameSinkHierarchy(parent_frame_sink_id,
+                                              child_frame_sink_id);
+  }
+
   auto iter = frame_sink_source_map_.find(parent_frame_sink_id);
   DCHECK(iter != frame_sink_source_map_.end());
 
@@ -376,11 +389,17 @@ void FrameSinkManagerImpl::RegisterCompositorFrameSinkSupport(
   auto it = frame_sink_source_map_.find(frame_sink_id);
   if (it != frame_sink_source_map_.end() && it->second.source)
     support->SetBeginFrameSource(it->second.source);
+
+  for (auto& observer : observer_list_)
+    observer.OnCreatedCompositorFrameSink(frame_sink_id, support->is_root());
 }
 
 void FrameSinkManagerImpl::UnregisterCompositorFrameSinkSupport(
     const FrameSinkId& frame_sink_id) {
   DCHECK(base::ContainsKey(support_map_, frame_sink_id));
+
+  for (auto& observer : observer_list_)
+    observer.OnDestroyedCompositorFrameSink(frame_sink_id);
 
   for (auto& capturer : video_capturers_) {
     if (capturer->requested_target() == frame_sink_id)
@@ -531,6 +550,14 @@ VideoDetector* FrameSinkManagerImpl::CreateVideoDetectorForTesting(
   video_detector_ = std::make_unique<VideoDetector>(
       surface_manager(), std::move(tick_clock), task_runner);
   return video_detector_.get();
+}
+
+void FrameSinkManagerImpl::AddObserver(FrameSinkObserver* obs) {
+  observer_list_.AddObserver(obs);
+}
+
+void FrameSinkManagerImpl::RemoveObserver(FrameSinkObserver* obs) {
+  observer_list_.RemoveObserver(obs);
 }
 
 }  // namespace viz

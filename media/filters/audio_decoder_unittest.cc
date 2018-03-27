@@ -30,7 +30,7 @@
 #include "media/filters/audio_file_reader.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "media/filters/in_memory_url_protocol.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_ANDROID)
@@ -157,7 +157,8 @@ class AudioDecoderTest
         return false;
       }
       if (params_.codec == kCodecOpus &&
-          base::android::BuildInfo::GetInstance()->sdk_int() < 21) {
+          base::android::BuildInfo::GetInstance()->sdk_int() <
+              base::android::SDK_VERSION_LOLLIPOP) {
         VLOG(0) << "Could not run test - Opus is not supported";
         return false;
       }
@@ -243,7 +244,8 @@ class AudioDecoderTest
                                    bool success) {
     decoder_->Initialize(
         config, nullptr, NewExpectedBoolCB(success),
-        base::Bind(&AudioDecoderTest::OnDecoderOutput, base::Unretained(this)));
+        base::Bind(&AudioDecoderTest::OnDecoderOutput, base::Unretained(this)),
+        AudioDecoder::WaitingForDecryptionKeyCB());
     base::RunLoop().RunUntilIdle();
   }
 
@@ -331,7 +333,8 @@ class AudioDecoderTest
   // for AAC before Android L. Skip the timestamp check in this situation.
   bool SkipBufferTimestampCheck() const {
 #if defined(OS_ANDROID)
-    return (base::android::BuildInfo::GetInstance()->sdk_int() < 21) &&
+    return (base::android::BuildInfo::GetInstance()->sdk_int() <
+            base::android::SDK_VERSION_LOLLIPOP) &&
            decoder_type_ == MEDIA_CODEC && params_.codec == kCodecAAC;
 #else
     return false;
@@ -451,13 +454,6 @@ const DecodedBufferExpectations kSfxMp3Expectations[] = {
     {27188, 26122, "4.24,3.95,4.22,4.78,5.13,4.93,"},
 };
 
-// File has trailing garbage, but should still decode without error.
-const DecodedBufferExpectations kTrailingGarbageMp3Expectations[] = {
-    {0, 26122, "-0.57,-0.77,-0.39,0.27,0.74,0.65,"},
-    {26122, 26122, "-0.57,-0.77,-0.39,0.27,0.74,0.65,"},
-    {52244, 26122, "-0.57,-0.77,-0.39,0.27,0.74,0.65,"},
-};
-
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
 const DecodedBufferExpectations kSfxAdtsExpectations[] = {
     {0, 23219, "-1.90,-1.53,-0.15,1.28,1.23,-0.33,"},
@@ -512,8 +508,6 @@ const DecodedBufferExpectations kSfxOpusExpectations[] = {
 
 const TestParams kFFmpegTestParams[] = {
     {kCodecMP3, "sfx.mp3", kSfxMp3Expectations, 0, 44100, CHANNEL_LAYOUT_MONO},
-    {kCodecMP3, "trailing-garbage.mp3", kTrailingGarbageMp3Expectations, 0,
-     44100, CHANNEL_LAYOUT_MONO},
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
     {kCodecAAC, "sfx.adts", kSfxAdtsExpectations, 0, 44100,
      CHANNEL_LAYOUT_MONO},

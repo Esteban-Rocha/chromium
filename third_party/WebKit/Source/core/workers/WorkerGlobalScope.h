@@ -36,6 +36,7 @@
 #include "core/frame/DOMWindowBase64.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
+#include "core/workers/WorkerOrWorkletModuleFetchCoordinatorProxy.h"
 #include "core/workers/WorkerSettings.h"
 #include "platform/heap/Handle.h"
 #include "platform/loader/fetch/CachedMetadataHandler.h"
@@ -125,6 +126,9 @@ class CORE_EXPORT WorkerGlobalScope
   // EventTarget
   ExecutionContext* GetExecutionContext() const final;
 
+  WorkerOrWorkletModuleFetchCoordinatorProxy* ModuleFetchCoordinatorProxy()
+      const;
+
   // Evaluates the given top-level classic script.
   virtual void EvaluateClassicScript(
       const KURL& script_url,
@@ -169,17 +173,18 @@ class CORE_EXPORT WorkerGlobalScope
   // received. If the script load could not be handled by the
   // InstalledScriptsManager, e.g. when the script was not an installed script,
   // returns LoadResult::kNotHandled.
-  // TODO(crbug.com/753350): Factor out LoadingScriptFrom* into a new class
-  // which provides the worker's scripts.
-  LoadResult LoadingScriptFromInstalledScriptsManager(
+  // TODO(crbug.com/753350): Factor out LoadScriptFrom* into a new class which
+  // provides the worker's scripts.
+  LoadResult LoadScriptFromInstalledScriptsManager(
       const KURL& script_url,
       KURL* out_response_url,
       String* out_source_code,
       std::unique_ptr<Vector<char>>* out_cached_meta_data);
-  // Tries to load the script synchronously from the WorkerScriptLoader, which
-  // requests the script from the browser. This
-  // blocks until the script is received.
-  LoadResult LoadingScriptFromWorkerScriptLoader(
+
+  // Tries to load the script synchronously from the WorkerClassicScriptLoader,
+  // which requests the script from the browser. This blocks until the script is
+  // received.
+  LoadResult LoadScriptFromClassicScriptLoader(
       const KURL& script_url,
       KURL* out_response_url,
       String* out_source_code,
@@ -193,6 +198,7 @@ class CORE_EXPORT WorkerGlobalScope
   const base::UnguessableToken parent_devtools_token_;
   const V8CacheOptions v8_cache_options_;
   std::unique_ptr<WorkerSettings> worker_settings_;
+  Member<WorkerOrWorkletModuleFetchCoordinatorProxy> fetch_coordinator_proxy_;
 
   mutable Member<WorkerLocation> location_;
   mutable TraceWrapperMember<WorkerNavigator> navigator_;

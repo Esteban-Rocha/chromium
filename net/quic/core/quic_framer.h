@@ -552,9 +552,41 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   bool ProcessIetfAckFrame(QuicDataReader* reader,
                            uint8_t frame_type,
                            QuicAckFrame* ack_frame);
-  // Append an IETf-format Ack frame to the packet
+  // Append an IETF-format Ack frame to the packet
   bool AppendIetfAckFrameAndTypeByte(const QuicAckFrame& frame,
                                      QuicDataWriter* writer);
+
+  // Add/remove IETF-Format padding.
+  bool AppendIetfPaddingFrame(const QuicPaddingFrame& frame,
+                              QuicDataWriter* writer);
+  void ProcessIetfPaddingFrame(QuicDataReader* reader, QuicPaddingFrame* frame);
+
+  // Quic IETF PATH Challenge/Response frames.
+  bool ProcessIetfPathChallengeFrame(QuicDataReader* reader,
+                                     QuicPathChallengeFrame* frame);
+  bool ProcessIetfPathResponseFrame(QuicDataReader* reader,
+                                    QuicPathResponseFrame* frame);
+
+  bool AppendIetfPathChallengeFrameAndTypeByte(
+      const QuicPathChallengeFrame& frame,
+      QuicDataWriter* writer);
+  bool AppendIetfPathResponseFrameAndTypeByte(
+      const QuicPathResponseFrame& frame,
+      QuicDataWriter* writer);
+
+  // Add/process the IETF-format Stream Reset frame.
+  bool AppendIetfResetStreamFrame(const QuicRstStreamFrame& frame,
+                                  QuicDataWriter* writer);
+  bool ProcessIetfResetStreamFrame(QuicDataReader* reader,
+                                   QuicRstStreamFrame* frame);
+
+  // IETF Stop Sending frames.
+  bool ProcessIetfStopSendingFrame(QuicDataReader* reader,
+                                   QuicStopSendingFrame* stop_sending_frame);
+  // Append an IETf-format Ack frame to the packet
+  bool AppendIetfStopSendingFrameAndTypeByte(
+      const QuicStopSendingFrame& stop_sending_frame,
+      QuicDataWriter* writer);
 
   bool RaiseError(QuicErrorCode error);
 

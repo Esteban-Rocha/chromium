@@ -737,8 +737,14 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
 
   [self openUrls:urls];
 
+  // In test environments where there is no network connection, the visible NTP
+  // URL may be chrome-search://local-ntp/local-ntp.html instead of
+  // chrome://newtab/. See local_ntp_test_utils::GetFinalNtpUrl for more
+  // details.
+  // This NTP check should be replaced once https://crbug.com/624410 is fixed.
   if (startupIndex != TabStripModel::kNoTab &&
-      startupContent->GetVisibleURL() == chrome::kChromeUINewTabURL) {
+      (startupContent->GetVisibleURL() == chrome::kChromeUINewTabURL ||
+       startupContent->GetVisibleURL() == chrome::kChromeSearchLocalNtpUrl)) {
     browser->tab_strip_model()->CloseWebContentsAt(startupIndex,
         TabStripModel::CLOSE_NONE);
   }
@@ -1038,10 +1044,14 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
   NSInteger tag = [sender tag];
 
   // If there are no browser windows, and we are trying to open a browser
-  // for a locked profile or the system profile, we have to show the User
-  // Manager instead as the locked profile needs authentication and the system
-  // profile cannot have a browser.
-  if (IsProfileSignedOut(lastProfile) || lastProfile->IsSystemProfile()) {
+  // for a locked profile or the system profile or the guest profile but
+  // guest mode is disabled, we have to show the User Manager instead as the
+  // locked profile needs authentication and the system profile cannot have a
+  // browser.
+  const PrefService* prefService = g_browser_process->local_state();
+  if (IsProfileSignedOut(lastProfile) || lastProfile->IsSystemProfile() ||
+      (lastProfile->IsGuestSession() && prefService &&
+       !prefService->GetBoolean(prefs::kBrowserGuestModeEnabled))) {
     UserManager::Show(base::FilePath(),
                       profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
     return;

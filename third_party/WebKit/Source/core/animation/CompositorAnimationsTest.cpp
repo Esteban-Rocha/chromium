@@ -30,7 +30,11 @@
 
 #include "core/animation/CompositorAnimations.h"
 
+#include <limits>
 #include <memory>
+#include <utility>
+
+#include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "core/animation/Animation.h"
 #include "core/animation/DocumentTimeline.h"
@@ -44,10 +48,11 @@
 #include "core/frame/FrameTestHelpers.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/LayoutTestHelper.h"
 #include "core/paint/ObjectPaintProperties.h"
+#include "core/paint/PaintLayer.h"
 #include "core/style/ComputedStyle.h"
 #include "core/style/FilterOperations.h"
+#include "core/testing/CoreUnitTestHelper.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/animation/CompositorAnimationHost.h"
 #include "platform/animation/CompositorFloatAnimationCurve.h"
@@ -56,13 +61,12 @@
 #include "platform/geometry/FloatBox.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/testing/HistogramTester.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "platform/transforms/TransformOperations.h"
 #include "platform/transforms/TranslateTransformOperation.h"
 #include "platform/wtf/HashFunctions.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/web/WebSettings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -221,7 +225,7 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
   std::unique_ptr<StringKeyframeVector> CreateCompositableFloatKeyframeVector(
       Vector<double>& values) {
     std::unique_ptr<StringKeyframeVector> frames =
-        WTF::WrapUnique(new StringKeyframeVector);
+        base::WrapUnique(new StringKeyframeVector);
     for (size_t i = 0; i < values.size(); i++) {
       double offset = 1.0 / (values.size() - 1) * i;
       String value = String::Number(values[i]);
@@ -234,7 +238,7 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
   std::unique_ptr<StringKeyframeVector>
   CreateCompositableTransformKeyframeVector(const Vector<String>& values) {
     std::unique_ptr<StringKeyframeVector> frames =
-        WTF::WrapUnique(new StringKeyframeVector);
+        base::WrapUnique(new StringKeyframeVector);
     for (size_t i = 0; i < values.size(); ++i) {
       double offset = 1.0f / (values.size() - 1) * i;
       frames->push_back(
@@ -1402,9 +1406,9 @@ TEST_F(AnimationCompositorAnimationsTest, canStartElementOnCompositorEffect) {
   EXPECT_EQ(host->GetCompositedAnimationsCountForTesting(), 1u);
 }
 
-// Regression test for crbug.com/781305. When we have a transform animation
-// on a SVG element, the effect can be started on compositor but the element
-// itself cannot. The animation should not be a main thread compositable
+// Regression test for https://crbug.com/781305. When we have a transform
+// animation on a SVG element, the effect can be started on compositor but the
+// element itself cannot. The animation should not be a main thread compositable
 // animation.
 TEST_F(AnimationCompositorAnimationsTest,
        cannotStartElementOnCompositorEffectSVG) {
@@ -1424,6 +1428,49 @@ TEST_F(AnimationCompositorAnimationsTest,
   EXPECT_EQ(host->GetCompositedAnimationsCountForTesting(), 0u);
 }
 
+// A helper function for the next two tests to avoid duplicate code
+void CanStartOpacityTestHelper(CompositorAnimations::FailureCode code,
+                               Document* document,
+                               size_t composited_animations_count) {
+  EXPECT_EQ(code, CompositorAnimations::FailureCode::None());
+  EXPECT_EQ(document->Timeline().PendingAnimationsCount(), 1u);
+  EXPECT_EQ(document->Timeline().MainThreadCompositableAnimationsCount(), 0u);
+  CompositorAnimationHost* host =
+      document->View()->GetCompositorAnimationHost();
+  EXPECT_EQ(host->GetMainThreadAnimationsCountForTesting(), 0u);
+  EXPECT_EQ(host->GetMainThreadCompositableAnimationsCountForTesting(), 0u);
+  EXPECT_EQ(host->GetCompositedAnimationsCountForTesting(),
+            composited_animations_count);
+}
+
+// Regression tests for https://crbug.com/818809. When an element has an
+// animation that will be composited regardless of an experiment (such as
+// will-change: transform), then an opacity animation on this element will be
+// composited as well.
+TEST_F(AnimationCompositorAnimationsTest,
+       canStartOpacityWithWillChangeWithRuntimeFeature) {
+  ScopedTurnOff2DAndOpacityCompositorAnimationsForTest
+      turn_off_2d_and_opacity_compositors_animation(true);
+  LoadTestData("opacity-with-will-change-transform.html");
+  Document* document = GetFrame()->GetDocument();
+  Element* target = document->getElementById("target");
+  CompositorAnimations::FailureCode code =
+      CompositorAnimations::CheckCanStartElementOnCompositor(*target);
+  CanStartOpacityTestHelper(code, document, 1u);
+}
+
+TEST_F(AnimationCompositorAnimationsTest,
+       canStartOpacityWith3DTransformWithRuntimeFeature) {
+  ScopedTurnOff2DAndOpacityCompositorAnimationsForTest
+      turn_off_2d_and_opacity_compositors_animation(true);
+  LoadTestData("opacity-with-3d-transform.html");
+  Document* document = GetFrame()->GetDocument();
+  Element* target = document->getElementById("target");
+  CompositorAnimations::FailureCode code =
+      CompositorAnimations::CheckCanStartElementOnCompositor(*target);
+  CanStartOpacityTestHelper(code, document, 2u);
+}
+
 TEST_F(AnimationCompositorAnimationsTest,
        cannotStartAnimationOnCompositorWithRuntimeFeature) {
   ScopedTurnOff2DAndOpacityCompositorAnimationsForTest
@@ -1434,16 +1481,15 @@ TEST_F(AnimationCompositorAnimationsTest,
   const ObjectPaintProperties* properties =
       target->GetLayoutObject()->FirstFragment().PaintProperties();
   EXPECT_TRUE(properties->Transform()->HasDirectCompositingReasons());
-  Timing timing;
-  KeyframeEffectModelBase* effect =
-      StringKeyframeEffectModel::Create(StringKeyframeVector());
-  CompositorAnimations::FailureCode code =
-      CompositorAnimations::CheckCanStartAnimationOnCompositor(
-          timing, *target, nullptr, *effect, 1.0);
-  EXPECT_EQ(
-      code,
-      CompositorAnimations::FailureCode::AcceleratableAnimNotAccelerated(
-          "Acceleratable animation not accelerated due to an experiment"));
+  LayoutObject* layout_object = target->GetLayoutObject();
+  DCHECK(layout_object && layout_object->PaintingLayer());
+  // LoadTestData calls ForceFullCompositingUpdate, which have called
+  // CheckCanStartAnimationOnCompositor on the target element. In this test,
+  // there is one single transform animation, and it should not be composited
+  // because the runtime flag is on.
+  CompositingReasons compositing_reasons =
+      layout_object->PaintingLayer()->GetCompositingReasons();
+  EXPECT_EQ(compositing_reasons, CompositingReason::kNone);
   EXPECT_EQ(document->Timeline().PendingAnimationsCount(), 1u);
   EXPECT_EQ(document->Timeline().MainThreadCompositableAnimationsCount(), 1u);
   CompositorAnimationHost* host =

@@ -27,19 +27,19 @@
 #define ComputedStyle_h
 
 #include <memory>
-#include "core/CSSPropertyNames.h"
-#include "core/ComputedStyleBase.h"
 #include "core/CoreExport.h"
+#include "core/computed_style_base.h"
 #include "core/css/StyleAutoColor.h"
 #include "core/css/StyleColor.h"
-#include "core/css/properties/CSSProperty.h"
+#include "core/css/properties/css_property.h"
+#include "core/css_property_names.h"
 #include "core/style/BorderValue.h"
 #include "core/style/ComputedStyleConstants.h"
-#include "core/style/ComputedStyleInitialValues.h"
 #include "core/style/CursorList.h"
 #include "core/style/DataRef.h"
 #include "core/style/SVGComputedStyle.h"
 #include "core/style/TransformOrigin.h"
+#include "core/style/computed_style_initial_values.h"
 #include "platform/Length.h"
 #include "platform/LengthBox.h"
 #include "platform/LengthPoint.h"
@@ -553,6 +553,9 @@ class ComputedStyle : public ComputedStyleBase,
   ContentData* GetContentData() const { return ContentInternal().Get(); }
   void SetContent(ContentData*);
 
+  // -webkit-line-clamp
+  bool HasLineClamp() const { return LineClamp() > 0; }
+
   // -webkit-box-ordinal-group
   void SetBoxOrdinalGroup(unsigned og) {
     SetBoxOrdinalGroupInternal(
@@ -977,12 +980,6 @@ class ComputedStyle : public ComputedStyleBase,
   float FillOpacity() const { return SvgStyle().FillOpacity(); }
   void SetFillOpacity(float f) { AccessSVGStyle().SetFillOpacity(f); }
 
-  // Fill utiltiy functions.
-  const SVGPaintType& FillPaintType() const {
-    return SvgStyle().FillPaintType();
-  }
-  Color FillPaintColor() const { return SvgStyle().FillPaintColor(); }
-
   // stop-color
   void SetStopColor(const Color& c) { AccessSVGStyle().SetStopColor(c); }
 
@@ -1001,12 +998,6 @@ class ComputedStyle : public ComputedStyleBase,
   // stop-opacity
   float StopOpacity() const { return SvgStyle().StopOpacity(); }
   void SetStopOpacity(float f) { AccessSVGStyle().SetStopOpacity(f); }
-
-  // stroke
-  const SVGPaintType& StrokePaintType() const {
-    return SvgStyle().StrokePaintType();
-  }
-  Color StrokePaintColor() const { return SvgStyle().StrokePaintColor(); }
 
   // stroke-dasharray
   SVGDashArray* StrokeDashArray() const { return SvgStyle().StrokeDashArray(); }
@@ -2069,7 +2060,8 @@ class ComputedStyle : public ComputedStyleBase,
   // There are also other elements treated as stacking context during painting,
   // but not managed in stacks. See ObjectPainter::PaintAllPhasesAtomically().)
   CORE_EXPORT void UpdateIsStackingContext(bool is_document_element,
-                                           bool is_in_top_layer);
+                                           bool is_in_top_layer,
+                                           bool is_svg_stacking);
   bool IsStacked() const {
     return IsStackingContext() || GetPosition() != EPosition::kStatic;
   }

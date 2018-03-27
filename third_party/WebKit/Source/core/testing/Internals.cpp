@@ -36,12 +36,11 @@
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/V8IteratorResultValue.h"
-#include "core/CSSPropertyNames.h"
-#include "core/StylePropertyShorthand.h"
 #include "core/animation/DocumentTimeline.h"
 #include "core/css/SelectRuleFeatureSet.h"
 #include "core/css/StyleEngine.h"
-#include "core/css/properties/CSSUnresolvedProperty.h"
+#include "core/css/properties/css_unresolved_property.h"
+#include "core/css_property_names.h"
 #include "core/dom/DOMNodeIds.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
@@ -120,6 +119,7 @@
 #include "core/paint/compositing/CompositedLayerMapping.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "core/probe/CoreProbes.h"
+#include "core/style_property_shorthand.h"
 #include "core/svg/SVGImageElement.h"
 #include "core/svg_names.h"
 #include "core/testing/CallbackFunctionTest.h"
@@ -160,7 +160,6 @@
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/wtf/Optional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Time.h"
 #include "platform/wtf/dtoa.h"
 #include "platform/wtf/text/StringBuffer.h"
@@ -1449,7 +1448,8 @@ DOMPoint* Internals::touchPositionAdjustedToBestClickableNode(
       hit_test_point,
       HitTestRequest::kReadOnly | HitTestRequest::kActive |
           HitTestRequest::kListBased,
-      LayoutSize(radius));
+      LayoutRectOutsets(radius.Height(), radius.Width(), radius.Height(),
+                        radius.Width()));
 
   Node* target_node = nullptr;
   IntPoint adjusted_point;
@@ -1488,7 +1488,8 @@ Node* Internals::touchNodeAdjustedToBestClickableNode(
       hit_test_point,
       HitTestRequest::kReadOnly | HitTestRequest::kActive |
           HitTestRequest::kListBased,
-      LayoutSize(radius));
+      LayoutRectOutsets(radius.Height(), radius.Width(), radius.Height(),
+                        radius.Width()));
 
   Node* target_node = nullptr;
   IntPoint adjusted_point;
@@ -1523,7 +1524,8 @@ DOMPoint* Internals::touchPositionAdjustedToBestContextMenuNode(
       hit_test_point,
       HitTestRequest::kReadOnly | HitTestRequest::kActive |
           HitTestRequest::kListBased,
-      LayoutSize(radius));
+      LayoutRectOutsets(radius.Height(), radius.Width(), radius.Height(),
+                        radius.Width()));
 
   Node* target_node = nullptr;
   IntPoint adjusted_point;
@@ -1562,7 +1564,8 @@ Node* Internals::touchNodeAdjustedToBestContextMenuNode(
       hit_test_point,
       HitTestRequest::kReadOnly | HitTestRequest::kActive |
           HitTestRequest::kListBased,
-      LayoutSize(radius));
+      LayoutRectOutsets(radius.Height(), radius.Width(), radius.Height(),
+                        radius.Width()));
 
   Node* target_node = nullptr;
   IntPoint adjusted_point;
@@ -2039,15 +2042,15 @@ StaticNodeList* Internals::nodesFromRect(
 
   // When ignoreClipping is false, this method returns null for coordinates
   // outside of the viewport.
+  LayoutRectOutsets padding(top_padding, right_padding, bottom_padding,
+                            left_padding);
+  LayoutRect rect = HitTestLocation::RectForPoint(point, padding);
   if (!request.IgnoreClipping() &&
-      !frame_view->VisibleContentRect().Intersects(
-          HitTestLocation::RectForPoint(point, top_padding, right_padding,
-                                        bottom_padding, left_padding)))
+      !frame_view->VisibleContentRect().Intersects(EnclosingIntRect(rect)))
     return nullptr;
 
   HeapVector<Member<Node>> matches;
-  HitTestResult result(request, point, top_padding, right_padding,
-                       bottom_padding, left_padding);
+  HitTestResult result(request, point, padding);
   layout_view->HitTest(result);
   CopyToVector(result.ListBasedTestResult(), matches);
 
@@ -3432,7 +3435,7 @@ void Internals::setCapsLockState(bool enabled) {
 bool Internals::setScrollbarVisibilityInScrollableArea(Node* node,
                                                        bool visible) {
   if (ScrollableArea* scrollable_area = ScrollableAreaForNode(node)) {
-    scrollable_area->SetScrollbarsHidden(!visible);
+    scrollable_area->SetScrollbarsHiddenIfOverlay(!visible);
     scrollable_area->GetScrollAnimator().SetScrollbarsVisibleForTesting(
         visible);
     return scrollable_area->GetPageScrollbarTheme().UsesOverlayScrollbars();

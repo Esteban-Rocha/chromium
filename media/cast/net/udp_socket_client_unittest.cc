@@ -126,6 +126,7 @@ class MockNetworkContext final : public network::mojom::NetworkContext {
   void SetNetworkConditions(
       const std::string& profile_id,
       network::mojom::NetworkConditionsPtr conditions) override {}
+  void SetAcceptLanguage(const std::string& new_accept_language) override {}
   void AddHSTSForTesting(const std::string& host,
                          base::Time expiry,
                          bool include_subdomains,
@@ -138,8 +139,25 @@ class MockNetworkContext final : public network::mojom::NetworkContext {
                                                   std::move(receiver));
     OnUDPSocketCreated();
   }
+  void CreateTCPServerSocket(
+      const net::IPEndPoint& local_addr,
+      uint32_t backlog,
+      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
+      network::mojom::TCPServerSocketRequest request,
+      CreateTCPServerSocketCallback callback) override {}
+  void CreateTCPConnectedSocket(
+      const base::Optional<net::IPEndPoint>& local_addr,
+      const net::AddressList& remote_addr_list,
+      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
+      network::mojom::TCPConnectedSocketRequest request,
+      network::mojom::TCPConnectedSocketObserverPtr observer,
+      CreateTCPConnectedSocketCallback callback) override {}
 
-  MockUdpSocket* udp_socket() const { return udp_socket_.get(); };
+  MockUdpSocket* udp_socket() const { return udp_socket_.get(); }
+  void CreateWebSocket(network::mojom::WebSocketRequest request,
+                       int process_id,
+                       int render_frame_id,
+                       const url::Origin& origin) override {}
 
  private:
   mojo::Binding<network::mojom::NetworkContext> binding_;

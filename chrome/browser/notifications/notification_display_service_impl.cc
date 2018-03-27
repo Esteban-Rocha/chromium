@@ -20,7 +20,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_features.h"
 #include "content/public/browser/browser_thread.h"
-#include "ui/base/ui_features.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/message_center/public/cpp/notification.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -70,6 +70,11 @@ NotificationPlatformBridge* GetNativeNotificationPlatformBridge() {
 #elif defined(OS_WIN)
   if (NotificationPlatformBridgeWin::NativeNotificationEnabled())
     return g_browser_process->notification_platform_bridge();
+#elif defined(OS_CHROMEOS)
+  if (base::FeatureList::IsEnabled(features::kNativeNotifications) ||
+      base::FeatureList::IsEnabled(features::kMash)) {
+    return g_browser_process->notification_platform_bridge();
+  }
 #else
   if (base::FeatureList::IsEnabled(features::kNativeNotifications) &&
       g_browser_process->notification_platform_bridge()) {
@@ -251,7 +256,7 @@ void NotificationDisplayServiceImpl::Close(
 }
 
 void NotificationDisplayServiceImpl::GetDisplayed(
-    const DisplayedNotificationsCallback& callback) {
+    DisplayedNotificationsCallback callback) {
   if (!bridge_initialized_) {
     actions_.push(base::BindOnce(&NotificationDisplayServiceImpl::GetDisplayed,
                                  weak_factory_.GetWeakPtr(), callback));
@@ -259,7 +264,7 @@ void NotificationDisplayServiceImpl::GetDisplayed(
   }
 
   bridge_->GetDisplayed(GetProfileId(profile_), profile_->IsOffTheRecord(),
-                        callback);
+                        std::move(callback));
 }
 
 // Callback to run once the profile has been loaded in order to perform a
@@ -289,6 +294,7 @@ void NotificationDisplayServiceImpl::ProfileLoadedCallback(
 
 void NotificationDisplayServiceImpl::OnNotificationPlatformBridgeReady(
     bool success) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (base::FeatureList::IsEnabled(features::kNativeNotifications)) {
     UMA_HISTOGRAM_BOOLEAN("Notifications.UsingNativeNotificationCenter",
                           success);

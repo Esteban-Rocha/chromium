@@ -220,14 +220,12 @@ FloatRect UnionRect(const Vector<FloatRect>& rects) {
 }
 
 IntRect EnclosedIntRect(const FloatRect& rect) {
-  // Compute the enclosed rect using float types directly rather than
-  // FlooredIntPoint(...) etc. to avoid triggering integer overflows.
-  FloatPoint location(ceilf(rect.X()), ceilf(rect.Y()));
-  FloatPoint max_point(floorf(rect.MaxX()), floorf(rect.MaxY()));
-  FloatSize size = max_point - location;
+  IntPoint location = CeiledIntPoint(rect.Location());
+  IntPoint max_point = FlooredIntPoint(rect.MaxXMaxYCorner());
+  IntSize size(ClampSub(max_point.X(), location.X()),
+               ClampSub(max_point.Y(), location.Y()));
   size.ClampNegativeToZero();
-  FloatRect enclosed_rect(location, size);
-  return IntRect(enclosed_rect);
+  return IntRect(location, size);
 }
 
 IntRect RoundedIntRect(const FloatRect& rect) {

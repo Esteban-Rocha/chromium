@@ -4,34 +4,31 @@
 
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_view_controller.h"
 
-#import "base/logging.h"
-#import "ios/chrome/browser/ui/tab_grid/grid_commands.h"
-#import "ios/chrome/browser/ui/tab_grid/grid_consumer.h"
-#import "ios/chrome/browser/ui/tab_grid/grid_image_data_source.h"
-#import "ios/chrome/browser/ui/tab_grid/grid_view_controller.h"
+#include "base/strings/sys_string_conversions.h"
+#import "ios/chrome/browser/ui/tab_grid/grid/grid_commands.h"
+#import "ios/chrome/browser/ui/tab_grid/grid/grid_consumer.h"
+#import "ios/chrome/browser/ui/tab_grid/grid/grid_image_data_source.h"
+#import "ios/chrome/browser/ui/tab_grid/grid/grid_view_controller.h"
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_bottom_toolbar.h"
+#import "ios/chrome/browser/ui/tab_grid/tab_grid_constants.h"
+#import "ios/chrome/browser/ui/tab_grid/tab_grid_empty_state_view.h"
+#import "ios/chrome/browser/ui/tab_grid/tab_grid_new_tab_button.h"
+#import "ios/chrome/browser/ui/tab_grid/tab_grid_page_control.h"
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_top_toolbar.h"
+#import "ios/chrome/browser/ui/uikit_ui_util.h"
+#include "ios/chrome/grit/ios_strings.h"
+#include "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
 
-// The accessibility label for the done button for use in test automation.
-NSString* const kTabGridDoneButtonAccessibilityID =
-    @"TabGridDoneButtonAccessibilityID";
-
 namespace {
-// Temporary alert used while building this feature.
-UIAlertController* NotImplementedAlert() {
-  UIAlertController* alert =
-      [UIAlertController alertControllerWithTitle:@"Not implemented"
-                                          message:nil
-                                   preferredStyle:UIAlertControllerStyleAlert];
-  [alert addAction:[UIAlertAction actionWithTitle:@"OK"
-                                            style:UIAlertActionStyleCancel
-                                          handler:nil]];
-  return alert;
-}
+// Types of configurations of this view controller.
+typedef NS_ENUM(NSUInteger, TabGridConfiguration) {
+  TabGridConfigurationBottomToolbar = 1,
+  TabGridConfigurationFloatingButton,
+};
 }  // namespace
 
 @interface TabGridViewController ()<GridViewControllerDelegate,
@@ -47,7 +44,16 @@ UIAlertController* NotImplementedAlert() {
 @property(nonatomic, weak) TabGridBottomToolbar* bottomToolbar;
 @property(nonatomic, weak) UIButton* closeAllButton;
 @property(nonatomic, weak) UIButton* doneButton;
-@property(nonatomic, weak) UIButton* floatingButton;
+// Clang does not allow property getters to start with the reserved word "new",
+// but provides a workaround. The getter must be set before the property is
+// declared.
+- (TabGridNewTabButton*)newTabButton __attribute__((objc_method_family(none)));
+@property(nonatomic, weak) TabGridNewTabButton* newTabButton;
+@property(nonatomic, weak) TabGridNewTabButton* floatingButton;
+@property(nonatomic, assign) TabGridConfiguration configuration;
+// The page that was shown when entering the tab grid from the tab view.
+// This is used to decide whether the Done button is enabled.
+@property(nonatomic, assign) TabGridPage originalPage;
 @end
 
 @implementation TabGridViewController
@@ -69,7 +75,10 @@ UIAlertController* NotImplementedAlert() {
 @synthesize bottomToolbar = _bottomToolbar;
 @synthesize closeAllButton = _closeAllButton;
 @synthesize doneButton = _doneButton;
+@synthesize newTabButton = _newTabButton;
 @synthesize floatingButton = _floatingButton;
+@synthesize configuration = _configuration;
+@synthesize originalPage = _originalPage;
 
 - (instancetype)init {
   if (self = [super init]) {
@@ -89,20 +98,28 @@ UIAlertController* NotImplementedAlert() {
   [self setupRegularTabsViewController];
   [self setupRemoteTabsViewController];
   [self setupTopToolbar];
-  [self setupTopToolbarButtons];
   [self setupBottomToolbar];
-  [self setupBottomToolbarButtons];
+  [self setupFloatingButton];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
   // Call the current page setter to sync the scroll view offset to the current
   // page value.
   self.currentPage = _currentPage;
-  [self updateDoneAndCloseAllButtons];
+  self.originalPage = _currentPage;
+  [self.topToolbar.pageControl setSelectedPage:self.currentPage animated:YES];
+  [self configureViewControllerForCurrentSizeClassesAndPage];
   if (animated && self.transitionCoordinator) {
     [self animateToolbarsForAppearance];
   }
   [super viewWillAppear:animated];
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+  if (animated && self.transitionCoordinator) {
+    [self animateToolbarsForDisappearance];
+  }
+  [super viewWillDisappear:animated];
 }
 
 - (void)viewWillLayoutSubviews {
@@ -126,40 +143,97 @@ UIAlertController* NotImplementedAlert() {
   self.regularTabsViewController.gridView.contentInset = contentInset;
 }
 
+- (void)viewWillTransitionToSize:(CGSize)size
+       withTransitionCoordinator:
+           (id<UIViewControllerTransitionCoordinator>)coordinator {
+  [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+  auto animate = ^(id<UIViewControllerTransitionCoordinatorContext> context) {
+    // Call the current page setter to sync the scroll view offset to the
+    // current page value.
+    self.currentPage = _currentPage;
+    [self configureViewControllerForCurrentSizeClassesAndPage];
+  };
+  [coordinator animateAlongsideTransition:animate completion:nil];
+}
+
 - (UIStatusBarStyle)preferredStatusBarStyle {
   return UIStatusBarStyleLightContent;
 }
 
 #pragma mark - UIScrollViewDelegate
 
-- (void)scrollViewDidEndDecelerating:(UIScrollView*)scrollView {
+- (void)scrollViewDidScroll:(UIScrollView*)scrollView {
+  if (scrollView.dragging || scrollView.decelerating) {
+    // Only when user initiates scroll through dragging.
+    CGFloat offsetWidth =
+        self.scrollView.contentSize.width - self.scrollView.frame.size.width;
+    CGFloat offset = scrollView.contentOffset.x / offsetWidth;
+    self.topToolbar.pageControl.sliderPosition = offset;
+  }
+
   // Bookkeeping for the current page.
+  // TODO(crbug.com/822328) : Fix for RTL.
   CGFloat pageWidth = scrollView.frame.size.width;
   float fractionalPage = scrollView.contentOffset.x / pageWidth;
   NSUInteger page = lround(fractionalPage);
-  _currentPage = static_cast<TabGridPage>(page);
-  [self updateDoneAndCloseAllButtons];
+  if (page != self.currentPage) {
+    _currentPage = static_cast<TabGridPage>(page);
+    [self configureButtonsForOriginalAndCurrentPage];
+  }
 }
 
 #pragma mark - UIScrollViewAccessibilityDelegate
 
 - (NSString*)accessibilityScrollStatusForScrollView:(UIScrollView*)scrollView {
-  // TODO(crbug.com/818699) : Localize strings.
   // This reads the new page whenever the user scrolls in VoiceOver.
+  int stringID;
   switch (self.currentPage) {
     case TabGridPageIncognitoTabs:
-      return @"Incognito Tabs page";
+      stringID = IDS_IOS_TAB_GRID_INCOGNITO_TABS_TITLE;
+      break;
     case TabGridPageRegularTabs:
-      return @"Regular Tabs page";
+      stringID = IDS_IOS_TAB_GRID_REGULAR_TABS_TITLE;
+      break;
     case TabGridPageRemoteTabs:
-      return @"Remote Tabs page";
+      stringID = IDS_IOS_TAB_GRID_REMOTE_TABS_TITLE;
+      break;
+  }
+  return l10n_util::GetNSString(stringID);
+}
+
+#pragma mark - GridTransitionStateProviding properties
+
+- (BOOL)isSelectedCellVisible {
+  switch (self.currentPage) {
+    case TabGridPageIncognitoTabs:
+      return self.incognitoTabsViewController.selectedCellVisible;
+    case TabGridPageRegularTabs:
+      return self.regularTabsViewController.selectedCellVisible;
+    case TabGridPageRemoteTabs:
+      return NO;
   }
 }
 
-#pragma mark - TabGridTransitionStateProvider properties
+- (GridTransitionLayout*)layoutForTransitionContext:
+    (id<UIViewControllerContextTransitioning>)context {
+  switch (self.currentPage) {
+    case TabGridPageIncognitoTabs:
+      return [self.incognitoTabsViewController transitionLayout];
+    case TabGridPageRegularTabs:
+      return [self.regularTabsViewController transitionLayout];
+    case TabGridPageRemoteTabs:
+      return nil;
+  }
+}
 
-- (BOOL)selectedTabVisible {
-  return NO;
+- (UIView*)proxyContainerForTransitionContext:
+    (id<UIViewControllerContextTransitioning>)context {
+  return self.view;
+}
+
+- (UIView*)proxyPositionForTransitionContext:
+    (id<UIViewControllerContextTransitioning>)context {
+  return self.scrollView;
 }
 
 #pragma mark - Public
@@ -206,7 +280,7 @@ UIAlertController* NotImplementedAlert() {
     _currentPage = currentPage;
   } else {
     [self.scrollView setContentOffset:offset animated:YES];
-    // _currentPage is set in scrollViewDidEndDecelerating:
+    // _currentPage is set in scrollViewDidScroll:
   }
 }
 
@@ -257,11 +331,10 @@ UIAlertController* NotImplementedAlert() {
   [self addChildViewController:viewController];
   [contentView addSubview:viewController.view];
   [viewController didMoveToParentViewController:self];
-  // TODO(crbug.com/818699) : Localize strings.
-  viewController.emptyStateView = [self
-      createEmptyStateViewWithTopText:@"No Incognito Tabs"
-                           bottomText:
-                               @"Open a tab to browse the web privately."];
+  viewController.emptyStateView =
+      [[TabGridEmptyStateView alloc] initWithPage:TabGridPageIncognitoTabs];
+  viewController.emptyStateView.accessibilityIdentifier =
+      kTabGridIncognitoTabsEmptyStateIdentifier;
   viewController.theme = GridThemeDark;
   viewController.delegate = self;
   if (@available(iOS 11, *)) {
@@ -292,10 +365,10 @@ UIAlertController* NotImplementedAlert() {
   [self addChildViewController:viewController];
   [contentView addSubview:viewController.view];
   [viewController didMoveToParentViewController:self];
-  // TODO(crbug.com/818699) : Localize strings.
   viewController.emptyStateView =
-      [self createEmptyStateViewWithTopText:@"No Open Tabs"
-                                 bottomText:@"Open a tab to browse the web."];
+      [[TabGridEmptyStateView alloc] initWithPage:TabGridPageRegularTabs];
+  viewController.emptyStateView.accessibilityIdentifier =
+      kTabGridRegularTabsEmptyStateIdentifier;
   viewController.theme = GridThemeLight;
   viewController.delegate = self;
   if (@available(iOS 11, *)) {
@@ -321,6 +394,7 @@ UIAlertController* NotImplementedAlert() {
 // Adds the remote tabs view controller as a contained view controller, and
 // sets constraints.
 - (void)setupRemoteTabsViewController {
+  // TODO(crbug.com/804588) : Create remote tabs.
   UIView* contentView = self.scrollContentView;
   UIViewController* viewController = self.remoteTabsViewController;
   viewController.view.translatesAutoresizingMaskIntoConstraints = NO;
@@ -344,40 +418,16 @@ UIAlertController* NotImplementedAlert() {
   [NSLayoutConstraint activateConstraints:constraints];
 }
 
-// Creates an empty state view.
-- (UIView*)createEmptyStateViewWithTopText:(NSString*)topText
-                                bottomText:(NSString*)bottomText {
-  UIView* view = [[UIView alloc] init];
-  UILabel* topLabel = [[UILabel alloc] init];
-  topLabel.translatesAutoresizingMaskIntoConstraints = NO;
-  topLabel.text = topText;
-  topLabel.textColor = [UIColor whiteColor];
-  topLabel.font = [UIFont boldSystemFontOfSize:20.0f];
-  [view addSubview:topLabel];
-  UILabel* bottomLabel = [[UILabel alloc] init];
-  bottomLabel.translatesAutoresizingMaskIntoConstraints = NO;
-  bottomLabel.text = bottomText;
-  bottomLabel.textColor = [UIColor whiteColor];
-  bottomLabel.font = [UIFont systemFontOfSize:18.0f];
-  [view addSubview:bottomLabel];
-  NSArray* constraints = @[
-    [topLabel.centerXAnchor constraintEqualToAnchor:view.centerXAnchor],
-    [bottomLabel.centerXAnchor constraintEqualToAnchor:view.centerXAnchor],
-    [topLabel.centerYAnchor constraintEqualToAnchor:view.centerYAnchor
-                                           constant:-10.0f],
-    [bottomLabel.centerYAnchor constraintEqualToAnchor:view.centerYAnchor
-                                              constant:10.0f],
-  ];
-  [NSLayoutConstraint activateConstraints:constraints];
-  return view;
-}
-
 // Adds the top toolbar and sets constraints.
 - (void)setupTopToolbar {
   TabGridTopToolbar* topToolbar = [[TabGridTopToolbar alloc] init];
   topToolbar.translatesAutoresizingMaskIntoConstraints = NO;
   [self.view addSubview:topToolbar];
   self.topToolbar = topToolbar;
+  // Configure and initialize the page control.
+  [self.topToolbar.pageControl addTarget:self
+                                  action:@selector(pageControlChanged:)
+                        forControlEvents:UIControlEventValueChanged];
   NSArray* constraints = @[
     [topToolbar.topAnchor constraintEqualToAnchor:self.view.topAnchor],
     [topToolbar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
@@ -431,40 +481,118 @@ UIAlertController* NotImplementedAlert() {
   }
 }
 
-// Adds the top toolbar buttons.
-- (void)setupTopToolbarButtons {
-  self.doneButton = self.topToolbar.leadingButton;
-  self.closeAllButton = self.topToolbar.trailingButton;
-  self.doneButton.accessibilityIdentifier = kTabGridDoneButtonAccessibilityID;
-  // TODO(crbug.com/818699) : Localize strings.
-  [self.doneButton setTitle:@"Done" forState:UIControlStateNormal];
-  [self.closeAllButton setTitle:@"Close All" forState:UIControlStateNormal];
+// Adds floating button and constraints.
+- (void)setupFloatingButton {
+  TabGridNewTabButton* button = [TabGridNewTabButton
+      buttonWithSizeClass:TabGridNewTabButtonSizeClassLarge];
+  button.translatesAutoresizingMaskIntoConstraints = NO;
+  [self.view addSubview:button];
+  self.floatingButton = button;
+  NSArray* constraints = @[
+    [button.trailingAnchor
+        constraintEqualToAnchor:self.view.trailingAnchor
+                       constant:-kTabGridFloatingButtonHorizontalInset],
+    [button.bottomAnchor
+        constraintEqualToAnchor:self.view.bottomAnchor
+                       constant:-kTabGridFloatingButtonVerticalInset]
+  ];
+  [NSLayoutConstraint activateConstraints:constraints];
+}
+
+- (void)configureViewControllerForCurrentSizeClassesAndPage {
+  self.configuration = TabGridConfigurationFloatingButton;
+  if (self.traitCollection.verticalSizeClass ==
+          UIUserInterfaceSizeClassRegular &&
+      self.traitCollection.horizontalSizeClass ==
+          UIUserInterfaceSizeClassCompact) {
+    // The only bottom toolbar configuration is when the UI is narrow but
+    // vertically long.
+    self.configuration = TabGridConfigurationBottomToolbar;
+  }
+  switch (self.configuration) {
+    case TabGridConfigurationBottomToolbar:
+      self.topToolbar.leadingButton.hidden = YES;
+      self.topToolbar.trailingButton.hidden = YES;
+      self.bottomToolbar.hidden = NO;
+      self.floatingButton.hidden = YES;
+      self.doneButton = self.bottomToolbar.trailingButton;
+      self.closeAllButton = self.bottomToolbar.leadingButton;
+      self.newTabButton = self.bottomToolbar.centerButton;
+      break;
+    case TabGridConfigurationFloatingButton:
+      self.topToolbar.leadingButton.hidden = NO;
+      self.topToolbar.trailingButton.hidden = NO;
+      self.bottomToolbar.hidden = YES;
+      self.floatingButton.hidden = NO;
+      self.doneButton = self.topToolbar.leadingButton;
+      self.closeAllButton = self.topToolbar.trailingButton;
+      self.newTabButton = self.floatingButton;
+      break;
+  }
+  if (self.traitCollection.verticalSizeClass ==
+          UIUserInterfaceSizeClassRegular &&
+      self.traitCollection.horizontalSizeClass ==
+          UIUserInterfaceSizeClassRegular) {
+    // There is enough space for the tab view to have a tab strip,
+    // so put the done button on the trailing side where the tab
+    // switcher button is located on the tab view. This puts the buttons for
+    // entering and leaving the tab grid on the same corner.
+    self.doneButton = self.topToolbar.trailingButton;
+    self.closeAllButton = self.topToolbar.leadingButton;
+  }
+
+  [self.doneButton setTitle:l10n_util::GetNSString(IDS_IOS_TAB_GRID_DONE_BUTTON)
+                   forState:UIControlStateNormal];
+  [self.closeAllButton
+      setTitle:l10n_util::GetNSString(IDS_IOS_TAB_GRID_CLOSE_ALL_BUTTON)
+      forState:UIControlStateNormal];
+  self.doneButton.titleLabel.font =
+      [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+  self.closeAllButton.titleLabel.font =
+      [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+  self.doneButton.titleLabel.adjustsFontForContentSizeCategory = YES;
+  self.closeAllButton.titleLabel.adjustsFontForContentSizeCategory = YES;
+  self.doneButton.accessibilityIdentifier = kTabGridDoneButtonIdentifier;
+  self.closeAllButton.accessibilityIdentifier =
+      kTabGridCloseAllButtonIdentifier;
   [self.doneButton addTarget:self
                       action:@selector(doneButtonTapped:)
             forControlEvents:UIControlEventTouchUpInside];
   [self.closeAllButton addTarget:self
                           action:@selector(closeAllButtonTapped:)
                 forControlEvents:UIControlEventTouchUpInside];
+  [self.newTabButton addTarget:self
+                        action:@selector(newTabButtonTapped:)
+              forControlEvents:UIControlEventTouchUpInside];
+  [self configureButtonsForOriginalAndCurrentPage];
 }
 
-// Adds the bottom toolbar buttons.
-- (void)setupBottomToolbarButtons {
-  // TODO(crbug.com/818699) : Localize strings.
-  [self.bottomToolbar.leadingButton setTitle:@"Done"
-                                    forState:UIControlStateNormal];
-  [self.bottomToolbar.trailingButton setTitle:@"Close All"
-                                     forState:UIControlStateNormal];
-  [self.bottomToolbar.roundButton setTitle:@"New"
-                                  forState:UIControlStateNormal];
-  [self.bottomToolbar.leadingButton addTarget:self
-                                       action:@selector(doneButtonTapped:)
-                             forControlEvents:UIControlEventTouchUpInside];
-  [self.bottomToolbar.trailingButton addTarget:self
-                                        action:@selector(closeAllButtonTapped:)
-                              forControlEvents:UIControlEventTouchUpInside];
-  [self.bottomToolbar.roundButton addTarget:self
-                                     action:@selector(newTabButtonTapped:)
-                           forControlEvents:UIControlEventTouchUpInside];
+- (void)configureButtonsForOriginalAndCurrentPage {
+  self.newTabButton.page = self.currentPage;
+  switch (self.originalPage) {
+    case TabGridPageIncognitoTabs:
+      self.doneButton.enabled = !self.incognitoTabsViewController.isGridEmpty;
+      break;
+    case TabGridPageRegularTabs:
+      self.doneButton.enabled = !self.regularTabsViewController.isGridEmpty;
+      break;
+    case TabGridPageRemoteTabs:
+      NOTREACHED() << "It is not possible to have entered tab grid directly "
+                      "into remote tabs.";
+      break;
+  }
+  switch (self.currentPage) {
+    case TabGridPageIncognitoTabs:
+      self.closeAllButton.enabled =
+          !self.incognitoTabsViewController.isGridEmpty;
+      break;
+    case TabGridPageRegularTabs:
+      self.closeAllButton.enabled = !self.regularTabsViewController.isGridEmpty;
+      break;
+    case TabGridPageRemoteTabs:
+      self.closeAllButton.enabled = NO;
+      break;
+  }
 }
 
 // Translates the toolbar views offscreen and then animates them back in using
@@ -472,47 +600,77 @@ UIAlertController* NotImplementedAlert() {
 // interact with the layout system at all.
 - (void)animateToolbarsForAppearance {
   DCHECK(self.transitionCoordinator);
+  // TODO(crbug.com/820410): Tune the timing of these animations.
+
   // Capture the current toolbar transforms.
   CGAffineTransform topToolbarBaseTransform = self.topToolbar.transform;
   CGAffineTransform bottomToolbarBaseTransform = self.bottomToolbar.transform;
   // Translate the top toolbar up offscreen by shifting it up by its height.
-  self.topToolbar.transform =
-      CGAffineTransformTranslate(self.topToolbar.transform, /*tx=*/0,
-                                 /*ty=*/-self.topToolbar.bounds.size.height);
+  self.topToolbar.transform = CGAffineTransformTranslate(
+      self.topToolbar.transform, /*tx=*/0,
+      /*ty=*/-(self.topToolbar.bounds.size.height * 0.5));
   // Translate the bottom toolbar down offscreen by shifting it down by its
   // height.
-  self.bottomToolbar.transform =
-      CGAffineTransformTranslate(self.bottomToolbar.transform, /*tx=*/0,
-                                 /*ty=*/self.topToolbar.bounds.size.height);
+  self.bottomToolbar.transform = CGAffineTransformTranslate(
+      self.bottomToolbar.transform, /*tx=*/0,
+      /*ty=*/(self.topToolbar.bounds.size.height * 0.5));
+
   // Block that restores the toolbar transforms, suitable for using with the
   // transition coordinator.
-  void (^animation)(id<UIViewControllerTransitionCoordinatorContext>) =
-      ^(id<UIViewControllerTransitionCoordinatorContext> context) {
-        self.topToolbar.transform = topToolbarBaseTransform;
-        self.bottomToolbar.transform = bottomToolbarBaseTransform;
-      };
-  // Animate the toolbars into place alongside the current transition by
-  // restoring their transforms.
+  auto animation = ^(id<UIViewControllerTransitionCoordinatorContext> context) {
+    self.topToolbar.transform = topToolbarBaseTransform;
+    self.bottomToolbar.transform = bottomToolbarBaseTransform;
+  };
+
+  // Also hide the scroll view (and thus the tab grids) until the transition
+  // completes.
+  self.scrollView.hidden = YES;
+  auto cleanup = ^(id<UIViewControllerTransitionCoordinatorContext> context) {
+    self.scrollView.hidden = NO;
+  };
+
+  // Animate the toolbars into place alongside the current transition.
   [self.transitionCoordinator animateAlongsideTransition:animation
-                                              completion:nil];
+                                              completion:cleanup];
 }
 
-// Update |enabled| property of the done and close all buttons.
-- (void)updateDoneAndCloseAllButtons {
-  switch (self.currentPage) {
-    case TabGridPageIncognitoTabs:
-      self.doneButton.enabled = !self.incognitoTabsViewController.isGridEmpty;
-      self.closeAllButton.enabled = self.doneButton.enabled;
-      break;
-    case TabGridPageRegularTabs:
-      self.doneButton.enabled = !self.regularTabsViewController.isGridEmpty;
-      self.closeAllButton.enabled = self.doneButton.enabled;
-      break;
-    case TabGridPageRemoteTabs:
-      self.doneButton.enabled = YES;
-      self.closeAllButton.enabled = NO;
-      break;
-  }
+// Translates the toolbar views offscreen using the transition coordinator.
+- (void)animateToolbarsForDisappearance {
+  DCHECK(self.transitionCoordinator);
+  // TODO(crbug.com/820410): Tune the timing of these animations.
+
+  // Capture the current toolbar transforms.
+  CGAffineTransform topToolbarBaseTransform = self.topToolbar.transform;
+  CGAffineTransform bottomToolbarBaseTransform = self.bottomToolbar.transform;
+  // Translate the top toolbar up offscreen by shifting it up by its height.
+  CGAffineTransform topToolbarOffsetTransform = CGAffineTransformTranslate(
+      self.topToolbar.transform, /*tx=*/0,
+      /*ty=*/-(self.topToolbar.bounds.size.height * 0.5));
+  // Translate the bottom toolbar down offscreen by shifting it down by its
+  // height.
+  CGAffineTransform bottomToolbarOffsetTransform = CGAffineTransformTranslate(
+      self.bottomToolbar.transform, /*tx=*/0,
+      /*ty=*/(self.topToolbar.bounds.size.height * 0.5));
+
+  // Block that animates the toolbar transforms, suitable for using with the
+  // transition coordinator.
+  auto animation = ^(id<UIViewControllerTransitionCoordinatorContext> context) {
+    self.topToolbar.transform = topToolbarOffsetTransform;
+    self.bottomToolbar.transform = bottomToolbarOffsetTransform;
+  };
+
+  // Hide the scroll view (and thus the tab grids) until the transition
+  // completes.
+  self.scrollView.hidden = YES;
+  auto cleanup = ^(id<UIViewControllerTransitionCoordinatorContext> context) {
+    self.scrollView.hidden = NO;
+    self.topToolbar.transform = topToolbarBaseTransform;
+    self.bottomToolbar.transform = bottomToolbarBaseTransform;
+  };
+
+  // Animate the toolbars into place alongside the current transition.
+  [self.transitionCoordinator animateAlongsideTransition:animation
+                                              completion:cleanup];
 }
 
 #pragma mark - GridViewControllerDelegate
@@ -524,7 +682,7 @@ UIAlertController* NotImplementedAlert() {
   } else if (gridViewController == self.incognitoTabsViewController) {
     [self.incognitoTabsDelegate selectItemAtIndex:index];
   }
-  [self.tabPresentationDelegate showActiveTab];
+  [self.tabPresentationDelegate showActiveTabInPage:self.currentPage];
 }
 
 - (void)gridViewController:(GridViewController*)gridViewController
@@ -536,20 +694,18 @@ UIAlertController* NotImplementedAlert() {
   }
 }
 
-- (void)lastItemWasClosedInGridViewController:
-    (GridViewController*)gridViewController {
-  [self updateDoneAndCloseAllButtons];
+- (void)gridViewController:(GridViewController*)gridViewController
+        didChangeItemCount:(NSUInteger)count {
+  [self configureButtonsForOriginalAndCurrentPage];
+  if (gridViewController == self.regularTabsViewController) {
+    self.topToolbar.pageControl.regularTabCount = count;
+  }
 }
 
-- (void)firstItemWasAddedInGridViewController:
-    (GridViewController*)gridViewController {
-  [self updateDoneAndCloseAllButtons];
-}
-
-#pragma mark - Button actions
+#pragma mark - Control actions
 
 - (void)doneButtonTapped:(id)sender {
-  [self.tabPresentationDelegate showActiveTab];
+  [self.tabPresentationDelegate showActiveTabInPage:self.originalPage];
 }
 
 - (void)closeAllButtonTapped:(id)sender {
@@ -561,15 +717,28 @@ UIAlertController* NotImplementedAlert() {
       [self.regularTabsDelegate closeAllItems];
       break;
     case TabGridPageRemoteTabs:
-      // No-op. It is invalid to call close all tabs on remote tabs.
+      NOTREACHED() << "It is invalid to call close all tabs on remote tabs.";
       break;
   }
 }
 
 - (void)newTabButtonTapped:(id)sender {
-  [self presentViewController:NotImplementedAlert()
-                     animated:YES
-                   completion:nil];
+  switch (self.currentPage) {
+    case TabGridPageIncognitoTabs:
+      [self.incognitoTabsDelegate addNewItem];
+      break;
+    case TabGridPageRegularTabs:
+      [self.regularTabsDelegate addNewItem];
+      break;
+    case TabGridPageRemoteTabs:
+      NOTREACHED() << "It is invalid to call insert new tab on remote tabs.";
+      break;
+  }
+  [self.tabPresentationDelegate showActiveTabInPage:self.currentPage];
+}
+
+- (void)pageControlChanged:(id)sender {
+  self.currentPage = self.topToolbar.pageControl.selectedPage;
 }
 
 @end

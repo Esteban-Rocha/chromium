@@ -34,7 +34,6 @@
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Noncopyable.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/WebHTTPBody.h"
 #include "public/platform/WebHTTPHeaderVisitor.h"
 #include "public/platform/WebSecurityOrigin.h"
@@ -121,6 +120,10 @@ mojom::FetchCacheMode WebURLRequest::GetCacheMode() const {
 
 void WebURLRequest::SetCacheMode(mojom::FetchCacheMode cache_mode) {
   resource_request_->SetCacheMode(cache_mode);
+}
+
+double WebURLRequest::TimeoutInterval() const {
+  return resource_request_->TimeoutInterval();
 }
 
 WebString WebURLRequest::HttpMethod() const {

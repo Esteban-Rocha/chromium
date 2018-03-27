@@ -5,7 +5,7 @@
 #include "content/public/common/content_switches.h"
 
 #include "build/build_config.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 
 namespace switches {
 
@@ -196,9 +196,6 @@ const char kDisableKillAfterBadIPC[]        = "disable-kill-after-bad-ipc";
 // Disables LCD text.
 const char kDisableLCDText[]                = "disable-lcd-text";
 
-// Disables distance field text.
-const char kDisableDistanceFieldText[]      = "disable-distance-field-text";
-
 // Disable LocalStorage.
 const char kDisableLocalStorage[]           = "disable-local-storage";
 
@@ -245,6 +242,9 @@ const char kDisablePreferCompositingToLCDText[] =
 
 // Disables the Presentation API.
 const char kDisablePresentationAPI[]        = "disable-presentation-api";
+
+// Disables throttling of history.pushState/replaceState calls.
+const char kDisablePushStateThrottle[] = "disable-pushstate-throttle";
 
 // Disables RGBA_4444 textures.
 const char kDisableRGBA4444Textures[]       = "disable-rgba-4444-textures";
@@ -335,10 +335,6 @@ const char kDumpBlinkRuntimeCallStats[] = "dump-blink-runtime-call-stats";
 // Enables LCD text.
 const char kEnableLCDText[]                 = "enable-lcd-text";
 
-// Enables using signed distance fields when rendering text.
-// Only valid if GPU rasterization is enabled as well.
-const char kEnableDistanceFieldText[]       = "enable-distance-field-text";
-
 // Enable the creation of compositing layers when it would prevent LCD text.
 const char kEnablePreferCompositingToLCDText[] =
     "enable-prefer-compositing-to-lcd-text";
@@ -352,10 +348,6 @@ const char kEnableBackgroundFetchPersistence[] =
 // Applied before kDisableBlinkFeatures, and after other flags that change these
 // features.
 const char kEnableBlinkFeatures[]           = "enable-blink-features";
-
-// Enable experimental canvas features, e.g. canvas 2D context attributes
-const char kEnableExperimentalCanvasFeatures[] =
-    "enable-experimental-canvas-features";
 
 // Enables Web Platform features that are in development.
 const char kEnableExperimentalWebPlatformFeatures[] =
@@ -582,6 +574,10 @@ const char kLogFile[] = "log-file";
 const char kMainFrameResizesAreOrientationChanges[] =
     "main-frame-resizes-are-orientation-changes";
 
+// Specifies the maximum disk cache size for the ApplicationCache. Default
+// value is 250MB.
+const char kMaxAppCacheDiskCacheSizeMb[] = "max-appcache-disk-cache-size-mb";
+
 // Sets the width and height above which a composited layer will get tiled.
 const char kMaxUntiledLayerHeight[]         = "max-untiled-layer-height";
 const char kMaxUntiledLayerWidth[]          = "max-untiled-layer-width";
@@ -772,11 +768,8 @@ const char kSingleProcess[]                 = "single-process";
 // process consolidation, not isolation). You probably want this one.
 const char kSitePerProcess[]                = "site-per-process";
 
-// Skips reencoding bitmaps as PNGs when the encoded data is unavailable
-// during SKP capture.  This allows for obtaining an accurate sample of
-// the types of images on the web, rather than being weighted towards PNGs
-// that we have encoded ourselves.
-const char kSkipReencodingOnSKPCapture[]    = "skip-reencoding-on-skp-capture";
+// Disables enabling site isolation (i.e., --site-per-process) via field trial.
+const char kDisableSiteIsolationTrials[] = "disable-site-isolation-trials";
 
 // Specifies if the browser should start in fullscreen mode, like if the user
 // had pressed F11 right after startup.
@@ -788,6 +781,15 @@ const char kStartFullscreen[] = "start-fullscreen";
 // that needs to access the provided statistics.
 const char kStatsCollectionController[] =
     "enable-stats-collection-bindings";
+
+// Specifies the max number of bytes that should be used by the skia font cache.
+// If the cache needs to allocate more, skia will purge previous entries.
+const char kSkiaFontCacheLimitMb[] = "skia-font-cache-limit-mb";
+
+// Specifies the max number of bytes that should be used by the skia resource
+// cache. The previous entries are purged from the cache when the memory useage
+// exceeds this limit.
+const char kSkiaResourceCacheLimitMb[] = "skia-resource-cache-limit-mb";
 
 // Type of the current test harness ("browser" or "ui").
 const char kTestType[]                      = "test-type";
@@ -829,10 +831,6 @@ const char kUtilityCmdPrefix[]              = "utility-cmd-prefix";
 
 // Causes the process to run as a utility subprocess.
 const char kUtilityProcess[]                = "utility";
-
-// When utility process is sandboxed, there is still access to one directory.
-// This flag specifies the directory that can be accessed.
-const char kUtilityProcessAllowedDir[]      = "utility-allowed-dir";
 
 // Causes the utility process to display a dialog on launch.
 const char kUtilityStartupDialog[] = "utility-startup-dialog";

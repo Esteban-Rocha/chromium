@@ -906,13 +906,58 @@ void PDFiumEngine::Form_GetPageViewRect(FPDF_FORMFILLINFO* param,
                                         double* right,
                                         double* bottom) {
   PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
-  int page_index = engine->GetMostVisiblePage();
+  int page_index = engine->GetVisiblePageIndex(page);
+  if (!engine->PageIndexInBounds(page_index)) {
+    *left = 0;
+    *right = 0;
+    *top = 0;
+    *bottom = 0;
+    return;
+  }
+
   pp::Rect page_view_rect = engine->GetPageContentsRect(page_index);
 
-  *left = page_view_rect.x();
-  *right = page_view_rect.right();
-  *top = page_view_rect.y();
-  *bottom = page_view_rect.bottom();
+  float toolbar_height_in_screen_coords =
+      engine->GetToolbarHeightInScreenCoords();
+
+  float page_width = FPDF_GetPageWidth(page);
+  float page_height = FPDF_GetPageHeight(page);
+
+  // To convert from a screen scale to a page scale, we multiply by
+  // (page_height / page_view_rect.height()) and
+  // (page_width / page_view_rect.width()),
+  // The base point of the page in screen coords is (page_view_rect.x(),
+  // page_view_rect.y()).
+  // Therefore, to convert an x position from screen to page
+  // coords, we use (page_width * (x - base_x) / page_view_rect.width()).
+  // For y positions, (page_height * (y - base_y) / page_view_rect.height()).
+
+  // The top-most y position that can be relied to be visible on the screen is
+  // the bottom of the toolbar, which is y = toolbar_height_in_screen_coords.
+  float screen_top_in_page_coords =
+      page_height * (toolbar_height_in_screen_coords - page_view_rect.y()) /
+      page_view_rect.height();
+  // The bottom-most y position that is visible on the screen is the bottom of
+  // the plugin area, which is y = engine->plugin_size_.height().
+  float screen_bottom_in_page_coords =
+      page_height * (engine->plugin_size_.height() - page_view_rect.y()) /
+      page_view_rect.height();
+  // The left-most x position that is visible on the screen is the left of the
+  // plugin area, which is x = 0.
+  float screen_left_in_page_coords =
+      page_width * (0 - page_view_rect.x()) / page_view_rect.width();
+  // The right-most x position that is visible on the screen is the right of the
+  // plugin area, which is x = engine->plugin_size_.width().
+  float screen_right_in_page_coords =
+      page_width * (engine->plugin_size_.width() - page_view_rect.x()) /
+      page_view_rect.width();
+
+  // Return the edge of the screen or of the page, since we're restricted to
+  // both.
+  *left = std::max(screen_left_in_page_coords, 0.0f);
+  *right = std::min(screen_right_in_page_coords, page_width);
+  *top = std::max(screen_top_in_page_coords, 0.0f);
+  *bottom = std::min(screen_bottom_in_page_coords, page_height);
 }
 
 int PDFiumEngine::Form_GetPlatform(FPDF_FORMFILLINFO* param,
@@ -1063,7 +1108,7 @@ void PDFiumEngine::ScrolledToXPosition(int position) {
   int old_x = position_.x();
   position_.set_x(position);
   CalculateVisiblePages();
-  client_->Scroll(pp::Point(old_x - position, 0));
+  client_->DidScroll(pp::Point(old_x - position, 0));
 }
 
 void PDFiumEngine::ScrolledToYPosition(int position) {
@@ -1072,7 +1117,7 @@ void PDFiumEngine::ScrolledToYPosition(int position) {
   int old_y = position_.y();
   position_.set_y(position);
   CalculateVisiblePages();
-  client_->Scroll(pp::Point(0, old_y - position));
+  client_->DidScroll(pp::Point(0, old_y - position));
 }
 
 void PDFiumEngine::PrePaint() {
@@ -2030,6 +2075,9 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
       return true;
     }
     if (area == PDFiumPage::DOCLINK_AREA) {
+      if (!PageIndexInBounds(target.page))
+        return true;
+
       pp::Rect page_rect(GetPageScreenRect(target.page));
       int y = position_.y() + page_rect.y();
       if (target.y_in_pixels)
@@ -3739,7 +3787,10 @@ void PDFiumEngine::DeviceToPage(int page_index,
 }
 
 int PDFiumEngine::GetVisiblePageIndex(FPDF_PAGE page) {
-  for (int page_index : visible_pages_) {
+  // Copy visible_pages_ since it can change as a result of loading the page in
+  // GetPage(). See https://crbug.com/822091.
+  std::vector<int> visible_pages_copy(visible_pages_);
+  for (int page_index : visible_pages_copy) {
     if (pages_[page_index]->GetPage() == page)
       return page_index;
   }
@@ -4031,6 +4082,10 @@ void PDFiumEngine::KillTouchTimer(int timer_id) {
 
 bool PDFiumEngine::PageIndexInBounds(int index) const {
   return index >= 0 && index < static_cast<int>(pages_.size());
+}
+
+float PDFiumEngine::GetToolbarHeightInScreenCoords() {
+  return client_->GetToolbarHeightInScreenCoords();
 }
 
 void PDFiumEngine::Form_Invalidate(FPDF_FORMFILLINFO* param,
@@ -4373,6 +4428,35 @@ void PDFiumEngine::SetSelectionBounds(const pp::Point& base,
                                    : RangeSelectionDirection::Right;
 }
 
+void PDFiumEngine::GetSelection(uint32_t* selection_start_page_index,
+                                uint32_t* selection_start_char_index,
+                                uint32_t* selection_end_page_index,
+                                uint32_t* selection_end_char_index) {
+  size_t len = selection_.size();
+  if (len == 0) {
+    *selection_start_page_index = 0;
+    *selection_start_char_index = 0;
+    *selection_end_page_index = 0;
+    *selection_end_char_index = 0;
+    return;
+  }
+
+  *selection_start_page_index = selection_[0].page_index();
+  *selection_start_char_index = selection_[0].char_index();
+  *selection_end_page_index = selection_[len - 1].page_index();
+
+  // If the selection is all within one page, the end index is the
+  // start index plus the char count. But if the selection spans
+  // multiple pages, the selection starts at the beginning of the
+  // last page in |selection_| and goes to the char count.
+  if (len == 1) {
+    *selection_end_char_index =
+        selection_[0].char_index() + selection_[0].char_count();
+  } else {
+    *selection_end_char_index = selection_[len - 1].char_count();
+  }
+}
+
 PDFiumEngine::FormFillTimerData::FormFillTimerData(base::TimeDelta period,
                                                    TimerCallback callback)
     : timer_period(period), timer_callback(callback) {}
@@ -4502,14 +4586,14 @@ bool PDFiumEngineExports::RenderPDFPageToDC(const void* pdf_buffer,
                                             int page_number,
                                             const RenderingSettings& settings,
                                             HDC dc) {
-  FPDF_DOCUMENT doc = FPDF_LoadMemDocument(pdf_buffer, buffer_size, nullptr);
+  std::unique_ptr<void, FPDFDocumentDeleter> doc(
+      FPDF_LoadMemDocument(pdf_buffer, buffer_size, nullptr));
   if (!doc)
     return false;
-  FPDF_PAGE page = FPDF_LoadPage(doc, page_number);
-  if (!page) {
-    FPDF_CloseDocument(doc);
+  FPDF_PAGE page = FPDF_LoadPage(doc.get(), page_number);
+  if (!page)
     return false;
-  }
+
   RenderingSettings new_settings = settings;
   // calculate the page size
   if (new_settings.dpi_x == -1)
@@ -4562,7 +4646,6 @@ bool PDFiumEngineExports::RenderPDFPageToDC(const void* pdf_buffer,
   }
   RestoreDC(dc, save_state);
   FPDF_ClosePage(page);
-  FPDF_CloseDocument(doc);
   return true;
 }
 
@@ -4587,15 +4670,13 @@ bool PDFiumEngineExports::RenderPDFPageToBitmap(
     int page_number,
     const RenderingSettings& settings,
     void* bitmap_buffer) {
-  FPDF_DOCUMENT doc =
-      FPDF_LoadMemDocument(pdf_buffer, pdf_buffer_size, nullptr);
+  std::unique_ptr<void, FPDFDocumentDeleter> doc(
+      FPDF_LoadMemDocument(pdf_buffer, pdf_buffer_size, nullptr));
   if (!doc)
     return false;
-  FPDF_PAGE page = FPDF_LoadPage(doc, page_number);
-  if (!page) {
-    FPDF_CloseDocument(doc);
+  FPDF_PAGE page = FPDF_LoadPage(doc.get(), page_number);
+  if (!page)
     return false;
-  }
 
   pp::Rect dest;
   int rotate = CalculatePosition(page, settings, &dest);
@@ -4613,7 +4694,6 @@ bool PDFiumEngineExports::RenderPDFPageToBitmap(
                         FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH);
   FPDFBitmap_Destroy(bitmap);
   FPDF_ClosePage(page);
-  FPDF_CloseDocument(doc);
   return true;
 }
 
@@ -4621,25 +4701,30 @@ bool PDFiumEngineExports::GetPDFDocInfo(const void* pdf_buffer,
                                         int buffer_size,
                                         int* page_count,
                                         double* max_page_width) {
-  FPDF_DOCUMENT doc = FPDF_LoadMemDocument(pdf_buffer, buffer_size, nullptr);
+  std::unique_ptr<void, FPDFDocumentDeleter> doc(
+      FPDF_LoadMemDocument(pdf_buffer, buffer_size, nullptr));
   if (!doc)
     return false;
-  int page_count_local = FPDF_GetPageCount(doc);
-  if (page_count) {
+
+  if (!page_count && !max_page_width)
+    return true;
+
+  int page_count_local = FPDF_GetPageCount(doc.get());
+  if (page_count)
     *page_count = page_count_local;
-  }
+
   if (max_page_width) {
     *max_page_width = 0;
     for (int page_number = 0; page_number < page_count_local; page_number++) {
       double page_width = 0;
       double page_height = 0;
-      FPDF_GetPageSizeByIndex(doc, page_number, &page_width, &page_height);
+      FPDF_GetPageSizeByIndex(doc.get(), page_number, &page_width,
+                              &page_height);
       if (page_width > *max_page_width) {
         *max_page_width = page_width;
       }
     }
   }
-  FPDF_CloseDocument(doc);
   return true;
 }
 
@@ -4648,13 +4733,11 @@ bool PDFiumEngineExports::GetPDFPageSizeByIndex(const void* pdf_buffer,
                                                 int page_number,
                                                 double* width,
                                                 double* height) {
-  FPDF_DOCUMENT doc =
-      FPDF_LoadMemDocument(pdf_buffer, pdf_buffer_size, nullptr);
+  std::unique_ptr<void, FPDFDocumentDeleter> doc(
+      FPDF_LoadMemDocument(pdf_buffer, pdf_buffer_size, nullptr));
   if (!doc)
     return false;
-  bool success = FPDF_GetPageSizeByIndex(doc, page_number, width, height) != 0;
-  FPDF_CloseDocument(doc);
-  return success;
+  return FPDF_GetPageSizeByIndex(doc.get(), page_number, width, height) != 0;
 }
 
 }  // namespace chrome_pdf

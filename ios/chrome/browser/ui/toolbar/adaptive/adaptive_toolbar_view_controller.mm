@@ -6,9 +6,12 @@
 
 #import "base/logging.h"
 #include "base/metrics/user_metrics.h"
+#import "ios/chrome/browser/ui/commands/browser_commands.h"
+#import "ios/chrome/browser/ui/popup_menu/popup_menu_flags.h"
 #import "ios/chrome/browser/ui/toolbar/adaptive/adaptive_toolbar_view.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button_factory.h"
+#import "ios/chrome/browser/ui/toolbar/buttons/toolbar_configuration.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_constants.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_tab_grid_button.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_tools_menu_button.h"
@@ -40,11 +43,16 @@
 
 - (void)updateForSideSwipeSnapshotOnNTP:(BOOL)onNTP {
   self.view.progressBar.hidden = YES;
+  self.view.blur.hidden = YES;
+  self.view.backgroundColor =
+      self.buttonFactory.toolbarConfiguration.backgroundColor;
   // TODO(crbug.com/804850): Have the correct background color for incognito
   // NTP.
 }
 
 - (void)resetAfterSideSwipeSnapshot {
+  self.view.blur.hidden = NO;
+  self.view.backgroundColor = [UIColor clearColor];
 }
 
 #pragma mark - UIViewController
@@ -57,6 +65,18 @@
 - (void)viewDidLoad {
   [super viewDidLoad];
   [self addStandardActionsForAllButtons];
+
+  // Adds the layout guide to the buttons.
+  self.view.toolsMenuButton.guideName = kToolsMenuGuide;
+  self.view.tabGridButton.guideName = kTabSwitcherGuide;
+  self.view.forwardButton.guideName = kForwardButtonGuide;
+  self.view.forwardButtonTrailingPosition.guideName = kForwardButtonGuide;
+  self.view.backButton.guideName = kBackButtonGuide;
+
+  // Add navigation popup menu triggers.
+  [self addLongPressGestureToView:self.view.backButton];
+  [self addLongPressGestureToView:self.view.forwardButton];
+  [self addLongPressGestureToView:self.view.forwardButtonTrailingPosition];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
@@ -74,6 +94,7 @@
 
 - (void)setCanGoForward:(BOOL)canGoForward {
   self.view.forwardButton.enabled = canGoForward;
+  self.view.forwardButtonTrailingPosition.enabled = canGoForward;
 }
 
 - (void)setCanGoBack:(BOOL)canGoBack {
@@ -128,7 +149,7 @@
 
 #pragma mark - NewTabPageControllerDelegate
 
-- (void)setToolbarBackgroundAlpha:(CGFloat)alpha {
+- (void)setToolbarBackgroundToIncognitoNTPColorWithAlpha:(CGFloat)alpha {
   // TODO(crbug.com/803379): Implement that.
 }
 
@@ -149,6 +170,23 @@
            [weakProgressBar setHidden:YES animated:YES completion:nil];
          }
        }];
+}
+
+#pragma mark - TabHistoryUIUpdater
+
+- (void)updateUIForTabHistoryPresentationFrom:(ToolbarButtonType)buttonType {
+  if (buttonType == ToolbarButtonTypeBack) {
+    self.view.backButton.selected = YES;
+  } else {
+    self.view.forwardButton.selected = YES;
+    self.view.forwardButtonTrailingPosition.selected = YES;
+  }
+}
+
+- (void)updateUIForTabHistoryWasDismissed {
+  self.view.backButton.selected = NO;
+  self.view.forwardButton.selected = NO;
+  self.view.forwardButtonTrailingPosition.selected = NO;
 }
 
 #pragma mark - Private
@@ -183,7 +221,8 @@
 
   if (sender == self.view.backButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarBack"));
-  } else if (sender == self.view.forwardButton) {
+  } else if (sender == self.view.forwardButton ||
+             sender == self.view.forwardButtonTrailingPosition) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarForward"));
   } else if (sender == self.view.reloadButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarReload"));
@@ -201,6 +240,36 @@
     base::RecordAction(base::UserMetricsAction("MobileToolbarOmniboxShortcut"));
   } else {
     NOTREACHED();
+  }
+}
+
+// Adds a LongPressGesture to the |view|, with target on -|handleLongPress:|.
+- (void)addLongPressGestureToView:(UIView*)view {
+  UILongPressGestureRecognizer* navigationHistoryLongPress =
+      [[UILongPressGestureRecognizer alloc]
+          initWithTarget:self
+                  action:@selector(handleLongPress:)];
+  [view addGestureRecognizer:navigationHistoryLongPress];
+}
+
+// Handles the long press on the views.
+- (void)handleLongPress:(UILongPressGestureRecognizer*)gesture {
+  if (gesture.state != UIGestureRecognizerStateBegan)
+    return;
+
+  if (gesture.view == self.view.backButton) {
+    if (base::FeatureList::IsEnabled(kNewToolsMenu)) {
+      [self.dispatcher showNavigationHistoryBackPopupMenu];
+    } else {
+      [self.dispatcher showTabHistoryPopupForBackwardHistory];
+    }
+  } else if (gesture.view == self.view.forwardButton ||
+             gesture.view == self.view.forwardButtonTrailingPosition) {
+    if (base::FeatureList::IsEnabled(kNewToolsMenu)) {
+      [self.dispatcher showNavigationHistoryForwardPopupMenu];
+    } else {
+      [self.dispatcher showTabHistoryPopupForForwardHistory];
+    }
   }
 }
 

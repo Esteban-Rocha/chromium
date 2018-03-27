@@ -11,6 +11,7 @@
 #include "base/files/file.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/test/bind_test_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "ipc/ipc.mojom.h"
@@ -55,7 +56,7 @@ class PeerPidReceiver : public IPC::mojom::Channel {
   enum class MessageExpectation {
     kNotExpected,
     kExpectedValid,
-    kExptectedInvalid
+    kExpectedInvalid
   };
 
   PeerPidReceiver(
@@ -65,7 +66,11 @@ class PeerPidReceiver : public IPC::mojom::Channel {
       : binding_(this, std::move(request)),
         on_peer_pid_set_(on_peer_pid_set),
         message_expectation_(message_expectation) {}
-  ~PeerPidReceiver() override {}
+  ~PeerPidReceiver() override {
+    bool expected_message =
+        message_expectation_ != MessageExpectation::kNotExpected;
+    EXPECT_EQ(expected_message, received_message_);
+  }
 
   // mojom::Channel:
   void SetPeerPid(int32_t pid) override {
@@ -77,6 +82,7 @@ class PeerPidReceiver : public IPC::mojom::Channel {
                base::Optional<std::vector<mojo::native::SerializedHandlePtr>>
                    handles) override {
     ASSERT_NE(MessageExpectation::kNotExpected, message_expectation_);
+    received_message_ = true;
 
     IPC::Message message(reinterpret_cast<const char*>(data.data()),
                          static_cast<uint32_t>(data.size()));
@@ -91,11 +97,19 @@ class PeerPidReceiver : public IPC::mojom::Channel {
 
   int32_t peer_pid() const { return peer_pid_; }
 
+  void RunUntilDisconnect() {
+    base::RunLoop run_loop;
+    binding_.set_connection_error_handler(run_loop.QuitClosure());
+    run_loop.Run();
+  }
+
  private:
   mojo::AssociatedBinding<IPC::mojom::Channel> binding_;
   const base::Closure on_peer_pid_set_;
   MessageExpectation message_expectation_;
   int32_t peer_pid_ = -1;
+
+  bool received_message_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(PeerPidReceiver);
 };
@@ -123,26 +137,7 @@ TEST_F(IPCMojoBootstrapTest, Connect) {
 
   EXPECT_EQ(kTestClientPid, impl.peer_pid());
 
-  EXPECT_TRUE(helper_.WaitForChildTestShutdown());
-}
-
-TEST_F(IPCMojoBootstrapTest, ReceiveEmptyMessage) {
-  base::MessageLoop message_loop;
-  Connection connection(
-      IPC::MojoBootstrap::Create(
-          helper_.StartChild("IPCMojoBootstrapTestEmptyMessage"),
-          IPC::Channel::MODE_SERVER, base::ThreadTaskRunnerHandle::Get(),
-          base::ThreadTaskRunnerHandle::Get()),
-      kTestServerPid);
-
-  IPC::mojom::ChannelAssociatedRequest receiver;
-  connection.TakeReceiver(&receiver);
-
-  base::RunLoop run_loop;
-  PeerPidReceiver impl(std::move(receiver), run_loop.QuitClosure(),
-                       PeerPidReceiver::MessageExpectation::kExptectedInvalid);
-  run_loop.Run();
-
+  impl.RunUntilDisconnect();
   EXPECT_TRUE(helper_.WaitForChildTestShutdown());
 }
 
@@ -168,6 +163,30 @@ MULTIPROCESS_TEST_MAIN_WITH_SETUP(
   EXPECT_EQ(kTestServerPid, impl.peer_pid());
 
   return 0;
+}
+
+TEST_F(IPCMojoBootstrapTest, ReceiveEmptyMessage) {
+  base::MessageLoop message_loop;
+  Connection connection(
+      IPC::MojoBootstrap::Create(
+          helper_.StartChild("IPCMojoBootstrapTestEmptyMessage"),
+          IPC::Channel::MODE_SERVER, base::ThreadTaskRunnerHandle::Get(),
+          base::ThreadTaskRunnerHandle::Get()),
+      kTestServerPid);
+
+  IPC::mojom::ChannelAssociatedRequest receiver;
+  connection.TakeReceiver(&receiver);
+
+  base::RunLoop run_loop;
+  PeerPidReceiver impl(std::move(receiver), run_loop.QuitClosure(),
+                       PeerPidReceiver::MessageExpectation::kExpectedInvalid);
+  run_loop.Run();
+
+  // Wait for the Channel to be disconnected so we can reasonably assert that
+  // the child's empty message must have been received before we pass the test.
+  impl.RunUntilDisconnect();
+
+  EXPECT_TRUE(helper_.WaitForChildTestShutdown());
 }
 
 // A long running process that connects to us.

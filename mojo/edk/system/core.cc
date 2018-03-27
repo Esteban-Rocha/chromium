@@ -20,9 +20,8 @@
 #include "base/time/time.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
-#include "mojo/edk/embedder/embedder.h"
-#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/process_error_callback.h"
 #include "mojo/edk/system/channel.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/data_pipe_consumer_dispatcher.h"
@@ -186,21 +185,18 @@ void Core::SetDefaultProcessErrorCallback(
   default_process_error_callback_ = callback;
 }
 
-ScopedMessagePipeHandle Core::CreatePartialMessagePipe(ports::PortRef* peer) {
+MojoHandle Core::CreatePartialMessagePipe(ports::PortRef* peer) {
   RequestContext request_context;
   ports::PortRef local_port;
   GetNodeController()->node()->CreatePortPair(&local_port, peer);
-  MojoHandle handle = AddDispatcher(new MessagePipeDispatcher(
+  return AddDispatcher(new MessagePipeDispatcher(
       GetNodeController(), local_port, kUnknownPipeIdForDebug, 0));
-  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
 
-ScopedMessagePipeHandle Core::CreatePartialMessagePipe(
-    const ports::PortRef& port) {
+MojoHandle Core::CreatePartialMessagePipe(const ports::PortRef& port) {
   RequestContext request_context;
-  return ScopedMessagePipeHandle(
-      MessagePipeHandle(AddDispatcher(new MessagePipeDispatcher(
-          GetNodeController(), port, kUnknownPipeIdForDebug, 1))));
+  return AddDispatcher(new MessagePipeDispatcher(GetNodeController(), port,
+                                                 kUnknownPipeIdForDebug, 1));
 }
 
 void Core::SendBrokerClientInvitation(
@@ -382,15 +378,14 @@ void Core::RequestShutdown(const base::Closure& callback) {
   GetNodeController()->RequestShutdown(callback);
 }
 
-ScopedMessagePipeHandle Core::ExtractMessagePipeFromInvitation(
-    const std::string& name) {
+MojoHandle Core::ExtractMessagePipeFromInvitation(const std::string& name) {
   RequestContext request_context;
   ports::PortRef port0, port1;
   GetNodeController()->node()->CreatePortPair(&port0, &port1);
   MojoHandle handle = AddDispatcher(new MessagePipeDispatcher(
       GetNodeController(), port0, kUnknownPipeIdForDebug, 1));
   GetNodeController()->MergePortIntoInviter(name, port1);
-  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
+  return handle;
 }
 
 MojoResult Core::SetProperty(MojoPropertyType type, const void* value) {
@@ -432,51 +427,70 @@ MojoResult Core::QueryHandleSignalsState(
   return MOJO_RESULT_OK;
 }
 
-MojoResult Core::CreateWatcher(MojoWatcherCallback callback,
-                               MojoHandle* watcher_handle) {
-  RequestContext request_context;
-  if (!watcher_handle)
+MojoResult Core::CreateTrap(MojoTrapEventHandler handler,
+                            const MojoCreateTrapOptions* options,
+                            MojoHandle* trap_handle) {
+  if (options && options->struct_size != sizeof(*options))
     return MOJO_RESULT_INVALID_ARGUMENT;
-  *watcher_handle = AddDispatcher(new WatcherDispatcher(callback));
-  if (*watcher_handle == MOJO_HANDLE_INVALID)
+
+  RequestContext request_context;
+  if (!trap_handle)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  *trap_handle = AddDispatcher(new WatcherDispatcher(handler));
+  if (*trap_handle == MOJO_HANDLE_INVALID)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
   return MOJO_RESULT_OK;
 }
 
-MojoResult Core::Watch(MojoHandle watcher_handle,
-                       MojoHandle handle,
-                       MojoHandleSignals signals,
-                       MojoWatchCondition condition,
-                       uintptr_t context) {
+MojoResult Core::AddTrigger(MojoHandle trap_handle,
+                            MojoHandle handle,
+                            MojoHandleSignals signals,
+                            MojoTriggerCondition condition,
+                            uintptr_t context,
+                            const MojoAddTriggerOptions* options) {
+  if (options && options->struct_size != sizeof(*options))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   RequestContext request_context;
-  scoped_refptr<Dispatcher> watcher = GetDispatcher(watcher_handle);
+  scoped_refptr<Dispatcher> watcher = GetDispatcher(trap_handle);
   if (!watcher || watcher->GetType() != Dispatcher::Type::WATCHER)
     return MOJO_RESULT_INVALID_ARGUMENT;
+
   scoped_refptr<Dispatcher> dispatcher = GetDispatcher(handle);
   if (!dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;
+
   return watcher->WatchDispatcher(std::move(dispatcher), signals, condition,
                                   context);
 }
 
-MojoResult Core::CancelWatch(MojoHandle watcher_handle, uintptr_t context) {
+MojoResult Core::RemoveTrigger(MojoHandle trap_handle,
+                               uintptr_t context,
+                               const MojoRemoveTriggerOptions* options) {
+  if (options && options->struct_size != sizeof(*options))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   RequestContext request_context;
-  scoped_refptr<Dispatcher> watcher = GetDispatcher(watcher_handle);
+  scoped_refptr<Dispatcher> watcher = GetDispatcher(trap_handle);
   if (!watcher || watcher->GetType() != Dispatcher::Type::WATCHER)
     return MOJO_RESULT_INVALID_ARGUMENT;
   return watcher->CancelWatch(context);
 }
 
-MojoResult Core::ArmWatcher(MojoHandle watcher_handle,
-                            uint32_t* num_ready_contexts,
-                            uintptr_t* ready_contexts,
-                            MojoResult* ready_results,
-                            MojoHandleSignalsState* ready_signals_states) {
+MojoResult Core::ArmTrap(MojoHandle trap_handle,
+                         const MojoArmTrapOptions* options,
+                         uint32_t* num_ready_triggers,
+                         uintptr_t* ready_triggers,
+                         MojoResult* ready_results,
+                         MojoHandleSignalsState* ready_signals_states) {
+  if (options && options->struct_size != sizeof(*options))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   RequestContext request_context;
-  scoped_refptr<Dispatcher> watcher = GetDispatcher(watcher_handle);
+  scoped_refptr<Dispatcher> watcher = GetDispatcher(trap_handle);
   if (!watcher || watcher->GetType() != Dispatcher::Type::WATCHER)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  return watcher->Arm(num_ready_contexts, ready_contexts, ready_results,
+  return watcher->Arm(num_ready_triggers, ready_triggers, ready_results,
                       ready_signals_states);
 }
 
@@ -992,6 +1006,21 @@ MojoResult Core::UnmapBuffer(void* buffer) {
     result = mapping_table_.RemoveMapping(buffer, &mapping);
   }
   return result;
+}
+
+MojoResult Core::GetBufferInfo(MojoHandle buffer_handle,
+                               const MojoSharedBufferOptions* options,
+                               MojoSharedBufferInfo* info) {
+  if (options && options->struct_size != sizeof(MojoSharedBufferOptions))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (!info || info->struct_size != sizeof(MojoSharedBufferInfo))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<Dispatcher> dispatcher(GetDispatcher(buffer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return dispatcher->GetBufferInfo(info);
 }
 
 MojoResult Core::WrapPlatformHandle(const MojoPlatformHandle* platform_handle,

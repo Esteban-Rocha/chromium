@@ -39,6 +39,7 @@ import android.widget.RemoteViews;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.ContextUtils;
+import org.chromium.base.Log;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.library_loader.LibraryLoader;
@@ -483,7 +484,10 @@ public class CustomTabActivity extends ChromeActivity {
             @Override
             public boolean updateCustomButton(int id, Bitmap bitmap, String description) {
                 CustomButtonParams params = mIntentDataProvider.getButtonParamsForId(id);
-                if (params == null) return false;
+                if (params == null) {
+                    Log.w(TAG, "Custom toolbar button with ID %d not found", id);
+                    return false;
+                }
 
                 params.update(bitmap, description);
                 if (params.showOnToolbar()) {

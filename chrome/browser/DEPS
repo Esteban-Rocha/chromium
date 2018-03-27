@@ -26,11 +26,11 @@ include_rules = [
   "+device/geolocation",
   "+device/media_transfer_protocol",
   "+device/usb",
-  "+device/vr/features/features.h",
+  "+device/vr/buildflags/buildflags.h",
   "+extensions/browser",
   "+extensions/common",
   "+extensions/components/javascript_dialog_extensions_client",
-  "+extensions/features",
+  "+extensions/buildflags",
   "+extensions/grit",
   "+extensions/test",
   "+google/cacheinvalidation",  # Sync invalidation API protobuf files.
@@ -45,6 +45,7 @@ include_rules = [
   "+media/capture",
   "+media/midi",  # For midi switches
   "+media/mojo",  # For mojo media services.
+  "+media/renderers",
   "+ppapi/c",  # For various types.
   "+ppapi/host",
   "+ppapi/proxy",
@@ -74,6 +75,7 @@ include_rules = [
   "+services/ui/common",
   "+services/ui/public",
   "+services/ui/service.h",
+  "+services/viz/privileged",
   "+skia/ext",
   "+third_party/boringssl/src/include",
   "+third_party/crashpad",
@@ -86,6 +88,10 @@ include_rules = [
   "-ash",
   "+ash/public",
   "+ash/components/quick_launch/public/mojom",
+
+  # The message center may not exist, or may run out of process (in mash).
+  "-ui/message_center",
+  "+ui/message_center/public",
 
   # chrome only needs switches from cc. All usage of the compositor is from
   # content. Definitely don't include generic stuff from cc/base here, if this
@@ -204,5 +210,10 @@ specific_include_rules = {
   ],
   "display_info_provider_chromeos_unittest.cc": [
     "+ui/events/devices/touch_device_transform.h"
-  ]
+  ],
+  # TODO(estade): the message center is initialized and shut down here, but it
+  # should be the responsibility of code in chrome/browser/notifications/
+  "browser_process_impl.cc": [
+    "+ui/message_center/message_center.h",
+  ],
 }

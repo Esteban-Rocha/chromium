@@ -37,7 +37,6 @@
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/HashMap.h"
 #include "platform/wtf/HashSet.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Threading.h"
 #include "platform/wtf/text/ParsingUtilities.h"
 #include "platform/wtf/text/StringHash.h"
@@ -87,8 +86,7 @@ Referrer SecurityPolicy::GenerateReferrer(ReferrerPolicy referrer_policy,
   ReferrerPolicy referrer_policy_no_default = referrer_policy;
   if (referrer_policy_no_default == kReferrerPolicyDefault) {
     if (RuntimeEnabledFeatures::ReducedReferrerGranularityEnabled()) {
-      referrer_policy_no_default =
-          kReferrerPolicyNoReferrerWhenDowngradeOriginWhenCrossOrigin;
+      referrer_policy_no_default = kReferrerPolicyStrictOriginWhenCrossOrigin;
     } else {
       referrer_policy_no_default = kReferrerPolicyNoReferrerWhenDowngrade;
     }
@@ -144,7 +142,7 @@ Referrer SecurityPolicy::GenerateReferrer(ReferrerPolicy referrer_policy,
                           : origin + "/",
                       referrer_policy_no_default);
     }
-    case kReferrerPolicyNoReferrerWhenDowngradeOriginWhenCrossOrigin: {
+    case kReferrerPolicyStrictOriginWhenCrossOrigin: {
       scoped_refptr<const SecurityOrigin> referrer_origin =
           SecurityOrigin::Create(referrer_url);
       scoped_refptr<const SecurityOrigin> url_origin =
@@ -234,7 +232,7 @@ void SecurityPolicy::AddOriginAccessWhitelistEntry(
   OriginAccessMap::AddResult result =
       GetOriginAccessMap().insert(source_string, nullptr);
   if (result.is_new_entry)
-    result.stored_value->value = WTF::WrapUnique(new OriginAccessWhiteList);
+    result.stored_value->value = std::make_unique<OriginAccessWhiteList>();
 
   OriginAccessWhiteList* list = result.stored_value->value.get();
   list->push_back(OriginAccessEntry(
@@ -317,7 +315,7 @@ bool SecurityPolicy::ReferrerPolicyFromString(
     return true;
   }
   if (EqualIgnoringASCIICase(policy, "strict-origin-when-cross-origin")) {
-    *result = kReferrerPolicyNoReferrerWhenDowngradeOriginWhenCrossOrigin;
+    *result = kReferrerPolicyStrictOriginWhenCrossOrigin;
     return true;
   }
   if (EqualIgnoringASCIICase(policy, "no-referrer-when-downgrade") ||
@@ -382,6 +380,6 @@ STATIC_ASSERT_ENUM(kWebReferrerPolicySameOrigin, kReferrerPolicySameOrigin);
 STATIC_ASSERT_ENUM(kWebReferrerPolicyStrictOrigin, kReferrerPolicyStrictOrigin);
 STATIC_ASSERT_ENUM(
     kWebReferrerPolicyNoReferrerWhenDowngradeOriginWhenCrossOrigin,
-    kReferrerPolicyNoReferrerWhenDowngradeOriginWhenCrossOrigin);
+    kReferrerPolicyStrictOriginWhenCrossOrigin);
 
 }  // namespace blink

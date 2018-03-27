@@ -1004,21 +1004,22 @@ void CompositedLayerMapping::UpdateSquashingLayerGeometry(
         compositing_container->SubpixelAccumulation();
   }
 
-#if 0 && DCHECK_IS_ON()
-  // TODO(trchen): We should enable this for below comment out |DCHECK()| once
-  // we have simple reproduce case and fix it. See http://crbug.com/646437 for
-  // details.
-  const PaintLayer* commonTransformAncestor = nullptr;
-  if (compositingContainer && compositingContainer->transform())
-    commonTransformAncestor = compositingContainer;
-  else if (compositingContainer)
-    commonTransformAncestor = compositingContainer->transformAncestor();
-#endif
+  const PaintLayer* common_transform_ancestor = nullptr;
+  if (compositing_container && compositing_container->Transform()) {
+    common_transform_ancestor = compositing_container;
+  } else if (compositing_container) {
+    common_transform_ancestor =
+        &compositing_container->TransformAncestorOrRoot();
+  }
+
+  // What about a null compositing container?
+
   // FIXME: Cache these offsets.
   LayoutPoint compositing_container_offset_from_transformed_ancestor;
-  if (compositing_container && !compositing_container->Transform()) {
+  if (compositing_container) {
     compositing_container_offset_from_transformed_ancestor =
-        compositing_container->ComputeOffsetFromTransformedAncestor();
+        compositing_container->ComputeOffsetFromAncestor(
+            *common_transform_ancestor);
   }
 
   LayoutRect total_squash_bounds;
@@ -1029,14 +1030,12 @@ void CompositedLayerMapping::UpdateSquashingLayerGeometry(
     // Store the local bounds of the Layer subtree before applying the offset.
     layers[i].composited_bounds = squashed_bounds;
 
-#if 0 && DCHECK_IS_ON()
-    // TODO(trchen): We should enable this |DCHECK()| once we have simple
-    // reproduce case and fix it. See http://crbug.com/646437 for details.
-    DCHECK(layers[i].paintLayer->transformAncestor() ==
-           commonTransformAncestor);
-#endif
+    DCHECK(&layers[i].paint_layer->TransformAncestorOrRoot() ==
+           common_transform_ancestor);
+
     LayoutPoint squashed_layer_offset_from_transformed_ancestor =
-        layers[i].paint_layer->ComputeOffsetFromTransformedAncestor();
+        layers[i].paint_layer->ComputeOffsetFromAncestor(
+            *common_transform_ancestor);
     LayoutSize squashed_layer_offset_from_compositing_container =
         squashed_layer_offset_from_transformed_ancestor -
         compositing_container_offset_from_transformed_ancestor;
@@ -1071,7 +1070,8 @@ void CompositedLayerMapping::UpdateSquashingLayerGeometry(
   // painting code expects the offset to be.
   for (size_t i = 0; i < layers.size(); ++i) {
     const LayoutPoint squashed_layer_offset_from_transformed_ancestor =
-        layers[i].paint_layer->ComputeOffsetFromTransformedAncestor();
+        layers[i].paint_layer->ComputeOffsetFromAncestor(
+            *common_transform_ancestor);
     const LayoutSize offset_from_squash_layer_origin =
         (squashed_layer_offset_from_transformed_ancestor -
          compositing_container_offset_from_transformed_ancestor) -
@@ -1689,6 +1689,8 @@ void CompositedLayerMapping::UpdateScrollingLayerGeometry(
               LayoutPoint(owning_layer_.SubpixelAccumulation()),
               LayoutSize(layout_box.ScrollWidth(), layout_box.ScrollHeight())))
           .Size();
+  // Ensure scrolling contents are at least as large as the scroll clip
+  scroll_size = scroll_size.ExpandedTo(overflow_clip_rect.Size());
 
   if (overflow_clip_rect_offset_changed)
     scrolling_contents_layer_->SetNeedsDisplay();
@@ -2551,6 +2553,8 @@ bool CompositedLayerMapping::UpdateScrollingLayers(
       owning_layer_.GetScrollingCoordinator();
 
   auto* scrollable_area = owning_layer_.GetScrollableArea();
+  if (scrollable_area)
+    scrollable_area->SetUsesCompositedScrolling(needs_scrolling_layers);
 
   bool layer_changed = false;
   if (needs_scrolling_layers) {
@@ -3346,6 +3350,7 @@ IntRect CompositedLayerMapping::RecomputeInterestRect(
 
   FloatSize offset_from_anchor_layout_object;
   const LayoutBoxModelObject* anchor_layout_object;
+  bool should_apply_anchor_overflow_clip = false;
   if (graphics_layer == squashing_layer_.get()) {
     // All squashed layers have the same clip and transform space, so we can use
     // the first squashed layer's layoutObject to map the squashing layer's
@@ -3367,21 +3372,31 @@ IntRect CompositedLayerMapping::RecomputeInterestRect(
            graphics_layer == scrolling_contents_layer_.get());
     anchor_layout_object = &owning_layer_.GetLayoutObject();
     IntSize offset = graphics_layer->OffsetFromLayoutObject();
-    AdjustForCompositedScrolling(graphics_layer, offset);
+    should_apply_anchor_overflow_clip =
+        AdjustForCompositedScrolling(graphics_layer, offset) &&
+        (RuntimeEnabledFeatures::RootLayerScrollingEnabled() ||
+         !owning_layer_.IsRootLayer());
     offset_from_anchor_layout_object = FloatSize(offset);
   }
+
+  LayoutView* root_view = anchor_layout_object->View();
+  while (root_view->GetFrame()->OwnerLayoutObject())
+    root_view = root_view->GetFrame()->OwnerLayoutObject()->View();
+
   // Start with the bounds of the graphics layer in the space of the anchor
   // LayoutObject.
   FloatRect graphics_layer_bounds_in_object_space(graphics_layer_bounds);
   graphics_layer_bounds_in_object_space.Move(offset_from_anchor_layout_object);
+  if (should_apply_anchor_overflow_clip && anchor_layout_object != root_view) {
+    FloatRect clip_rect(
+        ToLayoutBox(anchor_layout_object)->OverflowClipRect(LayoutPoint()));
+    graphics_layer_bounds_in_object_space.Intersect(clip_rect);
+  }
 
   // Now map the bounds to its visible content rect in root view space,
   // including applying clips along the way.
   LayoutRect graphics_layer_bounds_in_root_view_space(
       graphics_layer_bounds_in_object_space);
-  LayoutView* root_view = anchor_layout_object->View();
-  while (root_view->GetFrame()->OwnerLayoutObject())
-    root_view = root_view->GetFrame()->OwnerLayoutObject()->View();
 
   anchor_layout_object->MapToVisualRectInAncestorSpace(
       root_view, graphics_layer_bounds_in_root_view_space);
@@ -3525,7 +3540,7 @@ bool CompositedLayerMapping::NeedsRepaint(
                                                 : owning_layer_.NeedsRepaint();
 }
 
-void CompositedLayerMapping::AdjustForCompositedScrolling(
+bool CompositedLayerMapping::AdjustForCompositedScrolling(
     const GraphicsLayer* graphics_layer,
     IntSize& offset) const {
   if (graphics_layer == scrolling_contents_layer_.get() ||
@@ -3539,9 +3554,11 @@ void CompositedLayerMapping::AdjustForCompositedScrolling(
         // beginning of flow.
         ScrollOffset scroll_offset = scrollable_area->GetScrollOffset();
         offset.Expand(-scroll_offset.Width(), -scroll_offset.Height());
+        return true;
       }
     }
   }
+  return false;
 }
 
 void CompositedLayerMapping::PaintContents(

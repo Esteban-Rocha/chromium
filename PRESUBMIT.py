@@ -454,7 +454,7 @@ _BANNED_CPP_FUNCTIONS = (
     (
       r'/\bbase::Bind\(',
       (
-          'Please consider using base::Bind{Once,Repeating} instead '
+          'Please consider using base::Bind{Once,Repeating} instead',
           'of base::Bind. (crbug.com/714018)',
       ),
       False,
@@ -463,7 +463,7 @@ _BANNED_CPP_FUNCTIONS = (
     (
       r'/\bbase::Callback<',
       (
-          'Please consider using base::{Once,Repeating}Callback instead '
+          'Please consider using base::{Once,Repeating}Callback instead',
           'of base::Callback. (crbug.com/714018)',
       ),
       False,
@@ -472,8 +472,61 @@ _BANNED_CPP_FUNCTIONS = (
     (
       r'/\bbase::Closure\b',
       (
-          'Please consider using base::{Once,Repeating}Closure instead '
+          'Please consider using base::{Once,Repeating}Closure instead',
           'of base::Closure. (crbug.com/714018)',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'RunMessageLoop',
+      (
+          'RunMessageLoop is deprecated, use RunLoop instead.',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'RunThisRunLoop',
+      (
+          'RunThisRunLoop is deprecated, use RunLoop directly instead.',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'RunAllPendingInMessageLoop()',
+      (
+          "Prefer RunLoop over RunAllPendingInMessageLoop, please contact gab@",
+          "if you're convinced you need this.",
+      ),
+      False,
+      (),
+    ),
+    (
+      r'RunAllPendingInMessageLoop(BrowserThread',
+      (
+          'RunAllPendingInMessageLoop is deprecated. Use RunLoop for',
+          'BrowserThread::UI, TestBrowserThreadBundle::RunIOThreadUntilIdle',
+          'for BrowserThread::IO, and prefer RunLoop::QuitClosure to observe',
+          'async events instead of flushing threads.',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'MessageLoopRunner',
+      (
+          'MessageLoopRunner is deprecated, use RunLoop instead.',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'GetDeferredQuitTaskForRunLoop',
+      (
+          "GetDeferredQuitTaskForRunLoop shouldn't be needed, please contact",
+          "gab@ if you found a use case where this is the only solution.",
       ),
       False,
       (),
@@ -495,7 +548,8 @@ _BANNED_CPP_FUNCTIONS = (
 
 _IPC_ENUM_TRAITS_DEPRECATED = (
     'You are using IPC_ENUM_TRAITS() in your code. It has been deprecated.\n'
-    'See http://www.chromium.org/Home/chromium-security/education/security-tips-for-ipc')
+    'See http://www.chromium.org/Home/chromium-security/education/'
+    'security-tips-for-ipc')
 
 _JAVA_MULTIPLE_DEFINITION_EXCLUDED_PATHS = [
     r".*[\\\/]BuildHooksAndroidImpl\.java",
@@ -555,9 +609,10 @@ _ALL_PYDEPS_FILES = _ANDROID_SPECIFIC_PYDEPS_FILES + _GENERIC_PYDEPS_FILES
 
 # Bypass the AUTHORS check for these accounts.
 _KNOWN_ROBOTS = set(
-  '%s-chromium-autoroll@skia-buildbots.google.com.iam.gserviceaccount.com' % s
-  for s in ('afdo', 'angle', 'catapult', 'depot-tools', 'nacl', 'pdfium',
-            'skia', 'src-internal', 'webrtc'))
+    '%s-chromium-autoroll@skia-buildbots.google.com.iam.gserviceaccount.com' % s
+    for s in ('afdo', 'angle', 'catapult', 'chromite', 'depot-tools',
+              'fuchsia-sdk', 'nacl', 'pdfium', 'skia', 'src-internal', 'webrtc')
+  ) | set('%s@appspot.gserviceaccount.com' % s for s in ('findit-for-me',))
 
 
 def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
@@ -676,18 +731,40 @@ def _CheckUmaHistogramChanges(input_api, output_api):
   the reverse: changes in histograms.xml not matched in the code itself."""
   touched_histograms = []
   histograms_xml_modifications = []
-  pattern = input_api.re.compile('UMA_HISTOGRAM.*\("(.*)"')
+  call_pattern_c = r'\bUMA_HISTOGRAM.*\('
+  call_pattern_java = r'\bRecordHistogram\.record[a-zA-Z]+Histogram\('
+  name_pattern = r'"(.*?)"'
+  single_line_c_re = input_api.re.compile(call_pattern_c + name_pattern)
+  single_line_java_re = input_api.re.compile(call_pattern_java + name_pattern)
+  split_line_c_prefix_re = input_api.re.compile(call_pattern_c)
+  split_line_java_prefix_re = input_api.re.compile(call_pattern_java)
+  split_line_suffix_re = input_api.re.compile(r'^\s*' + name_pattern)
+  last_line_matched_prefix = False
   for f in input_api.AffectedFiles():
     # If histograms.xml itself is modified, keep the modified lines for later.
     if f.LocalPath().endswith(('histograms.xml')):
       histograms_xml_modifications = f.ChangedContents()
       continue
-    if not f.LocalPath().endswith(('cc', 'mm', 'cpp')):
+    if f.LocalPath().endswith(('cc', 'mm', 'cpp')):
+      single_line_re = single_line_c_re
+      split_line_prefix_re = split_line_c_prefix_re
+    elif f.LocalPath().endswith(('java')):
+      single_line_re = single_line_java_re
+      split_line_prefix_re = split_line_java_prefix_re
+    else:
       continue
     for line_num, line in f.ChangedContents():
-      found = pattern.search(line)
+      if last_line_matched_prefix:
+        suffix_found = split_line_suffix_re.search(line)
+        if suffix_found :
+          touched_histograms.append([suffix_found.group(1), f, line_num])
+          last_line_matched_prefix = False
+          continue
+      found = single_line_re.search(line)
       if found:
         touched_histograms.append([found.group(1), f, line_num])
+        continue
+      last_line_matched_prefix = split_line_prefix_re.search(line)
 
   # Search for the touched histogram names in the local modifications to
   # histograms.xml, and, if not found, on the base histograms.xml file.
@@ -776,7 +853,8 @@ def _CheckNoDEPSGIT(input_api, output_api):
       'Never commit changes to .DEPS.git. This file is maintained by an\n'
       'automated system based on what\'s in DEPS and your changes will be\n'
       'overwritten.\n'
-      'See https://sites.google.com/a/chromium.org/dev/developers/how-tos/get-the-code#Rolling_DEPS\n'
+      'See https://sites.google.com/a/chromium.org/dev/developers/how-tos/'
+      'get-the-code#Rolling_DEPS\n'
       'for more information')]
   return []
 
@@ -937,13 +1015,13 @@ def _CheckUnwantedDependencies(input_api, output_api):
   added_java_imports = []
   for f in input_api.AffectedFiles():
     if CppChecker.IsCppFile(f.LocalPath()):
-      changed_lines = [line for line_num, line in f.ChangedContents()]
+      changed_lines = [line for _, line in f.ChangedContents()]
       added_includes.append([f.AbsoluteLocalPath(), changed_lines])
     elif ProtoChecker.IsProtoFile(f.LocalPath()):
-      changed_lines = [line for line_num, line in f.ChangedContents()]
+      changed_lines = [line for _, line in f.ChangedContents()]
       added_imports.append([f.AbsoluteLocalPath(), changed_lines])
     elif JavaChecker.IsJavaFile(f.LocalPath()):
-      changed_lines = [line for line_num, line in f.ChangedContents()]
+      changed_lines = [line for _, line in f.ChangedContents()]
       added_java_imports.append([f.AbsoluteLocalPath(), changed_lines])
 
   deps_checker = checkdeps.DepsChecker(input_api.PresubmitLocalPath())
@@ -1102,8 +1180,8 @@ def _CheckGoogleSupportAnswerUrl(input_api, output_api):
   results = []
   if errors:
     results.append(output_api.PresubmitPromptWarning(
-      'Found Google support URL addressed by answer number. Please replace with '
-      'a p= identifier instead. See crbug.com/679462\n', errors))
+      'Found Google support URL addressed by answer number. Please replace '
+      'with a p= identifier instead. See crbug.com/679462\n', errors))
   return results
 
 
@@ -1174,7 +1252,7 @@ def _ExtractAddRulesFromParsedDeps(parsed_deps):
       rule[1:] for rule in parsed_deps.get('include_rules', [])
       if rule.startswith('+') or rule.startswith('!')
   ])
-  for specific_file, rules in parsed_deps.get('specific_include_rules',
+  for _, rules in parsed_deps.get('specific_include_rules',
                                               {}).iteritems():
     add_rules.update([
         rule[1:] for rule in rules
@@ -1324,7 +1402,6 @@ def _CheckSpamLogging(input_api, output_api):
                  r"^chrome[\\\/]browser[\\\/]ui[\\\/]startup[\\\/]"
                      r"startup_browser_creator\.cc$",
                  r"^chrome[\\\/]installer[\\\/]setup[\\\/].*",
-                 r"^chrome[\\\/]installer[\\\/]zucchini[\\\/].*",
                  r"chrome[\\\/]browser[\\\/]diagnostics[\\\/]" +
                      r"diagnostics_writer\.cc$",
                  r"^chrome_elf[\\\/]dll_hash[\\\/]dll_hash_main\.cc$",
@@ -1334,6 +1411,7 @@ def _CheckSpamLogging(input_api, output_api):
                      r"dump_stability_report_main_win.cc$",
                  r"^components[\\\/]html_viewer[\\\/]"
                      r"web_test_delegate_impl\.cc$",
+                 r"^components[\\\/]zucchini[\\\/].*",
                  # TODO(peter): Remove this exception. https://crbug.com/534537
                  r"^content[\\\/]browser[\\\/]notifications[\\\/]"
                      r"notification_event_dispatcher_impl\.cc$",
@@ -1696,7 +1774,7 @@ def _GetOwnersFilesToCheckForIpcOwners(input_api):
               'per-file %s=file://ipc/SECURITY_OWNERS' % pattern,
           ]
       }
-      to_check[owners_file][pattern]['files'].append(f)
+    to_check[owners_file][pattern]['files'].append(input_file)
 
   # Iterate through the affected files to see what we actually need to check
   # for. We should only nag patch authors about per-file rules if a file in that
@@ -1713,7 +1791,12 @@ def _GetOwnersFilesToCheckForIpcOwners(input_api):
       mostly_json_lines = '\n'.join(f.NewContents())
       # Comments aren't allowed in strict JSON, so filter them out.
       json_lines = json_comment_eater.Nom(mostly_json_lines)
-      json_content = input_api.json.loads(json_lines)
+      try:
+        json_content = input_api.json.loads(json_lines)
+      except:
+        # There's another PRESUBMIT check that already verifies that JSON files
+        # are not invalid, so no need to emit another warning here.
+        continue
       if 'interface_provider_specs' in json_content:
         AddPatternToCheck(f, input_api.os_path.basename(f.LocalPath()))
     for pattern in file_patterns:
@@ -1759,7 +1842,7 @@ def _CheckIpcOwners(input_api, output_api):
   for owners_file, patterns in to_check.iteritems():
     missing_lines = []
     files = []
-    for pattern, entry in patterns.iteritems():
+    for _, entry in patterns.iteritems():
       missing_lines.extend(entry['rules'])
       files.extend(['  %s' % f.LocalPath() for f in entry['files']])
     if missing_lines:
@@ -2180,15 +2263,21 @@ def _CheckPydepsNeedsUpdating(input_api, output_api, checker_for_tests=None):
   results = []
   # First, check for new / deleted .pydeps.
   for f in input_api.AffectedFiles(include_deletes=True):
-    if f.LocalPath().endswith('.pydeps'):
-      if f.Action() == 'D' and f.LocalPath() in _ALL_PYDEPS_FILES:
-        results.append(output_api.PresubmitError(
-            'Please update _ALL_PYDEPS_FILES within //PRESUBMIT.py to '
-            'remove %s' % f.LocalPath()))
-      elif f.Action() != 'D' and f.LocalPath() not in _ALL_PYDEPS_FILES:
-        results.append(output_api.PresubmitError(
-            'Please update _ALL_PYDEPS_FILES within //PRESUBMIT.py to '
-            'include %s' % f.LocalPath()))
+    # Check whether we are running the presubmit check for a file in src.
+    # f.LocalPath is relative to repo (src, or internal repo).
+    # os_path.exists is relative to src repo.
+    # Therefore if os_path.exists is true, it means f.LocalPath is relative
+    # to src and we can conclude that the pydeps is in src.
+    if input_api.os_path.exists(f.LocalPath()):
+      if f.LocalPath().endswith('.pydeps'):
+        if f.Action() == 'D' and f.LocalPath() in _ALL_PYDEPS_FILES:
+          results.append(output_api.PresubmitError(
+              'Please update _ALL_PYDEPS_FILES within //PRESUBMIT.py to '
+              'remove %s' % f.LocalPath()))
+        elif f.Action() != 'D' and f.LocalPath() not in _ALL_PYDEPS_FILES:
+          results.append(output_api.PresubmitError(
+              'Please update _ALL_PYDEPS_FILES within //PRESUBMIT.py to '
+              'include %s' % f.LocalPath()))
 
   if results:
     return results
@@ -2402,7 +2491,7 @@ def _CheckForRelativeIncludes(input_api, output_api):
     if not CppChecker.IsCppFile(f.LocalPath()):
       continue
 
-    relative_includes = [line for line_num, line in f.ChangedContents()
+    relative_includes = [line for _, line in f.ChangedContents()
                          if "#include" in line and "../" in line]
     if not relative_includes:
       continue
@@ -2625,11 +2714,13 @@ def _CommonChecks(input_api, output_api):
   results.extend(input_api.RunTests(
     input_api.canned_checks.CheckVPythonSpec(input_api, output_api)))
 
-  if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
-    results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
-        input_api, output_api,
-        input_api.PresubmitLocalPath(),
-        whitelist=[r'^PRESUBMIT_test\.py$']))
+  for f in input_api.AffectedFiles():
+    path, name = input_api.os_path.split(f.LocalPath())
+    if name == 'PRESUBMIT.py':
+      full_path = input_api.os_path.join(input_api.PresubmitLocalPath(), path)
+      results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
+          input_api, output_api, full_path,
+          whitelist=[r'^PRESUBMIT_test\.py$']))
   return results
 
 
@@ -2891,7 +2982,7 @@ def _CheckForIncludeGuards(input_api, output_api):
               errors.append(output_api.PresubmitPromptWarning(
                 'Header using the wrong include guard name %s' % guard_name,
                 ['%s:%d' % (f.LocalPath(), line_number + 1)],
-                'Expected: %r\nGot: %r' % (guard_name, expected_text)))
+                'Expected: %r\nFound: %r' % (expected_text, guard_name)))
       else:
         # The line after #ifndef should have a #define of the same name.
         if line_number == guard_line_number + 1:
@@ -2939,9 +3030,12 @@ def _CheckForWindowsLineEndings(input_api, output_api):
   source_file_filter = lambda f: input_api.FilterSourceFile(
       f, white_list=file_inclusion_pattern, black_list=None)
   for f in input_api.AffectedSourceFiles(source_file_filter):
-    for line_number, line in f.ChangedContents():
+    include_file = False
+    for _, line in f.ChangedContents():
       if line.endswith('\r\n'):
-        problems.append(f.LocalPath())
+        include_file = True
+    if include_file:
+      problems.append(f.LocalPath())
 
   if problems:
     return [output_api.PresubmitPromptWarning('Are you sure that you want '
@@ -2951,8 +3045,7 @@ def _CheckForWindowsLineEndings(input_api, output_api):
   return []
 
 
-def _CheckSyslogUseWarning(input_api, output_api, source_file_filter=None,
-                           lint_filters=None, verbose_level=None):
+def _CheckSyslogUseWarning(input_api, output_api, source_file_filter=None):
   """Checks that all source files use SYSLOG properly."""
   syslog_files = []
   for f in input_api.AffectedSourceFiles(source_file_filter):

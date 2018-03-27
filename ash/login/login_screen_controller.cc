@@ -96,6 +96,9 @@ void LoginScreenController::ShowLoginScreen(ShowLoginScreenCallback on_shown) {
   // Login screen can only be used during login.
   if (Shell::Get()->session_controller()->GetSessionState() !=
       session_manager::SessionState::LOGIN_PRIMARY) {
+    LOG(ERROR) << "Not showing login screen since session state is "
+               << static_cast<int>(
+                      Shell::Get()->session_controller()->GetSessionState());
     std::move(on_shown).Run(false);
     return;
   }
@@ -310,6 +313,27 @@ void LoginScreenController::ShowGaiaSignin() {
   if (!login_screen_client_)
     return;
   login_screen_client_->ShowGaiaSignin();
+}
+
+void LoginScreenController::OnRemoveUserWarningShown() {
+  if (!login_screen_client_)
+    return;
+  login_screen_client_->OnRemoveUserWarningShown();
+}
+
+void LoginScreenController::RemoveUser(const AccountId& account_id) {
+  if (!login_screen_client_)
+    return;
+  login_screen_client_->RemoveUser(account_id);
+}
+
+void LoginScreenController::LaunchPublicSession(
+    const AccountId& account_id,
+    const std::string& locale,
+    const std::string& input_method) {
+  if (!login_screen_client_)
+    return;
+  login_screen_client_->LaunchPublicSession(account_id, locale, input_method);
 }
 
 void LoginScreenController::AddLockScreenAppsFocusObserver(

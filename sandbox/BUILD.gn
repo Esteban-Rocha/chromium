@@ -40,6 +40,9 @@ buildflag_header("sandbox_features") {
 
 # This target must be here and not in win/ otherwise it would require a full
 # parse of win/BUILD.gn which fails on non-Windows platforms.
+#
+# Although the code is Windows-based, the fuzzer is designed to work on Linux,
+# so do not disable this fuzzer on non-Windows platforms.
 fuzzer_test("sandbox_ipc_fuzzer") {
   set_sources_assignment_filter([])
   sources = [

@@ -193,14 +193,7 @@ void AutofillAgent::DidCommitProvisionalLoad(bool is_new_navigation,
 
   // Navigation to a new page or a page refresh.
 
-  // Do Finch testing to see how much regressions are caused by this leak fix
-  // (crbug/753071).
-  std::string group_name =
-      base::FieldTrialList::FindFullName("FixDocumentLeakInAutofillAgent");
-  if (base::StartsWith(group_name, "enabled",
-                       base::CompareCase::INSENSITIVE_ASCII)) {
-    element_.Reset();
-  }
+  element_.Reset();
 
   form_cache_.Reset();
   ResetLastInteractedElements();
@@ -394,6 +387,9 @@ void AutofillAgent::UserGestureObserved() {
 
 void AutofillAgent::DoAcceptDataListSuggestion(
     const base::string16& suggested_value) {
+  if (element_.IsNull())
+    return;
+
   WebInputElement* input_element = ToWebInputElement(&element_);
   DCHECK(input_element);
   base::string16 new_value = suggested_value;
@@ -425,6 +421,9 @@ void AutofillAgent::DoAcceptDataListSuggestion(
 
 // mojom::AutofillAgent:
 void AutofillAgent::FillForm(int32_t id, const FormData& form) {
+  if (element_.IsNull())
+    return;
+
   if (id != autofill_query_id_ && id != kNoQueryId)
     return;
 
@@ -437,6 +436,9 @@ void AutofillAgent::FillForm(int32_t id, const FormData& form) {
 }
 
 void AutofillAgent::PreviewForm(int32_t id, const FormData& form) {
+  if (element_.IsNull())
+    return;
+
   if (id != autofill_query_id_)
     return;
 
@@ -448,6 +450,9 @@ void AutofillAgent::PreviewForm(int32_t id, const FormData& form) {
 
 void AutofillAgent::FieldTypePredictionsAvailable(
     const std::vector<FormDataPredictions>& forms) {
+  if (element_.IsNull())
+    return;
+
   bool attach_predictions_to_dom =
       base::FeatureList::IsEnabled(features::kAutofillShowTypePredictions);
   for (const auto& form : forms) {
@@ -456,27 +461,30 @@ void AutofillAgent::FieldTypePredictionsAvailable(
 }
 
 void AutofillAgent::ClearForm() {
+  if (element_.IsNull())
+    return;
+
   form_cache_.ClearFormWithElement(element_);
 }
 
 void AutofillAgent::ClearPreviewedForm() {
-  if (!element_.IsNull()) {
-    if (password_autofill_agent_->DidClearAutofillSelection(element_))
-      return;
+  // TODO(crbug.com/816533): It is very rare, but it looks like the |element_|
+  // can be null if a provisional load was committed immediately prior to
+  // clearing the previewed form.
+  if (element_.IsNull())
+    return;
 
-    form_util::ClearPreviewedFormWithElement(element_,
-                                             was_query_node_autofilled_);
-  } else {
-    // TODO(isherman): There seem to be rare cases where this code *is*
-    // reachable: see [ http://crbug.com/96321#c6 ].  Ideally we would
-    // understand those cases and fix the code to avoid them.  However, so far I
-    // have been unable to reproduce such a case locally.  If you hit this
-    // NOTREACHED(), please file a bug against me.
-    NOTREACHED();
-  }
+  if (password_autofill_agent_->DidClearAutofillSelection(element_))
+    return;
+
+  form_util::ClearPreviewedFormWithElement(element_,
+                                           was_query_node_autofilled_);
 }
 
 void AutofillAgent::FillFieldWithValue(const base::string16& value) {
+  if (element_.IsNull())
+    return;
+
   WebInputElement* input_element = ToWebInputElement(&element_);
   if (input_element) {
     DoFillFieldWithValue(value, input_element);
@@ -485,6 +493,9 @@ void AutofillAgent::FillFieldWithValue(const base::string16& value) {
 }
 
 void AutofillAgent::PreviewFieldWithValue(const base::string16& value) {
+  if (element_.IsNull())
+    return;
+
   WebInputElement* input_element = ToWebInputElement(&element_);
   if (input_element)
     DoPreviewFieldWithValue(value, input_element);
@@ -496,6 +507,9 @@ void AutofillAgent::AcceptDataListSuggestion(const base::string16& value) {
 
 void AutofillAgent::FillPasswordSuggestion(const base::string16& username,
                                            const base::string16& password) {
+  if (element_.IsNull())
+    return;
+
   bool handled =
       password_autofill_agent_->FillSuggestion(element_, username, password);
   DCHECK(handled);
@@ -503,6 +517,9 @@ void AutofillAgent::FillPasswordSuggestion(const base::string16& username,
 
 void AutofillAgent::PreviewPasswordSuggestion(const base::string16& username,
                                               const base::string16& password) {
+  if (element_.IsNull())
+    return;
+
   bool handled = password_autofill_agent_->PreviewSuggestion(
       element_, blink::WebString::FromUTF16(username),
       blink::WebString::FromUTF16(password));
@@ -951,6 +968,7 @@ bool AutofillAgent::GetSubmittedForm(FormData* form) {
 
 void AutofillAgent::ResetLastInteractedElements() {
   last_interacted_form_.Reset();
+  last_clicked_form_control_element_for_testing_.Reset();
   formless_elements_user_edited_.clear();
   provisionally_saved_form_.reset();
 }

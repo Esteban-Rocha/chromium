@@ -39,7 +39,7 @@
 #include "chromecast/browser/url_request_context_factory.h"
 #include "chromecast/common/global_descriptors.h"
 #include "chromecast/media/audio/cast_audio_manager.h"
-#include "chromecast/media/cma/backend/media_pipeline_backend_factory_impl.h"
+#include "chromecast/media/cma/backend/cma_backend_factory_impl.h"
 #include "chromecast/media/cma/backend/media_pipeline_backend_manager.h"
 #include "chromecast/public/media/media_pipeline_backend.h"
 #include "components/network_hints/browser/network_hints_message_filter.h"
@@ -59,7 +59,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
 #include "media/audio/audio_thread_impl.h"
-#include "media/mojo/features.h"
+#include "media/mojo/buildflags.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -114,16 +114,14 @@ namespace {
 #if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
 static std::unique_ptr<service_manager::Service> CreateMediaService(
     CastContentBrowserClient* browser_client) {
-  std::unique_ptr<media::CastMojoMediaClient> mojo_media_client(
-      new media::CastMojoMediaClient(
-          browser_client->GetMediaPipelineBackendFactory(),
-          base::Bind(&CastContentBrowserClient::CreateCdmFactory,
-                     base::Unretained(browser_client)),
-          browser_client->GetVideoModeSwitcher(),
-          browser_client->GetVideoResolutionPolicy(),
-          browser_client->media_resource_tracker()));
-  return std::unique_ptr<service_manager::Service>(
-      new ::media::MediaService(std::move(mojo_media_client)));
+  auto mojo_media_client = std::make_unique<media::CastMojoMediaClient>(
+      browser_client->GetCmaBackendFactory(),
+      base::Bind(&CastContentBrowserClient::CreateCdmFactory,
+                 base::Unretained(browser_client)),
+      browser_client->GetVideoModeSwitcher(),
+      browser_client->GetVideoResolutionPolicy(),
+      browser_client->media_resource_tracker());
+  return std::make_unique<::media::MediaService>(std::move(mojo_media_client));
 }
 #endif  // BUILDFLAG(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
 
@@ -234,15 +232,13 @@ CastContentBrowserClient::GetMediaTaskRunner() {
   return cast_browser_main_parts_->GetMediaTaskRunner();
 }
 
-media::MediaPipelineBackendFactory*
-CastContentBrowserClient::GetMediaPipelineBackendFactory() {
+media::CmaBackendFactory* CastContentBrowserClient::GetCmaBackendFactory() {
   DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
-  if (!media_pipeline_backend_factory_) {
-    media_pipeline_backend_factory_.reset(
-        new media::MediaPipelineBackendFactoryImpl(
-            media_pipeline_backend_manager()));
+  if (!cma_backend_factory_) {
+    cma_backend_factory_ = std::make_unique<media::CmaBackendFactoryImpl>(
+        media_pipeline_backend_manager());
   }
-  return media_pipeline_backend_factory_.get();
+  return cma_backend_factory_.get();
 }
 
 media::MediaResourceTracker*
@@ -266,13 +262,13 @@ CastContentBrowserClient::CreateAudioManager(
 #if defined(USE_ALSA)
   return std::make_unique<media::CastAudioManagerAlsa>(
       std::make_unique<::media::AudioThreadImpl>(), audio_log_factory,
-      std::make_unique<media::MediaPipelineBackendFactoryImpl>(
+      std::make_unique<media::CmaBackendFactoryImpl>(
           media_pipeline_backend_manager()),
       GetMediaTaskRunner(), use_mixer);
 #else
   return std::make_unique<media::CastAudioManager>(
       std::make_unique<::media::AudioThreadImpl>(), audio_log_factory,
-      std::make_unique<media::MediaPipelineBackendFactoryImpl>(
+      std::make_unique<media::CmaBackendFactoryImpl>(
           media_pipeline_backend_manager()),
       GetMediaTaskRunner(), use_mixer);
 #endif  // defined(USE_ALSA)
@@ -469,7 +465,7 @@ void CastContentBrowserClient::OverrideWebkitPrefs(
     content::RenderViewHost* render_view_host,
     content::WebPreferences* prefs) {
   prefs->allow_scripts_to_close_windows = true;
-  // TODO(lcwu): http://crbug.com/391089. This pref is set to true by default
+  // TODO(halliwell): http://crbug.com/391089. This pref defaults to to true
   // because some content providers such as YouTube use plain http requests
   // to retrieve media data chunks while running in a https page. This pref
   // should be disabled once all the content providers are no longer doing that.
@@ -593,15 +589,16 @@ void CastContentBrowserClient::SelectClientCertificateOnIOThread(
   if (network_delegate->IsWhitelisted(requesting_url, session_id,
                                       render_process_id, false)) {
     original_runner->PostTask(
-        FROM_HERE, base::Bind(continue_callback, DeviceCert(), DeviceKey()));
+        FROM_HERE,
+        base::BindOnce(continue_callback, DeviceCert(), DeviceKey()));
     return;
   } else {
     LOG(ERROR) << "Invalid host for client certificate request: "
                << requesting_url.host()
                << " with render_process_id: " << render_process_id;
   }
-  original_runner->PostTask(FROM_HERE,
-                            base::Bind(continue_callback, nullptr, nullptr));
+  original_runner->PostTask(
+      FROM_HERE, base::BindOnce(continue_callback, nullptr, nullptr));
 }
 
 bool CastContentBrowserClient::CanCreateWindow(

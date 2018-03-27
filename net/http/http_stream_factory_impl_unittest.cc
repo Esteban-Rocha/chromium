@@ -40,7 +40,7 @@
 #include "net/http/transport_security_state.h"
 #include "net/log/net_log_with_source.h"
 #include "net/proxy_resolution/proxy_info.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/quic/chromium/mock_crypto_client_stream_factory.h"
 #include "net/quic/chromium/quic_http_utils.h"
 #include "net/quic/chromium/quic_stream_factory_peer.h"
@@ -62,6 +62,7 @@
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 
 // This file can be included from net/http even though
 // it is in net/websockets because it doesn't
@@ -368,6 +369,8 @@ void PreconnectHelperForURL(int num_streams,
   request.url = url;
   request.load_flags = 0;
   request.motivation = HttpRequestInfo::PRECONNECT_MOTIVATED;
+  request.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   session->http_stream_factory()->PreconnectStreams(num_streams, request);
   mock_factory->WaitForPreconnects();
@@ -542,8 +545,8 @@ TEST_F(HttpStreamFactoryTest, PreconnectDirect) {
 
 TEST_F(HttpStreamFactoryTest, PreconnectHttpProxy) {
   for (size_t i = 0; i < arraysize(kTests); ++i) {
-    SpdySessionDependencies session_deps(
-        ProxyResolutionService::CreateFixed("http_proxy"));
+    SpdySessionDependencies session_deps(ProxyResolutionService::CreateFixed(
+        "http_proxy", TRAFFIC_ANNOTATION_FOR_TESTS));
     std::unique_ptr<HttpNetworkSession> session(
         SpdySessionDependencies::SpdyCreateSession(&session_deps));
     HttpNetworkSessionPeer peer(session.get());
@@ -576,8 +579,8 @@ TEST_F(HttpStreamFactoryTest, PreconnectHttpProxy) {
 
 TEST_F(HttpStreamFactoryTest, PreconnectSocksProxy) {
   for (size_t i = 0; i < arraysize(kTests); ++i) {
-    SpdySessionDependencies session_deps(
-        ProxyResolutionService::CreateFixed("socks4://socks_proxy:1080"));
+    SpdySessionDependencies session_deps(ProxyResolutionService::CreateFixed(
+        "socks4://socks_proxy:1080", TRAFFIC_ANNOTATION_FOR_TESTS));
     std::unique_ptr<HttpNetworkSession> session(
         SpdySessionDependencies::SpdyCreateSession(&session_deps));
     HttpNetworkSessionPeer peer(session.get());
@@ -695,7 +698,8 @@ TEST_F(HttpStreamFactoryTest, PreconnectSetsMotivation) {
 TEST_F(HttpStreamFactoryTest, JobNotifiesProxy) {
   const char* kProxyString = "PROXY bad:99; PROXY maybe:80; DIRECT";
   SpdySessionDependencies session_deps(
-      ProxyResolutionService::CreateFixedFromPacResult(kProxyString));
+      ProxyResolutionService::CreateFixedFromPacResult(
+          kProxyString, TRAFFIC_ANNOTATION_FOR_TESTS));
 
   // First connection attempt fails
   StaticSocketDataProvider socket_data1;
@@ -715,6 +719,8 @@ TEST_F(HttpStreamFactoryTest, JobNotifiesProxy) {
   HttpRequestInfo request_info;
   request_info.method = "GET";
   request_info.url = GURL("http://www.google.com");
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -758,8 +764,8 @@ const int quic_proxy_test_mock_errors[] = {
 TEST_F(HttpStreamFactoryTest, QuicProxyMarkedAsBad) {
   for (size_t i = 0; i < arraysize(quic_proxy_test_mock_errors); ++i) {
     std::unique_ptr<ProxyResolutionService> proxy_resolution_service;
-    proxy_resolution_service =
-        ProxyResolutionService::CreateFixedFromPacResult("QUIC bad:99; DIRECT");
+    proxy_resolution_service = ProxyResolutionService::CreateFixedFromPacResult(
+        "QUIC bad:99; DIRECT", TRAFFIC_ANNOTATION_FOR_TESTS);
 
     HttpNetworkSession::Params session_params;
     session_params.enable_quic = true;
@@ -803,6 +809,8 @@ TEST_F(HttpStreamFactoryTest, QuicProxyMarkedAsBad) {
     HttpRequestInfo request_info;
     request_info.method = "GET";
     request_info.url = GURL("http://www.google.com");
+    request_info.traffic_annotation =
+        MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
     SSLConfig ssl_config;
     StreamRequestWaiter waiter;
@@ -940,7 +948,8 @@ TEST_F(HttpStreamFactoryTest, WithQUICAlternativeProxyMarkedAsBad) {
       MockClientSocketFactory socket_factory;
       std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
           ProxyResolutionService::CreateFixedFromPacResult(
-              "HTTPS badproxy:99; HTTPS badfallbackproxy:98; DIRECT");
+              "HTTPS badproxy:99; HTTPS badfallbackproxy:98; DIRECT",
+              TRAFFIC_ANNOTATION_FOR_TESTS);
       TestProxyDelegate test_proxy_delegate;
       HttpServerPropertiesImpl http_server_properties;
       MockCertVerifier cert_verifier;
@@ -1006,6 +1015,8 @@ TEST_F(HttpStreamFactoryTest, WithQUICAlternativeProxyMarkedAsBad) {
       HttpRequestInfo request_info;
       request_info.method = "GET";
       request_info.url = GURL("http://www.google.com");
+      request_info.traffic_annotation =
+          MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
       SSLConfig ssl_config;
       StreamRequestWaiter waiter;
@@ -1053,7 +1064,7 @@ TEST_F(HttpStreamFactoryTest, WithQUICAlternativeProxyNotMarkedAsBad) {
     MockClientSocketFactory socket_factory;
     std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
         ProxyResolutionService::CreateFixedFromPacResult(
-            "HTTPS badproxy:99; DIRECT");
+            "HTTPS badproxy:99; DIRECT", TRAFFIC_ANNOTATION_FOR_TESTS);
     TestProxyDelegate test_proxy_delegate;
     HttpServerPropertiesImpl http_server_properties;
     MockCertVerifier cert_verifier;
@@ -1104,6 +1115,8 @@ TEST_F(HttpStreamFactoryTest, WithQUICAlternativeProxyNotMarkedAsBad) {
     HttpRequestInfo request_info;
     request_info.method = "GET";
     request_info.url = GURL("http://www.google.com");
+    request_info.traffic_annotation =
+        MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
     SSLConfig ssl_config;
     StreamRequestWaiter waiter;
@@ -1140,8 +1153,8 @@ TEST_F(HttpStreamFactoryTest, UsePreConnectIfNoZeroRTT) {
   for (int num_streams = 1; num_streams < 3; ++num_streams) {
     GURL url = GURL("https://www.google.com");
 
-    SpdySessionDependencies session_deps(
-        ProxyResolutionService::CreateFixed("http_proxy"));
+    SpdySessionDependencies session_deps(ProxyResolutionService::CreateFixed(
+        "http_proxy", TRAFFIC_ANNOTATION_FOR_TESTS));
 
     // Setup params to disable preconnect, but QUIC doesn't 0RTT.
     HttpNetworkSession::Params session_params =
@@ -1200,7 +1213,7 @@ TEST_F(HttpStreamFactoryTest, OnlyOnePreconnectToProxyServer) {
       GURL url = GURL("http://www.google.com");
       std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
           ProxyResolutionService::CreateFixedFromPacResult(
-              "HTTPS myproxy.org:443");
+              "HTTPS myproxy.org:443", TRAFFIC_ANNOTATION_FOR_TESTS);
 
       // Set up the proxy server as a server that supports request priorities.
       HttpServerPropertiesImpl http_server_properties;
@@ -1254,6 +1267,8 @@ TEST_F(HttpStreamFactoryTest, OnlyOnePreconnectToProxyServer) {
         request.method = "GET";
         request.url = url;
         request.load_flags = 0;
+        request.traffic_annotation =
+            MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
         if (preconnect_request == 0) {
           // First preconnect job should succeed.
@@ -1293,7 +1308,8 @@ TEST_F(HttpStreamFactoryTest, ProxyServerPreconnectDifferentPrivacyModes) {
   base::HistogramTester histogram_tester;
   GURL url = GURL("http://www.google.com");
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
-      ProxyResolutionService::CreateFixedFromPacResult("HTTPS myproxy.org:443");
+      ProxyResolutionService::CreateFixedFromPacResult(
+          "HTTPS myproxy.org:443", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   // Set up the proxy server as a server that supports request priorities.
   HttpServerPropertiesImpl http_server_properties;
@@ -1341,6 +1357,8 @@ TEST_F(HttpStreamFactoryTest, ProxyServerPreconnectDifferentPrivacyModes) {
   request_privacy_mode_disabled.method = "GET";
   request_privacy_mode_disabled.url = url;
   request_privacy_mode_disabled.load_flags = 0;
+  request_privacy_mode_disabled.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   // First preconnect job should succeed.
   session->http_stream_factory()->PreconnectStreams(
@@ -1361,6 +1379,8 @@ TEST_F(HttpStreamFactoryTest, ProxyServerPreconnectDifferentPrivacyModes) {
   request_privacy_mode_enabled.url = url;
   request_privacy_mode_enabled.load_flags = 0;
   request_privacy_mode_enabled.privacy_mode = PRIVACY_MODE_ENABLED;
+  request_privacy_mode_enabled.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   // Request with a different privacy mode should succeed.
   session->http_stream_factory()->PreconnectStreams(
@@ -1394,6 +1414,8 @@ TEST_F(HttpStreamFactoryTest, PrivacyModeDisablesChannelId) {
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
   request_info.privacy_mode = PRIVACY_MODE_DISABLED;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1493,6 +1515,8 @@ TEST_F(HttpStreamFactoryTest, PrivacyModeUsesDifferentSocketPoolGroup) {
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
   request_info.privacy_mode = PRIVACY_MODE_DISABLED;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1543,6 +1567,8 @@ TEST_F(HttpStreamFactoryTest, GetLoadState) {
   HttpRequestInfo request_info;
   request_info.method = "GET";
   request_info.url = GURL("http://www.google.com");
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1573,6 +1599,8 @@ TEST_F(HttpStreamFactoryTest, RequestHttpStream) {
   request_info.method = "GET";
   request_info.url = GURL("http://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1622,6 +1650,8 @@ TEST_F(HttpStreamFactoryTest, ReprioritizeAfterStreamReceived) {
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1667,6 +1697,8 @@ TEST_F(HttpStreamFactoryTest, RequestHttpStreamOverSSL) {
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1694,8 +1726,8 @@ TEST_F(HttpStreamFactoryTest, RequestHttpStreamOverSSL) {
 }
 
 TEST_F(HttpStreamFactoryTest, RequestHttpStreamOverProxy) {
-  SpdySessionDependencies session_deps(
-      ProxyResolutionService::CreateFixed("myproxy:8888"));
+  SpdySessionDependencies session_deps(ProxyResolutionService::CreateFixed(
+      "myproxy:8888", TRAFFIC_ANNOTATION_FOR_TESTS));
 
   StaticSocketDataProvider socket_data;
   socket_data.set_connect_data(MockConnect(ASYNC, OK));
@@ -1710,6 +1742,8 @@ TEST_F(HttpStreamFactoryTest, RequestHttpStreamOverProxy) {
   request_info.method = "GET";
   request_info.url = GURL("http://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1746,8 +1780,8 @@ TEST_F(HttpStreamFactoryTest, RequestHttpStreamOverProxy) {
 // Verifies that once a stream has been created to a proxy server (that supports
 // request priorities) the next preconnect job can again open new sockets.
 TEST_F(HttpStreamFactoryTest, RequestHttpStreamOverProxyWithPreconnects) {
-  SpdySessionDependencies session_deps(
-      ProxyResolutionService::CreateFixed("https://myproxy.org:443"));
+  SpdySessionDependencies session_deps(ProxyResolutionService::CreateFixed(
+      "https://myproxy.org:443", TRAFFIC_ANNOTATION_FOR_TESTS));
 
   // Set up the proxy server as a server that supports request priorities.
   auto http_server_properties = std::make_unique<HttpServerPropertiesImpl>();
@@ -1770,6 +1804,8 @@ TEST_F(HttpStreamFactoryTest, RequestHttpStreamOverProxyWithPreconnects) {
   request_info.method = "GET";
   request_info.url = GURL("http://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   base::HistogramTester histogram_tester;
   const int num_preconnects = 5;
@@ -1839,6 +1875,8 @@ TEST_F(HttpStreamFactoryTest, RequestWebSocketBasicHandshakeStream) {
   request_info.method = "GET";
   request_info.url = GURL("ws://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1883,6 +1921,8 @@ TEST_F(HttpStreamFactoryTest, RequestWebSocketBasicHandshakeStreamOverSSL) {
   request_info.method = "GET";
   request_info.url = GURL("wss://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1909,8 +1949,8 @@ TEST_F(HttpStreamFactoryTest, RequestWebSocketBasicHandshakeStreamOverSSL) {
 }
 
 TEST_F(HttpStreamFactoryTest, RequestWebSocketBasicHandshakeStreamOverProxy) {
-  SpdySessionDependencies session_deps(
-      ProxyResolutionService::CreateFixed("myproxy:8888"));
+  SpdySessionDependencies session_deps(ProxyResolutionService::CreateFixed(
+      "myproxy:8888", TRAFFIC_ANNOTATION_FOR_TESTS));
 
   MockRead read(SYNCHRONOUS, "HTTP/1.0 200 Connection established\r\n\r\n");
   StaticSocketDataProvider socket_data(&read, 1, 0, 0);
@@ -1925,6 +1965,8 @@ TEST_F(HttpStreamFactoryTest, RequestWebSocketBasicHandshakeStreamOverProxy) {
   request_info.method = "GET";
   request_info.url = GURL("ws://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -1982,6 +2024,8 @@ TEST_F(HttpStreamFactoryTest, RequestSpdyHttpStreamHttpsURL) {
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -2012,9 +2056,10 @@ TEST_F(HttpStreamFactoryTest, RequestSpdyHttpStreamHttpURL) {
   url::SchemeHostPort scheme_host_port("http", "myproxy.org", 443);
   auto session_deps = std::make_unique<SpdySessionDependencies>(
       ProxyResolutionService::CreateFixedFromPacResult(
-          "HTTPS myproxy.org:443"));
+          "HTTPS myproxy.org:443", TRAFFIC_ANNOTATION_FOR_TESTS));
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
-      ProxyResolutionService::CreateFixedFromPacResult("HTTPS myproxy.org:443");
+      ProxyResolutionService::CreateFixedFromPacResult(
+          "HTTPS myproxy.org:443", TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockRead mock_read(SYNCHRONOUS, ERR_IO_PENDING);
   SequencedSocketData socket_data(&mock_read, 1, nullptr, 0);
@@ -2038,6 +2083,8 @@ TEST_F(HttpStreamFactoryTest, RequestSpdyHttpStreamHttpURL) {
   request_info.method = "GET";
   request_info.url = GURL("http://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -2124,6 +2171,8 @@ TEST_F(HttpStreamFactoryTest, NewSpdySessionCloseIdleH2Sockets) {
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter1;
@@ -2179,6 +2228,8 @@ TEST_F(HttpStreamFactoryTest, TwoSpdyConnects) {
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
   SSLConfig ssl_config;
 
   // Request two streams at once and make sure they use the same connection.
@@ -2233,6 +2284,8 @@ TEST_F(HttpStreamFactoryTest, RequestBidirectionalStreamImpl) {
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -2422,6 +2475,8 @@ TEST_P(HttpStreamFactoryBidirectionalQuicTest,
   request_info.method = "GET";
   request_info.url = default_url_;
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   StreamRequestWaiter waiter;
   std::unique_ptr<HttpStreamRequest> request(
@@ -2446,7 +2501,7 @@ TEST_P(HttpStreamFactoryBidirectionalQuicTest,
   TestBidirectionalDelegate delegate;
   stream_impl->Start(&bidi_request_info, NetLogWithSource(),
                      /*send_request_headers_automatically=*/true, &delegate,
-                     nullptr);
+                     nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
   delegate.WaitUntilDone();
 
   scoped_refptr<IOBuffer> buffer = new net::IOBuffer(1);
@@ -2487,6 +2542,8 @@ TEST_P(HttpStreamFactoryBidirectionalQuicTest,
   request_info.method = "GET";
   request_info.url = default_url_;
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   StreamRequestWaiter waiter;
   std::unique_ptr<HttpStreamRequest> request(
@@ -2549,6 +2606,8 @@ TEST_P(HttpStreamFactoryBidirectionalQuicTest,
   request_info.method = "GET";
   request_info.url = default_url_;
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   StreamRequestWaiter waiter;
   std::unique_ptr<HttpStreamRequest> request(
@@ -2573,7 +2632,7 @@ TEST_P(HttpStreamFactoryBidirectionalQuicTest,
   TestBidirectionalDelegate delegate;
   stream_impl->Start(&bidi_request_info, NetLogWithSource(),
                      /*send_request_headers_automatically=*/true, &delegate,
-                     nullptr);
+                     nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
   delegate.WaitUntilDone();
 
   // Make sure the BidirectionalStream negotiated goes through QUIC.
@@ -2615,6 +2674,8 @@ TEST_F(HttpStreamFactoryTest, RequestBidirectionalStreamImplFailure) {
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -2679,11 +2740,16 @@ TEST_F(HttpStreamFactoryTest, Tag) {
   request_info1.url = GURL("https://example.org");
   request_info1.load_flags = 0;
   request_info1.socket_tag = tag1;
+  request_info1.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
   SocketTag tag2(getuid(), 0x87654321);
   HttpRequestInfo request_info2 = request_info1;
   request_info2.socket_tag = tag2;
+  request_info2.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
-  // Verify one stream with one tag results in one session, group and socket.
+  // Verify one stream with one tag results in one session, group and
+  // socket.
   SSLConfig ssl_config;
   StreamRequestWaiter waiter1;
   std::unique_ptr<HttpStreamRequest> request1(
@@ -2836,9 +2902,13 @@ TEST_P(HttpStreamFactoryBidirectionalQuicTest, Tag) {
   request_info1.url = default_url_;
   request_info1.load_flags = 0;
   request_info1.socket_tag = tag1;
+  request_info1.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
   SocketTag tag2(getuid(), 0x87654321);
   HttpRequestInfo request_info2 = request_info1;
   request_info2.socket_tag = tag2;
+  request_info2.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   // Verify one stream with one tag results in one QUIC session.
   SSLConfig ssl_config;
@@ -2935,16 +3005,23 @@ TEST_F(HttpStreamFactoryTest, ChangeSocketTag) {
   request_info1.url = GURL("https://www.example.org");
   request_info1.load_flags = 0;
   request_info1.socket_tag = tag1;
+  request_info1.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   SocketTag tag2(getuid(), 0x87654321);
   HttpRequestInfo request_info2 = request_info1;
   request_info2.socket_tag = tag2;
+  request_info2.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
   // Prepare another HttpRequestInfo with tag1 and a different host name.
   HttpRequestInfo request_info3 = request_info1;
   request_info3.url = GURL("https://foo.example.org");
+  request_info3.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
-  // Verify one stream with one tag results in one session, group and socket.
+  // Verify one stream with one tag results in one session, group and
+  // socket.
   SSLConfig ssl_config;
   StreamRequestWaiter waiter1;
   std::unique_ptr<HttpStreamRequest> request1(
@@ -3130,6 +3207,8 @@ TEST_F(HttpStreamFactoryTest, MultiIPAliases) {
   request_info1.method = "GET";
   request_info1.url = GURL("https://a.example.org");
   request_info1.privacy_mode = PRIVACY_MODE_DISABLED;
+  request_info1.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
   HttpRequestInfo request_info1_alias = request_info1;
   request_info1.url = GURL("https://b.example.org");
 
@@ -3138,6 +3217,8 @@ TEST_F(HttpStreamFactoryTest, MultiIPAliases) {
   request_info2.method = "GET";
   request_info2.url = GURL("https://a.example.org");
   request_info2.privacy_mode = PRIVACY_MODE_ENABLED;
+  request_info2.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
   HttpRequestInfo request_info2_alias = request_info2;
   request_info2.url = GURL("https://b.example.org");
 

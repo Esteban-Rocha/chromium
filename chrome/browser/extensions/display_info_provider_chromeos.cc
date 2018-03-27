@@ -10,7 +10,7 @@
 #include "ash/display/display_configuration_controller.h"
 #include "ash/display/overscan_calibrator.h"
 #include "ash/display/resolution_notification_controller.h"
-#include "ash/display/screen_orientation_controller_chromeos.h"
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/display/touch_calibrator_controller.h"
 #include "ash/shell.h"
 #include "ash/touch/ash_touch_transform_controller.h"
@@ -23,6 +23,7 @@
 #include "ui/display/display.h"
 #include "ui/display/display_layout.h"
 #include "ui/display/display_layout_builder.h"
+#include "ui/display/manager/chromeos/display_util.h"
 #include "ui/display/manager/chromeos/touch_device_manager.h"
 #include "ui/display/manager/display_manager.h"
 #include "ui/display/manager/display_manager_utilities.h"
@@ -781,11 +782,33 @@ void DisplayInfoProviderChromeOS::UpdateDisplayUnitInfoForPlatform(
     }
   }
 
-  unit->display_zoom_factor =
-      display_manager->GetZoomFactorForDisplay(display.id());
-
   const display::ManagedDisplayInfo& display_info =
       display_manager->GetDisplayInfo(display.id());
+  if (!display_info.manufacturer_id().empty() ||
+      !display_info.product_id().empty() ||
+      (display_info.year_of_manufacture() !=
+       display::kInvalidYearOfManufacture)) {
+    unit->edid = std::make_unique<system_display::Edid>();
+    if (!display_info.manufacturer_id().empty())
+      unit->edid->manufacturer_id = display_info.manufacturer_id();
+    if (!display_info.product_id().empty())
+      unit->edid->product_id = display_info.product_id();
+    if (display_info.year_of_manufacture() !=
+        display::kInvalidYearOfManufacture) {
+      unit->edid->year_of_manufacture = display_info.year_of_manufacture();
+    }
+  }
+
+  unit->display_zoom_factor = display_info.zoom_factor();
+
+  display::ManagedDisplayMode active_mode;
+  if (display_manager->GetActiveModeForDisplayId(display.id(), &active_mode)) {
+    unit->available_display_zoom_factors =
+        display::GetDisplayZoomFactors(active_mode);
+  } else {
+    unit->available_display_zoom_factors.push_back(display_info.zoom_factor());
+  }
+
   const float device_dpi = display_info.device_dpi();
   unit->dpi_x = device_dpi * display.size().width() /
                 display_info.bounds_in_native().width();

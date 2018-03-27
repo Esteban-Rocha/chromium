@@ -39,6 +39,7 @@ import org.chromium.base.test.params.ParameterizedRunner;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.base.test.util.Restriction;
+import org.chromium.base.test.util.RetryOnFailure;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.customtabs.CustomTabActivity;
@@ -57,6 +58,8 @@ import org.chromium.content_public.browser.WebContents;
 import java.lang.ref.WeakReference;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -321,8 +324,8 @@ public class WebVrTransitionTest {
 
         // Send an autopresent intent, which will open the link in a CCT
         VrTransitionUtils.sendVrLaunchIntent(
-                VrTestFramework.getHtmlTestFile("test_webvr_autopresent"),
-                mTestRule.getActivity(), true /* autopresent */);
+                VrTestFramework.getHtmlTestFile("test_webvr_autopresent"), mTestRule.getActivity(),
+                true /* autopresent */, true /* avoidRelaunch */);
 
         // Wait until a CCT is opened due to the intent
         final AtomicReference<CustomTabActivity> cct = new AtomicReference<CustomTabActivity>();
@@ -403,6 +406,7 @@ public class WebVrTransitionTest {
     @Test
     @MediumTest
     @VrActivityRestriction({VrActivityRestriction.SupportedActivity.ALL})
+    @RetryOnFailure
     public void testWindowRafStopsFiringWhilePresenting() throws InterruptedException {
         windowRafStopsFiringWhilePresentingImpl(
                 VrTestFramework.getHtmlTestFile("test_window_raf_stops_firing_while_presenting"),
@@ -431,7 +435,12 @@ public class WebVrTransitionTest {
         framework.loadUrlAndAwaitInitialization(url, PAGE_LOAD_TIMEOUT_S);
         TestFramework.executeStepAndWait(
                 "stepVerifyBeforePresent()", framework.getFirstTabWebContents());
+        // Pausing of window.rAF is done asynchronously, so wait until that's done.
+        final CountDownLatch vsyncPausedLatch = new CountDownLatch(1);
+        TestVrShellDelegate.getInstance().setVrShellOnVSyncPausedCallback(
+                () -> { vsyncPausedLatch.countDown(); });
         TransitionUtils.enterPresentationOrFail(framework);
+        vsyncPausedLatch.await(POLL_TIMEOUT_SHORT_MS, TimeUnit.MILLISECONDS);
         TestFramework.executeStepAndWait(
                 "stepVerifyDuringPresent()", framework.getFirstTabWebContents());
         TransitionUtils.forceExitVr();
@@ -472,5 +481,46 @@ public class WebVrTransitionTest {
         TransitionUtils.enterPresentationOrFail(framework);
         framework.simulateRendererKilled();
         Assert.assertTrue("Browser is in VR", VrShellDelegate.isInVr());
+    }
+
+    /**
+     * Tests that window.rAF continues to fire when we have a non-exclusive session.
+     */
+    @Test
+    @MediumTest
+    @CommandLineFlags.Remove({"enable-webvr"})
+    @CommandLineFlags.Add({"enable-features=WebXR"})
+    @VrActivityRestriction({VrActivityRestriction.SupportedActivity.ALL})
+    public void testWindowRafFiresDuringNonExclusiveSession() throws InterruptedException {
+        mXrTestFramework.loadUrlAndAwaitInitialization(
+                XrTestFramework.getHtmlTestFile(
+                        "test_window_raf_fires_during_non_exclusive_session"),
+                PAGE_LOAD_TIMEOUT_S);
+        XrTestFramework.waitOnJavaScriptStep(mXrTestFramework.getFirstTabWebContents());
+        XrTestFramework.endTest(mXrTestFramework.getFirstTabWebContents());
+    }
+
+    /**
+     * Tests that non-exclusive sessions stop receiving rAFs during an exclusive session, but resume
+     * once the exclusive session ends.
+     */
+    @Test
+    @MediumTest
+    @CommandLineFlags.Remove({"enable-webvr"})
+    @CommandLineFlags.Add({"enable-features=WebXR"})
+    @VrActivityRestriction({VrActivityRestriction.SupportedActivity.ALL})
+    public void testNonExclusiveStopsDuringExclusive() throws InterruptedException {
+        mXrTestFramework.loadUrlAndAwaitInitialization(
+                XrTestFramework.getHtmlTestFile("test_non_exclusive_stops_during_exclusive"),
+                PAGE_LOAD_TIMEOUT_S);
+        XrTestFramework.executeStepAndWait(
+                "stepBeforeExclusive()", mXrTestFramework.getFirstTabWebContents());
+        TransitionUtils.enterPresentationOrFail(mXrTestFramework);
+        XrTestFramework.executeStepAndWait(
+                "stepDuringExclusive()", mXrTestFramework.getFirstTabWebContents());
+        TransitionUtils.forceExitVr();
+        XrTestFramework.executeStepAndWait(
+                "stepAfterExclusive()", mXrTestFramework.getFirstTabWebContents());
+        XrTestFramework.endTest(mXrTestFramework.getFirstTabWebContents());
     }
 }

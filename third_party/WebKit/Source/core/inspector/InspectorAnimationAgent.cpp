@@ -7,14 +7,14 @@
 #include <memory>
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/animation/Animation.h"
-#include "core/animation/AnimationEffectReadOnly.h"
+#include "core/animation/AnimationEffect.h"
 #include "core/animation/AnimationEffectTiming.h"
 #include "core/animation/ComputedTimingProperties.h"
 #include "core/animation/EffectModel.h"
 #include "core/animation/ElementAnimation.h"
 #include "core/animation/ElementAnimations.h"
+#include "core/animation/KeyframeEffect.h"
 #include "core/animation/KeyframeEffectModel.h"
-#include "core/animation/KeyframeEffectReadOnly.h"
 #include "core/animation/StringKeyframe.h"
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSKeyframeRule.h"
@@ -95,8 +95,7 @@ void InspectorAnimationAgent::DidCommitLoadForLocalFrame(LocalFrame* frame) {
 }
 
 static std::unique_ptr<protocol::Animation::AnimationEffect>
-BuildObjectForAnimationEffect(KeyframeEffectReadOnly* effect,
-                              bool is_transition) {
+BuildObjectForAnimationEffect(KeyframeEffect* effect, bool is_transition) {
   ComputedTimingProperties computed_timing = effect->getComputedTiming();
   double delay = computed_timing.delay();
   double duration = computed_timing.duration().GetAsUnrestrictedDouble();
@@ -146,7 +145,7 @@ BuildObjectForStringKeyframe(const StringKeyframe* keyframe,
 }
 
 static std::unique_ptr<protocol::Animation::KeyframesRule>
-BuildObjectForAnimationKeyframes(const KeyframeEffectReadOnly* effect) {
+BuildObjectForAnimationKeyframes(const KeyframeEffect* effect) {
   if (!effect || !effect->Model() || !effect->Model()->IsKeyframeEffectModel())
     return nullptr;
   const KeyframeEffectModelBase* model = effect->Model();
@@ -177,8 +176,7 @@ InspectorAnimationAgent::BuildObjectForAnimation(blink::Animation& animation) {
   if (!animation.effect()) {
     animation_type = AnimationType::WebAnimation;
   } else {
-    const Element* element =
-        ToKeyframeEffectReadOnly(animation.effect())->target();
+    const Element* element = ToKeyframeEffect(animation.effect())->target();
     std::unique_ptr<protocol::Animation::KeyframesRule> keyframe_rule;
 
     if (!element) {
@@ -193,7 +191,7 @@ InspectorAnimationAgent::BuildObjectForAnimation(blink::Animation& animation) {
       } else {
         // Keyframe based animations
         keyframe_rule = BuildObjectForAnimationKeyframes(
-            ToKeyframeEffectReadOnly(animation.effect()));
+            ToKeyframeEffect(animation.effect()));
         animation_type = css_animations.IsAnimationForInspector(animation)
                              ? AnimationType::CSSAnimation
                              : AnimationType::WebAnimation;
@@ -201,7 +199,7 @@ InspectorAnimationAgent::BuildObjectForAnimation(blink::Animation& animation) {
     }
 
     animation_effect_object = BuildObjectForAnimationEffect(
-        ToKeyframeEffectReadOnly(animation.effect()),
+        ToKeyframeEffect(animation.effect()),
         animation_type == AnimationType::CSSTransition);
     animation_effect_object->setKeyframesRule(std::move(keyframe_rule));
   }
@@ -254,8 +252,8 @@ Response InspectorAnimationAgent::getCurrentTime(const String& id,
     *current_time = animation->currentTime();
   } else {
     // Use startTime where possible since currentTime is limited.
-    *current_time =
-        animation->TimelineInternal()->currentTime() - animation->startTime();
+    *current_time = animation->TimelineInternal()->currentTime() -
+                    animation->startTime().value_or(NullValue());
   }
   return Response::OK();
 }
@@ -274,8 +272,8 @@ Response InspectorAnimationAgent::setPaused(
       return Response::Error("Failed to clone detached animation");
     if (paused && !clone->Paused()) {
       // Ensure we restore a current time if the animation is limited.
-      double current_time =
-          clone->TimelineInternal()->currentTime() - clone->startTime();
+      double current_time = clone->TimelineInternal()->currentTime() -
+                            clone->startTime().value_or(NullValue());
       clone->pause();
       clone->setCurrentTime(current_time, false);
     } else if (!paused && clone->Paused()) {
@@ -289,8 +287,7 @@ blink::Animation* InspectorAnimationAgent::AnimationClone(
     blink::Animation* animation) {
   const String id = String::Number(animation->SequenceNumber());
   if (!id_to_animation_clone_.at(id)) {
-    KeyframeEffectReadOnly* old_effect =
-        ToKeyframeEffectReadOnly(animation->effect());
+    KeyframeEffect* old_effect = ToKeyframeEffect(animation->effect());
     DCHECK(old_effect->Model()->IsKeyframeEffectModel());
     KeyframeEffectModelBase* old_model = old_effect->Model();
     KeyframeEffectModelBase* new_model = nullptr;
@@ -323,7 +320,7 @@ blink::Animation* InspectorAnimationAgent::AnimationClone(
     id_to_animation_clone_.Set(id, clone);
     id_to_animation_.Set(String::Number(clone->SequenceNumber()), clone);
     clone->play();
-    clone->setStartTime(animation->startTime(), false);
+    clone->setStartTime(animation->startTime().value_or(NullValue()), false);
 
     animation->SetEffectSuppressed(true);
   }
@@ -420,8 +417,7 @@ Response InspectorAnimationAgent::resolveAnimation(
     return response;
   if (id_to_animation_clone_.at(animation_id))
     animation = id_to_animation_clone_.at(animation_id);
-  const Element* element =
-      ToKeyframeEffectReadOnly(animation->effect())->target();
+  const Element* element = ToKeyframeEffect(animation->effect())->target();
   Document* document = element->ownerDocument();
   LocalFrame* frame = document ? document->GetFrame() : nullptr;
   ScriptState* script_state =
@@ -463,7 +459,7 @@ String InspectorAnimationAgent::CreateCSSId(blink::Animation& animation) {
       id_to_animation_type_.at(String::Number(animation.SequenceNumber()));
   DCHECK_NE(type, AnimationType::WebAnimation);
 
-  KeyframeEffectReadOnly* effect = ToKeyframeEffectReadOnly(animation.effect());
+  KeyframeEffect* effect = ToKeyframeEffect(animation.effect());
   Vector<const CSSProperty*> css_properties;
   if (type == AnimationType::CSSAnimation) {
     for (const CSSProperty* property : g_animation_properties)
@@ -551,12 +547,14 @@ DocumentTimeline& InspectorAnimationAgent::ReferenceTimeline() {
 double InspectorAnimationAgent::NormalizedStartTime(
     blink::Animation& animation) {
   if (ReferenceTimeline().PlaybackRate() == 0) {
-    return animation.startTime() + ReferenceTimeline().currentTime() -
+    return animation.startTime().value_or(NullValue()) +
+           ReferenceTimeline().currentTime() -
            animation.TimelineInternal()->currentTime();
   }
-  return animation.startTime() + (animation.TimelineInternal()->ZeroTime() -
-                                  ReferenceTimeline().ZeroTime()) *
-                                     1000 * ReferenceTimeline().PlaybackRate();
+  return animation.startTime().value_or(NullValue()) +
+         (animation.TimelineInternal()->ZeroTime() -
+          ReferenceTimeline().ZeroTime()) *
+             1000 * ReferenceTimeline().PlaybackRate();
 }
 
 void InspectorAnimationAgent::Trace(blink::Visitor* visitor) {

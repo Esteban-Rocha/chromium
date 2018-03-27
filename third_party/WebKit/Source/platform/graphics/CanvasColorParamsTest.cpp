@@ -5,7 +5,7 @@
 #include "platform/graphics/CanvasColorParams.h"
 
 #include "platform/graphics/ColorCorrectionTestUtils.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkColorSpaceXform.h"
 #include "ui/gfx/color_space.h"
@@ -24,8 +24,6 @@ namespace blink {
 // SkColorSpaceXformCanvas for sRGB targets and GetSkColorSpaceForSkSurfaces()
 // returns nullptr for the surface.
 TEST(CanvasColorParamsTest, MatchSkColorSpaceWithGfxColorSpace) {
-  ScopedExperimentalCanvasFeaturesForTest experimental_canvas_features(true);
-
   sk_sp<SkColorSpace> src_rgb_color_space = SkColorSpace::MakeSRGB();
   std::unique_ptr<uint8_t[]> src_pixel(new uint8_t[4]{32, 96, 160, 255});
 

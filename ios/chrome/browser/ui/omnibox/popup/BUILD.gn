@@ -17,6 +17,7 @@ source_set("popup") {
     "omnibox_popup_view_ios.h",
     "omnibox_popup_view_ios.mm",
     "omnibox_popup_view_suggestions_delegate.h",
+    "table_view_owning.h",
   ]
   deps = [
     ":popup_internal",
@@ -28,6 +29,7 @@ source_set("popup") {
     "//ios/chrome/browser/browser_state",
     "//ios/chrome/browser/ui:ui",
     "//ios/chrome/browser/ui:ui_util",
+    "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/omnibox:omnibox_popup_shared",
     "//ios/chrome/browser/ui/omnibox:omnibox_util",
     "//ios/chrome/browser/ui/toolbar/public:public",

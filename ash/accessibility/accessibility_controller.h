@@ -82,9 +82,6 @@ class ASH_EXPORT AccessibilityController
   void SetStickyKeysEnabled(bool enabled);
   bool IsStickyKeysEnabled() const;
 
-  void SetTapDraggingEnabled(bool enabled);
-  bool IsTapDraggingEnabled() const;
-
   void SetVirtualKeyboardEnabled(bool enabled);
   bool IsVirtualKeyboardEnabled() const;
 
@@ -129,20 +126,16 @@ class ASH_EXPORT AccessibilityController
   // countdown.
   void PlaySpokenFeedbackToggleCountdown(int tick_count);
 
-  // Sets whether the accessibility panel is filling the entire screen.
-  // TODO(jamescook): Convert to mojo interface.
-  void SetAccessibilityPanelFullscreen(bool fullscreen);
-
-  // Public because a11y features like screen magnifier and tap dragging are
-  // managed outside of this controller.
-  void NotifyAccessibilityStatusChanged(
-      AccessibilityNotificationVisibility notify);
+  // Public because a11y features like screen magnifier are managed outside of
+  // this controller.
+  void NotifyAccessibilityStatusChanged();
 
   // mojom::AccessibilityController:
   void SetClient(mojom::AccessibilityControllerClientPtr client) override;
   void SetDarkenScreen(bool darken) override;
   void BrailleDisplayStateChanged(bool connected) override;
   void SetFocusHighlightRect(const gfx::Rect& bounds_in_screen) override;
+  void SetAccessibilityPanelFullscreen(bool fullscreen) override;
 
   // SessionObserver:
   void OnSigninScreenPrefServiceInitialized(PrefService* prefs) override;
@@ -169,6 +162,8 @@ class ASH_EXPORT AccessibilityController
   void UpdateStickyKeysFromPref();
   void UpdateVirtualKeyboardFromPref();
   void UpdateAccessibilityHighlightingFromPrefs();
+
+  void NotifyShowAccessibilityNotification();
 
   service_manager::Connector* connector_ = nullptr;
   std::unique_ptr<PrefChangeRegistrar> pref_change_registrar_;

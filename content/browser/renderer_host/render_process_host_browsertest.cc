@@ -11,6 +11,8 @@
 #include "build/build_config.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/child_process_launcher_utils.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_observer.h"
@@ -31,7 +33,7 @@
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/media_switches.h"
 #include "media/base/test_data_util.h"
-#include "media/mojo/features.h"
+#include "media/mojo/buildflags.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -137,24 +139,6 @@ class NonSpareRendererContentBrowserClient : public TestContentBrowserClient {
                                          const GURL& url) override {
     return true;
   }
-};
-
-class RenderProcessHostWithKeepAliveOptionEnabledTest
-    : public RenderProcessHostTest {
- public:
-  void SetUp() override {
-    feature_list_.InitAndEnableFeature(
-        features::kKeepAliveRendererForKeepaliveRequests);
-    RenderProcessHostTest::SetUp();
-  }
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    command_line->AppendSwitch(
-        switches::kEnableExperimentalWebPlatformFeatures);
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
 };
 
 // Sometimes the renderer process's ShutdownRequest (corresponding to the
@@ -356,8 +340,8 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, SpareRendererOnProcessReuse) {
   base::WaitableEvent launcher_thread_done(
       base::WaitableEvent::ResetPolicy::MANUAL,
       base::WaitableEvent::InitialState::NOT_SIGNALED);
-  BrowserThread::PostTask(
-      BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
+  GetProcessLauncherTaskRunner()->PostTask(
+      FROM_HERE,
       base::BindOnce([](base::WaitableEvent* done) { done->Signal(); },
                      base::Unretained(&launcher_thread_done)));
   ASSERT_TRUE(launcher_thread_done.TimedWait(TestTimeouts::action_timeout()));
@@ -729,8 +713,7 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest,
     rph->RemoveObserver(this);
 }
 
-IN_PROC_BROWSER_TEST_F(RenderProcessHostWithKeepAliveOptionEnabledTest,
-                       KeepAliveRendererProcess) {
+IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, KeepAliveRendererProcess) {
   embedded_test_server()->RegisterRequestHandler(
       base::BindRepeating(HandleBeacon));
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -757,8 +740,7 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostWithKeepAliveOptionEnabledTest,
     rph->RemoveObserver(this);
 }
 
-IN_PROC_BROWSER_TEST_F(RenderProcessHostWithKeepAliveOptionEnabledTest,
-                       KeepAliveRendererProcess_Hung) {
+IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, KeepAliveRendererProcess_Hung) {
   embedded_test_server()->RegisterRequestHandler(
       base::BindRepeating(HandleHungBeacon));
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -785,7 +767,7 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostWithKeepAliveOptionEnabledTest,
     rph->RemoveObserver(this);
 }
 
-IN_PROC_BROWSER_TEST_F(RenderProcessHostWithKeepAliveOptionEnabledTest,
+IN_PROC_BROWSER_TEST_F(RenderProcessHostTest,
                        FetchKeepAliveRendererProcess_Hung) {
   embedded_test_server()->RegisterRequestHandler(
       base::BindRepeating(HandleHungBeacon));

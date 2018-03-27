@@ -25,22 +25,22 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "core/editing/Editor.h"
+#include "core/editing/commands/EditorCommand.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/CSSPropertyNames.h"
-#include "core/CSSValueKeywords.h"
-#include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSValueList.h"
+#include "core/css_property_names.h"
+#include "core/css_value_keywords.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/TagCollection.h"
 #include "core/dom/events/Event.h"
 #include "core/editing/EditingStyleUtilities.h"
 #include "core/editing/EditingTriState.h"
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/Editor.h"
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/SelectionModifier.h"
@@ -48,11 +48,13 @@
 #include "core/editing/SetSelectionOptions.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/commands/ApplyStyleCommand.h"
+#include "core/editing/commands/ClipboardCommands.h"
 #include "core/editing/commands/CreateLinkCommand.h"
 #include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/editing/commands/EditorCommandNames.h"
 #include "core/editing/commands/FormatBlockCommand.h"
 #include "core/editing/commands/IndentOutdentCommand.h"
+#include "core/editing/commands/InsertCommands.h"
 #include "core/editing/commands/InsertListCommand.h"
 #include "core/editing/commands/RemoveFormatCommand.h"
 #include "core/editing/commands/ReplaceSelectionCommand.h"
@@ -61,16 +63,11 @@
 #include "core/editing/iterators/TextIterator.h"
 #include "core/editing/serializers/Serialization.h"
 #include "core/editing/spellcheck/SpellChecker.h"
-#include "core/events/ClipboardEvent.h"
-#include "core/events/TextEvent.h"
-#include "core/frame/ContentSettingsClient.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
-#include "core/frame/Settings.h"
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLHRElement.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/forms/TextControlElement.h"
 #include "core/html_names.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutBox.h"
@@ -78,8 +75,6 @@
 #include "core/page/Page.h"
 #include "platform/Histogram.h"
 #include "platform/KillRing.h"
-#include "platform/PasteMode.h"
-#include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/scroll/Scrollbar.h"
 #include "platform/wtf/StringExtras.h"
 #include "platform/wtf/text/AtomicString.h"
@@ -258,21 +253,16 @@ class EditorInternalCommand {
   EditingTriState (*state)(LocalFrame&, Event*);
   String (*value)(const EditorInternalCommand&, LocalFrame&, Event*);
   bool is_text_insertion;
-  // TODO(yosin) We should have |canExecute()|, which checks clipboard
-  // accessibility to simplify |Editor::Command::execute()|.
-  bool allow_execution_when_disabled;
+  bool (*can_execute)(LocalFrame&, EditorCommandSource);
 };
 
 static const bool kNotTextInsertion = false;
 static const bool kIsTextInsertion = true;
 
-static const bool kAllowExecutionWhenDisabled = true;
-static const bool kDoNotAllowExecutionWhenDisabled = false;
-
 // Related to Editor::selectionForCommand.
 // Certain operations continue to use the target control's selection even if the
 // event handler already moved the selection outside of the text control.
-static LocalFrame* TargetFrame(LocalFrame& frame, Event* event) {
+LocalFrame* InsertCommands::TargetFrame(LocalFrame& frame, Event* event) {
   if (!event)
     return &frame;
   Node* node = event->target()->ToNode();
@@ -455,8 +445,8 @@ static bool ExecuteApplyParagraphStyle(LocalFrame& frame,
   return false;
 }
 
-static bool ExecuteInsertFragment(LocalFrame& frame,
-                                  DocumentFragment* fragment) {
+bool InsertCommands::ExecuteInsertFragment(LocalFrame& frame,
+                                           DocumentFragment* fragment) {
   DCHECK(frame.GetDocument());
   return ReplaceSelectionCommand::Create(
              *frame.GetDocument(), fragment,
@@ -465,7 +455,8 @@ static bool ExecuteInsertFragment(LocalFrame& frame,
       ->Apply();
 }
 
-static bool ExecuteInsertElement(LocalFrame& frame, HTMLElement* content) {
+bool InsertCommands::ExecuteInsertElement(LocalFrame& frame,
+                                          HTMLElement* content) {
   DCHECK(frame.GetDocument());
   DocumentFragment* fragment = DocumentFragment::Create(*frame.GetDocument());
   DummyExceptionStateForTesting exception_state;
@@ -475,8 +466,8 @@ static bool ExecuteInsertElement(LocalFrame& frame, HTMLElement* content) {
   return ExecuteInsertFragment(frame, fragment);
 }
 
-static bool ExpandSelectionToGranularity(LocalFrame& frame,
-                                         TextGranularity granularity) {
+bool ExpandSelectionToGranularity(LocalFrame& frame,
+                                  TextGranularity granularity) {
   const VisibleSelection& selection = CreateVisibleSelectionWithGranularity(
       SelectionInDOMTree::Builder()
           .SetBaseAndExtent(
@@ -739,134 +730,9 @@ static bool ExecuteBackColor(LocalFrame& frame,
                            CSSPropertyBackgroundColor, value);
 }
 
-static bool CanWriteClipboard(LocalFrame& frame, EditorCommandSource source) {
-  if (source == EditorCommandSource::kMenuOrKeyBinding)
-    return true;
-  Settings* settings = frame.GetSettings();
-  bool default_value =
-      (settings && settings->GetJavaScriptCanAccessClipboard()) ||
-      Frame::HasTransientUserActivation(&frame);
-  if (!frame.GetContentSettingsClient())
-    return default_value;
-  return frame.GetContentSettingsClient()->AllowWriteToClipboard(default_value);
-}
-
-static Element* FindEventTargetForClipboardEvent(LocalFrame& frame,
-                                                 EditorCommandSource source) {
-  // https://www.w3.org/TR/clipboard-apis/#fire-a-clipboard-event says:
-  //  "Set target to be the element that contains the start of the selection in
-  //   document order, or the body element if there is no selection or cursor."
-  // We treat hidden selections as "no selection or cursor".
-  if (source == EditorCommandSource::kMenuOrKeyBinding &&
-      frame.Selection().IsHidden())
-    return frame.Selection().GetDocument().body();
-
-  return FindEventTargetFrom(
-      frame, frame.Selection().ComputeVisibleSelectionInDOMTree());
-}
-
-// Returns true if Editor should continue with default processing.
-static bool DispatchClipboardEvent(LocalFrame& frame,
-                                   const AtomicString& event_type,
-                                   DataTransferAccessPolicy policy,
-                                   EditorCommandSource source,
-                                   PasteMode paste_mode) {
-  Element* const target = FindEventTargetForClipboardEvent(frame, source);
-  if (!target)
-    return true;
-
-  DataTransfer* const data_transfer =
-      DataTransfer::Create(DataTransfer::kCopyAndPaste, policy,
-                           policy == kDataTransferWritable
-                               ? DataObject::Create()
-                               : DataObject::CreateFromPasteboard(paste_mode));
-
-  Event* const evt = ClipboardEvent::Create(event_type, data_transfer);
-  target->DispatchEvent(evt);
-  const bool no_default_processing = evt->defaultPrevented();
-  if (no_default_processing && policy == kDataTransferWritable) {
-    Pasteboard::GeneralPasteboard()->WriteDataObject(
-        data_transfer->GetDataObject());
-  }
-
-  // Invalidate clipboard here for security.
-  data_transfer->SetAccessPolicy(kDataTransferNumb);
-  return !no_default_processing;
-}
-
-static bool DispatchCopyOrCutEvent(LocalFrame& frame,
-                                   EditorCommandSource source,
-                                   const AtomicString& event_type) {
-  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-  if (IsInPasswordField(
-          frame.Selection().ComputeVisibleSelectionInDOMTree().Start()))
-    return true;
-
-  return DispatchClipboardEvent(frame, event_type, kDataTransferWritable,
-                                source, PasteMode::kAllMimeTypes);
-}
-
 static bool CanSmartCopyOrDelete(LocalFrame& frame) {
   return frame.GetEditor().SmartInsertDeleteEnabled() &&
          frame.Selection().Granularity() == TextGranularity::kWord;
-}
-
-static void WriteSelectionToPasteboard(LocalFrame& frame) {
-  const KURL& url = frame.GetDocument()->Url();
-  const String html = frame.Selection().SelectedHTMLForClipboard();
-  const String plain_text = frame.SelectedTextForClipboard();
-  Pasteboard::GeneralPasteboard()->WriteHTML(html, url, plain_text,
-                                             CanSmartCopyOrDelete(frame));
-}
-
-static bool ExecuteCopy(LocalFrame& frame,
-                        Event*,
-                        EditorCommandSource source,
-                        const String&) {
-  // To support |allowExecutionWhenDisabled|, we need to check clipboard
-  // accessibility here rather than |Editor::Command::execute()|.
-  // TODO(yosin) We should move checking |canWriteClipboard()| to
-  // |Editor::Command::execute()| with introducing appropriate predicate, e.g.
-  // |canExecute()|. See also "Cut", and "Paste" command.
-  if (!CanWriteClipboard(frame, source))
-    return false;
-  if (!DispatchCopyOrCutEvent(frame, source, EventTypeNames::copy))
-    return true;
-  if (!frame.GetEditor().CanCopy())
-    return true;
-
-  // Since copy is a read-only operation it succeeds anytime a selection
-  // is *visible*. In contrast to cut or paste, the selection does not
-  // need to be focused - being visible is enough.
-  if (source == EditorCommandSource::kMenuOrKeyBinding &&
-      frame.Selection().IsHidden())
-    return true;
-
-  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  // A 'copy' event handler might have dirtied the layout so we need to update
-  // before we obtain the selection.
-  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  if (EnclosingTextControl(
-          frame.Selection().ComputeVisibleSelectionInDOMTree().Start())) {
-    Pasteboard::GeneralPasteboard()->WritePlainText(
-        frame.SelectedTextForClipboard(),
-        CanSmartCopyOrDelete(frame) ? Pasteboard::kCanSmartReplace
-                                    : Pasteboard::kCannotSmartReplace);
-    return true;
-  }
-  const Document* const document = frame.GetDocument();
-  if (HTMLImageElement* image_element =
-          ImageElementFromImageDocument(document)) {
-    WriteImageNodeToPasteboard(Pasteboard::GeneralPasteboard(), *image_element,
-                               document->title());
-    return true;
-  }
-  WriteSelectionToPasteboard(frame);
-  return true;
 }
 
 static bool ExecuteCreateLink(LocalFrame& frame,
@@ -877,75 +743,6 @@ static bool ExecuteCreateLink(LocalFrame& frame,
     return false;
   DCHECK(frame.GetDocument());
   return CreateLinkCommand::Create(*frame.GetDocument(), value)->Apply();
-}
-
-static bool CanDeleteRange(const EphemeralRange& range) {
-  if (range.IsCollapsed())
-    return false;
-
-  const Node* const start_container =
-      range.StartPosition().ComputeContainerNode();
-  const Node* const end_container = range.EndPosition().ComputeContainerNode();
-  if (!start_container || !end_container)
-    return false;
-
-  return HasEditableStyle(*start_container) && HasEditableStyle(*end_container);
-}
-
-static bool ExecuteCut(LocalFrame& frame,
-                       Event*,
-                       EditorCommandSource source,
-                       const String&) {
-  // To support |allowExecutionWhenDisabled|, we need to check clipboard
-  // accessibility here rather than |Editor::Command::execute()|.
-  // TODO(yosin) We should move checking |canWriteClipboard()| to
-  // |Editor::Command::execute()| with introducing appropriate predicate, e.g.
-  // |canExecute()|. See also "Copy", and "Paste" command.
-  if (!CanWriteClipboard(frame, source))
-    return false;
-  if (!DispatchCopyOrCutEvent(frame, source, EventTypeNames::cut))
-    return true;
-  if (!frame.GetEditor().CanCut())
-    return true;
-
-  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  // A 'cut' event handler might have dirtied the layout so we need to update
-  // before we obtain the selection.
-  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  if (source == EditorCommandSource::kMenuOrKeyBinding &&
-      !frame.Selection().SelectionHasFocus())
-    return true;
-
-  if (!CanDeleteRange(frame.GetEditor().SelectedRange()))
-    return true;
-  if (EnclosingTextControl(
-          frame.Selection().ComputeVisibleSelectionInDOMTree().Start())) {
-    const String plain_text = frame.SelectedTextForClipboard();
-    Pasteboard::GeneralPasteboard()->WritePlainText(
-        plain_text, CanSmartCopyOrDelete(frame)
-                        ? Pasteboard::kCanSmartReplace
-                        : Pasteboard::kCannotSmartReplace);
-  } else {
-    WriteSelectionToPasteboard(frame);
-  }
-
-  if (source == EditorCommandSource::kMenuOrKeyBinding) {
-    if (DispatchBeforeInputDataTransfer(
-            FindEventTargetForClipboardEvent(frame, source),
-            InputEvent::InputType::kDeleteByCut,
-            nullptr) != DispatchEventResult::kNotCanceled)
-      return true;
-    // 'beforeinput' event handler may destroy target frame.
-    if (frame.GetDocument()->GetFrame() != frame)
-      return true;
-  }
-  frame.GetEditor().DeleteSelectionWithSmartDelete(
-      CanSmartCopyOrDelete(frame) ? DeleteMode::kSmart : DeleteMode::kSimple,
-      InputEvent::InputType::kDeleteByCut);
-
-  return true;
 }
 
 static bool ExecuteDefaultParagraphSeparator(LocalFrame& frame,
@@ -1292,19 +1089,19 @@ static bool ExecuteIndent(LocalFrame& frame,
       ->Apply();
 }
 
-static bool ExecuteInsertBacktab(LocalFrame& frame,
-                                 Event* event,
-                                 EditorCommandSource,
-                                 const String&) {
+bool InsertCommands::ExecuteInsertBacktab(LocalFrame& frame,
+                                          Event* event,
+                                          EditorCommandSource,
+                                          const String&) {
   return TargetFrame(frame, event)
       ->GetEventHandler()
       .HandleTextInputEvent("\t", event);
 }
 
-static bool ExecuteInsertHorizontalRule(LocalFrame& frame,
-                                        Event*,
-                                        EditorCommandSource,
-                                        const String& value) {
+bool InsertCommands::ExecuteInsertHorizontalRule(LocalFrame& frame,
+                                                 Event*,
+                                                 EditorCommandSource,
+                                                 const String& value) {
   DCHECK(frame.GetDocument());
   HTMLHRElement* rule = HTMLHRElement::Create(*frame.GetDocument());
   if (!value.IsEmpty())
@@ -1312,19 +1109,19 @@ static bool ExecuteInsertHorizontalRule(LocalFrame& frame,
   return ExecuteInsertElement(frame, rule);
 }
 
-static bool ExecuteInsertHTML(LocalFrame& frame,
-                              Event*,
-                              EditorCommandSource,
-                              const String& value) {
+bool InsertCommands::ExecuteInsertHTML(LocalFrame& frame,
+                                       Event*,
+                                       EditorCommandSource,
+                                       const String& value) {
   DCHECK(frame.GetDocument());
   return ExecuteInsertFragment(
       frame, CreateFragmentFromMarkup(*frame.GetDocument(), value, ""));
 }
 
-static bool ExecuteInsertImage(LocalFrame& frame,
-                               Event*,
-                               EditorCommandSource,
-                               const String& value) {
+bool InsertCommands::ExecuteInsertImage(LocalFrame& frame,
+                                        Event*,
+                                        EditorCommandSource,
+                                        const String& value) {
   DCHECK(frame.GetDocument());
   HTMLImageElement* image = HTMLImageElement::Create(*frame.GetDocument());
   if (!value.IsEmpty())
@@ -1332,10 +1129,10 @@ static bool ExecuteInsertImage(LocalFrame& frame,
   return ExecuteInsertElement(frame, image);
 }
 
-static bool ExecuteInsertLineBreak(LocalFrame& frame,
-                                   Event* event,
-                                   EditorCommandSource source,
-                                   const String&) {
+bool InsertCommands::ExecuteInsertLineBreak(LocalFrame& frame,
+                                            Event* event,
+                                            EditorCommandSource source,
+                                            const String&) {
   switch (source) {
     case EditorCommandSource::kMenuOrKeyBinding:
       return TargetFrame(frame, event)
@@ -1353,66 +1150,66 @@ static bool ExecuteInsertLineBreak(LocalFrame& frame,
   return false;
 }
 
-static bool ExecuteInsertNewline(LocalFrame& frame,
-                                 Event* event,
-                                 EditorCommandSource,
-                                 const String&) {
-  LocalFrame* target_frame = blink::TargetFrame(frame, event);
+bool InsertCommands::ExecuteInsertNewline(LocalFrame& frame,
+                                          Event* event,
+                                          EditorCommandSource,
+                                          const String&) {
+  LocalFrame* target_frame = TargetFrame(frame, event);
   return target_frame->GetEventHandler().HandleTextInputEvent(
       "\n", event,
       target_frame->GetEditor().CanEditRichly() ? kTextEventInputKeyboard
                                                 : kTextEventInputLineBreak);
 }
 
-static bool ExecuteInsertNewlineInQuotedContent(LocalFrame& frame,
-                                                Event*,
-                                                EditorCommandSource,
-                                                const String&) {
+bool InsertCommands::ExecuteInsertNewlineInQuotedContent(LocalFrame& frame,
+                                                         Event*,
+                                                         EditorCommandSource,
+                                                         const String&) {
   DCHECK(frame.GetDocument());
   return TypingCommand::InsertParagraphSeparatorInQuotedContent(
       *frame.GetDocument());
 }
 
-static bool ExecuteInsertOrderedList(LocalFrame& frame,
-                                     Event*,
-                                     EditorCommandSource,
-                                     const String&) {
+bool InsertCommands::ExecuteInsertOrderedList(LocalFrame& frame,
+                                              Event*,
+                                              EditorCommandSource,
+                                              const String&) {
   DCHECK(frame.GetDocument());
   return InsertListCommand::Create(*frame.GetDocument(),
                                    InsertListCommand::kOrderedList)
       ->Apply();
 }
 
-static bool ExecuteInsertParagraph(LocalFrame& frame,
-                                   Event*,
-                                   EditorCommandSource,
-                                   const String&) {
+bool InsertCommands::ExecuteInsertParagraph(LocalFrame& frame,
+                                            Event*,
+                                            EditorCommandSource,
+                                            const String&) {
   DCHECK(frame.GetDocument());
   return TypingCommand::InsertParagraphSeparator(*frame.GetDocument());
 }
 
-static bool ExecuteInsertTab(LocalFrame& frame,
-                             Event* event,
-                             EditorCommandSource,
-                             const String&) {
+bool InsertCommands::ExecuteInsertTab(LocalFrame& frame,
+                                      Event* event,
+                                      EditorCommandSource,
+                                      const String&) {
   return TargetFrame(frame, event)
       ->GetEventHandler()
       .HandleTextInputEvent("\t", event);
 }
 
-static bool ExecuteInsertText(LocalFrame& frame,
-                              Event*,
-                              EditorCommandSource,
-                              const String& value) {
+bool InsertCommands::ExecuteInsertText(LocalFrame& frame,
+                                       Event*,
+                                       EditorCommandSource,
+                                       const String& value) {
   DCHECK(frame.GetDocument());
   TypingCommand::InsertText(*frame.GetDocument(), value, 0);
   return true;
 }
 
-static bool ExecuteInsertUnorderedList(LocalFrame& frame,
-                                       Event*,
-                                       EditorCommandSource,
-                                       const String&) {
+bool InsertCommands::ExecuteInsertUnorderedList(LocalFrame& frame,
+                                                Event*,
+                                                EditorCommandSource,
+                                                const String&) {
   DCHECK(frame.GetDocument());
   return InsertListCommand::Create(*frame.GetDocument(),
                                    InsertListCommand::kUnorderedList)
@@ -2027,207 +1824,6 @@ static bool ExecuteToggleOverwrite(LocalFrame& frame,
   return true;
 }
 
-static bool CanReadClipboard(LocalFrame& frame, EditorCommandSource source) {
-  if (source == EditorCommandSource::kMenuOrKeyBinding)
-    return true;
-  Settings* settings = frame.GetSettings();
-  bool default_value = settings &&
-                       settings->GetJavaScriptCanAccessClipboard() &&
-                       settings->GetDOMPasteAllowed();
-  if (!frame.GetContentSettingsClient())
-    return default_value;
-  return frame.GetContentSettingsClient()->AllowReadFromClipboard(
-      default_value);
-}
-
-static bool CanSmartReplaceWithPasteboard(LocalFrame& frame,
-                                          Pasteboard* pasteboard) {
-  return frame.GetEditor().SmartInsertDeleteEnabled() &&
-         pasteboard->CanSmartReplace();
-}
-
-static void PasteAsPlainTextWithPasteboard(LocalFrame& frame,
-                                           Pasteboard* pasteboard,
-                                           EditorCommandSource source) {
-  Element* const target = FindEventTargetForClipboardEvent(frame, source);
-  if (!target)
-    return;
-  target->DispatchEvent(TextEvent::CreateForPlainTextPaste(
-      frame.DomWindow(), pasteboard->PlainText(),
-      CanSmartReplaceWithPasteboard(frame, pasteboard)));
-}
-
-static bool DispatchPasteEvent(LocalFrame& frame,
-                               PasteMode paste_mode,
-                               EditorCommandSource source) {
-  return DispatchClipboardEvent(frame, EventTypeNames::paste,
-                                kDataTransferReadable, source, paste_mode);
-}
-
-static void PasteAsFragment(LocalFrame& frame,
-                            DocumentFragment* pasting_fragment,
-                            bool smart_replace,
-                            bool match_style,
-                            EditorCommandSource source) {
-  Element* const target = FindEventTargetForClipboardEvent(frame, source);
-  if (!target)
-    return;
-  target->DispatchEvent(TextEvent::CreateForFragmentPaste(
-      frame.DomWindow(), pasting_fragment, smart_replace, match_style));
-}
-
-static void PasteWithPasteboard(LocalFrame& frame,
-                                Pasteboard* pasteboard,
-                                EditorCommandSource source) {
-  DocumentFragment* fragment = nullptr;
-  bool chose_plain_text = false;
-
-  if (pasteboard->IsHTMLAvailable()) {
-    unsigned fragment_start = 0;
-    unsigned fragment_end = 0;
-    KURL url;
-    const String markup =
-        pasteboard->ReadHTML(url, fragment_start, fragment_end);
-    if (!markup.IsEmpty()) {
-      DCHECK(frame.GetDocument());
-      fragment = CreateFragmentFromMarkupWithContext(
-          *frame.GetDocument(), markup, fragment_start, fragment_end, url,
-          kDisallowScriptingAndPluginContent);
-    }
-  }
-
-  if (!fragment) {
-    const String text = pasteboard->PlainText();
-    if (!text.IsEmpty()) {
-      chose_plain_text = true;
-
-      // TODO(editing-dev): Use of UpdateStyleAndLayoutIgnorePendingStylesheets
-      // needs to be audited.  See http://crbug.com/590369 for more details.
-      // |SelectedRange| requires clean layout for visible selection
-      // normalization.
-      frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-      fragment =
-          CreateFragmentFromText(frame.GetEditor().SelectedRange(), text);
-    }
-  }
-
-  if (!fragment)
-    return;
-
-  PasteAsFragment(frame, fragment,
-                  CanSmartReplaceWithPasteboard(frame, pasteboard),
-                  chose_plain_text, source);
-}
-
-static void Paste(LocalFrame& frame, EditorCommandSource source) {
-  DCHECK(frame.GetDocument());
-  if (!DispatchPasteEvent(frame, PasteMode::kAllMimeTypes, source))
-    return;
-  if (!frame.GetEditor().CanPaste())
-    return;
-
-  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  // A 'paste' event handler might have dirtied the layout so we need to update
-  // before we obtain the selection.
-  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  if (source == EditorCommandSource::kMenuOrKeyBinding &&
-      !frame.Selection().SelectionHasFocus())
-    return;
-
-  ResourceFetcher* const loader = frame.GetDocument()->Fetcher();
-  ResourceCacheValidationSuppressor validation_suppressor(loader);
-
-  const PasteMode paste_mode = frame.GetEditor().CanEditRichly()
-                                   ? PasteMode::kAllMimeTypes
-                                   : PasteMode::kPlainTextOnly;
-
-  if (source == EditorCommandSource::kMenuOrKeyBinding) {
-    DataTransfer* data_transfer =
-        DataTransfer::Create(DataTransfer::kCopyAndPaste, kDataTransferReadable,
-                             DataObject::CreateFromPasteboard(paste_mode));
-
-    if (DispatchBeforeInputDataTransfer(
-            FindEventTargetForClipboardEvent(frame, source),
-            InputEvent::InputType::kInsertFromPaste,
-            data_transfer) != DispatchEventResult::kNotCanceled)
-      return;
-    // 'beforeinput' event handler may destroy target frame.
-    if (frame.GetDocument()->GetFrame() != frame)
-      return;
-  }
-
-  if (paste_mode == PasteMode::kAllMimeTypes) {
-    PasteWithPasteboard(frame, Pasteboard::GeneralPasteboard(), source);
-    return;
-  }
-  PasteAsPlainTextWithPasteboard(frame, Pasteboard::GeneralPasteboard(),
-                                 source);
-}
-
-static bool ExecutePaste(LocalFrame& frame,
-                         Event*,
-                         EditorCommandSource source,
-                         const String&) {
-  // To support |allowExecutionWhenDisabled|, we need to check clipboard
-  // accessibility here rather than |Editor::Command::execute()|.
-  // TODO(yosin) We should move checking |canReadClipboard()| to
-  // |Editor::Command::execute()| with introducing appropriate predicate, e.g.
-  // |canExecute()|. See also "Copy", and "Cut" command.
-  if (!CanReadClipboard(frame, source))
-    return false;
-  Paste(frame, source);
-  return true;
-}
-
-static bool ExecutePasteGlobalSelection(LocalFrame& frame,
-                                        Event*,
-                                        EditorCommandSource source,
-                                        const String&) {
-  // To support |allowExecutionWhenDisabled|, we need to check clipboard
-  // accessibility here rather than |Editor::Command::execute()|.
-  // TODO(yosin) We should move checking |canReadClipboard()| to
-  // |Editor::Command::execute()| with introducing appropriate predicate, e.g.
-  // |canExecute()|. See also "Copy", and "Cut" command.
-  if (!CanReadClipboard(frame, source))
-    return false;
-  if (!frame.GetEditor().Behavior().SupportsGlobalSelection())
-    return false;
-  DCHECK_EQ(source, EditorCommandSource::kMenuOrKeyBinding);
-
-  bool old_selection_mode = Pasteboard::GeneralPasteboard()->IsSelectionMode();
-  Pasteboard::GeneralPasteboard()->SetSelectionMode(true);
-  Paste(frame, source);
-  Pasteboard::GeneralPasteboard()->SetSelectionMode(old_selection_mode);
-  return true;
-}
-
-static bool ExecutePasteAndMatchStyle(LocalFrame& frame,
-                                      Event*,
-                                      EditorCommandSource source,
-                                      const String&) {
-  if (!DispatchPasteEvent(frame, PasteMode::kPlainTextOnly, source))
-    return false;
-  if (!frame.GetEditor().CanPaste())
-    return false;
-
-  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  // A 'paste' event handler might have dirtied the layout so we need to update
-  // before we obtain the selection.
-  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  if (source == EditorCommandSource::kMenuOrKeyBinding &&
-      !frame.Selection().SelectionHasFocus())
-    return false;
-
-  PasteAsPlainTextWithPasteboard(frame, Pasteboard::GeneralPasteboard(),
-                                 source);
-  return true;
-}
-
 static bool ExecutePrint(LocalFrame& frame,
                          Event*,
                          EditorCommandSource,
@@ -2614,17 +2210,6 @@ static bool Supported(LocalFrame*) {
   return true;
 }
 
-static bool PasteSupported(LocalFrame* frame) {
-  const Settings* const settings = frame->GetSettings();
-  const bool default_value = settings &&
-                             settings->GetJavaScriptCanAccessClipboard() &&
-                             settings->GetDOMPasteAllowed();
-  if (!frame->GetContentSettingsClient())
-    return default_value;
-  return frame->GetContentSettingsClient()->AllowReadFromClipboard(
-      default_value);
-}
-
 static bool SupportedFromMenuOrKeyBinding(LocalFrame*) {
   return false;
 }
@@ -2681,29 +2266,6 @@ static bool EnableCaretInEditableText(LocalFrame& frame,
   return selection.IsCaret() && selection.IsContentEditable();
 }
 
-// WinIE uses onbeforecut and onbeforepaste to enables the cut and paste menu
-// items. They also send onbeforecopy, apparently for symmetry, but it doesn't
-// affect the menu items. We need to use onbeforecopy as a real menu enabler
-// because we allow elements that are not normally selectable to implement
-// copy/paste (like divs, or a document body).
-
-static bool EnabledCopy(LocalFrame& frame, Event*, EditorCommandSource source) {
-  if (!CanWriteClipboard(frame, source))
-    return false;
-  return !DispatchCopyOrCutEvent(frame, source, EventTypeNames::beforecopy) ||
-         frame.GetEditor().CanCopy();
-}
-
-static bool EnabledCut(LocalFrame& frame, Event*, EditorCommandSource source) {
-  if (!CanWriteClipboard(frame, source))
-    return false;
-  if (source == EditorCommandSource::kMenuOrKeyBinding &&
-      !frame.Selection().SelectionHasFocus())
-    return false;
-  return !DispatchCopyOrCutEvent(frame, source, EventTypeNames::beforecut) ||
-         frame.GetEditor().CanCut();
-}
-
 static bool EnabledInEditableText(LocalFrame& frame,
                                   Event* event,
                                   EditorCommandSource source) {
@@ -2744,17 +2306,6 @@ static bool EnabledInRichlyEditableText(LocalFrame& frame,
       frame.Selection().ComputeVisibleSelectionInDOMTree();
   return !selection.IsNone() && IsRichlyEditablePosition(selection.Base()) &&
          selection.RootEditableElement();
-}
-
-static bool EnabledPaste(LocalFrame& frame,
-                         Event*,
-                         EditorCommandSource source) {
-  if (!CanReadClipboard(frame, source))
-    return false;
-  if (source == EditorCommandSource::kMenuOrKeyBinding &&
-      !frame.Selection().SelectionHasFocus())
-    return false;
-  return frame.GetEditor().CanPaste();
 }
 
 static bool EnabledRangeInEditableText(LocalFrame& frame,
@@ -2984,6 +2535,12 @@ static String ValueFormatBlock(const EditorInternalCommand&,
   return format_block_element->localName();
 }
 
+// CanExectue functions
+
+static bool CanNotExecuteWhenDisabled(LocalFrame&, EditorCommandSource) {
+  return false;
+}
+
 // Map of functions
 
 static const EditorInternalCommand* InternalCommand(
@@ -2994,470 +2551,479 @@ static const EditorInternalCommand* InternalCommand(
       // Covered by unit tests in EditingCommandTest.cpp
       {WebEditingCommandType::kAlignJustified, ExecuteJustifyFull,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kAlignLeft, ExecuteJustifyLeft,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kAlignRight, ExecuteJustifyRight,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kBackColor, ExecuteBackColor, Supported,
        EnabledInRichlyEditableText, StateNone, ValueBackColor,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       // FIXME: remove BackwardDelete when Safari for Windows stops using it.
       {WebEditingCommandType::kBackwardDelete, ExecuteDeleteBackward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kBold, ExecuteToggleBold, Supported,
        EnabledInRichlyEditableText, StateBold, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kCopy, ExecuteCopy, Supported, EnabledCopy,
-       StateNone, ValueStateOrNull, kNotTextInsertion,
-       kAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kCopy, ClipboardCommands::ExecuteCopy, Supported,
+       ClipboardCommands::EnabledCopy, StateNone, ValueStateOrNull,
+       kNotTextInsertion, ClipboardCommands::CanWriteClipboard},
       {WebEditingCommandType::kCreateLink, ExecuteCreateLink, Supported,
        EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kCut, ExecuteCut, Supported, EnabledCut,
-       StateNone, ValueStateOrNull, kNotTextInsertion,
-       kAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kCut, ClipboardCommands::ExecuteCut, Supported,
+       ClipboardCommands::EnabledCut, StateNone, ValueStateOrNull,
+       kNotTextInsertion, ClipboardCommands::CanWriteClipboard},
       {WebEditingCommandType::kDefaultParagraphSeparator,
        ExecuteDefaultParagraphSeparator, Supported, Enabled, StateNone,
        ValueDefaultParagraphSeparator, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDelete, ExecuteDelete, Supported, EnabledDelete,
        StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteBackward, ExecuteDeleteBackward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteBackwardByDecomposingPreviousCharacter,
        ExecuteDeleteBackwardByDecomposingPreviousCharacter,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteForward, ExecuteDeleteForward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteToBeginningOfLine,
        ExecuteDeleteToBeginningOfLine, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteToBeginningOfParagraph,
        ExecuteDeleteToBeginningOfParagraph, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteToEndOfLine, ExecuteDeleteToEndOfLine,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteToEndOfParagraph,
        ExecuteDeleteToEndOfParagraph, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteToMark, ExecuteDeleteToMark,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteWordBackward, ExecuteDeleteWordBackward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kDeleteWordForward, ExecuteDeleteWordForward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kFindString, ExecuteFindString, Supported,
        Enabled, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kFontName, ExecuteFontName, Supported,
        EnabledInRichlyEditableText, StateNone, ValueFontName, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kFontSize, ExecuteFontSize, Supported,
        EnabledInRichlyEditableText, StateNone, ValueFontSize, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kFontSizeDelta, ExecuteFontSizeDelta, Supported,
        EnabledInRichlyEditableText, StateNone, ValueFontSizeDelta,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kForeColor, ExecuteForeColor, Supported,
        EnabledInRichlyEditableText, StateNone, ValueForeColor,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kFormatBlock, ExecuteFormatBlock, Supported,
        EnabledInRichlyEditableText, StateNone, ValueFormatBlock,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kForwardDelete, ExecuteForwardDelete, Supported,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kHiliteColor, ExecuteBackColor, Supported,
        EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kIgnoreSpelling, ExecuteIgnoreSpelling,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kIndent, ExecuteIndent, Supported,
        EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertBacktab, ExecuteInsertBacktab,
-       SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kIsTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertHTML, ExecuteInsertHTML, Supported,
-       EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertHorizontalRule,
-       ExecuteInsertHorizontalRule, Supported, EnabledInRichlyEditableText,
-       StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertImage, ExecuteInsertImage, Supported,
-       EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertLineBreak, ExecuteInsertLineBreak,
-       Supported, EnabledInEditableText, StateNone, ValueStateOrNull,
-       kIsTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertNewline, ExecuteInsertNewline,
-       SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kIsTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertNewlineInQuotedContent,
-       ExecuteInsertNewlineInQuotedContent, Supported,
-       EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertOrderedList, ExecuteInsertOrderedList,
-       Supported, EnabledInRichlyEditableText, StateOrderedList,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertParagraph, ExecuteInsertParagraph,
-       Supported, EnabledInEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertTab, ExecuteInsertTab,
-       SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kIsTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertText, ExecuteInsertText, Supported,
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertBacktab,
+       InsertCommands::ExecuteInsertBacktab, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kIsTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kInsertUnorderedList, ExecuteInsertUnorderedList,
-       Supported, EnabledInRichlyEditableText, StateUnorderedList,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertHTML, InsertCommands::ExecuteInsertHTML,
+       Supported, EnabledInEditableText, StateNone, ValueStateOrNull,
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertHorizontalRule,
+       InsertCommands::ExecuteInsertHorizontalRule, Supported,
+       EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertImage, InsertCommands::ExecuteInsertImage,
+       Supported, EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertLineBreak,
+       InsertCommands::ExecuteInsertLineBreak, Supported, EnabledInEditableText,
+       StateNone, ValueStateOrNull, kIsTextInsertion,
+       CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertNewline,
+       InsertCommands::ExecuteInsertNewline, SupportedFromMenuOrKeyBinding,
+       EnabledInEditableText, StateNone, ValueStateOrNull, kIsTextInsertion,
+       CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertNewlineInQuotedContent,
+       InsertCommands::ExecuteInsertNewlineInQuotedContent, Supported,
+       EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertOrderedList,
+       InsertCommands::ExecuteInsertOrderedList, Supported,
+       EnabledInRichlyEditableText, StateOrderedList, ValueStateOrNull,
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertParagraph,
+       InsertCommands::ExecuteInsertParagraph, Supported, EnabledInEditableText,
+       StateNone, ValueStateOrNull, kNotTextInsertion,
+       CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertTab, InsertCommands::ExecuteInsertTab,
+       SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
+       ValueStateOrNull, kIsTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertText, InsertCommands::ExecuteInsertText,
+       Supported, EnabledInEditableText, StateNone, ValueStateOrNull,
+       kIsTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kInsertUnorderedList,
+       InsertCommands::ExecuteInsertUnorderedList, Supported,
+       EnabledInRichlyEditableText, StateUnorderedList, ValueStateOrNull,
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kItalic, ExecuteToggleItalic, Supported,
        EnabledInRichlyEditableText, StateItalic, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kJustifyCenter, ExecuteJustifyCenter, Supported,
        EnabledInRichlyEditableText, StateJustifyCenter, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kJustifyFull, ExecuteJustifyFull, Supported,
        EnabledInRichlyEditableText, StateJustifyFull, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kJustifyLeft, ExecuteJustifyLeft, Supported,
        EnabledInRichlyEditableText, StateJustifyLeft, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kJustifyNone, ExecuteJustifyLeft, Supported,
        EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kJustifyRight, ExecuteJustifyRight, Supported,
        EnabledInRichlyEditableText, StateJustifyRight, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMakeTextWritingDirectionLeftToRight,
        ExecuteMakeTextWritingDirectionLeftToRight,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText,
        StateTextWritingDirectionLeftToRight, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMakeTextWritingDirectionNatural,
        ExecuteMakeTextWritingDirectionNatural, SupportedFromMenuOrKeyBinding,
        EnabledInRichlyEditableText, StateTextWritingDirectionNatural,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMakeTextWritingDirectionRightToLeft,
        ExecuteMakeTextWritingDirectionRightToLeft,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText,
        StateTextWritingDirectionRightToLeft, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveBackward, ExecuteMoveBackward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveBackwardAndModifySelection,
        ExecuteMoveBackwardAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveDown, ExecuteMoveDown,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveDownAndModifySelection,
        ExecuteMoveDownAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveForward, ExecuteMoveForward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveForwardAndModifySelection,
        ExecuteMoveForwardAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveLeft, ExecuteMoveLeft,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveLeftAndModifySelection,
        ExecuteMoveLeftAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMovePageDown, ExecuteMovePageDown,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMovePageDownAndModifySelection,
        ExecuteMovePageDownAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMovePageUp, ExecuteMovePageUp,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMovePageUpAndModifySelection,
        ExecuteMovePageUpAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveParagraphBackward,
        ExecuteMoveParagraphBackward, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveParagraphBackwardAndModifySelection,
        ExecuteMoveParagraphBackwardAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveParagraphForward,
        ExecuteMoveParagraphForward, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveParagraphForwardAndModifySelection,
        ExecuteMoveParagraphForwardAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveRight, ExecuteMoveRight,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveRightAndModifySelection,
        ExecuteMoveRightAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToBeginningOfDocument,
        ExecuteMoveToBeginningOfDocument, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToBeginningOfDocumentAndModifySelection,
        ExecuteMoveToBeginningOfDocumentAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToBeginningOfLine,
        ExecuteMoveToBeginningOfLine, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToBeginningOfLineAndModifySelection,
        ExecuteMoveToBeginningOfLineAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToBeginningOfParagraph,
        ExecuteMoveToBeginningOfParagraph, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToBeginningOfParagraphAndModifySelection,
        ExecuteMoveToBeginningOfParagraphAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToBeginningOfSentence,
        ExecuteMoveToBeginningOfSentence, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToBeginningOfSentenceAndModifySelection,
        ExecuteMoveToBeginningOfSentenceAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToEndOfDocument, ExecuteMoveToEndOfDocument,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToEndOfDocumentAndModifySelection,
        ExecuteMoveToEndOfDocumentAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToEndOfLine, ExecuteMoveToEndOfLine,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToEndOfLineAndModifySelection,
        ExecuteMoveToEndOfLineAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToEndOfParagraph,
        ExecuteMoveToEndOfParagraph, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToEndOfParagraphAndModifySelection,
        ExecuteMoveToEndOfParagraphAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToEndOfSentence, ExecuteMoveToEndOfSentence,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToEndOfSentenceAndModifySelection,
        ExecuteMoveToEndOfSentenceAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToLeftEndOfLine, ExecuteMoveToLeftEndOfLine,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToLeftEndOfLineAndModifySelection,
        ExecuteMoveToLeftEndOfLineAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToRightEndOfLine,
        ExecuteMoveToRightEndOfLine, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveToRightEndOfLineAndModifySelection,
        ExecuteMoveToRightEndOfLineAndModifySelection,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveUp, ExecuteMoveUp,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveUpAndModifySelection,
        ExecuteMoveUpAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveWordBackward, ExecuteMoveWordBackward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveWordBackwardAndModifySelection,
        ExecuteMoveWordBackwardAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveWordForward, ExecuteMoveWordForward,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveWordForwardAndModifySelection,
        ExecuteMoveWordForwardAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveWordLeft, ExecuteMoveWordLeft,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveWordLeftAndModifySelection,
        ExecuteMoveWordLeftAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveWordRight, ExecuteMoveWordRight,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kMoveWordRightAndModifySelection,
        ExecuteMoveWordRightAndModifySelection, SupportedFromMenuOrKeyBinding,
        EnabledVisibleSelection, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kOutdent, ExecuteOutdent, Supported,
        EnabledInRichlyEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kOverWrite, ExecuteToggleOverwrite,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kPaste, ExecutePaste, PasteSupported,
-       EnabledPaste, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kPasteAndMatchStyle, ExecutePasteAndMatchStyle,
-       Supported, EnabledPaste, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kPasteGlobalSelection,
-       ExecutePasteGlobalSelection, SupportedFromMenuOrKeyBinding, EnabledPaste,
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
+      {WebEditingCommandType::kPaste, ClipboardCommands::ExecutePaste,
+       ClipboardCommands::PasteSupported, ClipboardCommands::EnabledPaste,
        StateNone, ValueStateOrNull, kNotTextInsertion,
-       kAllowExecutionWhenDisabled},
+       ClipboardCommands::CanReadClipboard},
+      {WebEditingCommandType::kPasteAndMatchStyle,
+       ClipboardCommands::ExecutePasteAndMatchStyle, Supported,
+       ClipboardCommands::EnabledPaste, StateNone, ValueStateOrNull,
+       kNotTextInsertion, ClipboardCommands::CanReadClipboard},
+      {WebEditingCommandType::kPasteGlobalSelection,
+       ClipboardCommands::ExecutePasteGlobalSelection,
+       SupportedFromMenuOrKeyBinding, ClipboardCommands::EnabledPaste,
+       StateNone, ValueStateOrNull, kNotTextInsertion,
+       ClipboardCommands::CanReadClipboard},
       {WebEditingCommandType::kPrint, ExecutePrint, Supported, Enabled,
        StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kRedo, ExecuteRedo, Supported, EnabledRedo,
        StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kRemoveFormat, ExecuteRemoveFormat, Supported,
        EnabledRangeInEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kScrollPageBackward, ExecuteScrollPageBackward,
        SupportedFromMenuOrKeyBinding, Enabled, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kScrollPageForward, ExecuteScrollPageForward,
        SupportedFromMenuOrKeyBinding, Enabled, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kScrollLineUp, ExecuteScrollLineUp,
        SupportedFromMenuOrKeyBinding, Enabled, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kScrollLineDown, ExecuteScrollLineDown,
        SupportedFromMenuOrKeyBinding, Enabled, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kScrollToBeginningOfDocument,
        ExecuteScrollToBeginningOfDocument, SupportedFromMenuOrKeyBinding,
        Enabled, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kScrollToEndOfDocument,
        ExecuteScrollToEndOfDocument, SupportedFromMenuOrKeyBinding, Enabled,
        StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSelectAll, ExecuteSelectAll, Supported,
        EnabledSelectAll, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSelectLine, ExecuteSelectLine,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSelectParagraph, ExecuteSelectParagraph,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSelectSentence, ExecuteSelectSentence,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSelectToMark, ExecuteSelectToMark,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelectionAndMark, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSelectWord, ExecuteSelectWord,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSetMark, ExecuteSetMark,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelection, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kStrikethrough, ExecuteStrikethrough, Supported,
        EnabledInRichlyEditableText, StateStrikethrough, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kStyleWithCSS, ExecuteStyleWithCSS, Supported,
        Enabled, StateStyleWithCSS, ValueEmpty, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSubscript, ExecuteSubscript, Supported,
        EnabledInRichlyEditableText, StateSubscript, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSuperscript, ExecuteSuperscript, Supported,
        EnabledInRichlyEditableText, StateSuperscript, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kSwapWithMark, ExecuteSwapWithMark,
        SupportedFromMenuOrKeyBinding, EnabledVisibleSelectionAndMark, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kToggleBold, ExecuteToggleBold,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateBold,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kToggleItalic, ExecuteToggleItalic,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateItalic,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kToggleUnderline, ExecuteUnderline,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText,
        StateUnderline, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kTranspose, ExecuteTranspose, Supported,
        EnableCaretInEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kUnderline, ExecuteUnderline, Supported,
        EnabledInRichlyEditableText, StateUnderline, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kUndo, ExecuteUndo, Supported, EnabledUndo,
        StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kUnlink, ExecuteUnlink, Supported,
        EnabledRangeInRichlyEditableText, StateNone, ValueStateOrNull,
-       kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kUnscript, ExecuteUnscript,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kUnselect, ExecuteUnselect, Supported,
        EnabledUnselect, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kUseCSS, ExecuteUseCSS, Supported, Enabled,
        StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kYank, ExecuteYank, SupportedFromMenuOrKeyBinding,
        EnabledInEditableText, StateNone, ValueStateOrNull, kNotTextInsertion,
-       kDoNotAllowExecutionWhenDisabled},
+       CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kYankAndSelect, ExecuteYankAndSelect,
        SupportedFromMenuOrKeyBinding, EnabledInEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
       {WebEditingCommandType::kAlignCenter, ExecuteJustifyCenter,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateNone,
-       ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
+       ValueStateOrNull, kNotTextInsertion, CanNotExecuteWhenDisabled},
   };
   // Handles all commands except WebEditingCommandType::Invalid.
   static_assert(
@@ -3476,14 +3042,14 @@ static const EditorInternalCommand* InternalCommand(
   return &kEditorCommands[command_index];
 }
 
-Editor::Command Editor::CreateCommand(const String& command_name) {
-  return Command(InternalCommand(command_name),
-                 EditorCommandSource::kMenuOrKeyBinding, frame_);
+EditorCommand Editor::CreateCommand(const String& command_name) const {
+  return EditorCommand(InternalCommand(command_name),
+                       EditorCommandSource::kMenuOrKeyBinding, frame_);
 }
 
-Editor::Command Editor::CreateCommand(const String& command_name,
-                                      EditorCommandSource source) {
-  return Command(InternalCommand(command_name), source, frame_);
+EditorCommand Editor::CreateCommand(const String& command_name,
+                                    EditorCommandSource source) const {
+  return EditorCommand(InternalCommand(command_name), source, frame_);
 }
 
 bool Editor::ExecuteCommand(const String& command_name) {
@@ -3549,11 +3115,16 @@ bool Editor::ExecuteCommand(const String& command_name, const String& value) {
   return CreateCommand(command_name).Execute(value);
 }
 
-Editor::Command::Command() : command_(nullptr) {}
+bool Editor::IsCommandEnabled(const String& command_name) const {
+  return CreateCommand(command_name).IsEnabled();
+}
 
-Editor::Command::Command(const EditorInternalCommand* command,
-                         EditorCommandSource source,
-                         LocalFrame* frame)
+EditorCommand::EditorCommand()
+    : command_(nullptr), source_(EditorCommandSource::kMenuOrKeyBinding) {}
+
+EditorCommand::EditorCommand(const EditorInternalCommand* command,
+                             EditorCommandSource source,
+                             LocalFrame* frame)
     : command_(command), source_(source), frame_(command ? frame : nullptr) {
   // Use separate assertions so we can tell which bad thing happened.
   if (!command)
@@ -3562,18 +3133,15 @@ Editor::Command::Command(const EditorInternalCommand* command,
     DCHECK(frame_);
 }
 
-bool Editor::Command::Execute(const String& parameter,
-                              Event* triggering_event) const {
-  // TODO(yosin) We should move this logic into |canExecute()| member function
-  // in |EditorInternalCommand| to replace |allowExecutionWhenDisabled|.
-  // |allowExecutionWhenDisabled| is for "Copy", "Cut" and "Paste" commands
-  // only.
-  if (!IsEnabled(triggering_event)) {
-    // Let certain commands be executed when performed explicitly even if they
-    // are disabled.
-    if (!IsSupported() || !frame_ || !command_->allow_execution_when_disabled)
-      return false;
-  }
+LocalFrame& EditorCommand::GetFrame() const {
+  DCHECK(frame_);
+  return *frame_;
+}
+
+bool EditorCommand::Execute(const String& parameter,
+                            Event* triggering_event) const {
+  if (!CanExecute(triggering_event))
+    return false;
 
   if (source_ == EditorCommandSource::kMenuOrKeyBinding) {
     InputEvent::InputType input_type =
@@ -3596,11 +3164,17 @@ bool Editor::Command::Execute(const String& parameter,
   return command_->execute(*frame_, triggering_event, source_, parameter);
 }
 
-bool Editor::Command::Execute(Event* triggering_event) const {
+bool EditorCommand::Execute(Event* triggering_event) const {
   return Execute(String(), triggering_event);
 }
 
-bool Editor::Command::IsSupported() const {
+bool EditorCommand::CanExecute(Event* triggering_event) const {
+  if (IsEnabled(triggering_event))
+    return true;
+  return IsSupported() && frame_ && command_->can_execute(*frame_, source_);
+}
+
+bool EditorCommand::IsSupported() const {
   if (!command_)
     return false;
   switch (source_) {
@@ -3613,33 +3187,33 @@ bool Editor::Command::IsSupported() const {
   return false;
 }
 
-bool Editor::Command::IsEnabled(Event* triggering_event) const {
+bool EditorCommand::IsEnabled(Event* triggering_event) const {
   if (!IsSupported() || !frame_)
     return false;
   return command_->is_enabled(*frame_, triggering_event, source_);
 }
 
-EditingTriState Editor::Command::GetState(Event* triggering_event) const {
+EditingTriState EditorCommand::GetState(Event* triggering_event) const {
   if (!IsSupported() || !frame_)
     return EditingTriState::kFalse;
   return command_->state(*frame_, triggering_event);
 }
 
-String Editor::Command::Value(Event* triggering_event) const {
+String EditorCommand::Value(Event* triggering_event) const {
   if (!IsSupported() || !frame_)
     return String();
   return command_->value(*command_, *frame_, triggering_event);
 }
 
-bool Editor::Command::IsTextInsertion() const {
+bool EditorCommand::IsTextInsertion() const {
   return command_ && command_->is_text_insertion;
 }
 
-int Editor::Command::IdForHistogram() const {
+int EditorCommand::IdForHistogram() const {
   return IsSupported() ? static_cast<int>(command_->command_type) : 0;
 }
 
-const StaticRangeVector* Editor::Command::GetTargetRanges() const {
+const StaticRangeVector* EditorCommand::GetTargetRanges() const {
   const Node* target = EventTargetNodeForDocument(frame_->GetDocument());
   if (!IsSupported() || !frame_ || !target || !HasRichlyEditableStyle(*target))
     return nullptr;

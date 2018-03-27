@@ -12,39 +12,6 @@ class SignedExchangeHeaderParserTest : public ::testing::Test {
   SignedExchangeHeaderParserTest() {}
 };
 
-TEST_F(SignedExchangeHeaderParserTest, ParseSignedHeaders) {
-  const char hdr_string[] = "\"content-type\", \"digest\"";
-  base::Optional<std::vector<std::string>> headers =
-      SignedExchangeHeaderParser::ParseSignedHeaders(hdr_string);
-  EXPECT_TRUE(headers.has_value());
-  ASSERT_EQ(headers->size(), 2u);
-  EXPECT_EQ(headers->at(0), "content-type");
-  EXPECT_EQ(headers->at(1), "digest");
-}
-
-TEST_F(SignedExchangeHeaderParserTest, SignedHeadersNoQuotes) {
-  const char hdr_string[] = "content-type, digest";
-  base::Optional<std::vector<std::string>> headers =
-      SignedExchangeHeaderParser::ParseSignedHeaders(hdr_string);
-  EXPECT_FALSE(headers.has_value());
-}
-
-TEST_F(SignedExchangeHeaderParserTest, SignedHeadersParseError) {
-  const char hdr_string[] = "\"content-type\", \"digest";
-  base::Optional<std::vector<std::string>> headers =
-      SignedExchangeHeaderParser::ParseSignedHeaders(hdr_string);
-  EXPECT_FALSE(headers.has_value());
-}
-
-TEST_F(SignedExchangeHeaderParserTest, QuotedChar) {
-  const char hdr_string[] = R"("\\o/")";
-  base::Optional<std::vector<std::string>> headers =
-      SignedExchangeHeaderParser::ParseSignedHeaders(hdr_string);
-  EXPECT_TRUE(headers.has_value());
-  ASSERT_EQ(headers->size(), 1u);
-  EXPECT_EQ(headers->at(0), "\\o/");
-}
-
 TEST_F(SignedExchangeHeaderParserTest, ParseSignature) {
   const char hdr_string[] =
       "sig1;"
@@ -185,6 +152,61 @@ TEST_F(SignedExchangeHeaderParserTest, InvalidCertSHA256) {
       " date=1511128380; expires=1511733180";
   auto signatures = SignedExchangeHeaderParser::ParseSignature(hdr_string);
   EXPECT_FALSE(signatures.has_value());
+}
+
+TEST_F(SignedExchangeHeaderParserTest, OpenQuoteAtEnd) {
+  const char hdr_string[] = "sig1; sig=\"";
+  auto signatures = SignedExchangeHeaderParser::ParseSignature(hdr_string);
+  EXPECT_FALSE(signatures.has_value());
+}
+
+TEST_F(SignedExchangeHeaderParserTest, VersionParam_None) {
+  const char content_type[] = "application/signed-exchange";
+  base::Optional<std::string> version;
+  EXPECT_TRUE(SignedExchangeHeaderParser::GetVersionParamFromContentType(
+      content_type, &version));
+  EXPECT_FALSE(version);
+}
+
+TEST_F(SignedExchangeHeaderParserTest, VersionParam_NoneWithSemicolon) {
+  const char content_type[] = "application/signed-exchange;";
+  base::Optional<std::string> version;
+  EXPECT_FALSE(SignedExchangeHeaderParser::GetVersionParamFromContentType(
+      content_type, &version));
+}
+
+TEST_F(SignedExchangeHeaderParserTest, VersionParam_EmptyString) {
+  const char content_type[] = "application/signed-exchange;v=";
+  base::Optional<std::string> version;
+  EXPECT_FALSE(SignedExchangeHeaderParser::GetVersionParamFromContentType(
+      content_type, &version));
+}
+
+TEST_F(SignedExchangeHeaderParserTest, VersionParam_Simple) {
+  const char content_type[] = "application/signed-exchange;v=b0";
+  base::Optional<std::string> version;
+  EXPECT_TRUE(SignedExchangeHeaderParser::GetVersionParamFromContentType(
+      content_type, &version));
+  ASSERT_TRUE(version);
+  EXPECT_EQ(*version, "b0");
+}
+
+TEST_F(SignedExchangeHeaderParserTest, VersionParam_SimpleWithSpace) {
+  const char content_type[] = "application/signed-exchange; v=b0";
+  base::Optional<std::string> version;
+  EXPECT_TRUE(SignedExchangeHeaderParser::GetVersionParamFromContentType(
+      content_type, &version));
+  ASSERT_TRUE(version);
+  EXPECT_EQ(*version, "b0");
+}
+
+TEST_F(SignedExchangeHeaderParserTest, VersionParam_SimpleWithDoublequotes) {
+  const char content_type[] = "application/signed-exchange;v=\"b0\"";
+  base::Optional<std::string> version;
+  EXPECT_TRUE(SignedExchangeHeaderParser::GetVersionParamFromContentType(
+      content_type, &version));
+  ASSERT_TRUE(version);
+  EXPECT_EQ(*version, "b0");
 }
 
 }  // namespace content

@@ -22,6 +22,11 @@
   },
   {
     "prefix": "threaded",
+    "base": "external/wpt/offscreen-canvas/convert-to-blob",
+    "args": ["--enable-threaded-compositing"]
+  },
+  {
+    "prefix": "threaded",
     "base": "compositing/visibility",
     "args": ["--enable-threaded-compositing"]
   },
@@ -319,7 +324,13 @@
   },
   {
     "prefix": "wheelscrolllatching",
-    "base": "fast/compositor-wheel-scroll-latching",
+    "base": "fast/compositor-wheel-scroll-latching/animated-scroll",
+    "args": ["--enable-features=TouchpadAndWheelScrollLatching",
+             "--enable-threaded-compositing"]
+  },
+  {
+    "prefix": "wheelscrolllatching",
+    "base": "fast/compositor-wheel-scroll-latching/non-animated-scroll",
     "args": ["--enable-features=TouchpadAndWheelScrollLatching",
              "--enable-threaded-compositing",
              "--disable-smooth-scrolling"]

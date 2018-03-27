@@ -141,9 +141,6 @@ const base::Feature kIsolateOrigins{"IsolateOrigins",
                                     base::FEATURE_DISABLED_BY_DEFAULT};
 const char kIsolateOriginsFieldTrialParamName[] = "OriginsList";
 
-const base::Feature kKeepAliveRendererForKeepaliveRequests{
-    "KeepAliveRendererForKeepaliveRequests", base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Enables an API which allows websites to capture reserved keys in fullscreen.
 // Defined by w3c here: https://w3c.github.io/keyboard-lock/
 const base::Feature kKeyboardLockAPI{"KeyboardLockAPI",
@@ -238,16 +235,6 @@ const base::Feature kOriginManifest{"OriginManifest",
 const base::Feature kOriginTrials{"OriginTrials",
                                   base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Whether a download can be handled by parallel jobs.
-const base::Feature kParallelDownloading {
-  "ParallelDownloading",
-#if defined(OS_ANDROID)
-      base::FEATURE_ENABLED_BY_DEFAULT
-#else
-      base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-};
-
 // Whether document level event listeners should default 'passive' to true.
 const base::Feature kPassiveDocumentEventListeners{
     "PassiveDocumentEventListeners", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -256,6 +243,10 @@ const base::Feature kPassiveDocumentEventListeners{
 // listeners to be non-blocking during fling.
 const base::Feature kPassiveEventListenersDueToFling{
     "PassiveEventListenersDueToFling", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Whether PDF files should be rendered in diffent processes based on origin.
+const base::Feature kPdfIsolation = {"PdfIsolation",
+                                     base::FEATURE_DISABLED_BY_DEFAULT};
 
 // If Pepper 3D Image Chromium is allowed, this feature controls whether it is
 // enabled.
@@ -356,14 +347,9 @@ const base::Feature kSignedHTTPExchange{"SignedHTTPExchange",
 const base::Feature kSignInProcessIsolation{"sign-in-process-isolation",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Alternative to switches::kSitePerProcess, for turning on full site isolation.
-// Launch bug: https://crbug.com/739418.
-const base::Feature kSitePerProcess{"site-per-process",
-                                    base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Slimming Paint V1.75. See http://crbug.com/771643.
 const base::Feature kSlimmingPaintV175{"SlimmingPaintV175",
-                                       base::FEATURE_DISABLED_BY_DEFAULT};
+                                       base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Stop scheduler task queues in background after allowed grace time.
 const base::Feature kStopInBackground {
@@ -379,6 +365,11 @@ const base::Feature kStopInBackground {
 // after allowed grace time. Launch bug: https://crbug.com/775761.
 const base::Feature kStopLoadingInBackground{"stop-loading-in-background",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Stop non-timer task queues in background, on Android,
+// after allowed grace time. Launch bug: https://crbug.com/822954.
+const base::Feature kStopNonTimersInBackground{
+    "stop-non-timers-in-background", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Throttle Blink timers in out-of-view cross origin frames.
 const base::Feature kTimerThrottlingForHiddenFrames{
@@ -425,6 +416,14 @@ const base::Feature kUseMojoAudioOutputStreamFactory{
 const base::Feature kUserActivationV2{"UserActivationV2",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Use RenderWidgetHostView::CreateVideoCapturer instead of
+// RenderWidgetHostView::CopyFromSurface to obtain a stream of snapshots
+// captured from the renderer for DevTools performance timeline and eyedropper
+// tool.
+const base::Feature kUseVideoCaptureApiForDevToolsSnapshots{
+    "UseVideoCaptureApiForDevToolsSnapshots",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables to use a snapshot file in creating V8 contexts.
 const base::Feature kV8ContextSnapshot{"V8ContextSnapshot",
                                        base::FEATURE_ENABLED_BY_DEFAULT};
@@ -432,10 +431,6 @@ const base::Feature kV8ContextSnapshot{"V8ContextSnapshot",
 // Enables future V8 VM features
 const base::Feature kV8VmFuture{"V8VmFuture",
                                 base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Controls whether vibrate requires user gesture.
-const base::Feature kVibrateRequiresUserGesture{
-    "VibrateRequiresUserGesture", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Controls whether editing web input fields is enabled in VR.
 const base::Feature kVrWebInputEditing{"VrWebInputEditing",
@@ -499,6 +494,11 @@ const base::Feature kWebRtcHWVP8Encoding {
 
 // Enables negotiation of experimental multiplex codec in SDP.
 const base::Feature kWebRtcMultiplexCodec{"WebRTC-MultiplexCodec",
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Allows privileged JS applications to trigger the logging peer connections,
+// and the later upload of those logs to a remote server.
+const base::Feature kWebRtcRemoteEventLog{"WebRtcRemoteEventLog",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Fallback from hardware encoder (if available) to software, for WebRTC

@@ -2,7 +2,7 @@
 # found in the LICENSE file.
 
 import("//build/config/jumbo.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//testing/test.gni")
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
@@ -118,8 +118,6 @@ jumbo_static_library("test_support") {
     "test/logging_timer.h",
     "test/result_catcher.cc",
     "test/result_catcher.h",
-    "test/test_content_browser_client.cc",
-    "test/test_content_browser_client.h",
     "test/test_content_utility_client.cc",
     "test/test_content_utility_client.h",
     "test/test_extension_dir.cc",
@@ -223,7 +221,6 @@ test("extensions_unittests") {
     "//extensions/common:unit_tests",
     "//extensions/renderer:unit_tests",
     "//extensions/shell:unit_tests",
-    "//extensions/utility:unit_tests",
     "//services/data_decoder:lib",
     "//services/service_manager/public/cpp/test:test_support",
     "//ui/gl:test_support",
@@ -250,7 +247,6 @@ test("extensions_browsertests") {
   ]
 
   data_deps = [
-    "//testing/buildbot/filters:extensions_browsertests_filters",
     "//third_party/mesa:osmesa",
   ]
 }

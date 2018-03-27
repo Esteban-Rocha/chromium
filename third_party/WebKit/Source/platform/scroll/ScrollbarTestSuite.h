@@ -12,7 +12,6 @@
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/scroll/Scrollbar.h"
 #include "platform/scroll/ScrollbarThemeMock.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/scheduler/test/renderer_scheduler_test_support.h"
@@ -69,7 +68,7 @@ class MockScrollableArea : public GarbageCollectedFinalized<MockScrollableArea>,
   MOCK_CONST_METHOD0(LayerForVerticalScrollbar, GraphicsLayer*());
   MOCK_CONST_METHOD0(HorizontalScrollbar, Scrollbar*());
   MOCK_CONST_METHOD0(VerticalScrollbar, Scrollbar*());
-  MOCK_CONST_METHOD0(ScrollbarsHidden, bool());
+  MOCK_CONST_METHOD0(ScrollbarsHiddenIfOverlay, bool());
 
   bool UserInputScrollable(ScrollbarOrientation) const override { return true; }
   bool ScrollbarsCanBeActive() const override { return true; }

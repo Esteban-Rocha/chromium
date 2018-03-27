@@ -21,7 +21,6 @@
 
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/svg/SVGElementProxy.h"
 #include "core/svg/SVGResource.h"
 #include "core/svg/SVGTreeScopeResources.h"
 #include "platform/wtf/AutoReset.h"
@@ -30,7 +29,7 @@ namespace blink {
 
 namespace {
 
-SVGResource* ResourceForContainer(
+LocalSVGResource* ResourceForContainer(
     const LayoutSVGResourceContainer& resource_container) {
   const SVGElement& element = *resource_container.GetElement();
   return element.GetTreeScope()
@@ -63,22 +62,11 @@ void LayoutSVGResourceContainer::UpdateLayout() {
   ClearInvalidationMask();
 }
 
-SVGElementProxySet* LayoutSVGResourceContainer::ElementProxySet() {
-  return GetElement()->ElementProxySet();
-}
-
-void LayoutSVGResourceContainer::NotifyContentChanged() {
-  if (SVGResource* resource = ResourceForContainer(*this))
-    resource->NotifyContentChanged();
-  if (SVGElementProxySet* proxy_set = ElementProxySet())
-    proxy_set->NotifyContentChanged(GetElement()->GetTreeScope());
-}
-
 void LayoutSVGResourceContainer::WillBeDestroyed() {
   LayoutSVGHiddenContainer::WillBeDestroyed();
   // The resource is being torn down. If we have any clients, move those to be
   // pending on the resource (if one exists.)
-  if (SVGResource* resource = ResourceForContainer(*this))
+  if (LocalSVGResource* resource = ResourceForContainer(*this))
     MakeClientsPending(*resource);
 }
 
@@ -89,13 +77,14 @@ void LayoutSVGResourceContainer::StyleDidChange(
   // The resource has (read: may have) been attached. Notify any pending
   // clients that they can now try to add themselves as clients to the
   // resource.
-  if (SVGResource* resource = ResourceForContainer(*this)) {
+  if (LocalSVGResource* resource = ResourceForContainer(*this)) {
     if (resource->Target() == GetElement())
       resource->NotifyPendingClients();
   }
 }
 
-void LayoutSVGResourceContainer::MakeClientsPending(SVGResource& resource) {
+void LayoutSVGResourceContainer::MakeClientsPending(
+    LocalSVGResource& resource) {
   RemoveAllClientsFromCache();
 
   for (auto* client : clients_) {
@@ -115,10 +104,8 @@ void LayoutSVGResourceContainer::MarkAllClientsForInvalidation(
     InvalidationModeMask invalidation_mask) {
   if (is_invalidating_)
     return;
-  SVGResource* resource = ResourceForContainer(*this);
-  SVGElementProxySet* proxy_set = ElementProxySet();
-  if (clients_.IsEmpty() && (!proxy_set || proxy_set->IsEmpty()) &&
-      (!resource || !resource->HasClients()))
+  LocalSVGResource* resource = ResourceForContainer(*this);
+  if (clients_.IsEmpty() && (!resource || !resource->HasClients()))
     return;
   // Remove modes for which invalidations have already been
   // performed. If no modes remain we are done.
@@ -128,8 +115,10 @@ void LayoutSVGResourceContainer::MarkAllClientsForInvalidation(
   completed_invalidations_mask_ |= invalidation_mask;
 
   is_invalidating_ = true;
-  bool needs_layout = invalidation_mask & kLayoutInvalidation;
-  bool mark_for_invalidation = invalidation_mask & ~kParentOnlyInvalidation;
+  bool needs_layout =
+      invalidation_mask & SVGResourceClient::kLayoutInvalidation;
+  bool mark_for_invalidation =
+      invalidation_mask & ~SVGResourceClient::kParentOnlyInvalidation;
 
   // Invalidate clients registered on the this object (via SVGResources).
   for (auto* client : clients_) {
@@ -146,8 +135,9 @@ void LayoutSVGResourceContainer::MarkAllClientsForInvalidation(
     MarkForLayoutAndParentResourceInvalidation(*client, needs_layout);
   }
 
-  // Invalidate clients registered via an SVGElementProxy/SVGResource.
-  NotifyContentChanged();
+  // Invalidate clients registered via an SVGResource.
+  if (resource)
+    resource->NotifyContentChanged(invalidation_mask);
 
   is_invalidating_ = false;
 }
@@ -155,7 +145,7 @@ void LayoutSVGResourceContainer::MarkAllClientsForInvalidation(
 void LayoutSVGResourceContainer::MarkClientForInvalidation(
     LayoutObject& client,
     InvalidationModeMask invalidation_mask) {
-  if (invalidation_mask & kPaintInvalidation) {
+  if (invalidation_mask & SVGResourceClient::kPaintInvalidation) {
     // Since LayoutSVGInlineTexts don't have SVGResources (they use their
     // parent's), they will not be notified of changes to paint servers. So
     // if the client is one that could have a LayoutSVGInlineText use a
@@ -168,7 +158,7 @@ void LayoutSVGResourceContainer::MarkClientForInvalidation(
     client.SetNeedsPaintPropertyUpdate();
   }
 
-  if (invalidation_mask & kBoundariesInvalidation)
+  if (invalidation_mask & SVGResourceClient::kBoundariesInvalidation)
     client.SetNeedsBoundariesUpdate();
 }
 
@@ -217,7 +207,12 @@ static inline void RemoveFromCacheAndInvalidateDependencies(
   if (!object.GetNode() || !object.GetNode()->IsSVGElement())
     return;
 
-  ToSVGElement(object.GetNode())->NotifyIncomingReferences(needs_layout);
+  ToSVGElement(object.GetNode())
+      ->NotifyIncomingReferences([needs_layout](SVGElement& element) {
+        DCHECK(element.GetLayoutObject());
+        LayoutSVGResourceContainer::MarkForLayoutAndParentResourceInvalidation(
+            *element.GetLayoutObject(), needs_layout);
+      });
 }
 
 void LayoutSVGResourceContainer::MarkForLayoutAndParentResourceInvalidation(

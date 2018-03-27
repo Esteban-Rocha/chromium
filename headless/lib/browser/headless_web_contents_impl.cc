@@ -113,7 +113,7 @@ class HeadlessWebContentsImpl::Delegate : public content::WebContentsDelegate {
     auto* const headless_contents =
         HeadlessWebContentsImpl::From(browser(), source);
     DCHECK(headless_contents);
-    headless_contents->Close();
+    headless_contents->DelegateRequestsClose();
   }
 
   void AddNewContents(content::WebContents* source,
@@ -232,7 +232,7 @@ struct HeadlessWebContentsImpl::PendingFrame {
   bool MaybeRunCallback() {
     if (wait_for_copy_result || !display_did_finish_frame)
       return false;
-    callback.Run(has_damage, std::move(bitmap));
+    std::move(callback).Run(has_damage, std::move(bitmap));
     return true;
   }
 
@@ -455,7 +455,25 @@ bool HeadlessWebContentsImpl::OpenURL(const GURL& url) {
 
 void HeadlessWebContentsImpl::Close() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  if (quit_closure_)
+    return;
+
+  if (!render_process_exited_) {
+    web_contents_->ClosePage();
+    base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
   browser_context()->DestroyWebContents(this);
+}
+
+void HeadlessWebContentsImpl::DelegateRequestsClose() {
+  if (quit_closure_) {
+    quit_closure_.Run();
+    quit_closure_ = base::Closure();
+  }
 }
 
 std::string HeadlessWebContentsImpl::GetDevToolsAgentHostId() {
@@ -487,6 +505,7 @@ void HeadlessWebContentsImpl::RenderProcessExited(
     base::TerminationStatus status,
     int exit_code) {
   DCHECK_EQ(render_process_host_, host);
+  render_process_exited_ = true;
   for (auto& observer : observers_)
     observer.RenderProcessExited(status, exit_code);
 }
@@ -643,7 +662,7 @@ void HeadlessWebContentsImpl::BeginFrame(
     const base::TimeDelta& interval,
     bool animate_only,
     bool capture_screenshot,
-    const FrameFinishedCallback& frame_finished_callback) {
+    FrameFinishedCallback frame_finished_callback) {
   DCHECK(begin_frame_control_enabled_);
   TRACE_EVENT2("headless", "HeadlessWebContentsImpl::BeginFrame", "frame_time",
                frame_timeticks, "capture_screenshot", capture_screenshot);
@@ -652,7 +671,7 @@ void HeadlessWebContentsImpl::BeginFrame(
 
   auto pending_frame = std::make_unique<PendingFrame>();
   pending_frame->sequence_number = sequence_number;
-  pending_frame->callback = frame_finished_callback;
+  pending_frame->callback = std::move(frame_finished_callback);
   // Note: It's important to move |pending_frame| into |pending_frames_| now
   // since the CopyFromSurface() call below can run its result callback
   // synchronously on certain platforms/environments.

@@ -398,26 +398,8 @@ bool HTMLOptionElement::SpatialNavigationFocused() const {
 }
 
 bool HTMLOptionElement::IsDisplayNone() const {
-  // If the style is not set, then the node is still unattached.
-  // We have to wait till it gets attached to read the display property.
-  const ComputedStyle* style = NonLayoutObjectComputedStyle();
-  if (!style)
-    return false;
-
-  if (style->Display() != EDisplay::kNone) {
-    // We need to check the parent's display property.  Parent's
-    // display:none doesn't override children's display properties in
-    // ComputedStyle.
-    Element* parent = parentElement();
-    DCHECK(parent);
-    if (IsHTMLOptGroupElement(*parent)) {
-      const ComputedStyle* parent_style = parent->GetComputedStyle()
-                                              ? parent->GetComputedStyle()
-                                              : parent->EnsureComputedStyle();
-      return !parent_style || parent_style->Display() == EDisplay::kNone;
-    }
-  }
-  return style->Display() == EDisplay::kNone;
+  const ComputedStyle* style = GetComputedStyle();
+  return !style || style->Display() == EDisplay::kNone;
 }
 
 String HTMLOptionElement::innerText() {

@@ -50,11 +50,11 @@
 #include "core/script/Modulator.h"
 #include "core/workers/GlobalScopeCreationParams.h"
 #include "core/workers/InstalledScriptsManager.h"
+#include "core/workers/WorkerClassicScriptLoader.h"
 #include "core/workers/WorkerLocation.h"
 #include "core/workers/WorkerModuleTreeClient.h"
 #include "core/workers/WorkerNavigator.h"
 #include "core/workers/WorkerReportingProxy.h"
-#include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThread.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/InstanceCounters.h"
@@ -161,13 +161,13 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls,
     String source_code;
     std::unique_ptr<Vector<char>> cached_meta_data;
     LoadResult result = LoadResult::kNotHandled;
-    result = LoadingScriptFromInstalledScriptsManager(
+    result = LoadScriptFromInstalledScriptsManager(
         complete_url, &response_url, &source_code, &cached_meta_data);
 
     // If the script wasn't provided by the InstalledScriptsManager, load from
     // ResourceLoader.
     if (result == LoadResult::kNotHandled) {
-      result = LoadingScriptFromWorkerScriptLoader(
+      result = LoadScriptFromClassicScriptLoader(
           complete_url, &response_url, &source_code, &cached_meta_data);
     }
 
@@ -182,7 +182,7 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls,
     SingleCachedMetadataHandler* handler(
         CreateWorkerScriptCachedMetadataHandler(complete_url,
                                                 cached_meta_data.get()));
-    ReportingProxy().WillEvaluateImportedScript(
+    ReportingProxy().WillEvaluateImportedClassicScript(
         source_code.length(), cached_meta_data ? cached_meta_data->size() : 0);
     ScriptController()->Evaluate(
         ScriptSourceCode(source_code, ScriptSourceLocationType::kUnknown,
@@ -197,7 +197,7 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls,
 }
 
 WorkerGlobalScope::LoadResult
-WorkerGlobalScope::LoadingScriptFromInstalledScriptsManager(
+WorkerGlobalScope::LoadScriptFromInstalledScriptsManager(
     const KURL& script_url,
     KURL* out_response_url,
     String* out_source_code,
@@ -227,27 +227,28 @@ WorkerGlobalScope::LoadingScriptFromInstalledScriptsManager(
 }
 
 WorkerGlobalScope::LoadResult
-WorkerGlobalScope::LoadingScriptFromWorkerScriptLoader(
+WorkerGlobalScope::LoadScriptFromClassicScriptLoader(
     const KURL& script_url,
     KURL* out_response_url,
     String* out_source_code,
     std::unique_ptr<Vector<char>>* out_cached_meta_data) {
   ExecutionContext* execution_context = GetExecutionContext();
-  scoped_refptr<WorkerScriptLoader> script_loader(WorkerScriptLoader::Create());
-  script_loader->LoadSynchronously(
+  scoped_refptr<WorkerClassicScriptLoader> classic_script_loader(
+      WorkerClassicScriptLoader::Create());
+  classic_script_loader->LoadSynchronously(
       *execution_context, script_url, WebURLRequest::kRequestContextScript,
       execution_context->GetSecurityContext().AddressSpace());
 
   // If the fetching attempt failed, throw a NetworkError exception and
   // abort all these steps.
-  if (script_loader->Failed())
+  if (classic_script_loader->Failed())
     return LoadResult::kFailed;
 
-  *out_response_url = script_loader->ResponseURL();
-  *out_source_code = script_loader->SourceText();
-  *out_cached_meta_data = script_loader->ReleaseCachedMetadata();
-  probe::scriptImported(execution_context, script_loader->Identifier(),
-                        script_loader->SourceText());
+  *out_response_url = classic_script_loader->ResponseURL();
+  *out_source_code = classic_script_loader->SourceText();
+  *out_cached_meta_data = classic_script_loader->ReleaseCachedMetadata();
+  probe::scriptImported(execution_context, classic_script_loader->Identifier(),
+                        classic_script_loader->SourceText());
   return LoadResult::kSuccess;
 }
 
@@ -294,6 +295,13 @@ ExecutionContext* WorkerGlobalScope::GetExecutionContext() const {
   return const_cast<WorkerGlobalScope*>(this);
 }
 
+WorkerOrWorkletModuleFetchCoordinatorProxy*
+WorkerGlobalScope::ModuleFetchCoordinatorProxy() const {
+  DCHECK(IsContextThread());
+  DCHECK(fetch_coordinator_proxy_);
+  return fetch_coordinator_proxy_;
+}
+
 void WorkerGlobalScope::EvaluateClassicScript(
     const KURL& script_url,
     String source_code,
@@ -303,14 +311,14 @@ void WorkerGlobalScope::EvaluateClassicScript(
       CreateWorkerScriptCachedMetadataHandler(script_url,
                                               cached_meta_data.get());
   DCHECK(!source_code.IsNull());
-  ReportingProxy().WillEvaluateWorkerScript(
+  ReportingProxy().WillEvaluateClassicScript(
       source_code.length(),
       cached_meta_data.get() ? cached_meta_data->size() : 0);
   bool success = ScriptController()->Evaluate(
       ScriptSourceCode(source_code, ScriptSourceLocationType::kUnknown, handler,
                        script_url),
       nullptr /* error_event */, v8_cache_options_);
-  ReportingProxy().DidEvaluateWorkerScript(success);
+  ReportingProxy().DidEvaluateClassicScript(success);
 }
 
 void WorkerGlobalScope::ImportModuleScript(
@@ -332,6 +340,14 @@ WorkerGlobalScope::WorkerGlobalScope(
       user_agent_(creation_params->user_agent),
       parent_devtools_token_(creation_params->parent_devtools_token),
       v8_cache_options_(creation_params->v8_cache_options),
+      // Specify |kUnspecedLoading| because these task runners are used during
+      // module loading and this usage is not explicitly spec'ed.
+      fetch_coordinator_proxy_(
+          WorkerOrWorkletModuleFetchCoordinatorProxy::Create(
+              creation_params->module_fetch_coordinator,
+              thread->GetParentFrameTaskRunners()->Get(
+                  TaskType::kUnspecedLoading),
+              thread->GetTaskRunner(TaskType::kUnspecedLoading))),
       thread_(thread),
       timers_(GetTaskRunner(TaskType::kJavascriptTimer)),
       time_origin_(time_origin),
@@ -393,6 +409,7 @@ void WorkerGlobalScope::SetWorkerSettings(
 }
 
 void WorkerGlobalScope::Trace(blink::Visitor* visitor) {
+  visitor->Trace(fetch_coordinator_proxy_);
   visitor->Trace(location_);
   visitor->Trace(navigator_);
   visitor->Trace(timers_);

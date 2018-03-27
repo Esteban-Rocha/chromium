@@ -39,23 +39,33 @@ class WebGLTransformFeedback : public WebGLContextObject {
   WebGLProgram* GetProgram() const { return program_; }
   void SetProgram(WebGLProgram*);
 
-  // This is the generic bind point for the transform feedback buffer.
-  void SetBoundTransformFeedbackBuffer(WebGLBuffer*);
-  WebGLBuffer* GetBoundTransformFeedbackBuffer() const;
-
   // These are the indexed bind points for transform feedback buffers.
   // Returns false if index is out of range and the caller should
   // synthesize a GL error.
   bool SetBoundIndexedTransformFeedbackBuffer(GLuint index, WebGLBuffer*);
   bool GetBoundIndexedTransformFeedbackBuffer(GLuint index,
                                               WebGLBuffer** outBuffer) const;
+  bool HasEnoughBuffers(GLuint num_required) const;
 
-  bool IsBufferBoundToTransformFeedback(WebGLBuffer*);
-
+  bool UsesBuffer(WebGLBuffer*);
   void UnbindBuffer(WebGLBuffer*);
 
   virtual void Trace(blink::Visitor*);
   virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
+
+  bool active() const { return active_; }
+  bool paused() const { return paused_; }
+
+  void SetActive(bool active) {
+    active_ = active;
+    DCHECK(active_ || !paused_);
+  }
+  void SetPaused(bool paused) {
+    paused_ = paused;
+    DCHECK(active_ || !paused_);
+  }
+
+  bool ValidateProgramForResume(WebGLProgram*) const;
 
  protected:
   explicit WebGLTransformFeedback(WebGL2RenderingContextBase*, TFType);
@@ -70,11 +80,13 @@ class WebGLTransformFeedback : public WebGLContextObject {
   TFType type_;
   GLenum target_;
 
-  TraceWrapperMember<WebGLBuffer> bound_transform_feedback_buffer_;
   HeapVector<TraceWrapperMember<WebGLBuffer>>
       bound_indexed_transform_feedback_buffers_;
 
   Member<WebGLProgram> program_;
+  unsigned program_link_count_;
+  bool active_;
+  bool paused_;
 };
 
 }  // namespace blink

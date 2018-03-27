@@ -32,7 +32,6 @@
 
 #include "core/css/CSSSelector.h"
 #include "core/dom/Document.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -100,7 +99,7 @@ void SelectorFilter::PushParent(Element& parent) {
   if (parent_stack_.IsEmpty()) {
     DCHECK_EQ(parent, parent.GetDocument().documentElement());
     DCHECK(!ancestor_identifier_filter_);
-    ancestor_identifier_filter_ = WTF::WrapUnique(new IdentifierFilter);
+    ancestor_identifier_filter_ = std::make_unique<IdentifierFilter>();
     PushParentStackFrame(parent);
     return;
   }
@@ -159,7 +158,7 @@ void SelectorFilter::CollectIdentifierHashes(
     return;
   }
 
-  // Skip the topmost selector. It is handled quickly by the rule hashes.
+  // Skip the rightmost compound. It is handled quickly by the rule hashes.
   bool skip_over_subselectors = true;
   for (const CSSSelector* current = selector.TagHistory(); current;
        current = current->TagHistory()) {
@@ -180,8 +179,8 @@ void SelectorFilter::CollectIdentifierHashes(
       case CSSSelector::kDescendant:
       case CSSSelector::kShadowDeepAsDescendant:
       case CSSSelector::kChild:
-      // Fall through.
       case CSSSelector::kShadowPseudo:
+      case CSSSelector::kShadowPart:
       case CSSSelector::kShadowDeep:
       case CSSSelector::kShadowPiercingDescendant:
         skip_over_subselectors = false;

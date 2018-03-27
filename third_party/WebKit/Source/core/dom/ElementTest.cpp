@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "core/dom/Document.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/editing/testing/EditingTestBase.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/geometry/DOMRect.h"
@@ -342,6 +343,69 @@ TEST_F(ElementTest, GetBoundingClientRectForSVG) {
   EXPECT_EQ(71, svg_stroke_bounding_client_rect->height());
   // TODO(pdr): BoundsInViewport is not web exposed and should include stroke.
   EXPECT_EQ(IntRect(10, 100, 100, 71), svg_stroke->BoundsInViewport());
+}
+
+TEST_F(ElementTest, PartAttribute) {
+  Document& document = GetDocument();
+  SetBodyContent(R"HTML(
+    <span id='has_one_part' part='partname'></span>
+    <span id='has_two_parts' part='partname1 partname2'></span>
+    <span id='has_no_part'></span>
+  )HTML");
+
+  Element* has_one_part = document.getElementById("has_one_part");
+  Element* has_two_parts = document.getElementById("has_two_parts");
+  Element* has_no_part = document.getElementById("has_no_part");
+
+  ASSERT_TRUE(has_no_part);
+  ASSERT_TRUE(has_one_part);
+  ASSERT_TRUE(has_two_parts);
+
+  {
+    EXPECT_TRUE(has_one_part->HasPartName());
+    const SpaceSplitString* part_names = has_one_part->PartNames();
+    ASSERT_TRUE(part_names);
+    ASSERT_EQ(1UL, part_names->size());
+    ASSERT_EQ("partname", (*part_names)[0].Ascii());
+  }
+
+  {
+    EXPECT_TRUE(has_two_parts->HasPartName());
+    const SpaceSplitString* part_names = has_two_parts->PartNames();
+    ASSERT_TRUE(part_names);
+    ASSERT_EQ(2UL, part_names->size());
+    ASSERT_EQ("partname1", (*part_names)[0].Ascii());
+    ASSERT_EQ("partname2", (*part_names)[1].Ascii());
+  }
+
+  {
+    EXPECT_FALSE(has_no_part->HasPartName());
+    EXPECT_FALSE(has_no_part->PartNames());
+
+    // Now update the attribute value and make sure it's reflected.
+    has_no_part->setAttribute("part", "partname");
+    const SpaceSplitString* part_names = has_no_part->PartNames();
+    ASSERT_TRUE(part_names);
+    ASSERT_EQ(1UL, part_names->size());
+    ASSERT_EQ("partname", (*part_names)[0].Ascii());
+  }
+}
+
+TEST_F(ElementTest, OptionElementDisplayNoneComputedStyle) {
+  Document& document = GetDocument();
+  SetBodyContent(R"HTML(
+    <optgroup id=group style='display:none'></optgroup>
+    <option id=option style='display:none'></option>
+    <div style='display:none'>
+      <optgroup id=inner-group></optgroup>
+      <option id=inner-option></option>
+    </div>
+  )HTML");
+
+  EXPECT_FALSE(document.getElementById("group")->GetComputedStyle());
+  EXPECT_FALSE(document.getElementById("option")->GetComputedStyle());
+  EXPECT_FALSE(document.getElementById("inner-group")->GetComputedStyle());
+  EXPECT_FALSE(document.getElementById("inner-option")->GetComputedStyle());
 }
 
 }  // namespace blink

@@ -500,7 +500,7 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::TaskType task_type) override;
   int GetEnabledBindings() const override;
   void SetAccessibilityModeForTest(ui::AXMode new_mode) override;
-  scoped_refptr<SharedURLLoaderFactory> GetURLLoaderFactory() override;
+  scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory() override;
 
   // blink::mojom::EngagementClient implementation:
   void SetEngagementLevel(const url::Origin& origin,
@@ -1042,7 +1042,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnReloadLoFiImages();
   void OnTextSurroundingSelectionRequest(uint32_t max_length);
   void OnSetAccessibilityMode(ui::AXMode new_mode);
-  void OnSnapshotAccessibilityTree(int callback_id);
+  void OnSnapshotAccessibilityTree(int callback_id, ui::AXMode ax_mode);
   void OnUpdateOpener(int opener_routing_id);
   void OnDidUpdateFramePolicy(const blink::FramePolicy& frame_policy);
   void OnSetFrameOwnerProperties(
@@ -1078,7 +1078,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnFindMatchRects(int current_version);
 #endif
   void OnSetOverlayRoutingToken(const base::UnguessableToken& token);
-  void OnSetHasReceivedUserGesture();
+  void OnNotifyUserActivation();
 
 #if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 #if defined(OS_MACOSX)
@@ -1145,7 +1145,6 @@ class CONTENT_EXPORT RenderFrameImpl
   bool RunJavaScriptDialog(JavaScriptDialogType type,
                            const base::string16& message,
                            const base::string16& default_value,
-                           const GURL& frame_url,
                            base::string16* result);
 
   // Loads the appropriate error page for the specified failure into the frame.

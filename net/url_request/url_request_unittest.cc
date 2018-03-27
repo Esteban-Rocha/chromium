@@ -88,8 +88,8 @@
 #include "net/log/test_net_log.h"
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
-#include "net/net_features.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/net_buildflags.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/quic/chromium/mock_crypto_client_stream_factory.h"
 #include "net/quic/chromium/quic_server_info.h"
 #include "net/socket/socket_test_util.h"
@@ -735,7 +735,8 @@ class TestURLRequestContextWithProxy : public TestURLRequestContext {
                                  NetworkDelegate* delegate)
       : TestURLRequestContext(true) {
     context_storage_.set_proxy_resolution_service(
-        ProxyResolutionService::CreateFixed(proxy));
+        ProxyResolutionService::CreateFixed(proxy,
+                                            TRAFFIC_ANNOTATION_FOR_TESTS));
     set_network_delegate(delegate);
     Init();
   }
@@ -3317,23 +3318,54 @@ TEST_F(URLRequestTest, CookieAgeMetrics) {
   {
     TestDelegate d;
     std::unique_ptr<URLRequest> req(default_context_.CreateRequest(
-        http_server.GetURL(kHost, "/set-cookie?cookie=value"), DEFAULT_PRIORITY,
-        &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+        http_server.GetURL(kHost, "/set-cookie?cookie=value&cookie2=value2"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
     req->Start();
     base::RunLoop().Run();
-    ASSERT_EQ(1, network_delegate.set_cookie_count());
+    ASSERT_EQ(2, network_delegate.set_cookie_count());
   }
 
-  // Make a secure request to `example.test`: we shouldn't record data.
+  // Make a secure same-site request.
   {
     TestDelegate d;
     std::unique_ptr<URLRequest> req(default_context_.CreateRequest(
         https_server.GetURL(kHost, "/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
         TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server.GetURL(kHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server.GetURL(kHost, "/")));
     req->Start();
     base::RunLoop().Run();
     histograms.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 0);
     histograms.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 0);
+    histograms.ExpectTotalCount("Cookie.AgeForSecureCrossSiteRequest", 0);
+    histograms.ExpectTotalCount("Cookie.AgeForSecureSameSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AllAgesForNonSecureCrossSiteRequest",
+                                0);
+    histograms.ExpectTotalCount("Cookie.AllAgesForNonSecureSameSiteRequest", 0);
+    histograms.ExpectTotalCount("Cookie.AllAgesForSecureCrossSiteRequest", 0);
+    histograms.ExpectTotalCount("Cookie.AllAgesForSecureSameSiteRequest", 2);
+  }
+
+  // Make a secure cross-site request.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(default_context_.CreateRequest(
+        https_server.GetURL(kHost, "/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server.GetURL(kCrossHost, "/"));
+    req->set_initiator(
+        url::Origin::Create(https_server.GetURL(kCrossHost, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 0);
+    histograms.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 0);
+    histograms.ExpectTotalCount("Cookie.AgeForSecureCrossSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AgeForSecureSameSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AllAgesForNonSecureCrossSiteRequest",
+                                0);
+    histograms.ExpectTotalCount("Cookie.AllAgesForNonSecureSameSiteRequest", 0);
+    histograms.ExpectTotalCount("Cookie.AllAgesForSecureCrossSiteRequest", 2);
+    histograms.ExpectTotalCount("Cookie.AllAgesForSecureSameSiteRequest", 2);
   }
 
   // Make a non-secure same-site request.
@@ -3348,6 +3380,13 @@ TEST_F(URLRequestTest, CookieAgeMetrics) {
     base::RunLoop().Run();
     histograms.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 0);
     histograms.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AgeForSecureCrossSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AgeForSecureSameSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AllAgesForNonSecureCrossSiteRequest",
+                                0);
+    histograms.ExpectTotalCount("Cookie.AllAgesForNonSecureSameSiteRequest", 2);
+    histograms.ExpectTotalCount("Cookie.AllAgesForSecureCrossSiteRequest", 2);
+    histograms.ExpectTotalCount("Cookie.AllAgesForSecureSameSiteRequest", 2);
   }
 
   // Make a non-secure cross-site request.
@@ -3363,6 +3402,13 @@ TEST_F(URLRequestTest, CookieAgeMetrics) {
     base::RunLoop().Run();
     histograms.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 1);
     histograms.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AgeForSecureCrossSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AgeForSecureSameSiteRequest", 1);
+    histograms.ExpectTotalCount("Cookie.AllAgesForNonSecureCrossSiteRequest",
+                                2);
+    histograms.ExpectTotalCount("Cookie.AllAgesForNonSecureSameSiteRequest", 2);
+    histograms.ExpectTotalCount("Cookie.AllAgesForSecureCrossSiteRequest", 2);
+    histograms.ExpectTotalCount("Cookie.AllAgesForSecureSameSiteRequest", 2);
   }
 }
 

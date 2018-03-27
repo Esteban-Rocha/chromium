@@ -23,11 +23,11 @@
 #define CSSParserSelector_h
 
 #include <memory>
+#include <utility>
 
 #include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/css/CSSSelector.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -41,7 +41,7 @@ class CORE_EXPORT CSSParserSelector {
   explicit CSSParserSelector(const QualifiedName&, bool is_implicit = false);
 
   static std::unique_ptr<CSSParserSelector> Create() {
-    return WTF::WrapUnique(new CSSParserSelector);
+    return std::make_unique<CSSParserSelector>();
   }
   static std::unique_ptr<CSSParserSelector> Create(const QualifiedName& name,
                                                    bool is_implicit = false) {
@@ -100,14 +100,12 @@ class CORE_EXPORT CSSParserSelector {
     return selector_->SelectorList();
   }
 
-  bool NeedsImplicitShadowCombinatorForMatching() const {
-    return GetPseudoType() == CSSSelector::kPseudoWebKitCustomElement ||
-           GetPseudoType() == CSSSelector::kPseudoBlinkInternalElement ||
-           GetPseudoType() == CSSSelector::kPseudoCue ||
-           GetPseudoType() == CSSSelector::kPseudoPlaceholder ||
-           GetPseudoType() == CSSSelector::kPseudoShadow ||
-           GetPseudoType() == CSSSelector::kPseudoSlotted;
-  }
+  // Some pseudo elements behave as if they have an implicit combinator to their
+  // left even though they are written without one. This method returns the
+  // correct implicit combinator. If no new combinator should be used, it
+  // returns RelationType::kSubSelector.
+  CSSSelector::RelationType GetImplicitShadowCombinatorForMatching() const;
+  bool NeedsImplicitShadowCombinatorForMatching() const;
 
   bool IsSimple() const;
 

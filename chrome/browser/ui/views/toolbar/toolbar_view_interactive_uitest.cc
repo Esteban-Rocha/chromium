@@ -28,21 +28,13 @@
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
+#include "chrome/test/views/scoped_macviews_browser_mode.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
-
-// Borrowed from chrome/browser/ui/views/bookmarks/bookmark_bar_view_test.cc,
-// since these are also disabled on Linux for drag and drop.
-// TODO(erg): Fix DND tests on linux_aura. crbug.com/163931
-#if defined(OS_LINUX) && defined(USE_AURA)
-#define MAYBE(x) DISABLED_##x
-#else
-#define MAYBE(x) x
-#endif
 
 using bookmarks::BookmarkModel;
 
@@ -73,6 +65,8 @@ class ToolbarViewInteractiveUITest : public ExtensionBrowserTest {
   void SetUpCommandLine(base::CommandLine* command_line) override;
   void SetUpOnMainThread() override;
   void TearDownOnMainThread() override;
+
+  test::ScopedMacViewsBrowserMode views_mode_{true};
 
   ToolbarView* toolbar_view_;
 
@@ -159,8 +153,19 @@ void ToolbarViewInteractiveUITest::TearDownOnMainThread() {
   AppMenuButton::g_open_app_immediately_for_testing = false;
 }
 
+// Borrowed from chrome/browser/ui/views/bookmarks/bookmark_bar_view_test.cc,
+// since these are also disabled on Linux for drag and drop.
+// TODO(erg): Fix DND tests on linux_aura. crbug.com/163931
+#if defined(OS_LINUX) && defined(USE_AURA)
+#define MAYBE_TestAppMenuOpensOnDrag DISABLED_TestAppMenuOpensOnDrag
+#elif defined(OS_MACOSX)
+// Illegal thread join on the UI thread, may fix above: http://crbug.com/824570
+#define MAYBE_TestAppMenuOpensOnDrag DISABLED_TestAppMenuOpensOnDrag
+#else
+#define MAYBE_TestAppMenuOpensOnDrag TestAppMenuOpensOnDrag
+#endif
 IN_PROC_BROWSER_TEST_F(ToolbarViewInteractiveUITest,
-                       MAYBE(TestAppMenuOpensOnDrag)) {
+                       MAYBE_TestAppMenuOpensOnDrag) {
   // Load an extension that has a browser action.
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("api_test")
                                           .AppendASCII("browser_action")
@@ -189,6 +194,8 @@ class ToolbarViewTest : public InProcessBrowserTest {
   void RunToolbarCycleFocusTest(Browser* browser);
 
  private:
+  test::ScopedMacViewsBrowserMode views_mode_{true};
+
   DISALLOW_COPY_AND_ASSIGN(ToolbarViewTest);
 };
 
@@ -254,11 +261,25 @@ void ToolbarViewTest::RunToolbarCycleFocusTest(Browser* browser) {
     EXPECT_EQ(ids[i], reverse_ids[count - 2 - i]);
 }
 
-IN_PROC_BROWSER_TEST_F(ToolbarViewTest, ToolbarCycleFocus) {
+#if defined(OS_MACOSX)
+// Widget activation doesn't work on Mac: https://crbug.com/823543
+#define MAYBE_ToolbarCycleFocus DISABLED_ToolbarCycleFocus
+#else
+#define MAYBE_ToolbarCycleFocus ToolbarCycleFocus
+#endif
+IN_PROC_BROWSER_TEST_F(ToolbarViewTest, MAYBE_ToolbarCycleFocus) {
   RunToolbarCycleFocusTest(browser());
 }
 
-IN_PROC_BROWSER_TEST_F(ToolbarViewTest, ToolbarCycleFocusWithBookmarkBar) {
+#if defined(OS_MACOSX)
+// Widget activation doesn't work on Mac: https://crbug.com/823543
+#define MAYBE_ToolbarCycleFocusWithBookmarkBar \
+  DISABLED_ToolbarCycleFocusWithBookmarkBar
+#else
+#define MAYBE_ToolbarCycleFocusWithBookmarkBar ToolbarCycleFocusWithBookmarkBar
+#endif
+IN_PROC_BROWSER_TEST_F(ToolbarViewTest,
+                       MAYBE_ToolbarCycleFocusWithBookmarkBar) {
   CommandUpdater* updater = browser()->command_controller();
   updater->ExecuteCommand(IDC_SHOW_BOOKMARK_BAR);
 

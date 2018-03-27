@@ -557,6 +557,7 @@ URLRequest::URLRequest(const GURL& url,
       net_log_(NetLogWithSource::Make(context->net_log(),
                                       NetLogSourceType::URL_REQUEST)),
       url_chain_(1, url),
+      attach_same_site_cookies_(false),
       method_("GET"),
       referrer_policy_(CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE),
       first_party_url_policy_(NEVER_CHANGE_FIRST_PARTY_URL),
@@ -1166,8 +1167,11 @@ void URLRequest::OnCallToDelegateComplete() {
 void URLRequest::MaybeGenerateNetworkErrorLoggingReport() {
   NetworkErrorLoggingService* service =
       context()->network_error_logging_service();
-  if (!service)
+  if (!service) {
+    NetworkErrorLoggingService::
+        RecordRequestDiscardedForNoNetworkErrorLoggingService();
     return;
+  }
 
   // TODO(juliatuttle): Figure out whether we should be ignoring errors from
   // non-HTTPS origins.

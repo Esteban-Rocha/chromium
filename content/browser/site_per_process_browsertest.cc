@@ -956,7 +956,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, TitleAfterCrossSiteIframe) {
 
 // Test that the physical backing size and view bounds for a scaled out-of-
 // process iframe are set and updated correctly.
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, PhysicalBackingSizeTest) {
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       CompositorViewportPixelSizeTest) {
   GURL main_url(embedded_test_server()->GetURL(
       "a.com", "/frame_tree/page_with_scaled_frame.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -996,7 +997,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, PhysicalBackingSizeTest) {
   EXPECT_EQ(gfx::Size(100, 100), rwhv_nested->GetViewBounds().size());
   EXPECT_EQ(gfx::Size(100, 100), connector->local_frame_size_in_dip());
   EXPECT_EQ(connector->local_frame_size_in_pixels(),
-            rwhv_nested->GetPhysicalBackingSize());
+            rwhv_nested->GetCompositorViewportPixelSize());
 }
 
 // Test that the view bounds for an out-of-process iframe are set and updated
@@ -1108,8 +1109,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   blink::WebGestureEvent gesture_scroll_begin(
       blink::WebGestureEvent::kGestureScrollBegin,
       blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_scroll_begin.source_device = blink::kWebGestureDeviceTouchscreen;
+      blink::WebInputEvent::GetStaticTimeStampForTests(),
+      blink::kWebGestureDeviceTouchscreen);
   gesture_scroll_begin.data.scroll_begin.delta_hint_units =
       blink::WebGestureEvent::ScrollUnits::kPrecisePixels;
   gesture_scroll_begin.data.scroll_begin.delta_x_hint = 0.f;
@@ -1120,8 +1121,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   blink::WebGestureEvent gesture_scroll_update(
       blink::WebGestureEvent::kGestureScrollUpdate,
       blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_scroll_update.source_device = blink::kWebGestureDeviceTouchscreen;
+      blink::WebInputEvent::GetStaticTimeStampForTests(),
+      blink::kWebGestureDeviceTouchscreen);
   gesture_scroll_update.data.scroll_update.delta_units =
       blink::WebGestureEvent::ScrollUnits::kPrecisePixels;
   gesture_scroll_update.data.scroll_update.delta_x = 0.f;
@@ -1133,8 +1134,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   blink::WebGestureEvent gesture_fling_start(
       blink::WebGestureEvent::kGestureFlingStart,
       blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_fling_start.source_device = blink::kWebGestureDeviceTouchscreen;
+      blink::WebInputEvent::GetStaticTimeStampForTests(),
+      blink::kWebGestureDeviceTouchscreen);
   gesture_fling_start.data.fling_start.velocity_x = 0.f;
   gesture_fling_start.data.fling_start.velocity_y = 5.f;
 
@@ -1321,34 +1322,31 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   blink::WebGestureEvent gesture_event(
       blink::WebGestureEvent::kGestureScrollBegin,
       blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_event.source_device = blink::kWebGestureDeviceTouchpad;
-  gesture_event.x = 1;
-  gesture_event.y = 1;
+      blink::WebInputEvent::GetStaticTimeStampForTests(),
+      blink::kWebGestureDeviceTouchpad);
+  gesture_event.SetPositionInWidget(gfx::PointF(1, 1));
   gesture_event.data.scroll_begin.delta_x_hint = 0.0f;
   gesture_event.data.scroll_begin.delta_y_hint = 6.0f;
   rwhv_nested->GetRenderWidgetHost()->ForwardGestureEvent(gesture_event);
 
-  gesture_event = blink::WebGestureEvent(
-      blink::WebGestureEvent::kGestureScrollUpdate,
-      blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_event.source_device = blink::kWebGestureDeviceTouchpad;
-  gesture_event.x = 1;
-  gesture_event.y = 1;
+  gesture_event =
+      blink::WebGestureEvent(blink::WebGestureEvent::kGestureScrollUpdate,
+                             blink::WebInputEvent::kNoModifiers,
+                             blink::WebInputEvent::GetStaticTimeStampForTests(),
+                             blink::kWebGestureDeviceTouchpad);
+  gesture_event.SetPositionInWidget(gfx::PointF(1, 1));
   gesture_event.data.scroll_update.delta_x = 0.0f;
   gesture_event.data.scroll_update.delta_y = 6.0f;
   gesture_event.data.scroll_update.velocity_x = 0;
   gesture_event.data.scroll_update.velocity_y = 0;
   rwhv_nested->GetRenderWidgetHost()->ForwardGestureEvent(gesture_event);
 
-  gesture_event = blink::WebGestureEvent(
-      blink::WebGestureEvent::kGestureScrollEnd,
-      blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_event.source_device = blink::kWebGestureDeviceTouchpad;
-  gesture_event.x = 1;
-  gesture_event.y = 1;
+  gesture_event =
+      blink::WebGestureEvent(blink::WebGestureEvent::kGestureScrollEnd,
+                             blink::WebInputEvent::kNoModifiers,
+                             blink::WebInputEvent::GetStaticTimeStampForTests(),
+                             blink::kWebGestureDeviceTouchpad);
+  gesture_event.SetPositionInWidget(gfx::PointF(1, 1));
   rwhv_nested->GetRenderWidgetHost()->ForwardGestureEvent(gesture_event);
 
   filter->WaitForRect();
@@ -1382,6 +1380,52 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   }
   DCHECK_EQ(filter->last_rect().x(), 0);
   DCHECK_EQ(filter->last_rect().y(), 0);
+}
+
+// Test that fling on an out-of-process iframe progresses properly.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, GestureFlingStart) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+  ASSERT_EQ(1U, root->child_count());
+
+  FrameTreeNode* child_iframe_node = root->child_at(0);
+
+  RenderWidgetHost* child_rwh =
+      child_iframe_node->current_frame_host()->GetRenderWidgetHost();
+
+  WaitForChildFrameSurfaceReady(child_iframe_node->current_frame_host());
+
+  // Send a GSB to start scrolling sequence.
+  blink::WebGestureEvent gesture_scroll_begin(
+      blink::WebGestureEvent::kGestureScrollBegin,
+      blink::WebInputEvent::kNoModifiers,
+      blink::WebInputEvent::GetStaticTimeStampForTests());
+  gesture_scroll_begin.SetSourceDevice(blink::kWebGestureDeviceTouchscreen);
+  gesture_scroll_begin.data.scroll_begin.delta_hint_units =
+      blink::WebGestureEvent::ScrollUnits::kPrecisePixels;
+  gesture_scroll_begin.data.scroll_begin.delta_x_hint = 0.f;
+  gesture_scroll_begin.data.scroll_begin.delta_y_hint = 5.f;
+  child_rwh->ForwardGestureEvent(gesture_scroll_begin);
+
+  // Send a GFS and wait for the ack of the first GSU generated from progressing
+  // the fling on the browser.
+  InputEventAckWaiter gesture_scroll_update_ack_observer(
+      child_rwh, blink::WebInputEvent::kGestureScrollUpdate);
+  gesture_scroll_update_ack_observer.Reset();
+  blink::WebGestureEvent gesture_fling_start(
+      blink::WebGestureEvent::kGestureFlingStart,
+      blink::WebInputEvent::kNoModifiers,
+      blink::WebInputEvent::GetStaticTimeStampForTests());
+  gesture_fling_start.SetSourceDevice(blink::kWebGestureDeviceTouchscreen);
+  gesture_fling_start.data.fling_start.velocity_x = 0.f;
+  gesture_fling_start.data.fling_start.velocity_y = 50.f;
+  child_rwh->ForwardGestureEvent(gesture_fling_start);
+  gesture_scroll_update_ack_observer.Wait();
 }
 
 class ScrollObserver : public RenderWidgetHost::InputEventObserver {
@@ -9588,28 +9632,25 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, TestChildProcessImportance) {
   FrameTreeNode* child = root->child_at(0);
 
   // Importance should survive initial navigation.
+  EXPECT_EQ(ChildProcessImportance::MODERATE,
+            root->current_frame_host()->GetProcess()->GetEffectiveImportance());
   EXPECT_EQ(
       ChildProcessImportance::MODERATE,
-      root->current_frame_host()->GetProcess()->ComputeEffectiveImportance());
-  EXPECT_EQ(
-      ChildProcessImportance::MODERATE,
-      child->current_frame_host()->GetProcess()->ComputeEffectiveImportance());
+      child->current_frame_host()->GetProcess()->GetEffectiveImportance());
 
   // Check setting importance.
   web_contents()->SetImportance(ChildProcessImportance::NORMAL);
+  EXPECT_EQ(ChildProcessImportance::NORMAL,
+            root->current_frame_host()->GetProcess()->GetEffectiveImportance());
   EXPECT_EQ(
       ChildProcessImportance::NORMAL,
-      root->current_frame_host()->GetProcess()->ComputeEffectiveImportance());
-  EXPECT_EQ(
-      ChildProcessImportance::NORMAL,
-      child->current_frame_host()->GetProcess()->ComputeEffectiveImportance());
+      child->current_frame_host()->GetProcess()->GetEffectiveImportance());
   web_contents()->SetImportance(ChildProcessImportance::IMPORTANT);
+  EXPECT_EQ(ChildProcessImportance::IMPORTANT,
+            root->current_frame_host()->GetProcess()->GetEffectiveImportance());
   EXPECT_EQ(
       ChildProcessImportance::IMPORTANT,
-      root->current_frame_host()->GetProcess()->ComputeEffectiveImportance());
-  EXPECT_EQ(
-      ChildProcessImportance::IMPORTANT,
-      child->current_frame_host()->GetProcess()->ComputeEffectiveImportance());
+      child->current_frame_host()->GetProcess()->GetEffectiveImportance());
 
   // Check importance is maintained if child navigates to new domain.
   int old_child_process_id = child->current_frame_host()->GetProcess()->GetID();
@@ -9623,7 +9664,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, TestChildProcessImportance) {
   EXPECT_NE(old_child_process_id, new_child_process_id);
   EXPECT_EQ(
       ChildProcessImportance::IMPORTANT,
-      child->current_frame_host()->GetProcess()->ComputeEffectiveImportance());
+      child->current_frame_host()->GetProcess()->GetEffectiveImportance());
 
   // Check importance is maintained if root navigates to new domain.
   int old_root_process_id = root->current_frame_host()->GetProcess()->GetID();
@@ -9636,9 +9677,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, TestChildProcessImportance) {
   EXPECT_EQ(0u, root->child_count());
   int new_root_process_id = root->current_frame_host()->GetProcess()->GetID();
   EXPECT_NE(old_root_process_id, new_root_process_id);
-  EXPECT_EQ(
-      ChildProcessImportance::IMPORTANT,
-      root->current_frame_host()->GetProcess()->ComputeEffectiveImportance());
+  EXPECT_EQ(ChildProcessImportance::IMPORTANT,
+            root->current_frame_host()->GetProcess()->GetEffectiveImportance());
 
   // Check interstitial maintains importance.
   TestInterstitialDelegate* delegate = new TestInterstitialDelegate;
@@ -9652,11 +9692,11 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, TestChildProcessImportance) {
   RenderProcessHost* interstitial_process =
       interstitial->GetMainFrame()->GetProcess();
   EXPECT_EQ(ChildProcessImportance::IMPORTANT,
-            interstitial_process->ComputeEffectiveImportance());
+            interstitial_process->GetEffectiveImportance());
 
   web_contents()->SetImportance(ChildProcessImportance::MODERATE);
   EXPECT_EQ(ChildProcessImportance::MODERATE,
-            interstitial_process->ComputeEffectiveImportance());
+            interstitial_process->GetEffectiveImportance());
 }
 
 // Tests for Android TouchSelectionEditing.
@@ -10625,7 +10665,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
 
   CommitMessageOrderReverser commit_order_reverser(
       shell()->web_contents(), kSubframeSameSiteUrl /* deferred_url */,
-      did_start_deferring_commit_callback);
+      std::move(did_start_deferring_commit_callback));
 
   ASSERT_TRUE(ExecuteScript(shell(), kAddSameSiteDynamicSubframe));
   commit_order_reverser.WaitForBothCommits();
@@ -10814,6 +10854,94 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, SizeAvailableAfterCommit) {
       &height));
 
   EXPECT_GT(height, 0);
+}
+// Test that a late swapout ACK won't incorrectly mark RenderViewHost as
+// inactive if it's already been reused and switched to active by another
+// navigation.  See https://crbug.com/823567.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       RenderViewHostStaysActiveWithLateSwapoutACK) {
+  EXPECT_TRUE(NavigateToURL(
+      shell(), embedded_test_server()->GetURL("a.com", "/title1.html")));
+
+  // Open a popup and navigate it to a.com.
+  Shell* popup = OpenPopup(
+      shell(), embedded_test_server()->GetURL("a.com", "/title2.html"), "foo");
+  WebContentsImpl* popup_contents =
+      static_cast<WebContentsImpl*>(popup->web_contents());
+  RenderFrameHostImpl* rfh = popup_contents->GetMainFrame();
+  RenderViewHostImpl* rvh = rfh->render_view_host();
+
+  // Disable the swapout ACK and the swapout timer.
+  scoped_refptr<SwapoutACKMessageFilter> filter = new SwapoutACKMessageFilter();
+  rfh->GetProcess()->AddFilter(filter.get());
+  rfh->DisableSwapOutTimerForTesting();
+
+  // Navigate popup to b.com.  Because there's an opener, the RVH for a.com
+  // stays around in swapped-out state.
+  EXPECT_TRUE(NavigateToURLInSameBrowsingInstance(
+      popup, embedded_test_server()->GetURL("b.com", "/title3.html")));
+  EXPECT_FALSE(rvh->is_active());
+
+  // The old RenderFrameHost is now pending deletion.
+  ASSERT_TRUE(rfh->IsRenderFrameLive());
+  ASSERT_FALSE(rfh->is_active());
+
+  // Kill the b.com process.
+  RenderProcessHost* b_process = popup_contents->GetMainFrame()->GetProcess();
+  RenderProcessHostWatcher crash_observer(
+      b_process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  b_process->Shutdown(0);
+  crash_observer.Wait();
+
+  // Go back in the popup from b.com to a.com/title2.html.  Because the current
+  // b.com RFH is dead, the new RFH is committed right away (without waiting
+  // for renderer to commit), so that users don't need to look at the sad tab.
+  TestNavigationObserver back_observer(popup_contents);
+  popup_contents->GetController().GoBack();
+
+  // Pretend that the original RFH in a.com now finishes running its unload
+  // handler and sends the swapout ACK.
+  rfh->OnSwappedOut();
+
+  // Wait for the new a.com navigation to finish.
+  back_observer.Wait();
+
+  // The RVH for a.com should've been reused, and it should be active.  Its
+  // main frame should've been updated to the RFH from the back navigation.
+  EXPECT_EQ(popup_contents->GetMainFrame()->render_view_host(), rvh);
+  EXPECT_TRUE(rvh->is_active());
+  EXPECT_EQ(rvh->GetMainFrame(), popup_contents->GetMainFrame());
+}
+
+// Check that when A opens a new window with B which embeds an A subframe, the
+// subframe is visible and generates paint events.  See
+// https://crbug.com/638375.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       SubframeVisibleAfterRenderViewBecomesSwappedOut) {
+  GURL main_url(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  GURL popup_url(embedded_test_server()->GetURL(
+      "b.com", "/cross_site_iframe_factory.html?b(b)"));
+  Shell* popup_shell = OpenPopup(shell()->web_contents(), popup_url, "popup");
+  FrameTreeNode* popup_child =
+      static_cast<WebContentsImpl*>(popup_shell->web_contents())
+          ->GetFrameTree()
+          ->root()
+          ->child_at(0);
+
+  // Navigate popup's subframe to a page on a.com, which will generate
+  // continuous compositor frames by incrementing a counter on the page.
+  NavigateFrameToURL(popup_child,
+                     embedded_test_server()->GetURL("a.com", "/counter.html"));
+
+  RenderWidgetHostViewChildFrame* child_view =
+      static_cast<RenderWidgetHostViewChildFrame*>(
+          popup_child->current_frame_host()->GetView());
+
+  // Make sure the child frame keeps generating compositor frames.
+  ChildFrameCompositorFrameSwapCounter counter(child_view);
+  counter.WaitForNewFrames(10u);
 }
 
 }  // namespace content

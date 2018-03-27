@@ -71,7 +71,7 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
 
     def generate_property_h_builder(self, property_classname, property_filename, property_):
         @template_expander.use_jinja(
-            'core/css/properties/templates/CSSPropertySubclass.h.tmpl',
+            'core/css/properties/templates/css_property_subclass.h.tmpl',
             template_cache=self.template_cache)
         def generate_property_h():
             return {
@@ -85,7 +85,7 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
 
     def generate_property_cpp_builder(self, property_filename, property_):
         @template_expander.use_jinja(
-            'core/css/properties/templates/CSSPropertySubclass.cpp.tmpl',
+            'core/css/properties/templates/css_property_subclass.cc.tmpl',
             template_cache=self.template_cache)
         def generate_property_cpp():
             return {
@@ -140,11 +140,11 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
 
     def h_includes(self, property_):
         if property_['alias_for']:
-            yield "core/css/properties/CSSUnresolvedProperty.h"
+            yield "core/css/properties/css_unresolved_property.h"
         else:
             yield "core/css/properties/" + property_['namespace_group'] + ".h"
             if property_['direction_aware_options']:
-                yield "core/StylePropertyShorthand.h"
+                yield "core/style_property_shorthand.h"
             if property_['runtime_flag']:
                 yield "platform/runtime_enabled_features.h"
             if property_['should_implement_apply_functions']:

@@ -256,9 +256,14 @@ static inline T ToSmallerUInt(v8::Isolate* isolate,
   if (std::isinf(number_value))
     return 0;
 
-  number_value =
-      number_value < 0 ? -floor(fabs(number_value)) : floor(fabs(number_value));
-  return static_cast<T>(fmod(number_value, LimitsTrait::kNumberOfValues));
+  // Confine number to (-kNumberOfValues, kNumberOfValues).
+  double number = fmod(trunc(number_value), LimitsTrait::kNumberOfValues);
+
+  // Adjust range to [0, kNumberOfValues).
+  if (number < 0)
+    number += LimitsTrait::kNumberOfValues;
+
+  return static_cast<T>(number);
 }
 
 int8_t ToInt8(v8::Isolate* isolate,
@@ -740,6 +745,8 @@ v8::Local<v8::Context> ToV8Context(LocalFrame* frame, DOMWrapperWorld& world) {
 
 v8::Local<v8::Context> ToV8ContextEvenIfDetached(LocalFrame* frame,
                                                  DOMWrapperWorld& world) {
+  // TODO(yukishiino): this method probably should not force context creation,
+  // but it does through WindowProxy() call.
   DCHECK(frame);
   return frame->WindowProxy(world)->ContextIfInitialized();
 }

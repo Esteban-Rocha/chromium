@@ -377,6 +377,9 @@ all_devtools_files = [
   "front_end/main/Main.js",
   "front_end/main/module.json",
   "front_end/main/SimpleApp.js",
+  "front_end/protocol_monitor/ProtocolMonitor.js",
+  "front_end/protocol_monitor/protocolMonitor.css",
+  "front_end/protocol_monitor/module.json",
   "front_end/mobile_throttling/MobileThrottlingSelector.js",
   "front_end/mobile_throttling/module.json",
   "front_end/mobile_throttling/NetworkPanelIndicator.js",
@@ -425,6 +428,7 @@ all_devtools_files = [
   "front_end/network_test_runner/module.json",
   "front_end/network_test_runner/NetworkTestRunner.js",
   "front_end/network_test_runner/ProductRegistryTestRunner.js",
+  "front_end/node_debugger/module.json",
   "front_end/node_main/NodeConnectionsPanel.js",
   "front_end/node_main/nodeConnectionsPanel.css",
   "front_end/node_main/NodeMain.js",
@@ -493,9 +497,11 @@ all_devtools_files = [
   "front_end/profiler/HeapSnapshotProxy.js",
   "front_end/profiler/HeapSnapshotView.js",
   "front_end/profiler/HeapProfilerPanel.js",
+  "front_end/profiler/IsolateSelector.js",
   "front_end/profiler/module.json",
   "front_end/profiler/ProfileDataGrid.js",
   "front_end/profiler/ProfileHeader.js",
+  "front_end/profiler/profileLauncherView.css",
   "front_end/profiler/ProfileLauncherView.js",
   "front_end/profiler/ProfileType.js",
   "front_end/profiler/profilesPanel.css",
@@ -784,7 +790,6 @@ all_devtools_files = [
   "front_end/ui/ListWidget.js",
   "front_end/ui/module.json",
   "front_end/ui/Panel.js",
-  "front_end/ui/panelEnablerView.css",
   "front_end/ui/popover.css",
   "front_end/ui/Popover.js",
   "front_end/ui/progressIndicator.css",
@@ -799,6 +804,8 @@ all_devtools_files = [
   "front_end/ui/RootView.js",
   "front_end/ui/searchableView.css",
   "front_end/ui/SearchableView.js",
+  "front_end/ui/segmentedButton.css",
+  "front_end/ui/SegmentedButton.js",
   "front_end/ui/SettingsUI.js",
   "front_end/ui/ShortcutRegistry.js",
   "front_end/ui/ShortcutsScreen.js",
@@ -999,6 +1006,7 @@ generated_non_autostart_non_remote_modules = [
   "$resources_out_dir/browser_console/browser_console_module.js",
   "$resources_out_dir/browser_debugger/browser_debugger_module.js",
   "$resources_out_dir/changes/changes_module.js",
+  "$resources_out_dir/protocol_monitor/protocol_monitor_module.js",
   "$resources_out_dir/cm/cm_module.js",
   "$resources_out_dir/color_picker/color_picker_module.js",
   "$resources_out_dir/console/console_module.js",
@@ -1018,6 +1026,7 @@ generated_non_autostart_non_remote_modules = [
   "$resources_out_dir/layer_viewer/layer_viewer_module.js",
   "$resources_out_dir/layers/layers_module.js",
   "$resources_out_dir/network/network_module.js",
+  "$resources_out_dir/node_debugger/node_debugger_module.js",
   "$resources_out_dir/object_ui/object_ui_module.js",
   "$resources_out_dir/perf_ui/perf_ui_module.js",
   "$resources_out_dir/profiler/profiler_module.js",
@@ -1035,16 +1044,12 @@ generated_non_autostart_non_remote_modules = [
   "$resources_out_dir/workspace_diff/workspace_diff_module.js",
 ]
 
-generated_resources =
-    generated_applications + generated_non_autostart_non_remote_modules
-
 generated_remote_modules = [
   "$resources_out_dir/accessibility/accessibility_module.js",
   "$resources_out_dir/audits2_worker/audits2_worker_module.js",
   "$resources_out_dir/cm_modes/cm_modes_module.js",
   "$resources_out_dir/emulated_devices/emulated_devices_module.js",
   "$resources_out_dir/product_registry_impl/product_registry_impl_module.js",
-  "$resources_out_dir/screencast/screencast_module.js",
 ]
 
 devtools_applications = [
@@ -1113,8 +1118,16 @@ action("generate_devtools_grd") {
     ":devtools_frontend_resources",
   ]
 
-  grd_files = generated_resources + devtools_embedder_scripts +
-              [ "$resources_out_dir/devtools_extension_api.js" ]
+  grd_files =
+      generated_applications + generated_non_autostart_non_remote_modules +
+      devtools_embedder_scripts +
+      [ "$resources_out_dir/devtools_extension_api.js" ]
+
+  # Bundle remote modules in ChromeOS.
+  if (is_chromeos) {
+    grd_files += generated_remote_modules
+  }
+
   inputs = grd_files + devtools_image_files
   outfile = "$root_gen_dir/devtools/devtools_resources.grd"
   outputs = [
@@ -1197,7 +1210,9 @@ action("build_release_devtools") {
 
   inputs = helper_scripts + all_devtools_files + generated_scripts +
            application_templates
-  outputs = generated_resources + generated_remote_modules
+  outputs =
+      generated_applications + generated_non_autostart_non_remote_modules +
+      generated_remote_modules
 
   args = devtools_applications + [
            "--input_path",

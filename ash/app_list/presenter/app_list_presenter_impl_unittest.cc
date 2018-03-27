@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ash/app_list/presenter/app_list_presenter_impl.h"
+#include "ash/app_list/app_list_presenter_impl.h"
 
 #include <memory>
 
 #include "ash/app_list/presenter/app_list_presenter_delegate_factory.h"
 #include "ash/app_list/presenter/test/app_list_presenter_impl_test_api.h"
 #include "base/memory/ptr_util.h"
-#include "ui/app_list/app_list_features.h"
 #include "ui/app_list/test/app_list_test_view_delegate.h"
 #include "ui/app_list/views/app_list_view.h"
 #include "ui/aura/client/focus_client.h"
@@ -133,7 +132,8 @@ void AppListPresenterImplTest::SetUp() {
   new wm::DefaultActivationClient(root_window());
   container_.reset(CreateNormalWindow(0, root_window(), nullptr));
   presenter_ = std::make_unique<AppListPresenterImpl>(
-      std::make_unique<AppListPresenterDelegateFactoryTest>(container_.get()));
+      std::make_unique<AppListPresenterDelegateFactoryTest>(container_.get()),
+      nullptr);
   presenter_test_api_ =
       std::make_unique<test::AppListPresenterImplTestApi>(presenter());
 }
@@ -147,15 +147,12 @@ void AppListPresenterImplTest::TearDown() {
 // not app list window's sibling and that appropriate delegate callbacks are
 // executed when the app launcher is shown and then when the app launcher is
 // dismissed.
-TEST_F(AppListPresenterImplTest, HideOnFocusOut) {
+TEST_F(AppListPresenterImplTest, DISABLED_HideOnFocusOut) {
   // TODO(newcomer): this test needs to be reevaluated for the fullscreen app
   // list (http://crbug.com/759779).
-  if (features::IsFullscreenAppListEnabled())
-    return;
-
   aura::client::FocusClient* focus_client =
       aura::client::GetFocusClient(root_window());
-  presenter()->Show(GetDisplayId());
+  presenter()->Show(GetDisplayId(), base::TimeTicks());
   EXPECT_TRUE(delegate()->init_called());
   EXPECT_TRUE(delegate()->on_shown_called());
   EXPECT_FALSE(delegate()->on_dismissed_called());
@@ -173,15 +170,12 @@ TEST_F(AppListPresenterImplTest, HideOnFocusOut) {
 // Tests that app launcher remains visible when focus moves to a window which
 // is app list window's sibling and that appropriate delegate callbacks are
 // executed when the app launcher is shown.
-TEST_F(AppListPresenterImplTest, RemainVisibleWhenFocusingToSibling) {
+TEST_F(AppListPresenterImplTest, DISABLED_RemainVisibleWhenFocusingToSibling) {
   // TODO(newcomer): this test needs to be reevaluated for the fullscreen app
   // list (http://crbug.com/759779).
-  if (features::IsFullscreenAppListEnabled())
-    return;
-
   aura::client::FocusClient* focus_client =
       aura::client::GetFocusClient(root_window());
-  presenter()->Show(GetDisplayId());
+  presenter()->Show(GetDisplayId(), base::TimeTicks());
   focus_client->FocusWindow(presenter()->GetWindow());
   EXPECT_TRUE(presenter()->GetTargetVisibility());
   EXPECT_TRUE(delegate()->init_called());
@@ -199,13 +193,10 @@ TEST_F(AppListPresenterImplTest, RemainVisibleWhenFocusingToSibling) {
 
 // Tests that the app list is dismissed and the delegate is destroyed when the
 // app list's widget is destroyed.
-TEST_F(AppListPresenterImplTest, WidgetDestroyed) {
+TEST_F(AppListPresenterImplTest, DISABLED_WidgetDestroyed) {
   // TODO(newcomer): this test needs to be reevaluated for the fullscreen app
   // list (http://crbug.com/759779).
-  if (features::IsFullscreenAppListEnabled())
-    return;
-
-  presenter()->Show(GetDisplayId());
+  presenter()->Show(GetDisplayId(), base::TimeTicks());
   EXPECT_TRUE(presenter()->GetTargetVisibility());
   presenter()->GetView()->GetWidget()->CloseNow();
   EXPECT_FALSE(presenter()->GetTargetVisibility());

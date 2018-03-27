@@ -54,6 +54,9 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
+#include "base/trace_event/memory_allocator_dump.h"
+#include "base/trace_event/memory_dump_manager.h"
+#include "base/trace_event/memory_dump_provider.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
@@ -138,13 +141,13 @@
 #include "content/common/content_switches_internal.h"
 #include "content/common/frame_messages.h"
 #include "content/common/in_process_child_thread_params.h"
+#include "content/common/media/peer_connection_tracker_messages.h"
 #include "content/common/navigation_subresource_loader_params.h"
 #include "content/common/resource_messages.h"
 #include "content/common/service_manager/child_connection.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -180,7 +183,7 @@
 #include "ipc/ipc_logging.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/media_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/mojo/services/video_decode_perf_history.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
@@ -341,6 +344,50 @@ IPC::PlatformFileForTransit CreateFileForProcess(base::FilePath file_path) {
 bool has_done_stun_trials = false;
 
 #endif
+
+// Globally tracks all existing RenderProcessHostImpl instances.
+//
+// TODO(https://crbug.com/813045): Remove this.
+class RenderProcessMemoryDumpProvider
+    : public base::trace_event::MemoryDumpProvider {
+ public:
+  RenderProcessMemoryDumpProvider() {
+    base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+        this, "RenderProcessHost", base::ThreadTaskRunnerHandle::Get());
+  }
+
+  ~RenderProcessMemoryDumpProvider() override {
+    base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
+        this);
+  }
+
+  void AddHost(RenderProcessHostImpl* host) { hosts_.insert(host); }
+  void RemoveHost(RenderProcessHostImpl* host) { hosts_.erase(host); }
+
+ private:
+  // base::trace_event::MemoryDumpProvider:
+  bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
+                    base::trace_event::ProcessMemoryDump* pmd) override {
+    for (auto* host : hosts_) {
+      base::trace_event::MemoryAllocatorDump* dump = pmd->CreateAllocatorDump(
+          base::StringPrintf("mojo/render_process_host/0x%" PRIxPTR,
+                             reinterpret_cast<uintptr_t>(host)));
+      dump->AddScalar("is_initialized",
+                      base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+                      host->is_initialized() ? 1 : 0);
+    }
+    return true;
+  }
+
+  std::set<RenderProcessHostImpl*> hosts_;
+
+  DISALLOW_COPY_AND_ASSIGN(RenderProcessMemoryDumpProvider);
+};
+
+RenderProcessMemoryDumpProvider& GetMemoryDumpProvider() {
+  static base::NoDestructor<RenderProcessMemoryDumpProvider> tracker;
+  return *tracker;
+}
 
 // the global list of all renderer processes
 base::LazyInstance<base::IDMap<RenderProcessHost*>>::Leaky g_all_hosts =
@@ -842,7 +889,7 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
               host, host->GetBrowserContext(), site_url))
         continue;
 
-      if (host->VisibleWidgetCount())
+      if (host->VisibleClientCount())
         foreground_processes->insert(host);
       else
         background_processes->insert(host);
@@ -1303,7 +1350,7 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       keep_alive_ref_count_(0),
       is_keep_alive_ref_count_disabled_(false),
       route_provider_binding_(this),
-      visible_widgets_(0),
+      visible_clients_(0),
       priority_({
         blink::kLaunchingProcessIsBackgrounded,
             blink::kLaunchingProcessIsBoostedForPendingView,
@@ -1367,6 +1414,8 @@ RenderProcessHostImpl::RenderProcessHostImpl(
 
   if (!base::FeatureList::IsEnabled(features::kMash))
     gpu_client_.reset(new GpuClient(GetID()));
+
+  GetMemoryDumpProvider().AddHost(this);
 }
 
 // static
@@ -1430,6 +1479,8 @@ RenderProcessHostImpl::~RenderProcessHostImpl() {
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                             base::BindOnce(&RemoveShaderInfo, GetID()));
   }
+
+  GetMemoryDumpProvider().RemoveHost(this);
 }
 
 bool RenderProcessHostImpl::Init() {
@@ -1705,9 +1756,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #else
       nullptr,
 #endif
-      GetBrowserContext(),
-      request_context.get(),
-      widget_helper_.get());
+      GetBrowserContext(), storage_partition_impl_, widget_helper_.get());
   AddFilter(render_frame_message_filter_.get());
 
   BrowserContext* browser_context = GetBrowserContext();
@@ -1729,7 +1778,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       storage_partition_impl_->GetFileSystemContext(),
       storage_partition_impl_->GetServiceWorkerContext(),
       storage_partition_impl_->GetPrefetchURLLoaderService(),
-      get_contexts_callback,
+      std::move(get_contexts_callback),
       BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
 
   AddFilter(resource_message_filter_.get());
@@ -1749,7 +1798,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
     AddFilter(base::MakeRefCounted<AudioRendererHost>(
                   GetID(), audio_manager,
                   BrowserMainLoop::GetInstance()->audio_system(),
-                  AudioMirroringManager::GetInstance(), media_stream_manager)
+                  media_stream_manager)
                   .get());
   }
   AddFilter(
@@ -1774,11 +1823,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #if defined(OS_MACOSX)
   AddFilter(new TextInputClientMessageFilter());
 #endif
-
-  scoped_refptr<CacheStorageDispatcherHost> cache_storage_filter =
-      new CacheStorageDispatcherHost();
-  cache_storage_filter->Init(storage_partition_impl_->GetCacheStorageContext());
-  AddFilter(cache_storage_filter.get());
 
   scoped_refptr<ServiceWorkerDispatcherHost> service_worker_filter =
       new ServiceWorkerDispatcherHost(GetID(), resource_context);
@@ -1810,6 +1854,26 @@ void RenderProcessHostImpl::CreateMessageFilters() {
     AddFilter(synchronous_compositor_filter_.get());
   }
 #endif
+}
+
+void RenderProcessHostImpl::BindCacheStorage(
+    blink::mojom::CacheStorageRequest request,
+    const url::Origin& origin) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  if (!cache_storage_dispatcher_host_) {
+    cache_storage_dispatcher_host_ =
+        base::MakeRefCounted<CacheStorageDispatcherHost>();
+    cache_storage_dispatcher_host_->Init(
+        storage_partition_impl_->GetCacheStorageContext());
+  }
+  // Send the binding to IO thread, because Cache Storage handles Mojo IPC on IO
+  // thread entirely.
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::BindOnce(&CacheStorageDispatcherHost::AddBinding,
+                     cache_storage_dispatcher_host_, std::move(request),
+                     origin));
 }
 
 void RenderProcessHostImpl::RegisterMojoInterfaces() {
@@ -2252,47 +2316,19 @@ void RenderProcessHostImpl::ShutdownForBadMessage(
       PROCESS_TYPE_RENDERER);
 }
 
-void RenderProcessHostImpl::WidgetRestored() {
-  visible_widgets_++;
-  UpdateProcessPriority();
+void RenderProcessHostImpl::UpdateClientPriority(PriorityClient* client) {
+  DCHECK(client);
+  DCHECK_EQ(1u, priority_clients_.count(client));
+  UpdateProcessPriorityInputs();
 }
 
-void RenderProcessHostImpl::WidgetHidden() {
-  // On startup, the browser will call Hide. We ignore this call.
-  if (visible_widgets_ == 0)
-    return;
-
-  --visible_widgets_;
-  if (visible_widgets_ == 0) {
-    UpdateProcessPriority();
-  }
-}
-
-int RenderProcessHostImpl::VisibleWidgetCount() const {
-  return visible_widgets_;
+int RenderProcessHostImpl::VisibleClientCount() const {
+  return visible_clients_;
 }
 
 #if defined(OS_ANDROID)
-void RenderProcessHostImpl::UpdateWidgetImportance(
-    ChildProcessImportance old_value,
-    ChildProcessImportance new_value) {
-  DCHECK_NE(old_value, new_value);
-  DCHECK(widget_importance_counts_[static_cast<size_t>(old_value)]);
-  widget_importance_counts_[static_cast<size_t>(old_value)]--;
-  widget_importance_counts_[static_cast<size_t>(new_value)]++;
-  UpdateProcessPriority();
-}
-
-ChildProcessImportance RenderProcessHostImpl::ComputeEffectiveImportance() {
-  ChildProcessImportance importance = ChildProcessImportance::NORMAL;
-  for (size_t i = 0u; i < arraysize(widget_importance_counts_); ++i) {
-    DCHECK_GE(widget_importance_counts_[i], 0);
-    if (widget_importance_counts_[i]) {
-      // No early out. Highest importance wins.
-      importance = static_cast<ChildProcessImportance>(i);
-    }
-  }
-  return importance;
+ChildProcessImportance RenderProcessHostImpl::GetEffectiveImportance() {
+  return effective_importance_;
 }
 #endif
 
@@ -2532,7 +2568,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableCompositorUkmForTests,
     switches::kDisablePreferCompositingToLCDText,
     switches::kDisableDatabases,
-    switches::kDisableDistanceFieldText,
     switches::kDisableFileSystem,
     switches::kDisableGpuMemoryBufferVideoFrames,
     switches::kDisableGpuVsync,
@@ -2560,10 +2595,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableWebGLImageChromium,
     switches::kDomAutomationController,
     switches::kEnableAutomation,
-    switches::kEnableDistanceFieldText,
-    switches::kEnableExperimentalCanvasFeatures,
     switches::kEnableExperimentalWebPlatformFeatures,
-    switches::kEnableHeapProfiling,
     switches::kEnableGPUClientLogging,
     switches::kEnableGpuClientTracing,
     switches::kEnableGpuMemoryBufferVideoFrames,
@@ -2579,6 +2611,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnablePreciseMemoryInfo,
     switches::kEnablePrintBrowser,
     switches::kEnablePreferCompositingToLCDText,
+    switches::kEnableRasterDecoder,
     switches::kEnableRGBA4444Textures,
     switches::kEnableSkiaBenchmarking,
     switches::kEnableSlimmingPaintV175,
@@ -2617,10 +2650,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kSamplingHeapProfiler,
     switches::kShowPaintRects,
     switches::kStatsCollectionController,
+    switches::kSkiaFontCacheLimitMb,
+    switches::kSkiaResourceCacheLimitMb,
     switches::kTestType,
     switches::kTouchEventFeatureDetection,
     switches::kTouchTextSelectionStrategy,
-    switches::kTraceConfigFile,
     switches::kTraceToConsole,
     switches::kUseFakeUIForMediaStream,
     // This flag needs to be propagated to the renderer process for
@@ -2699,15 +2733,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
                                  arraysize(kSwitchNames));
 
   BrowserChildProcessHostImpl::CopyFeatureAndFieldTrialFlags(renderer_cmd);
-
-  if (browser_cmd.HasSwitch(switches::kTraceStartup) &&
-      BrowserMainLoop::GetInstance()->is_tracing_startup_for_duration()) {
-    // Pass kTraceStartup switch to renderer only if startup tracing has not
-    // finished.
-    renderer_cmd->AppendSwitchASCII(
-        switches::kTraceStartup,
-        browser_cmd.GetSwitchValueASCII(switches::kTraceStartup));
-  }
+  BrowserChildProcessHostImpl::CopyTraceStartupFlags(renderer_cmd);
 
 #if BUILDFLAG(ENABLE_WEBRTC)
   // Only run the Stun trials in the first renderer.
@@ -3097,10 +3123,10 @@ void RenderProcessHostImpl::AddWidget(RenderWidgetHost* widget) {
   RenderWidgetHostImpl* widget_impl =
       static_cast<RenderWidgetHostImpl*>(widget);
   widgets_.insert(widget_impl);
-#if defined(OS_ANDROID)
-  widget_importance_counts_[static_cast<size_t>(widget_impl->importance())]++;
-  UpdateProcessPriority();
-#endif
+
+  DCHECK(!base::ContainsKey(priority_clients_, widget_impl));
+  priority_clients_.insert(widget_impl);
+  UpdateProcessPriorityInputs();
 }
 
 void RenderProcessHostImpl::RemoveWidget(RenderWidgetHost* widget) {
@@ -3108,12 +3134,9 @@ void RenderProcessHostImpl::RemoveWidget(RenderWidgetHost* widget) {
       static_cast<RenderWidgetHostImpl*>(widget);
   widgets_.erase(widget_impl);
 
-#if defined(OS_ANDROID)
-  ChildProcessImportance importance = widget_impl->importance();
-  DCHECK(widget_importance_counts_[static_cast<size_t>(importance)]);
-  widget_importance_counts_[static_cast<size_t>(importance)]--;
-  UpdateProcessPriority();
-#endif
+  DCHECK(base::ContainsKey(priority_clients_, widget_impl));
+  priority_clients_.erase(widget_impl);
+  UpdateProcessPriorityInputs();
 }
 
 void RenderProcessHostImpl::SetSuddenTerminationAllowed(bool enabled) {
@@ -3193,6 +3216,15 @@ RenderProcessHostImpl::StartRtpDump(
                    p2p_socket_dispatcher_host_);
   }
   return stop_rtp_dump_callback_;
+}
+
+void RenderProcessHostImpl::SetWebRtcEventLogOutput(int lid, bool enabled) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (enabled) {
+    Send(new PeerConnectionTracker_StartEventLogOutput(lid));
+  } else {
+    Send(new PeerConnectionTracker_StopEventLog(lid));
+  }
 }
 #endif  // BUILDFLAG(ENABLE_WEBRTC)
 
@@ -3797,6 +3829,33 @@ void RenderProcessHostImpl::SuddenTerminationChanged(bool enabled) {
   SetSuddenTerminationAllowed(enabled);
 }
 
+void RenderProcessHostImpl::UpdateProcessPriorityInputs() {
+  int32_t new_visible_widgets_count = 0;
+#if defined(OS_ANDROID)
+  ChildProcessImportance new_effective_importance =
+      ChildProcessImportance::NORMAL;
+#endif
+  for (auto* client : priority_clients_) {
+    Priority priority = client->GetPriority();
+    if (!priority.is_hidden)
+      new_visible_widgets_count++;
+#if defined(OS_ANDROID)
+    new_effective_importance =
+        std::max(new_effective_importance, priority.importance);
+#endif
+  }
+
+  bool inputs_changed = new_visible_widgets_count != visible_clients_;
+  visible_clients_ = new_visible_widgets_count;
+#if defined(OS_ANDROID)
+  inputs_changed =
+      inputs_changed || new_effective_importance != effective_importance_;
+  effective_importance_ = new_effective_importance;
+#endif
+  if (inputs_changed)
+    UpdateProcessPriority();
+}
+
 void RenderProcessHostImpl::UpdateProcessPriority() {
   if (!run_renderer_in_process() && (!child_process_launcher_.get() ||
                                      child_process_launcher_->IsStarting())) {
@@ -3810,13 +3869,13 @@ void RenderProcessHostImpl::UpdateProcessPriority() {
     // We background a process as soon as it hosts no active audio/video streams
     // and no visible widgets -- the callers must call this function whenever we
     // transition in/out of those states.
-    visible_widgets_ == 0 && media_stream_count_ == 0 &&
+    visible_clients_ == 0 && media_stream_count_ == 0 &&
         !base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kDisableRendererBackgrounding),
     // boost_for_pending_views
     !!pending_views_,
 #if defined(OS_ANDROID)
-    ComputeEffectiveImportance(),
+    GetEffectiveImportance(),
 #endif
   };
 

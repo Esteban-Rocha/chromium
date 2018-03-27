@@ -27,12 +27,13 @@
 #include "core/editing/Editor.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/CSSPropertyNames.h"
 #include "core/clipboard/DataObject.h"
 #include "core/clipboard/DataTransfer.h"
+#include "core/clipboard/DataTransferAccessPolicy.h"
 #include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSPropertyValueSet.h"
+#include "core/css_property_names.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/ElementTraversal.h"
@@ -86,7 +87,6 @@
 #include "platform/KillRing.h"
 #include "platform/scroll/ScrollAlignment.h"
 #include "platform/weborigin/KURL.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/text/CharacterNames.h"
 #include "public/platform/WebScrollIntoViewParams.h"
 
@@ -380,9 +380,9 @@ bool Editor::ReplaceSelectionAfterDraggingWithEvents(
     return true;
 
   // Dispatch 'beforeinput'.
-  DataTransfer* data_transfer =
-      DataTransfer::Create(DataTransfer::kDragAndDrop, kDataTransferReadable,
-                           drag_data->PlatformData());
+  DataTransfer* data_transfer = DataTransfer::Create(
+      DataTransfer::kDragAndDrop, DataTransferAccessPolicy::kReadable,
+      drag_data->PlatformData());
   data_transfer->SetSourceOperation(drag_data->DraggingSourceOperationMask());
   const bool should_insert =
       DispatchBeforeInputDataTransfer(
@@ -460,7 +460,7 @@ Editor::Editor(LocalFrame& frame)
       // This is off by default, since most editors want this behavior (this
       // matches IE but not FF).
       should_style_with_css_(false),
-      kill_ring_(WTF::WrapUnique(new KillRing)),
+      kill_ring_(std::make_unique<KillRing>()),
       are_marked_text_matches_highlighted_(false),
       default_paragraph_separator_(EditorParagraphSeparator::kIsDiv),
       overwrite_mode_enabled_(false) {}

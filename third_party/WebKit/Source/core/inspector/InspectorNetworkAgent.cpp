@@ -399,7 +399,7 @@ String GetReferrerPolicy(ReferrerPolicy policy) {
       return protocol::Network::Request::ReferrerPolicyEnum::SameOrigin;
     case kReferrerPolicyStrictOrigin:
       return protocol::Network::Request::ReferrerPolicyEnum::StrictOrigin;
-    case kReferrerPolicyNoReferrerWhenDowngradeOriginWhenCrossOrigin:
+    case kReferrerPolicyStrictOriginWhenCrossOrigin:
       return protocol::Network::Request::ReferrerPolicyEnum::
           StrictOriginWhenCrossOrigin;
   }
@@ -448,13 +448,17 @@ static bool FormDataToString(scoped_refptr<EncodedFormData> body,
   *content = "";
   if (!body || body->IsEmpty())
     return false;
-  if (max_body_size != 0 && body->SizeInBytes() > max_body_size)
-    return true;
 
+  // SizeInBytes below doesn't support all element types, so first check if all
+  // the body elements are of the right type.
   for (const auto& element : body->Elements()) {
     if (element.type_ != FormDataElement::kData)
       return true;
   }
+
+  if (max_body_size != 0 && body->SizeInBytes() > max_body_size)
+    return true;
+
   Vector<char> bytes;
   body->Flatten(bytes);
   *content = String::FromUTF8WithLatin1Fallback(bytes.data(), bytes.size());

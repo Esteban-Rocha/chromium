@@ -60,6 +60,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_launcher.h"
 #include "content/public/test/test_navigation_observer.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "ui/display/display_switches.h"
 
@@ -89,6 +90,14 @@
 
 #if !defined(OS_CHROMEOS) && defined(OS_LINUX)
 #include "ui/views/test/test_desktop_screen_x11.h"
+#endif
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "extensions/browser/extension_api_frame_id_map.h"
+#endif
+
+#if defined(TOOLKIT_VIEWS)
+#include "chrome/test/views/accessibility_checker.h"
 #endif
 
 namespace {
@@ -140,6 +149,10 @@ InProcessBrowserTest::InProcessBrowserTest()
 
 #if defined(OS_CHROMEOS)
   DefaultAshEventGeneratorDelegate::GetInstance();
+#endif
+
+#if defined(TOOLKIT_VIEWS)
+  accessibility_checker_ = std::make_unique<AccessibilityChecker>();
 #endif
 }
 
@@ -286,6 +299,14 @@ void InProcessBrowserTest::TearDown() {
   BrowserTestBase::TearDown();
   OSCryptMocker::TearDown();
   ChromeContentBrowserClient::SetDefaultQuotaSettingsForTesting(nullptr);
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  // By now, all the WebContents should be destroyed, Ensure that we are not
+  // leaking memory in ExtensionAPIFrameIdMap. crbug.com/817205.
+  EXPECT_EQ(
+      0u,
+      extensions::ExtensionApiFrameIdMap::Get()->GetFrameDataCountForTesting());
+#endif
 }
 
 void InProcessBrowserTest::CloseBrowserSynchronously(Browser* browser) {

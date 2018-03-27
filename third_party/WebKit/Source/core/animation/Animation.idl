@@ -28,22 +28,22 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// https://w3c.github.io/web-animations/#animation
+// https://drafts.csswg.org/web-animations/#animation
 
 enum AnimationPlayState { "idle", "pending", "running", "paused", "finished" };
 
 [
-    Constructor(optional AnimationEffectReadOnly? effect = null, optional AnimationTimeline? timeline),
+    Constructor(optional AnimationEffect? effect = null, optional AnimationTimeline? timeline),
     Exposed(Window WebAnimationsAPI),
     ConstructorCallWith=ExecutionContext,
     RaisesException=Constructor,
     ActiveScriptWrappable
 ] interface Animation : EventTarget {
     // TODO(suzyh): Make timeline mutable.
-    [RuntimeEnabled=WebAnimationsAPI] attribute AnimationEffectReadOnly? effect;
+    [RuntimeEnabled=WebAnimationsAPI] attribute AnimationEffect? effect;
     [RuntimeEnabled=WebAnimationsAPI] readonly attribute AnimationTimeline? timeline;
     [Measure] attribute double?    startTime;
-    [Measure] attribute double?    currentTime;
+    [Measure, RaisesException=Setter] attribute double?    currentTime;
     [Measure] attribute double     playbackRate;
     [Measure] readonly attribute AnimationPlayState playState;
     [Measure, RaisesException] void finish();

@@ -330,10 +330,8 @@ SkColor Tab::GetCloseTabButtonColor(
       color_id = ThemeProperties::COLOR_TAB_CLOSE_BUTTON_BACKGROUND_PRESSED;
       break;
     default:
-      color_id =
-          IsActive()
-              ? ThemeProperties::COLOR_TAB_CLOSE_BUTTON_BACKGROUND_ACTIVE
-              : ThemeProperties::COLOR_TAB_CLOSE_BUTTON_BACKGROUND_INACTIVE;
+      color_id = IsActive() ? ThemeProperties::COLOR_TAB_CLOSE_BUTTON_ACTIVE
+                            : ThemeProperties::COLOR_TAB_CLOSE_BUTTON_INACTIVE;
   }
   return theme_provider->GetColor(color_id);
 }
@@ -1217,8 +1215,7 @@ void Tab::OnButtonColorMaybeChanged() {
   const SkColor title_color = theme_provider->GetColor(IsActive() ?
       ThemeProperties::COLOR_TAB_TEXT :
       ThemeProperties::COLOR_BACKGROUND_TAB_TEXT);
-  // Alpha here is chosen so that black on tab is 0x75 (kChromeIconGrey).
-  const SkColor new_button_color = SkColorSetA(title_color, 0x84);
+  const SkColor new_button_color = SkColorSetA(title_color, 0xA0);
   if (button_color_ != new_button_color) {
     button_color_ = new_button_color;
     title_->SetEnabledColor(title_color);

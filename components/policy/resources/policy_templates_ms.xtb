@@ -58,11 +58,25 @@
 
       Jika dasar ini digunakan, semua pencetak akan disediakan kepada pengguna kecuali ID yang disenaraikan dalam dasar ini.
       </translation>
+<translation id="1181881366217399113">
+      NOTA: Dasar ini ialah percubaan dan mungkin keluar daripada fungsi!
+      Jika dasar ini didayakan, setiap asalan yang dinamakan dalam
+      senarai yang dipisahkan oleh koma akan dijalankan dalam prosesnya sendiri. Ini juga akan mengasingkan
+      asalan yang dinamakan oleh subdomain; cth. menyatakan https://example.com/ akan
+      turut menyebabkan https://foo.example.com/ diasingkan sebagai sebahagian daripada
+      tapak https://example.com/.
+      Jika dasar ini dilumpuhkan, logik pengurusan proses Pengasingan mengikut Tapak akan berkuat kuasa.
+      Jika dasar tidak dikonfiguraskan, pengguna akan dapat menukar tetapan ini.
+      Pada <ph name="PRODUCT_OS_NAME" />, anda disyorkan supaya turut menetapkan dasar peranti <ph name="DEVICE_LOGIN_SCREEN_ISOLATE_ORIGINS_POLICY_NAME" /> kepada nilai yang sama. Jika nilai yang ditetapkan oleh dua dasar ini tidak sepadan, kelengahan akan berlaku apabila memasuki sesi pengguna semasa nilai yang ditentukan oleh dasar pengguna sedang digunakan.
+      </translation>
 <translation id="1198465924256827162">Kekerapan muat naik status peranti dihantar, dalam milisaat.
 
       Jika dasar ini tidak ditetapkan, kekerapan lalai ialah 3 jam. Kekerapan
       minimum yang dibenarkan ialah 60 saat.</translation>
 <translation id="1204263402976895730">Pencetak perusahaan didayakan</translation>
+<translation id="1219695476179627719">Menentukan sama ada peranti harus diundurkan kepada versi yang ditetapkan oleh <ph name="DEVICE_TARGET_VERSION_PREFIX_POLICY_NAME" /> jika peranti sudah menjalankan versi yang lebih baharu.
+
+      Nilai lalai ialah RollbackDisabled.</translation>
 <translation id="1221359380862872747">Memuatkan url tertentu pada log masuk tunjuk cara</translation>
 <translation id="123081309365616809">Dayakan penghantaran kandungan ke peranti</translation>
 <translation id="1257550411839719984">Tetapkan direktori muat turun lalai</translation>
@@ -149,6 +163,11 @@
 <translation id="1503487916067509762">Mendayakan sekatan suntikan perisian pihak ketiga</translation>
 <translation id="1504431521196476721">Pembuktian Jauh</translation>
 <translation id="1509692106376861764">Dasar ini telah dihentikan pada <ph name="PRODUCT_NAME" /> versi 29.</translation>
+<translation id="1519337829779572350">Tetapan ini sudah ditamatkan, gunakan SafeBrowsingExtendedReportingEnabled sebagai ganti. Tindakan mendayakan atau melumpuhkan SafeBrowsingExtendedReportingEnabled adalah sama seperti menetapkan SafeBrowsingExtendedReportingOptInAllowed kepada Palsu.
+
+      Tindakan menetapkan dasar ini kepada palsu akan menghalang pengguna daripada memilih untuk menghantar sesetengah maklumat sistem dan kandungan halaman ke pelayan Google. Jika tetapan ini benar atau tidak dikonfigurasikan, maka pengguna akan dibenarkan menghantar sesetengah maklumat sistem dan kandungan halaman kepada Penyemakan Imbas Selamat untuk membantu anda mengesan apl dan tapak berbahaya.
+
+      Lihat https://developers.google.com/safe-browsing untuk mendapatkan maklumat lanjut tentang SafeBrowsing.</translation>
 <translation id="1522425503138261032">Membenarkan tapak untuk mengesan lokasi fizikal pengguna</translation>
 <translation id="152657506688053119">Senarai URL alternatif untuk penyedia carian lalai</translation>
 <translation id="1530812829012954197">Sentiasa paparkan corak URL berikut dalam penyemak imbas hos</translation>
@@ -248,7 +267,15 @@
       Format nilai mengikut nama zon waktu dalam "Pangkalan Data Zon Waktu IANA" (lihat "https://en.wikipedia.org/wiki/Tz_database"). Secara khususnya, kebanyakan zon waktu boleh dirujuk mengikut "continent/large_city" atau "ocean/large_city".
 
       Zon waktu automatik yang diselesaikan oleh lokasi peranti akan dilumpuhkan sepenuhnya apabila dasar ini ditetapkan. Langkah ini turut mengatasi dasar SystemTimezoneAutomaticDetection.</translation>
+<translation id="1888871729456797026">Token pendaftaran dasar awan pada desktop</translation>
 <translation id="1897365952389968758">Benarkan semua tapak untuk menjalankan JavaScript</translation>
+<translation id="1906888171268104594">Mengawal sama ada metrik penggunaan dan data diagnostik, termasuk laporan ranap dilaporkan kembali kepada Google.
+
+      Jika ditetapkan kepada benar, <ph name="PRODUCT_OS_NAME" /> akan melaporkan metrik penggunaan dan data diagnostik.
+
+      Jika ditetapkan kepada palsu, pelaporan metrik dan data diagnostik akan dilumpuhkan.
+
+      Jika tidak dikonfigurasikan, pelaporan metrik dan data diagnostik akan dilumpuhkan pada peranti tidak diurus dan didayakan pada peranti yang diurus.</translation>
 <translation id="193259052151668190">Senarai putih peranti boleh tanggal USB</translation>
 <translation id="1933378685401357864">Imej hias latar</translation>
 <translation id="1956493342242507974">Konfigurasikan pengurusan kuasa pada skrin log masuk dalam <ph name="PRODUCT_OS_NAME" />.
@@ -338,9 +365,6 @@
       Jika tetapan ini dikonfigurasikan, pengguna yang menggunakan buka kunci pantas akan diminta memasukkan kata laluan mereka pada kunci skrin bergantung pada tetapan ini.
 
       Jika tetapan ini tidak dikonfigurasikan, pengguna yang menggunakan buka kunci pantas akan diminta memasukkan kata laluan mereka pada kunci skrin setiap hari.</translation>
-<translation id="2188722565665306629">Membolehkan anda menetapkan jangka masa untuk pemberitahuan pelancaran semula <ph name="PRODUCT_NAME" /> ditunjukkan bagi menggunakan kemas kini yang belum selesai.
-
-      Tetapan dasar ini boleh digunakan untuk mengawal jangka masa pengguna dimaklumi secara progresif dalam milisaat berkenaan <ph name="PRODUCT_NAME" /> yang perlu dilancarkan semula (atau <ph name="PRODUCT_OS_NAME" /> mesti dimulakan semula) untuk dikemas kini. Dalam jangka masa ini, pengguna akan dimaklumi berulang kali tentang keperluan kemas kini berdasarkan tetapan dasar <ph name="RELAUNCH_NOTIFICATION_POLICY_NAME" />. Jika dasar ini tidak ditetapkan, tempoh lalai ialah 604800000 milisaat (satu minggu) akan digunakan.</translation>
 <translation id="2194470398825717446">Dasar ini ditamatkan dalam M61, sila gunakan EcryptfsMigrationStrategy.
 
       Menentukan gelagat peranti yang dihantar dengan ecryptfs dan memerlukan peralihan kepada penyulitan ext4.
@@ -414,6 +438,12 @@
 <translation id="2386362615870139244">Benarkan kunci bangkit skrin</translation>
 <translation id="2411817661175306360">Amaran perlindungan kata laluan dimatikan</translation>
 <translation id="2411919772666155530">Sekat pemberitahuan pada tapak ini</translation>
+<translation id="2415979855753196119">Membolehkan anda mengawal pencetusan pembenderaan akaun berisiko perlindungan kata laluan. Pembenderaan akaun berisiko perlindungan kata laluan bermakna memberitahu Google bahawa akaun ini berisiko untuk dirampas.
+
+      Jika dasar ini ditetapkan kepada 'PasswordProtectionRiskOff', pembenderaan akaun berisiko perlindungan kata laluan tidak akan dicetuskan.
+      Jika dasar ini ditetapkan kepada 'PasswordProtectionRiskOnPasswordReuse', pembenderaan akaun berisiko perlindungan kata laluan akan dicetuskan apabila pengguna menggunakan semula kata laluan Google pada mana-mana tapak yang tidak disenaraiputihkan.
+      Jika dasar ini ditetapkan kepada 'PasswordProtectionRiskOnPhishingReuse', pembenderaan akaun berisiko perlindungan kata laluan akan dicetuskan apabila pengguna menggunakan semula kata laluan Google pada tapak pancingan data.
+      Jika dasar ini dibiarkan tidak ditetapkan, pembenderaan akaun berisiko perlindungan kata laluan akan dicetuskan apabila pengguna menggunakan semula kata laluan Google pada tapak pancingan data tetapi pengguna boleh menukarnya.</translation>
 <translation id="2418507228189425036">Melumpuhkan penyimpanan sejarah penyemakan imbas dalam <ph name="PRODUCT_NAME" /> dan menghalang pengguna daripada menukar tetapan ini.
 
       Jika tetapan ini didayakan, sejarah penyemakan imbas tidak disimpan. Tetapan ini turut melumpuhkan penyegerakan tab.
@@ -525,6 +555,11 @@
       Jika dasar ini dibiarkan tanpa ditetapkan, ciri proksi pemampatan data akan disediakan supaya pengguna boleh memilih sama ada untuk menggunakannya atau tidak.</translation>
 <translation id="2587719089023392205">Tetapkan <ph name="PRODUCT_NAME" /> sebagai Penyemak Imbas Lalai</translation>
 <translation id="2592091433672667839">Tempoh tidak aktif sebelum penyelamat skrin dipaparkan pada skrin log masuk dalam mod runcit</translation>
+<translation id="2596260130957832043">Mengawal sama ada NTLMv2 didayakan.
+
+          Semua versi terbaru pelayan Samba dan Windows menyokong NTLMv2. Ciri ini harus dilumpuhkan untuk keserasian mundur sahaja dan mengurangkan keselamatan pengesahan.
+
+          Jika dasar ini tidak ditetapkan, nilai lalainya ialah benar dan NTLMv2 didayakan.</translation>
 <translation id="2623014935069176671">Tunggu aktiviti pengguna awal</translation>
 <translation id="262740370354162807">Dayakan penyerahan dokumen pada <ph name="CLOUD_PRINT_NAME" /></translation>
 <translation id="2633084400146331575">Dayakan maklum balas yang dituturkan</translation>
@@ -543,6 +578,7 @@
           Dasar ini hanya dihormati jika dasar 'DefaultSearchProviderEnabled' didayakan.</translation>
 <translation id="2682225790874070339">Melumpuhkan Drive dalam apl Fail <ph name="PRODUCT_OS_NAME" /></translation>
 <translation id="268577405881275241">Dayakan ciri proksi pemampatan data</translation>
+<translation id="2693108589792503178">Konfigurasikan URL tukar kata laluan.</translation>
 <translation id="2731627323327011390">Lumpuhkan penggunaan sijil <ph name="PRODUCT_OS_NAME" /> pada apl ARC</translation>
 <translation id="2742843273354638707">Sembunyikan apl Gedung Web Chrome dan pautan pembawah daripada Halaman Tab Baharu dan pelancar apl <ph name="PRODUCT_OS_NAME" />.
 
@@ -600,6 +636,13 @@
       Jika anda melumpuhkan tetapan ini atau tidak menetapkan nilai, Pratonton Cetakan akan menggunakan pencetak yang paling baru digunakan sebagai pilihan destinasi lalai.
 
       Jika anda mendayakan tetapan ini, Pratonton Cetakan akan menggunakan pencetak lalai sistem OS sebagai pilihan destinasi lalai.</translation>
+<translation id="2867699958489427143">Undur dan kekal pada versi sasaran jika versi OS lebih baharu daripada sasaran. Lakukan powerwash lengkap semasa proses.</translation>
+<translation id="286802604195763750">Membenarkan anda mengawal pencetusan amaran perlindungan kata laluan. Perlindungan kata laluan memaklumi pengguna apabila mereka menggunakan semula kata laluan yang dilindungi pada tapak yang mungkin mencurigakan.
+
+      Jika dasar ini ditetapkan kepada 'PasswordProtectionWarningOff', tiada amaran perlindungan kata laluan akan ditunjukkan.
+      Jika dasar ini ditetapkan kepada 'PasswordProtectionWarningOnPasswordReuse', amaran perlindungan kata laluan akan ditunjukkan apabila pengguna menggunakan semula kata laluan Google pada mana-mana tapak yang tidak disenaraiputihkan.
+      Jika dasar ini ditetapkan kepada 'PasswordProtectionWarningOnPhishingReuse', amaran perlindungan kata laluan akan ditunjukkan apabila pengguna menggunakan semula kata laluan Google pada tapak pancingan data.
+      Jika dasar ini dibiarkan tidak ditetapkan, amaran perlindungan kata laluan akan dicetuskan apabila pengguna menggunakan semula kata laluan Google pada tapak pancingan data tetapi pengguna boleh menukarnya.</translation>
 <translation id="2872961005593481000">Mematikan</translation>
 <translation id="2874209944580848064">Nota untuk peranti <ph name="PRODUCT_OS_NAME" /> yang menyokong apl Android:</translation>
 <translation id="2877225735001246144">Lumpuhkan carian CNAME apabila berunding pengesahan Kerberos</translation>
@@ -634,7 +677,20 @@
           Nilai dasar ini harus ditetapkan dalam milisaat. Nilai diapit supaya kurang daripada atau sama dengan kelewatan pemadaman skrin (jika ditetapkan) dan kelewatan melahu.</translation>
 <translation id="2987155890997901449">Dayakan ARC</translation>
 <translation id="2987227569419001736">Kawal penggunaan API Bluetooth Web</translation>
+<translation id="2998886474614739865">
+      NOTA: Dasar ini masih dalam percubaan dan mungkin menjejaskan fungsian!
+      Dasar ini digunakan pada skrin log masuk. Sila lihat dasar <ph name="ISOLATE_ORIGINS_POLICY_NAME" /> juga yang digunakan pada sesi pengguna. Anda disyorkan untuk menetapkan kedua-dua dasar pada nilai yang sama. Jika nilai tidak sepadan, kelewatan mungkin berlaku apabila memasukkan sesi pengguna semasa nilai yang dinyatakan oleh dasar pengguna sedang digunakan.
+      Jika dasar didayakan, setiap tempat asal yang dinamakan dalam
+      senarai yang dipisahkan koma akan dijalankan dalam prosesnya sendiri.
+      Tindakan ini turut mengasingkan tempat asal yang dinamakan mengikut
+      subdomain, mis. menyatakan https://example.com/ turut menyebabkan
+      https://foo.example.com/ diasingkan sebagai sebahagian daripada tapak
+      https://example.com/.
+      Jika dasar ini dilumpuhkan, logik pengurusan proses Pengasingan setiap Tapak akan dikuatkuasakan.
+      Jika dasar ini tidak dikonfigurasi, tetapan pengasingan tapak lalai platform akan digunakan untuk skrin log masuk.
+      </translation>
 <translation id="3016255526521614822">Apl pencatatan nota senarai putih dibenarkan pada skrin kunci <ph name="PRODUCT_OS_NAME" /></translation>
+<translation id="3021562480854470924">Bilangan pengunduran pencapaian yang dibenarkan</translation>
 <translation id="3030000825273123558">Dayakan laporan metrik</translation>
 <translation id="3034580675120919256">Membolehkan anda menetapkan sama ada laman web dibenarkan untuk menjalankan JavaScript. Menjalankan JavaScript boleh dibenarkan untuk semua tapak web atau dinafikan untuk semua tapak web.
 
@@ -742,6 +798,18 @@
 
           Jika dasar ini ditetapkan kepada rentetan tidak kosong, rentetan itu akan digunakan sebagai nama bagi destinasi <ph name="PRODUCT_NAME" />. Jika tidak, nama peranti akan dijadikan nama destinasi. Jika dasar ini tidak ditetapkan, nama peranti akan dijadikan nama destinasi dan pemilik peranti (atau pengguna daripada domain yang mengurus peranti tersebut) akan dibenarkan untuk menukar nama itu. Nama dihadkan kepada 24 aksara.</translation>
 <translation id="3381968327636295719">Gunakan penyemak imbas hos secara lalai</translation>
+<translation id="3386001018488754001">
+      NOTA: Dasar ini masih dalam percubaan dan mungkin menjejaskan fungsian!
+      Dasar ini digunakan pada skrin log masuk. Sila lihat dasar <ph name="SITE_PER_PROCESS_POLICY_NAME" /> juga yang digunakan pada sesi pengguna. Anda disyorkan untuk menetapkan kedua-dua dasar pada nilai yang sama. Jika nilai tidak sepadan, kelewatan mungkin berlaku apabila memasukkan sesi pengguna semasa nilai yang dinyatakan oleh dasar pengguna sedang digunakan.
+      Anda mungkin mahu meneliti tetapan dasar IsolateOrigins untuk
+      memanfaatkan kedua-dua keadaan, pengasingan dan kesan yang
+      terhad untuk pengguna, dengan menggunakan IsolateOrigins dengan
+      senarai tapak yang hendak diasingkan. Tetapan ini, SitePerProcess,
+      mengasingkan semua tapak.
+      Jika dasar ini didayakan, setiap tapak akan menjalankan proses masing-masing.
+      Jika dasar ini dilumpuhkan, logik pengurusan proses Pengasingan setiap Tapak akan dikuatkuasakan.
+      Jika dasar ini tidak dikonfigurasi, pengguna boleh mengubah tetapan ini.
+      </translation>
 <translation id="3395348522300156660">Menentukan pencetak yang boleh digunakan oleh pengguna.
 
       Dasar ini hanya digunakan jika <ph name="PRINTERS_WHITELIST" /> dipilih untuk <ph name="DEVICE_PRINTERS_ACCESS_MODE" />
@@ -780,6 +848,10 @@
           Jika dasar ini ditetapkan kepada Palsu atau dibiarkan tanpa ditetapkan, lengah pengurusan kuasa dan had tempoh sesi akan mula dijalankan serta merta pada permulaan sesi.</translation>
 <translation id="3478024346823118645">Hapuskan data pengguna semasa log keluar</translation>
 <translation id="348495353354674884">Dayakan papan kekunci maya</translation>
+<translation id="3487623755010328395">
+        Jika dasar ini ditetapkan, <ph name="PRODUCT_NAME" /> akan cuba mendaftar sendiri dan menerapkan dasar awan yang berkaitan untuk semua profil.
+
+        Nilai dasar ini ialah token Pendaftaran yang boleh diambil daripada konsol Google Admin.</translation>
 <translation id="3496296378755072552">Pengurus kata laluan</translation>
 <translation id="350443680860256679">Konfigurasi ARC</translation>
 <translation id="3504791027627803580">Menentukan URL enjin carian yang digunakan untuk menyediakan carian imej. Permintaan carian akan dihantar menggunakan kaedah GET. Sebaliknya, jika dasar DefaultSearchProviderImageURLPostParams ditetapkan, maka permintaan carian imej akan menggunakan kaedah POST.
@@ -1060,6 +1132,8 @@
       Jika dasar ini tidak ditetapkan maka pengguna boleh memilih untuk menunjukkan atau menyebunyikan pintasan apl daripada menu konteks bar penanda halaman.
 
       Jika dasar ini dikonfigurasikan maka pengguna tidak boleh mengubahnya da pintasan apl akan sentiasa dipaparkan atau tidak dipaparkan.</translation>
+<translation id="4432762137771104529">Dayakan Pelaporan Lanjutan Penyemakan Imbas Selamat</translation>
+<translation id="443454694385851356">Lama (tidak selamat)</translation>
 <translation id="443665821428652897">Padam bersih data tapak semasa penutupan penyemak imbas (tidak disyorkan)</translation>
 <translation id="4439336120285389675">Tentukan senarai ciri platform web yang ditamatkan untuk didayakan semula buat sementara waktu.
 
@@ -1086,6 +1160,13 @@
       Membiarkan tetapan tanpa ditetapkan akan membolehkan pengguna memilih sama ada untuk memaparkan butang laman utama atau tidak.</translation>
 <translation id="4485425108474077672">Konfigurasi URL halaman Tab Baharu</translation>
 <translation id="4492287494009043413">Lumpuhkan pengambilan tangkapan skrin</translation>
+<translation id="4497968613298501984">Konfigurasi senarai URL log masuk perusahaan (skim HTTP dan HTTPS sahaja). Cap jari kata laluan akan dirakam pada URL ini dan digunakan untuk pengesanan penggunaan semula kata laluan.
+      Tetapan ini hendaklah digunakan oleh pengguna GSuite yang menggunakan sistem SSO/SAML sahaja.
+      Untuk membolehkan <ph name="PRODUCT_NAME" /> merakam cap jari kata laluan dengan betul, sila pastikan halaman log masuk anda mengikut garis panduan di https://www.chromium.org/developers/design-documents/create-amazing-password-forms.
+
+      Jika tetapan ini didayakan, maka perkhidmatan perlindungan kata laluan akan merakam cap jari kata laluan pada URL ini bagi tujuan pengesanan penggunaan semula kata laluan.
+      Jika tetapan ini dilumpuhkan atau tidak ditetapkan, maka perkhidmatan perlindungan kata laluan hanya akan merakam cap jari kata laluan pada https://accounts.google.com.
+      Dasar ini tidak tersedia pada tika Windows yang tidak menyertai domain <ph name="MS_AD_NAME" />.</translation>
 <translation id="450537894712826981">Mengkonfigurasikan saiz cache yang <ph name="PRODUCT_NAME" /> akan gunakan untuk menyimpan fail media cache pada cakera.
 
       Jika anda menetapkan dasar ini, <ph name="PRODUCT_NAME" /> akan menggunakan saiz cache yang diberikan tidak kira sama ada pengguna telah menyatakan bendera '--saiz-cache-cakera'' atau tidak. Nilai yang dinyatakan dalam dasar ini bukan sempadan keras tetapi lebih kepada cadangan kepada sistem cache, sebarang nilai di bawah beberapa megabait adalah terlalu kecil dan akan dibulatkan kepada jumlah minimum yang munasabah.
@@ -1204,6 +1285,13 @@
 
       Jika dasar ini dibiarkan tanpa ditetapkan atau kosong, maka mana-mana pengguna boleh log masuk ke <ph name="PRODUCT_NAME" />.</translation>
 <translation id="4858735034935305895">Benarkan mod skrin penuh</translation>
+<translation id="4868249328547841081">Konfigurasi URL penukaran kata laluan (skim HTTP dan HTTPS sahaja). Perkhidmatan perlindungan kata laluan akan menghantar pengguna ke URL ini untuk menukar kata laluan mereka jika mereka telah mengalami pancingan data.
+      Tetapan ini hendaklah digunakan oleh pengguna GSuite yang menggunakan sistem SSO/SAML sahaja.
+      Untuk membolehkan <ph name="PRODUCT_NAME" /> merakam cap jari kata laluan baharu dengan betul pada halaman penukaran kata laluan ini, sila pastikan halaman penukaran kata laluan anda mengikut garis panduan di https://www.chromium.org/developers/design-documents/create-amazing-password-forms.
+
+      Jika tetapan ini didayakan, maka perkhidmatan perlindungan kata laluan akan menghantar pengguna ke URL ini untuk menukar kata laluan mereka jika mereka telah mengalami pancingan data.
+      Jika tetapan ini dilumpuhkan atau tidak ditetapkan, maka perkhidmatan perlindungan kata laluan akan menghantar pengguna ke https://myaccounts.google.com untuk menukar kata laluan mereka.
+      Dasar ini tidak tersedia pada tika Windows yang tidak menyertai domain <ph name="MS_AD_NAME" />.</translation>
 <translation id="4869787217450099946">Menentukan sama ada kunci bangkit skrin dibenarkan. Kunci bangkit skrin boleh diminta oleh sambungan melalui API sambungan pengurusan kuasa.
 
           Jika dasar ini ditetapkan kepada benar atau dibiarkan tanpa ditetapkan, kunci bangkit skrin akan digunakan untuk pengurusan kuasa.
@@ -1267,7 +1355,29 @@
 <translation id="5068140065960598044">Dasar awan <ph name="PRODUCT_NAME" /> mengatasi dasar Mesin.</translation>
 <translation id="5085647276663819155">Lumpuhkan Pratonton Cetakan</translation>
 <translation id="5090209345759901501">Luaskan tetapan kandungan Flash kepada semua kandungan</translation>
+<translation id="5093540029655764852">Menyatakan kadar (dalam hari) pelanggan menukar kata laluan akaun mesin mereka. Kata laluan dijana secara rawak oleh pelanggan dan tidak dapat dilihat oleh pengguna.
+
+      Sama seperti kata laluan pengguna, kata laluan mesin harus ditukar dengan kerap. Tindakan melumpuhkan dasar ini atau menetapkan bilangan hari yang banyak boleh memberikan kesan negatif kepada keselamatan kerana memberi penyerang lebih banyak masa untuk mencari kata laluan akaun dan menggunakannya.
+
+      Jika dasar ini tidak ditetapkan, kata laluan akaun mesin akan ditukar setiap 30 hari.
+
+      Jika dasar ini ditetapkan kepada 0, kata laluan akaun mesin akan dilumpuhkan.
+
+      Sila ambil perhatian bahawa kata laluan mungkin akan berusia lebih lama daripada bilangan hari yang ditetapkan jika pelanggan berada di luar talian untuk tempoh yang lebih panjang.</translation>
 <translation id="5105313908130842249">Kelewatan kunci skrin apabila dijalankan dengan kuasa bateri</translation>
+<translation id="5106504910236139235">Mendayakan Pelaporan Lanjutan Penyemakan Imbas Selamat <ph name="PRODUCT_NAME" /> dan menghalang pengguna daripada menukar tetapan ini.
+
+      Pelaporan Lanjutan menghantar maklumat sistem dan kandungan halaman ke pelayan Google untuk membantu anda mengesan apl dan tapak berbahaya.
+
+      Jika tetapan ditetapkan kepada benar, maka laporan akan dibuat dan dihantar apabila perlu (seperti apabila ruang antara keselamatan ditunjukkan).
+
+      Jika tetapan ditetapkan kepada palsu, laporan tidak akan dihantar.
+
+      Jika dasar ini ditetapkan kepada benar atau palsu, pengguna tidak akan dapat mengubah suai tetapan.
+
+      Jika dasar ini dibiarkan tanpa ditetapkan, pengguna akan dapat menukar tetapan dan menentukan sama ada hendak menghantar laporan atau tidak.
+
+      Lihat https://developers.google.com/safe-browsing untuk mendapatkan maklumat lanjut tentang SafeBrowsing.</translation>
 <translation id="5108031557082757679">Pencetak peranti perusahaan dilumpuhkan</translation>
 <translation id="5130288486815037971">Sama ada suit sifer RC4 dalam TLS didayakan</translation>
 <translation id="5141670636904227950">Tetapkan jenis penggadang skrin lalai yang didayakan pada skrin log masuk</translation>
@@ -1288,6 +1398,7 @@
       di luar daripada julat ini akan dikekalkan kepada julat ini.</translation>
 <translation id="5182055907976889880">Konfigurasi Google Drive dalam <ph name="PRODUCT_OS_NAME" />.</translation>
 <translation id="5183383917553127163">Membenarkan anda untuk menentukan sambungan yang tidak tertakluk dengan senarai hitam. Nilai senarai hitam bagi * bermakna semua sambungan disenaraihitamkan dan pengguna hanya boleh memasang sambungan yang disenaraikan dalam senarai putih. Secara lalai, semua sambungan adalah disenaraiputihkan, tetapi jika semua sambungan disenaraihitamkan oleh dasar, senarai putih boleh digunakan untuk membatalkan dasar tersebut.</translation>
+<translation id="519247340330463721">Konfigurasikan dasar berkaitan Penyemakan Imbas Selamat.</translation>
 <translation id="5192837635164433517">Membolehkan penggunaan halaman ralat ganti yang terbina dalam <ph name="PRODUCT_NAME" /> (seperti 'halaman tidak dijumpai') dan menghalang pengguna daripada mengubah tetapan ini.
 
       Jika anda mendayakan tetapan ini, halaman ralat ganti akan digunakan.
@@ -1308,6 +1419,15 @@
 <translation id="5219844027738217407">Untuk apl Android, dasar ini memberi kesan kepada mikrofon sahaja. Apabila dasar ini ditetapkan kepada benar, mikrofon akan diredam untuk semua apl Android, tanpa pengecualian.</translation>
 <translation id="523505283826916779">Tetapan kebolehcapaian</translation>
 <translation id="5247006254130721952">Sekat muat turun berbahaya</translation>
+<translation id="5248863213023520115">Menetapkan jenis penyulitan yang dibenarkan apabila meminta tiket Kerberos daripada pelayan <ph name="MS_AD_NAME" />.
+
+      Jika dasar ini ditetapkan kepada 'Semua', kedua-dua jenis penyulitan AES 'aes256-cts-hmac-sha1-96' dan 'aes128-cts-hmac-sha1-96' serta jenis penyulitan RC4 'rc4-hmac' dibenarkan. Penyulitan AES akan diutamakan jika pelayan menyokong kedua-dua jenis. Sila ambil perhatian bahawa RC4 tidak selamat dan pelayan harus dikonfigurasikan supaya menyokong penyulitan AES, jika boleh.
+
+      Jika dasar ini ditetapkan kepada 'Kukuh' atau jika tidak ditetapkan, hanya jenis penyulitan AES dibenarkan.
+
+      Jika dasar ini ditetapkan kepada 'Legasi', hanya jenis penyulitan RC4 dibenarkan. Pilihan ini tidak selamat dan sepatutnya hanya diperlukan dalam keadaan yang sangat tertentu.
+
+      Lihat juga https://wiki.samba.org/index.php/Samba_4.6_Features_added/changed#Kerberos_client_encryption_types.</translation>
 <translation id="5255162913209987122">Boleh Disyorkan</translation>
 <translation id="527237119693897329">Membolehkan anda menentukan hos pemesejan natif yang tidak seharusnya disekat.
 
@@ -1322,6 +1442,18 @@
 
       Jika dasar ini tidak ditetapkan, atau ditetapkan pada rentetan kosong atau julat port yang tidak sah, WebRTC dibenarkan untuk menggunakan mana-mana port UDP setempat yang tersedia.</translation>
 <translation id="5290940294294002042">Tentukan senarai pemalam yang boleh didayakan atau dilumpuhkan pengguna</translation>
+<translation id="5301787427319106606">
+      NOTA: Dasar ini masih dalam percubaan dan mungkin menjejaskan fungsian!
+      Anda mungkin mahu meneliti tetapan dasar IsolateOrigins untuk
+      memanfaatkan kedua-dua keadaan, pengasingan dan kesan yang
+      terhad untuk pengguna, dengan menggunakan IsolateOrigins dengan
+      senarai tapak yang hendak diasingkan. Tetapan ini, SitePerProcess,
+      mengasingkan semua tapak.
+      Jika dasar ini didayakan, setiap tapak akan menjalankan proses masing-masing.
+      Jika dasar ini dilumpuhkan, logik pengurusan proses Pengasingan setiap Tapak akan dikuatkuasakan.
+      Jika dasar ini tidak dikonfigurasi, pengguna boleh mengubah tetapan ini.
+      Pada <ph name="PRODUCT_OS_NAME" />, anda disyorkan untuk turut menetapkan dasar peranti <ph name="DEVICE_LOGIN_SCREEN_SITE_PER_PROCESS_POLICY_NAME" /> pada nilai yang sama. Jika nilai yang dinyatakan oleh kedua-dua dasar tidak sepadan, kelewatan mungkin berlaku apabila memasukkan sesi pengguna semasa nilai yang dinyatakan oleh dasar pengguna sedang digunakan.
+      </translation>
 <translation id="5302612588919538756">Dasar ini ditamatkan, sebaliknya pertimbangkan untuk menggunakan SyncDisabled.
 
       Membenarkan pengguna log masuk ke <ph name="PRODUCT_NAME" />.
@@ -1399,6 +1531,7 @@
       Jika dasar ini ditetapkan, sesi yang dinyatakan akan log masuk secara automatik selepas berlalunya suatu tempoh pada skrin log masuk tanpa interaksi pengguna. Sesi terbuka hendaklah telah dikonfigurasi (lihat |DeviceLocalAccounts|).
 
       Jika dasar ini tidak ditetapkan, log masuk automatik tidak akan berlaku.</translation>
+<translation id="5526701598901867718">Semua (tidak selamat)</translation>
 <translation id="5529037166721644841">Menentukan tempoh dalam milisaat ketika perkhidmatan pengurusan peranti diminta maklumat dasar peranti.
 
       Tindakan menetapkan dasar ini akan mengatasi nilai lalai iaitu 3 jam. Nilai yang sah untuk dasar ini ialah dalam julat 1800000 (30 minit) hingga 86400000 (1 hari).
@@ -1465,6 +1598,19 @@
           Apabila dasar ini tidak ditetapkan, panjang masa lalai digunakan.
 
           Nilai dasar harus dinyatakan dalam milisaat.</translation>
+<translation id="5784370777704871674">Mendayakan ciri Penyemakan Imbas Selamat <ph name="PRODUCT_NAME" /> dan menghalang pengguna daripada mengubah tetapan ini.
+
+      Jika anda mendayakan tetapan ini, Penyemakan Imbas Selamat akan sentiasa aktif.
+
+       Jika anda melumpuhkan tetapan ini, Penyemakan Imbas Selamat tidak akan aktif.
+
+      Jika anda mendayakan atau melumpuhkan tetapan ini, pengguna tidak boleh mengubah atau mengatasi tetapan "Dayakan perlindungan pancingan data dan perlindungan perisian hasad" dalam <ph name="PRODUCT_NAME" />.
+
+      Jika dasar ini dibiarkan tanpa ditetapkan, tetapan ini akan didayakan tetapi pengguna akan dapat mengubahnya.
+
+      Lihat https://developers.google.com/safe-browsing untuk mendapatkan maklumat lanjut tentang Penyemakan Imbas Selamat.
+
+      Dasar ini tidak tersedia pada tika Windows yang tidak dihubungkan ke domain <ph name="MS_AD_NAME" />.</translation>
 <translation id="5795001131770861387">Mendayakan sokongan HTTP/0.9 pada port bukan lalai</translation>
 <translation id="5809728392451418079">Tetapkan nama paparan untuk akaun setempat peranti</translation>
 <translation id="5814301096961727113">Tetapkan keadaan lalai maklum balas pertuturan pada skrin log masuk</translation>
@@ -1706,6 +1852,7 @@
           Jika anda memilih untuk mengesan pelayan proksi secara automatik, URL skrip "http://wpad/wpad.dat" akan diberikan kepada apl Android. Tiada bahagian protokol autokesan proksi yang lain akan digunakan.
 
           Jika anda memilih untuk menggunakan skrip proksi .pac, URL skrip akan diberikan kepada apl Android.</translation>
+<translation id="6473623140202114570">Konfigurasikan senarai domain tempat Penyemakan Imbas Selamat tidak akan mencetuskan amaran.</translation>
 <translation id="6491139795995924304">Benarkan bluetooth pada peranti</translation>
 <translation id="6520802717075138474">Import enjin carian daripada penyemak imbas lalai pada kali pertama menjalankannya</translation>
 <translation id="6525955212636890608">Jika anda mendayakan tetapan ini, semua kandungan Flash yang dibenamkan di tapak web yang telah ditetapkan untuk membenarkan Flash dalam tetapan kandungan -- sama ada oleh pengguna atau dasar perusahaan -- akan dijalankan, termasuk kandungan daripada sumber lain atau kandungan kecil.
@@ -1797,7 +1944,11 @@ Jika dasar ini dibiarkan tidak ditetapkan, papan kekunci pada skrin dilumpuhkan 
 <translation id="6810445994095397827">Sekat JavaScript pada tapak ini</translation>
 <translation id="681446116407619279">Skim pengesahan yang disokong</translation>
 <translation id="6835883744948188639">Tunjukkan gesaan berulang kepada pengguna yang menunjukkan pelancaran semula disyorkan</translation>
+<translation id="6856743875250214792">Dasar ini ditamatkan dan dialih keluar dalam M66, kerana digunakan untuk ujian dalaman sahaja dan merupakan liabiliti keselamatan.
+
+      Menetapkan bendera yang harus digunakan pada <ph name="PRODUCT_NAME" /> semasa bermula. Bendera yang ditetapkan akan digunakan pada skrin log masuk sahaja. Bendera yang ditetapkan melalui dasar ini tidak disebarkan ke dalam sesi pengguna.</translation>
 <translation id="685769593149966548">Kuatkuasakan Mod Sekatan Ketat untuk YouTube</translation>
+<translation id="686079137349561371">Microsoft Windows 7 atau lebih baharu</translation>
 <translation id="687046793986382807">Dasar ini telah ditamatkan bermula <ph name="PRODUCT_NAME" /> versi 35.
 
       Walau bagaimanapun, maklumat memori tetap dilaporkan pada halaman, tanpa mengira nilai pilihan tetapi saiz yang dilaporkan adalah anggaran dan kadar kemas kini dihadkan atas tujuan keselamatan. Untuk mendapatkan data masa nyata yang tepat, sila gunakan alatan seperti Telemetri.</translation>
@@ -1899,7 +2050,16 @@ Jika dasar ini dibiarkan tidak ditetapkan, papan kekunci pada skrin dilumpuhkan 
       Jika ia tidak ditetapkan, pengguna mungkin ditanya sama ada untuk mengimport atau mengimport mungkin berlaku secara automatik.</translation>
 <translation id="7063895219334505671">Benarkan pop muncul pada halaman ini</translation>
 <translation id="706669471845501145">Benarkan tapak untuk memaparkan pemberitahuan desktop</translation>
+<translation id="7072208053150563108">Kadar penukaran kata laluan mesin</translation>
 <translation id="7072406291414141328">Mendayakan lebar jalur pendikitan rangkaian</translation>
+<translation id="7074513465313721551">Konfigurasikan senarai domain yang akan dipercayai oleh Safe Browsing. Ini bermakna:
+      Safe Browsing tidak akan menyemak sumber berbahaya (mis. pancingan data, perisian hasad atau perisian tidak dikehendaki) jika URL sumber tersebut sepadan dengan domain ini.
+      Perkhidmatan perlindungan muat turun Safe Browsing tidak akan menyemak muat turun yang dihoskan pada domain ini.
+      Perkhidmatan perlindungan kata laluan Safe Browsing tidak akan meyemak pemasukan semula kata laluan jika URL halaman tersebut sepadan dengan domain ini.
+
+      Jika tetapan ini didayakan, maka Safe Browsing akan memparcayai domain ini.
+      Jika tetapan ini dilumpuhkan atau tidak ditetapkan, maka perlindungan Safe Browsing lalai akan digunakan pada semua sumber.
+      Dasar ini tidak tersedia pada tika Windows yang tidak dihubungkan ke domain <ph name="MS_AD_NAME" />.</translation>
 <translation id="7079519252486108041">Sekat pop muncul pada tapak ini</translation>
 <translation id="7106631983877564505">Dayakan kunci apabila peranti <ph name="PRODUCT_OS_NAME" /> melahu atau digantung.
 
@@ -1917,6 +2077,7 @@ Jika dasar ini dibiarkan tidak ditetapkan, papan kekunci pada skrin dilumpuhkan 
       Jika dasar ini ditetapkan kepada Palsu, mod latar belakang dilumpuhkan dan tidak boleh dikawal oleh pengguna dalam tetapan penyemak imbas.
 
       Jika dasar ini dibiarkan tanpa ditetapkan, mod latar belakang dilumpuhkan pada awalnya dan boleh dikawal oleh pengguna dalam tetapan penyemak imbas.</translation>
+<translation id="7127892035367404455">Undur kepada versi sasaran</translation>
 <translation id="7128918109610518786">Menyenaraikan pengecam aplikasi <ph name="PRODUCT_OS_NAME" /> yang dipaparkan sebagai apl berpin dalam bar pelancar.
 
       Jika dasar ini dikonfigurasi, set aplikasi akan ditetapkan dan tidak boleh diubah oleh pengguna.
@@ -2004,6 +2165,7 @@ Jika dasar ini dibiarkan tidak ditetapkan, papan kekunci pada skrin dilumpuhkan 
 
       Jika dasar ini tidak ditetapkan, pembersihan autimatik menggunakan strategi terbina dalam lalai. Pada masa ini, itu adalah strategi 'RemoveLRUIfDormant'.</translation>
 <translation id="7336878834592315572">Simpan kuki sepanjang tempoh sesi</translation>
+<translation id="733838170182967492">Membenarkan automain media</translation>
 <translation id="7340034977315324840">Laporkan masa aktiviti peranti</translation>
 <translation id="7343497214039883642">Fail konfigurasi pencetak perusahaan untuk peranti</translation>
 <translation id="7384999953864505698">Membenarkan protokol QUIC</translation>
@@ -2019,6 +2181,7 @@ Jika dasar ini dibiarkan tidak ditetapkan, papan kekunci pada skrin dilumpuhkan 
       Jika dasar ini dilumpuhkan, pengguna tidak dibenarkan untuk menggunakan semakan ejaan. Dasar SpellcheckLanguage turut akan diabaikan semasa dasar ini dilumpuhkan.
       </translation>
 <translation id="7443616896860707393">Gesaan Pengesahan Asas HTTP Asas Silang</translation>
+<translation id="7458437477941640506">Jangan undur kepada versi sasaran jika versi OS lebih baharu daripada sasaran. Kemas kini juga dilumpuhkan.</translation>
 <translation id="7469554574977894907">Dayakan cadangan carian</translation>
 <translation id="7474249562477552702">Sama ada sijil yang ditandatangani SHA-1 dikeluarkan oleh pengukuhan kepercayaan setempat dibenarkan</translation>
 <translation id="7485481791539008776">Peraturan pilihan pencetak lalai</translation>
@@ -2051,6 +2214,7 @@ Jika dasar ini dibiarkan tidak ditetapkan, papan kekunci pada skrin dilumpuhkan 
       Jika nilai dasar ini adalah 0, saiz cache lalai akan digunakan tetapi pengguna tidak akan dapat menukar saiz itu.
 
       Jika dasar ini tidak ditetapkan saiz lalai akan digunakan dan pengguna akan dapat mengatasi saiz itu dengan bendera --saiz-cache-cakera.</translation>
+<translation id="759957074386651883">Tetapan Penyemakan Imbas Selamat</translation>
 <translation id="7604169113182304895">Apl Android mungkin memilih untuk menghormati senarai ini secara sukarela tetapi anda tidak boleh memaksa apl Android supaya berbuat demikian.</translation>
 <translation id="7612157962821894603">Bendera untuk seluruh sistem akan digunakan pada permulaan <ph name="PRODUCT_NAME" /></translation>
 <translation id="7614663184588396421">Senarai skim protokol yang dilumpuhkan</translation>
@@ -2320,6 +2484,7 @@ Cara yang disyorkan untuk mengkonfigurasikan dasar pada Windows adalah melalui G
 <translation id="841977920223099909">Pencetus amaran perlindungan kata laluan</translation>
 <translation id="8424255554404582727">Tetapkan putaran paparan lalai yang digunakan semula pada setiap but semula</translation>
 <translation id="8426231401662877819">Putar skrin 90 darjah mengikut arah jam</translation>
+<translation id="8433423491036718210">Konfigurasikan senarai URL log masuk perusahaan tempat perkhidmatan perlindungan kata laluan harus mengabadikan cap jari kata laluan.</translation>
 <translation id="8451988835943702790">Gunakan Halaman Tab Baharu sebagai halaman utama</translation>
 <translation id="8459216513698220096">Menyatakan sama ada dan cara dasar pengguna daripada GPO komputer diproses.
 
@@ -2338,6 +2503,16 @@ Cara yang disyorkan untuk mengkonfigurasikan dasar pada Windows adalah melalui G
           Untuk melihat contoh pola, lihat http://www.chromium.org/developers/how-tos/chrome-frame-getting-started.</translation>
 <translation id="8493645415242333585">Lumpuhkan penyimpanan sejarah penyemakan imbas</translation>
 <translation id="8499172469244085141">Tetapan lalai (pengguna boleh mengatasi)</translation>
+<translation id="8507835864888987300">Menetapkan versi sasaran untuk Autokemas Kini.
+
+      Menentukan awalan versi sasaran <ph name="PRODUCT_OS_NAME" /> yang akan dikemas kini. Jika peranti menjalankan versi sebelum awalan yang dinyatakan, peranti akan dikemas kini kepada versi terkini dengan awalan yang diberikan. Jika peranti sudah menggunakan versi lebih baharu, kesannya bergantung pada nilai <ph name="DEVICE_ROLLBACK_TO_TARGET_VERSION_POLICY_NAME" />. Format awalan berfungsi mengikut komponen seperti yang ditunjukkan dalam contoh berikut:
+
+      "" (atau tidak dikonfigurasi): kemas kini kepada versi terkini yang tersedia.
+      "1412.": kemas kini kepada mana-mana versi kecil 1412 (mis. 1412.24.34 atau 1412.60.2)
+      "1412.2.": kemas kini kepada mana-mana versi kecil 1412.2 (mis. 1412.2.34 atau 1412.2.2)
+      "1412.24.34": kemas kini kepada versi tertentu yang ini sahaja
+
+      Amaran: Anda tidak disyorkan untuk mengkonfigurasi had versi kerana tindakan ini boleh menghalang pengguna daripada menerima kemas kini perisian dan pembetulan keselamatan kritikal. Tindakan mengehadkan kemas kini kepada awalan versi tertentu boleh menyebabkan pengguna terdedah kepada risiko.</translation>
 <translation id="8519264904050090490">URL pengecualian manual pengguna terurus</translation>
 <translation id="8527932539502116028">Menentukan pencetak yang tidak boleh digunakan oleh pengguna.
 
@@ -2561,6 +2736,13 @@ Cara yang disyorkan untuk mengkonfigurasikan dasar pada Windows adalah melalui G
 <translation id="924557436754151212">Import kata laluan yang disimpan daripada penyemak imbas lalai pada kali pertama menjalankannya</translation>
 <translation id="930930237275114205">Tetapkan direktori data pengguna <ph name="PRODUCT_FRAME_NAME" /></translation>
 <translation id="934390688529359269">Mendayakan log masuk paksa untuk <ph name="PRODUCT_NAME" /></translation>
+<translation id="938916311528680351">Membolehkan anda mengawal sama ada mesin maya dibenarkan untuk dijalankan pada OS Chrome.
+
+      Jika dasar ditetapkan kepada Benar, peranti dibenarkan untuk menjalankan mesin maya.
+      Jika dasar ditetapkan kepada Palsu, peranti tidak akan dibenarkan untuk menjalankan mesin maya.
+      Apabila dasar ini ditukar kepada Palsu, dasar ini diguna pakai pada mesin maya baharu tetapi tidak mematikan mesin maya yang sudah dijalankan.
+      Apabila dasar ini tidak ditetapkan pada peranti terurus, peranti akan dibenarkan untuk menjalankan mesin maya.
+      Peranti yang tidak diurus dibenarkan untuk menjalankan mesin maya.</translation>
 <translation id="944817693306670849">Tetapkan saiz cache cakera</translation>
 <translation id="982497069985795632">Dayakan semakan ejaan</translation>
 </translationbundle>

@@ -709,6 +709,10 @@ class RenderFrameSubmissionObserver
   // Blocks the browser ui thread until the next OnRenderFrameMetadataChanged.
   void WaitForMetadataChange();
 
+  // Blocks the browser ui thread until RenderFrameMetadata arrives where its
+  // scroll offset matches |expected_offset|.
+  void WaitForScrollOffset(const gfx::Vector2dF& expected_offset);
+
   const cc::RenderFrameMetadata& LastRenderFrameMetadata() const;
 
   // Returns the number of frames submitted since the observer's creation.
@@ -1108,6 +1112,10 @@ int LoadBasicRequest(network::mojom::NetworkContext* network_context,
                      const GURL& url,
                      int process_id = 0,
                      int render_frame_id = 0);
+
+// Ensures that all StoragePartitions for the given BrowserContext have their
+// cookies flushed to disk.
+void EnsureCookiesFlushed(BrowserContext* browser_context);
 
 // Returns true if there is a valid process for |process_group_name|. Must be
 // called on the IO thread.

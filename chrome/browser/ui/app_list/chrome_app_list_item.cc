@@ -179,6 +179,23 @@ void ChromeAppListItem::SetPosition(const syncer::StringOrdinal& position) {
     updater->SetItemPosition(id(), position);
 }
 
+void ChromeAppListItem::SetChromeFolderId(const std::string& folder_id) {
+  metadata_->folder_id = folder_id;
+}
+
+void ChromeAppListItem::SetChromeIsFolder(bool is_folder) {
+  metadata_->is_folder = is_folder;
+}
+
+void ChromeAppListItem::SetChromeName(const std::string& name) {
+  metadata_->name = name;
+}
+
+void ChromeAppListItem::SetChromePosition(
+    const syncer::StringOrdinal& position) {
+  metadata_->position = position;
+}
+
 bool ChromeAppListItem::CompareForTest(const ChromeAppListItem* other) const {
   return id() == other->id() && folder_id() == other->folder_id() &&
          name() == other->name() && GetItemType() == other->GetItemType() &&

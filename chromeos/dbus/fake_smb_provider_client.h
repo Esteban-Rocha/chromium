@@ -76,6 +76,13 @@ class CHROMEOS_EXPORT FakeSmbProviderClient : public SmbProviderClient {
                  const base::FilePath& target_path,
                  StatusCallback callback) override;
 
+  void GetDeleteList(int32_t mount_id,
+                     const base::FilePath& entry_path,
+                     GetDeleteListCallback callback) override;
+
+  void GetShares(const base::FilePath& server_url,
+                 ReadDirectoryCallback callback) override;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(FakeSmbProviderClient);
 };

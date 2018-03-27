@@ -47,8 +47,8 @@ use_remote_test_server = is_android || is_fuchsia
 # Python works only on Linux, MacOS and Windows.
 enable_python_utils = !is_android && !is_fuchsia && !is_ios
 
-buildflag_header("features") {
-  header = "net_features.h"
+buildflag_header("buildflags") {
+  header = "net_buildflags.h"
   flags = [
     "POSIX_AVOID_MMAP=$posix_avoid_mmap",
     "DISABLE_FILE_SUPPORT=$disable_file_support",
@@ -109,6 +109,8 @@ component("net") {
     "base/auth.h",
     "base/completion_callback.h",
     "base/completion_once_callback.h",
+    "base/datagram_buffer.cc",
+    "base/datagram_buffer.h",
     "base/escape.cc",
     "base/escape.h",
     "base/hash_value.cc",
@@ -306,6 +308,8 @@ component("net") {
     "log/net_log_source_type_list.h",
     "log/net_log_with_source.cc",
     "log/net_log_with_source.h",
+    "quic/core/quic_error_codes.cc",
+    "quic/core/quic_error_codes.h",
     "socket/client_socket_handle.cc",
     "socket/client_socket_handle.h",
     "socket/connection_attempts.h",
@@ -1079,12 +1083,14 @@ component("net") {
       "proxy_resolution/proxy_config_service_mac.h",
       "proxy_resolution/proxy_config_service_win.cc",
       "proxy_resolution/proxy_config_service_win.h",
-      "proxy_resolution/proxy_config_source.cc",
-      "proxy_resolution/proxy_config_source.h",
+      "proxy_resolution/proxy_config_with_annotation.cc",
+      "proxy_resolution/proxy_config_with_annotation.h",
       "proxy_resolution/proxy_info.cc",
       "proxy_resolution/proxy_info.h",
       "proxy_resolution/proxy_list.cc",
       "proxy_resolution/proxy_list.h",
+      "proxy_resolution/proxy_resolution_service.cc",
+      "proxy_resolution/proxy_resolution_service.h",
       "proxy_resolution/proxy_resolver.h",
       "proxy_resolution/proxy_resolver_error_observer.h",
       "proxy_resolution/proxy_resolver_factory.cc",
@@ -1094,8 +1100,6 @@ component("net") {
       "proxy_resolution/proxy_resolver_winhttp.cc",
       "proxy_resolution/proxy_resolver_winhttp.h",
       "proxy_resolution/proxy_retry_info.h",
-      "proxy_resolution/proxy_service.cc",
-      "proxy_resolution/proxy_service.h",
       "quic/chromium/bidirectional_stream_quic_impl.cc",
       "quic/chromium/bidirectional_stream_quic_impl.h",
       "quic/chromium/crypto/channel_id_chromium.cc",
@@ -1257,10 +1261,16 @@ component("net") {
       "quic/core/frames/quic_mtu_discovery_frame.h",
       "quic/core/frames/quic_padding_frame.cc",
       "quic/core/frames/quic_padding_frame.h",
+      "quic/core/frames/quic_path_challenge_frame.cc",
+      "quic/core/frames/quic_path_challenge_frame.h",
+      "quic/core/frames/quic_path_response_frame.cc",
+      "quic/core/frames/quic_path_response_frame.h",
       "quic/core/frames/quic_ping_frame.cc",
       "quic/core/frames/quic_ping_frame.h",
       "quic/core/frames/quic_rst_stream_frame.cc",
       "quic/core/frames/quic_rst_stream_frame.h",
+      "quic/core/frames/quic_stop_sending_frame.cc",
+      "quic/core/frames/quic_stop_sending_frame.h",
       "quic/core/frames/quic_stop_waiting_frame.cc",
       "quic/core/frames/quic_stop_waiting_frame.h",
       "quic/core/frames/quic_stream_frame.cc",
@@ -1312,8 +1322,6 @@ component("net") {
       "quic/core/quic_data_reader.h",
       "quic/core/quic_data_writer.cc",
       "quic/core/quic_data_writer.h",
-      "quic/core/quic_error_codes.cc",
-      "quic/core/quic_error_codes.h",
       "quic/core/quic_flags_list.h",
       "quic/core/quic_flow_controller.cc",
       "quic/core/quic_flow_controller.h",
@@ -2061,7 +2069,7 @@ component("net") {
   configs += net_configs
 
   public_deps += [
-    ":features",
+    ":buildflags",
     "//url",
   ]
 
@@ -2569,6 +2577,8 @@ static_library("test_support") {
     "cert/mock_client_cert_verifier.cc",
     "cert/mock_client_cert_verifier.h",
     "cookies/canonical_cookie_test_helpers.h",
+    "cookies/cookie_change_dispatcher_test_helpers.cc",
+    "cookies/cookie_change_dispatcher_test_helpers.h",
     "cookies/cookie_monster_store_test.cc",
     "cookies/cookie_monster_store_test.h",
     "cookies/cookie_store_change_unittest.h",
@@ -4671,6 +4681,7 @@ test("net_unittests") {
     "base/backoff_entry_unittest.cc",
     "base/chunked_upload_data_stream_unittest.cc",
     "base/data_url_unittest.cc",
+    "base/datagram_buffer_unittest.cc",
     "base/directory_lister_unittest.cc",
     "base/directory_listing_unittest.cc",
     "base/elements_upload_data_stream_unittest.cc",
@@ -5005,11 +5016,11 @@ test("net_unittests") {
     "proxy_resolution/proxy_config_unittest.cc",
     "proxy_resolution/proxy_info_unittest.cc",
     "proxy_resolution/proxy_list_unittest.cc",
+    "proxy_resolution/proxy_resolution_service_unittest.cc",
     "proxy_resolution/proxy_resolver_v8_tracing_unittest.cc",
     "proxy_resolution/proxy_resolver_v8_tracing_wrapper_unittest.cc",
     "proxy_resolution/proxy_resolver_v8_unittest.cc",
     "proxy_resolution/proxy_server_unittest.cc",
-    "proxy_resolution/proxy_service_unittest.cc",
     "quic/chromium/bidirectional_stream_quic_impl_unittest.cc",
     "quic/chromium/crypto/proof_test_chromium.cc",
     "quic/chromium/crypto/proof_verifier_chromium_test.cc",
@@ -5156,6 +5167,7 @@ test("net_unittests") {
     "quic/core/quic_sent_packet_manager_test.cc",
     "quic/core/quic_server_id_test.cc",
     "quic/core/quic_server_session_base_test.cc",
+    "quic/core/quic_session_test.cc",
     "quic/core/quic_simple_buffer_allocator_test.cc",
     "quic/core/quic_socket_address_coder_test.cc",
     "quic/core/quic_spdy_session_test.cc",
@@ -5584,7 +5596,7 @@ test("net_unittests") {
     deps += [
       ":net_browser_services",
       ":net_utility_services",
-      "//mojo/edk/system",
+      "//mojo/edk",
     ]
   } else {
     sources -= [
@@ -6227,6 +6239,10 @@ fuzzer_test("net_url_request_fuzzer") {
     "//net",
   ]
   dict = "data/fuzzer_dictionaries/net_url_request_fuzzer.dict"
+
+  # TODO(crbug.com/820089): Figure out why this fuzzer's corpus explodes to
+  # 10 GB. For now, disable it on ClusterFuzz.
+  additional_configs = [ "//testing/libfuzzer:no_clusterfuzz" ]
 }
 
 fuzzer_test("net_auth_challenge_tokenizer_fuzzer") {

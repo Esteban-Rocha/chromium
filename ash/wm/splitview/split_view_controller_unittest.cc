@@ -4,9 +4,11 @@
 
 #include "ash/wm/splitview/split_view_controller.h"
 
-#include "ash/display/screen_orientation_controller_chromeos.h"
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/display/screen_orientation_controller_test_api.h"
 #include "ash/screen_util.h"
+#include "ash/session/session_controller.h"
+#include "ash/session/test_session_controller_client.h"
 #include "ash/shell.h"
 #include "ash/system/overview/overview_button_tray.h"
 #include "ash/system/status_area_widget.h"
@@ -39,6 +41,9 @@ class SplitViewControllerTest : public AshTestBase {
   // test::AshTestBase:
   void SetUp() override {
     AshTestBase::SetUp();
+    // Avoid TabletModeController::OnGetSwitchStates() from disabling tablet
+    // mode.
+    base::RunLoop().RunUntilIdle();
     Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
   }
 
@@ -83,7 +88,7 @@ class SplitViewControllerTest : public AshTestBase {
     return split_view_controller()->split_view_divider();
   }
 
-  blink::WebScreenOrientationLockType screen_orientation() {
+  OrientationLockType screen_orientation() {
     return split_view_controller()->GetCurrentScreenOrientation();
   }
 
@@ -194,15 +199,15 @@ TEST_F(SplitViewControllerTest, WindowCloseTest) {
   // Since left window was closed, its default snap position changed to RIGHT.
   EXPECT_EQ(split_view_controller()->default_snap_position(),
             SplitViewController::RIGHT);
-  // It can't open overview window grid since there is no window to be shown
-  // in the overview window grid.
-  EXPECT_FALSE(Shell::Get()->window_selector_controller()->IsSelecting());
+  // Window grid is showing no recent items, and has no windows, but it is still
+  // available.
+  EXPECT_TRUE(Shell::Get()->window_selector_controller()->IsSelecting());
 
   // Now close the other snapped window.
   window2.reset();
   EXPECT_EQ(split_view_controller()->IsSplitViewModeActive(), false);
   EXPECT_EQ(split_view_controller()->state(), SplitViewController::NO_SNAP);
-  EXPECT_FALSE(Shell::Get()->window_selector_controller()->IsSelecting());
+  EXPECT_TRUE(Shell::Get()->window_selector_controller()->IsSelecting());
 
   // 3 - Then test the scenario with more than two windows.
   std::unique_ptr<aura::Window> window3(CreateWindow(bounds));
@@ -441,13 +446,10 @@ TEST_F(SplitViewControllerTest, SplitDividerBasicTest) {
   EXPECT_TRUE(split_view_divider());
   EXPECT_TRUE(split_view_divider()->divider_widget()->IsAlwaysOnTop());
 
+  // Test that activating an non-snappable window ends the split view mode.
   std::unique_ptr<aura::Window> window3(CreateNonSnappableWindow(bounds));
   wm::ActivateWindow(window3.get());
-  EXPECT_TRUE(split_view_divider());
-  EXPECT_FALSE(split_view_divider()->divider_widget()->IsAlwaysOnTop());
-
-  EndSplitView();
-  EXPECT_TRUE(!split_view_divider());
+  EXPECT_FALSE(split_view_divider());
 }
 
 // Verifys that the bounds of the two windows in splitview are as expected.
@@ -806,7 +808,7 @@ TEST_F(SplitViewControllerTest, RotationTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_0,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockLandscapePrimary);
+            OrientationLockType::kLandscapePrimary);
 
   const gfx::Rect bounds(0, 0, 200, 200);
   std::unique_ptr<aura::Window> window1(CreateWindow(bounds));
@@ -831,7 +833,7 @@ TEST_F(SplitViewControllerTest, RotationTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_270,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockPortraitPrimary);
+            OrientationLockType::kPortraitPrimary);
 
   bounds_window1 = window1->GetBoundsInScreen();
   bounds_window2 = window2->GetBoundsInScreen();
@@ -849,7 +851,7 @@ TEST_F(SplitViewControllerTest, RotationTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_180,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockLandscapeSecondary);
+            OrientationLockType::kLandscapeSecondary);
 
   bounds_window1 = window1->GetBoundsInScreen();
   bounds_window2 = window2->GetBoundsInScreen();
@@ -867,7 +869,7 @@ TEST_F(SplitViewControllerTest, RotationTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_90,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockPortraitSecondary);
+            OrientationLockType::kPortraitSecondary);
   bounds_window1 = window1->GetBoundsInScreen();
   bounds_window2 = window2->GetBoundsInScreen();
   bounds_divider =
@@ -884,7 +886,7 @@ TEST_F(SplitViewControllerTest, RotationTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_0,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockLandscapePrimary);
+            OrientationLockType::kLandscapePrimary);
   bounds_window1 = window1->GetBoundsInScreen();
   bounds_window2 = window2->GetBoundsInScreen();
   bounds_divider =
@@ -950,7 +952,7 @@ TEST_F(SplitViewControllerTest, ResizingSnappedWindowWithMinimumSizeTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_0,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockLandscapePrimary);
+            OrientationLockType::kLandscapePrimary);
 
   gfx::Rect display_bounds =
       split_view_controller()->GetDisplayWorkAreaBoundsInScreen(window1.get());
@@ -980,7 +982,7 @@ TEST_F(SplitViewControllerTest, ResizingSnappedWindowWithMinimumSizeTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_270,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockPortraitPrimary);
+            OrientationLockType::kPortraitPrimary);
 
   display_bounds =
       split_view_controller()->GetDisplayWorkAreaBoundsInScreen(window1.get());
@@ -1007,7 +1009,7 @@ TEST_F(SplitViewControllerTest, ResizingSnappedWindowWithMinimumSizeTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_180,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockLandscapeSecondary);
+            OrientationLockType::kLandscapeSecondary);
 
   display_bounds =
       split_view_controller()->GetDisplayWorkAreaBoundsInScreen(window1.get());
@@ -1036,7 +1038,7 @@ TEST_F(SplitViewControllerTest, ResizingSnappedWindowWithMinimumSizeTest) {
   test_api.SetDisplayRotation(display::Display::ROTATE_90,
                               display::Display::RotationSource::ACTIVE);
   EXPECT_EQ(test_api.GetCurrentOrientation(),
-            blink::kWebScreenOrientationLockPortraitSecondary);
+            OrientationLockType::kPortraitSecondary);
 
   display_bounds =
       split_view_controller()->GetDisplayWorkAreaBoundsInScreen(window1.get());
@@ -1071,8 +1073,7 @@ TEST_F(SplitViewControllerTest,
   aura::test::TestWindowDelegate* delegate1 =
       static_cast<aura::test::TestWindowDelegate*>(window1->delegate());
   ui::test::EventGenerator& generator(GetEventGenerator());
-  EXPECT_EQ(blink::kWebScreenOrientationLockLandscapePrimary,
-            screen_orientation());
+  EXPECT_EQ(OrientationLockType::kLandscapePrimary, screen_orientation());
   gfx::Rect workarea_bounds =
       split_view_controller()->GetDisplayWorkAreaBoundsInScreen(window1.get());
 
@@ -1179,6 +1180,37 @@ TEST_F(SplitViewControllerTest,
                                       SplitViewController::RIGHT);
   EXPECT_GT(divider_position(), 0.33f * workarea_bounds.width());
   EXPECT_LE(divider_position(), 0.5f * workarea_bounds.width());
+}
+
+// Test that if display configuration changes in lock screen, the split view
+// mode doesn't end.
+TEST_F(SplitViewControllerTest, DoNotEndSplitViewInLockScreen) {
+  display::test::DisplayManagerTestApi(display_manager())
+      .SetFirstDisplayAsInternalDisplay();
+  UpdateDisplay("800x400");
+  const gfx::Rect bounds(0, 0, 200, 300);
+  std::unique_ptr<aura::Window> window1(CreateWindow(bounds));
+  std::unique_ptr<aura::Window> window2(CreateWindow(bounds));
+  split_view_controller()->SnapWindow(window1.get(), SplitViewController::LEFT);
+  split_view_controller()->SnapWindow(window2.get(),
+                                      SplitViewController::RIGHT);
+  EXPECT_TRUE(split_view_controller()->IsSplitViewModeActive());
+  EXPECT_EQ(split_view_controller()->state(),
+            SplitViewController::BOTH_SNAPPED);
+
+  // Now lock the screen.
+  Shell::Get()->session_controller()->LockScreenAndFlushForTest();
+  // Change display configuration. Split view mode is still active.
+  UpdateDisplay("400x800");
+  EXPECT_TRUE(split_view_controller()->IsSplitViewModeActive());
+  EXPECT_EQ(split_view_controller()->state(),
+            SplitViewController::BOTH_SNAPPED);
+
+  // Now unlock the screen.
+  GetSessionControllerClient()->UnlockScreen();
+  EXPECT_TRUE(split_view_controller()->IsSplitViewModeActive());
+  EXPECT_EQ(split_view_controller()->state(),
+            SplitViewController::BOTH_SNAPPED);
 }
 
 }  // namespace ash

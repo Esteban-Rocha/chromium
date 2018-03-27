@@ -107,6 +107,12 @@ def GetDeveloperDirMac():
     candidate_paths.append(os.environ['DEVELOPER_DIR'])
   candidate_paths.extend([
     GetCommandOutput(['xcode-select', '-p']).strip(),
+    # Most Mac 10.1[0-2] bots have at least one Xcode installed.
+    '/Applications/Xcode.app',
+    '/Applications/Xcode9.0.app',
+    '/Applications/Xcode8.0.app',
+    # Mac 10.13 bots don't have any Xcode installed, but have CLI tools as a
+    # temporary workaround.
     '/Library/Developer/CommandLineTools',
   ])
   for path in candidate_paths:
@@ -121,7 +127,9 @@ def GetSharedLibraryDependenciesMac(binary, exe_path):
   This implementation assumes that we're running on a Mac system."""
   loader_path = os.path.dirname(binary)
   env = os.environ.copy()
-  env['DEVELOPER_DIR'] = GetDeveloperDirMac()
+  developer_dir = GetDeveloperDirMac()
+  if developer_dir:
+    env['DEVELOPER_DIR'] = developer_dir
   otool = GetCommandOutput(['otool', '-l', binary], env=env).splitlines()
   rpaths = []
   for idx, line in enumerate(otool):

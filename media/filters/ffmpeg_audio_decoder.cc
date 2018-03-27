@@ -64,10 +64,12 @@ std::string FFmpegAudioDecoder::GetDisplayName() const {
   return "FFmpegAudioDecoder";
 }
 
-void FFmpegAudioDecoder::Initialize(const AudioDecoderConfig& config,
-                                    CdmContext* /* cdm_context */,
-                                    const InitCB& init_cb,
-                                    const OutputCB& output_cb) {
+void FFmpegAudioDecoder::Initialize(
+    const AudioDecoderConfig& config,
+    CdmContext* /* cdm_context */,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& /* waiting_for_decryption_key_cb */) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(config.IsValidConfig());
 
@@ -77,8 +79,6 @@ void FFmpegAudioDecoder::Initialize(const AudioDecoderConfig& config,
     bound_init_cb.Run(false);
     return;
   }
-
-  FFmpegGlue::InitializeFFmpeg();
 
   if (!ConfigureDecoder(config)) {
     av_sample_format_ = 0;
@@ -163,11 +163,8 @@ bool FFmpegAudioDecoder::FFmpegDecode(
     packet.data = const_cast<uint8_t*>(buffer->data());
     packet.size = buffer->data_size();
 
-    // Since we're not at EOS and there is no data available in the current
-    // buffer, simply return and let the caller provide more data.
-    // crbug.com/663438 has more context on 0-byte buffers.
-    if (!packet.size)
-      return true;
+    DCHECK(packet.data);
+    DCHECK_GT(packet.size, 0);
   }
 
   bool decoded_frame_this_loop = false;

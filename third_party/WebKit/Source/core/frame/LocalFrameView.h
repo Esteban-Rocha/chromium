@@ -27,6 +27,8 @@
 #define LocalFrameView_h
 
 #include <memory>
+#include <utility>
+
 #include "core/CoreExport.h"
 #include "core/dom/DocumentLifecycle.h"
 #include "core/frame/FrameView.h"
@@ -153,6 +155,8 @@ class CORE_EXPORT LocalFrameView final
   bool CanHaveScrollbars() const { return can_have_scrollbars_; }
 
   Scrollbar* CreateScrollbar(ScrollbarOrientation) override;
+
+  void SnapAfterScrollbarDragging(ScrollbarOrientation) override;
 
   void SetLayoutOverflowSize(const IntSize&);
 
@@ -479,7 +483,6 @@ class CORE_EXPORT LocalFrameView final
   IntRect ScrollableAreaBoundingBox() const override;
   CompositorElementId GetCompositorElementId() const override;
   bool ScrollAnimatorEnabled() const override;
-  bool UsesCompositedScrolling() const override;
   bool ShouldScrollOnMainThread() const override;
   PaintLayer* Layer() const override;
   GraphicsLayer* LayerForScrolling() const override;
@@ -500,7 +503,7 @@ class CORE_EXPORT LocalFrameView final
                                       unsigned = 0) const final;
   scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner() const final;
 
-  LayoutRect ScrollIntoView(const LayoutRect& rect_in_content,
+  LayoutRect ScrollIntoView(const LayoutRect& rect_in_absolute,
                             const WebScrollIntoViewParams& params) override;
 
   // The window that hosts the LocalFrameView. The LocalFrameView will
@@ -701,6 +704,7 @@ class CORE_EXPORT LocalFrameView final
   IntPoint RootFrameToDocument(const IntPoint&);
   FloatPoint RootFrameToDocument(const FloatPoint&);
   LayoutPoint RootFrameToAbsolute(const LayoutPoint&) const;
+  IntPoint RootFrameToAbsolute(const IntPoint&) const;
   IntRect RootFrameToAbsolute(const IntRect&) const;
   DoublePoint DocumentToAbsolute(const DoublePoint&) const;
   FloatPoint DocumentToAbsolute(const FloatPoint&) const;
@@ -713,7 +717,8 @@ class CORE_EXPORT LocalFrameView final
   // Handles painting of the contents of the view as well as the scrollbars.
   void Paint(GraphicsContext&,
              const GlobalPaintFlags,
-             const CullRect&) const override;
+             const CullRect&,
+             const IntSize& paint_offset = IntSize()) const override;
   // Paints, and also updates the lifecycle to in-paint and paint clean
   // beforehand.  Call this for painting use-cases outside of the lifecycle.
   void PaintWithLifecycleUpdate(GraphicsContext&,
@@ -866,11 +871,11 @@ class CORE_EXPORT LocalFrameView final
 
   // Recursively update frame tree. Each frame has its only
   // scroll on main reason. Given the following frame tree
-  //.. A...
-  //../.\..
-  //.B...C.
-  //.|.....
-  //.D.....
+  // .. A...
+  // ../.\..
+  // .B...C.
+  // .|.....
+  // .D.....
   // If B has fixed background-attachment but other frames
   // don't, both A and C should scroll on cc. Frame D should
   // scrolled on main thread as its ancestor B.

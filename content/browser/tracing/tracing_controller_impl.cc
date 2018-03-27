@@ -21,6 +21,7 @@
 #include "base/trace_event/trace_config.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "components/tracing/common/trace_config_file.h"
 #include "content/browser/tracing/file_tracing_provider_impl.h"
 #include "content/browser/tracing/tracing_ui.h"
 #include "content/public/browser/browser_thread.h"
@@ -146,8 +147,8 @@ void TracingControllerImpl::AddAgents() {
   agents_.push_back(std::make_unique<EtwTracingAgent>(connector));
 #endif
 
-  auto chrome_agent =
-      std::make_unique<tracing::ChromeTraceEventAgent>(connector);
+  auto chrome_agent = std::make_unique<tracing::ChromeTraceEventAgent>(
+      connector, true /* request_clock_sync_marker_on_android */);
   // For adding general CPU, network, OS, and other system information to the
   // metadata.
   chrome_agent->AddMetadataGeneratorFunction(base::BindRepeating(
@@ -326,6 +327,7 @@ bool TracingControllerImpl::StopTracing(
     return false;
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
+  tracing::TraceConfigFile::GetInstance()->SetDisabled();
   trace_data_endpoint_ = std::move(trace_data_endpoint);
   is_data_complete_ = false;
   is_metadata_available_ = false;

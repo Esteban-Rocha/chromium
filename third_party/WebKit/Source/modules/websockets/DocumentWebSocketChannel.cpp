@@ -54,7 +54,7 @@
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "modules/websockets/WebSocketHandleImpl.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
-#include "platform/WebFrameScheduler.h"
+#include "platform/FrameScheduler.h"
 #include "platform/loader/fetch/UniqueIdentifier.h"
 #include "platform/network/NetworkLog.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
@@ -200,9 +200,10 @@ DocumentWebSocketChannel::~DocumentWebSocketChannel() {
   DCHECK(!blob_loader_);
 }
 
-bool DocumentWebSocketChannel::Connect(const KURL& url,
-                                       const String& protocol,
-                                       mojom::blink::WebSocketPtr socket_ptr) {
+bool DocumentWebSocketChannel::Connect(
+    const KURL& url,
+    const String& protocol,
+    network::mojom::blink::WebSocketPtr socket_ptr) {
   NETWORK_DVLOG(1) << this << " Connect()";
   if (!handle_)
     return false;
@@ -225,7 +226,7 @@ bool DocumentWebSocketChannel::Connect(const KURL& url,
     if (GetDocument()->GetFrame()) {
       connection_handle_for_scheduler_ = GetDocument()
                                              ->GetFrame()
-                                             ->FrameScheduler()
+                                             ->GetFrameScheduler()
                                              ->OnActiveConnectionCreated();
     }
   }
@@ -286,7 +287,7 @@ bool DocumentWebSocketChannel::Connect(const KURL& url,
 
 bool DocumentWebSocketChannel::Connect(const KURL& url,
                                        const String& protocol) {
-  mojom::blink::WebSocketPtr socket_ptr;
+  network::mojom::blink::WebSocketPtr socket_ptr;
   auto socket_request = mojo::MakeRequest(&socket_ptr);
   if (GetDocument() && GetDocument()->GetFrame()) {
     GetDocument()->GetFrame()->GetInterfaceProvider().GetInterface(
@@ -558,10 +559,6 @@ void DocumentWebSocketChannel::HandleDidClose(bool was_clean,
   // client->DidClose may delete this object.
 }
 
-ThreadableLoadingContext* DocumentWebSocketChannel::LoadingContext() {
-  return loading_context_;
-}
-
 Document* DocumentWebSocketChannel::GetDocument() {
   ExecutionContext* context = loading_context_->GetExecutionContext();
   if (context->IsDocument())
@@ -789,7 +786,7 @@ void DocumentWebSocketChannel::OnError(const WebString& console_message) {
 void DocumentWebSocketChannel::DidFinishLoadingBlob(DOMArrayBuffer* buffer) {
   blob_loader_.Clear();
   DCHECK(handle_);
-  // The loaded blob is always placed on m_messages[0].
+  // The loaded blob is always placed on |messages_[0]|.
   DCHECK_GT(messages_.size(), 0u);
   DCHECK_EQ(messages_.front()->type, kMessageTypeBlob);
   // We replace it with the loaded blob.
@@ -811,7 +808,7 @@ void DocumentWebSocketChannel::DidFailLoadingBlob(
 }
 
 void DocumentWebSocketChannel::TearDownFailedConnection() {
-  // m_handle and m_client can be null here.
+  // |handle_| and |client_| can be null here.
   connection_handle_for_scheduler_.reset();
   handshake_throttle_.reset();
 

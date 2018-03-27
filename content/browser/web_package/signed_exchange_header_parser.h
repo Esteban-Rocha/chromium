@@ -39,15 +39,17 @@ class CONTENT_EXPORT SignedExchangeHeaderParser {
     uint64_t expires;
   };
 
-  // Parses a value of the Signed-Headers header.
-  // https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.1
-  static base::Optional<std::vector<std::string>> ParseSignedHeaders(
-      const std::string& signed_headers_str);
-
   // Parses a value of the Signature header.
   // https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.2
   static base::Optional<std::vector<Signature>> ParseSignature(
       base::StringPiece signature_str);
+
+  // Parses |content_type| to get the value of "v=" parameter of the signed
+  // exchange. Example: "b0" for "application/signed-exchange;v=b0". Returns
+  // false if failed to parse.
+  static bool GetVersionParamFromContentType(
+      base::StringPiece content_type,
+      base::Optional<std::string>* version_param);
 };
 
 }  // namespace content

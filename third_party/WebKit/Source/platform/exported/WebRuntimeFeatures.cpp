@@ -120,10 +120,6 @@ void WebRuntimeFeatures::EnableDecodeToYUV(bool enable) {
   RuntimeEnabledFeatures::SetDecodeToYUVEnabled(enable);
 }
 
-void WebRuntimeFeatures::EnableExperimentalCanvasFeatures(bool enable) {
-  RuntimeEnabledFeatures::SetExperimentalCanvasFeaturesEnabled(enable);
-}
-
 void WebRuntimeFeatures::EnableFastMobileScrolling(bool enable) {
   RuntimeEnabledFeatures::SetFastMobileScrollingEnabled(enable);
 }
@@ -258,6 +254,10 @@ void WebRuntimeFeatures::EnablePictureInPicture(bool enable) {
 
 void WebRuntimeFeatures::EnablePreloadDefaultIsMetadata(bool enable) {
   RuntimeEnabledFeatures::SetPreloadDefaultIsMetadataEnabled(enable);
+}
+
+void WebRuntimeFeatures::EnablePreloadImageSrcSetEnabled(bool enable) {
+  RuntimeEnabledFeatures::SetPreloadImageSrcSetEnabled(enable);
 }
 
 void WebRuntimeFeatures::EnableRasterInducingScroll(bool enable) {

@@ -43,6 +43,8 @@ jumbo_component("aura") {
     "mus/client_surface_embedder.h",
     "mus/drag_drop_controller_host.h",
     "mus/drag_drop_controller_mus.h",
+    "mus/embed_root.h",
+    "mus/embed_root_delegate.h",
     "mus/focus_synchronizer.h",
     "mus/focus_synchronizer_delegate.h",
     "mus/focus_synchronizer_observer.h",
@@ -110,6 +112,7 @@ jumbo_component("aura") {
     "mus/capture_synchronizer.cc",
     "mus/client_surface_embedder.cc",
     "mus/drag_drop_controller_mus.cc",
+    "mus/embed_root.cc",
     "mus/focus_synchronizer.cc",
     "mus/in_flight_change.cc",
     "mus/input_method_mus.cc",
@@ -198,6 +201,10 @@ jumbo_component("aura") {
 
   if (use_ozone) {
     deps += [ "//ui/ozone" ]
+    sources += [
+      "mus/platform_event_source_mus_ozone.cc",
+      "mus/platform_event_source_mus_ozone.h",
+    ]
   }
 
   if (is_android) {
@@ -259,6 +266,8 @@ jumbo_static_library("test_support") {
     "test/ui_controls_factory_aura.h",
     "test/window_event_dispatcher_test_api.cc",
     "test/window_event_dispatcher_test_api.h",
+    "test/window_occlusion_tracker_test_api.cc",
+    "test/window_occlusion_tracker_test_api.h",
     "test/window_test_api.cc",
     "test/window_test_api.h",
   ]
@@ -362,6 +371,7 @@ test("aura_unittests") {
     "mus/window_port_mus_unittest.cc",
     "mus/window_tree_client_unittest.cc",
     "mus/window_tree_host_mus_unittest.cc",
+    "test/aura_test_suite.h",
     "test/run_all_unittests.cc",
     "window_event_dispatcher_unittest.cc",
     "window_occlusion_tracker_unittest.cc",
@@ -375,7 +385,7 @@ test("aura_unittests") {
     "//base/test:test_support",
     "//components/viz/client",
     "//mojo/common",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//net",
     "//services/ui/common:task_runner_test_base",
     "//services/ui/public/cpp",

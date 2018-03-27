@@ -4,7 +4,6 @@
 
 #include "core/css/cssom/StyleValueFactory.h"
 
-#include "core/StylePropertyShorthand.h"
 #include "core/css/CSSCustomPropertyDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSImageValue.h"
@@ -23,7 +22,8 @@
 #include "core/css/parser/CSSPropertyParser.h"
 #include "core/css/parser/CSSTokenizer.h"
 #include "core/css/parser/CSSVariableParser.h"
-#include "core/css/properties/CSSProperty.h"
+#include "core/css/properties/css_property.h"
+#include "core/style_property_shorthand.h"
 
 namespace blink {
 
@@ -70,6 +70,12 @@ CSSStyleValue* CreateStyleValueWithPropertyInternal(CSSPropertyID property_id,
       return CSSUnsupportedStyleValue::Create(property_id, value);
     case CSSPropertyTransform:
       return CSSTransformValue::FromCSSValue(value);
+    case CSSPropertyOffsetAnchor:
+    case CSSPropertyOffsetPosition:
+      // offset-anchor and offset-position can be 'auto'
+      if (value.IsIdentifierValue())
+        return CreateStyleValue(value);
+      FALLTHROUGH;
     case CSSPropertyObjectPosition:
       return CSSPositionValue::FromCSSValue(value);
     case CSSPropertyAlignItems: {
@@ -91,80 +97,6 @@ CSSStyleValue* CreateStyleValueWithPropertyInternal(CSSPropertyID property_id,
   return nullptr;
 }
 
-bool IsPropertySupported(CSSPropertyID property_id) {
-  switch (property_id) {
-    case CSSPropertyVariable:
-    case CSSPropertyAnimationDirection:
-    case CSSPropertyTransitionDuration:
-    case CSSPropertyColor:
-    case CSSPropertyDirection:
-    case CSSPropertyFontStyle:
-    case CSSPropertyFontWeight:
-    case CSSPropertyBackfaceVisibility:
-    case CSSPropertyBackgroundColor:
-    case CSSPropertyBackgroundImage:
-    case CSSPropertyBorderBottomColor:
-    case CSSPropertyBorderBottomStyle:
-    case CSSPropertyBorderBottomWidth:
-    case CSSPropertyBorderCollapse:
-    case CSSPropertyBorderImageSource:
-    case CSSPropertyBorderLeftColor:
-    case CSSPropertyBorderLeftStyle:
-    case CSSPropertyBorderLeftWidth:
-    case CSSPropertyBorderRightColor:
-    case CSSPropertyBorderRightStyle:
-    case CSSPropertyBorderRightWidth:
-    case CSSPropertyBorderTopColor:
-    case CSSPropertyBorderTopStyle:
-    case CSSPropertyBorderTopWidth:
-    case CSSPropertyBottom:
-    case CSSPropertyBoxSizing:
-    case CSSPropertyCaretColor:
-    case CSSPropertyClear:
-    case CSSPropertyColumnRuleColor:
-    case CSSPropertyDisplay:
-    case CSSPropertyEmptyCells:
-    case CSSPropertyFloat:
-    case CSSPropertyHeight:
-    case CSSPropertyLeft:
-    case CSSPropertyLineHeight:
-    case CSSPropertyListStyleImage:
-    case CSSPropertyListStylePosition:
-    case CSSPropertyMarginBottom:
-    case CSSPropertyMarginLeft:
-    case CSSPropertyMarginRight:
-    case CSSPropertyMarginTop:
-    case CSSPropertyObjectPosition:
-    case CSSPropertyOpacity:
-    case CSSPropertyOutlineColor:
-    case CSSPropertyOutlineStyle:
-    case CSSPropertyOverflowAnchor:
-    case CSSPropertyOverflowX:
-    case CSSPropertyOverflowY:
-    case CSSPropertyPaddingBottom:
-    case CSSPropertyPaddingLeft:
-    case CSSPropertyPaddingRight:
-    case CSSPropertyPaddingTop:
-    case CSSPropertyPosition:
-    case CSSPropertyResize:
-    case CSSPropertyRight:
-    case CSSPropertyShapeOutside:
-    case CSSPropertyTextAlign:
-    case CSSPropertyTextDecorationColor:
-    case CSSPropertyTextDecorationStyle:
-    case CSSPropertyTextTransform:
-    case CSSPropertyTop:
-    case CSSPropertyTransform:
-    case CSSPropertyVerticalAlign:
-    case CSSPropertyVisibility:
-    case CSSPropertyWhiteSpace:
-    case CSSPropertyWidth:
-      return true;
-    default:
-      return false;
-  }
-}
-
 CSSStyleValue* CreateStyleValueWithProperty(CSSPropertyID property_id,
                                             const CSSValue& value) {
   // These cannot be overridden by individual properties.
@@ -173,13 +105,11 @@ CSSStyleValue* CreateStyleValueWithProperty(CSSPropertyID property_id,
   if (value.IsVariableReferenceValue())
     return CSSUnparsedValue::FromCSSValue(ToCSSVariableReferenceValue(value));
   if (value.IsCustomPropertyDeclaration()) {
-    const CSSVariableData* variable_data =
-        ToCSSCustomPropertyDeclaration(value).Value();
-    DCHECK(variable_data);
-    return CSSUnparsedValue::FromCSSValue(*variable_data);
+    return CSSUnparsedValue::FromCSSValue(
+        ToCSSCustomPropertyDeclaration(value));
   }
 
-  if (!IsPropertySupported(property_id))
+  if (!CSSOMTypes::IsPropertySupported(property_id))
     return CSSUnsupportedStyleValue::Create(property_id, value);
 
   CSSStyleValue* style_value =
@@ -234,7 +164,7 @@ CSSStyleValueVector StyleValueFactory::FromString(
         CSSVariableData::Create(range, false /* is_animation_tainted */,
                                 false /* needs variable resolution */);
     CSSStyleValueVector values;
-    values.push_back(CSSUnparsedValue::FromCSSValue(*variable_data));
+    values.push_back(CSSUnparsedValue::FromCSSVariableData(*variable_data));
     return values;
   }
 

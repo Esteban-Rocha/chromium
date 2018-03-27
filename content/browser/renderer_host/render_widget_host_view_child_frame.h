@@ -37,7 +37,6 @@ class CompositorFrameSinkSupport;
 namespace content {
 class FrameConnectorDelegate;
 class RenderWidgetHost;
-class RenderWidgetHostImpl;
 class RenderWidgetHostViewChildFrameTest;
 class RenderWidgetHostViewGuestSurfaceTest;
 class TouchSelectionControllerClientChildFrame;
@@ -107,7 +106,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   void SetBackgroundColor(SkColor color) override;
   SkColor background_color() const override;
-  gfx::Size GetPhysicalBackingSize() const override;
+  gfx::Size GetCompositorViewportPixelSize() const override;
   bool IsMouseLocked() override;
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   void SetWantsAnimateOnlyBeginFrames() override;
@@ -142,7 +141,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void DidStopFlinging() override;
   bool LockMouse() override;
   void UnlockMouse() override;
-  RenderWidgetHostImpl* GetRenderWidgetHostImpl() const override;
   viz::FrameSinkId GetFrameSinkId() override;
   viz::LocalSurfaceId GetLocalSurfaceId() const override;
   void PreProcessTouchEvent(const blink::WebTouchEvent& event) override;
@@ -171,10 +169,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // RenderWidgetHostView implementation.
   void SetActive(bool active) override;
   void ShowDefinitionForSelection() override;
-  bool SupportsSpeech() const override;
   void SpeakSelection() override;
-  bool IsSpeaking() const override;
-  void StopSpeaking() override;
 #endif  // defined(OS_MACOSX)
 
   InputEventAckState FilterInputEvent(
@@ -221,7 +216,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void RegisterFrameSinkId();
   void UnregisterFrameSinkId();
 
-  void UpdateViewportIntersection(const gfx::Rect& viewport_intersection);
+  void UpdateViewportIntersection(const gfx::Rect& viewport_intersection,
+                                  const gfx::Rect& compositor_visible_rect);
 
   void SetIsInert();
 
@@ -258,9 +254,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // The last scroll offset of the view.
   gfx::Vector2dF last_scroll_offset_;
 
-  // Members will become private when RenderWidgetHostViewGuest is removed.
-  // The model object.
-  RenderWidgetHostImpl* host_;
 
   // The ID for FrameSink associated with this view.
   viz::FrameSinkId frame_sink_id_;

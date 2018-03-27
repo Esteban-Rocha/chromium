@@ -82,12 +82,15 @@ _NEGATIVE_FILTER = [
 _VERSION_SPECIFIC_FILTER = {}
 _VERSION_SPECIFIC_FILTER['HEAD'] = []
 
-_VERSION_SPECIFIC_FILTER['66'] = []
+_VERSION_SPECIFIC_FILTER['66'] = [
+    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2304
+    'ChromeDriverSiteIsolation.testCanClickOOPIF',
+]
 
 _VERSION_SPECIFIC_FILTER['65'] = [
     # https://bugs.chromium.org/p/chromium/issues/detail?id=803678
     'ChromeDriverTest.testGoBackAndGoForward',
-    'ChromeDriverTest.testAlertHandlingOnPageUnload'
+    'ChromeDriverTest.testAlertHandlingOnPageUnload',
 ]
 
 _VERSION_SPECIFIC_FILTER['64'] = [
@@ -192,6 +195,7 @@ _ANDROID_NEGATIVE_FILTER['chrome'] = (
         'ChromeDriverTest.testWindowPosition',
         'ChromeDriverTest.testWindowSize',
         'ChromeDriverTest.testWindowMaximize',
+        'ChromeDriverTest.testWindowMinimize',
         'ChromeLogPathCapabilityTest.testChromeLogPath',
         'RemoteBrowserTest.*',
         # Don't enable perf testing on Android yet.
@@ -255,14 +259,6 @@ _ANDROID_NEGATIVE_FILTER['chromedriver_webview_shell'] = (
         'ChromeDriverTest.testEmulateNetworkConditionsOffline',
         'ChromeDriverTest.testEmulateNetworkConditionsSpeed',
         'ChromeDriverTest.testEmulateNetworkConditionsName',
-        # The WebView shell that we test against (on KitKat) does not yet
-        # support Synthetic Gesture DevTools commands.
-        # TODO(samuong): reenable when it does.
-        'ChromeDriverTest.testHasTouchScreen',
-        'ChromeDriverTest.testTouchScrollElement',
-        'ChromeDriverTest.testTouchDoubleTapElement',
-        'ChromeDriverTest.testTouchLongPressElement',
-        'ChromeDriverTest.testTouchPinch',
         # WebView shell doesn't support popups or popup blocking.
         'ChromeDriverTest.testPopups',
         'ChromeDriverTest.testDontGoBackOrGoForward',
@@ -305,6 +301,8 @@ _ANDROID_NEGATIVE_FILTER['chromedriver_webview_shell'] = (
         'ChromeDriverTest.testTouchSingleTapElement',
         # https://bugs.chromium.org/p/chromium/issues/detail?id=746266
         'ChromeDriverSiteIsolation.testCanClickOOPIF',
+        # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2332
+        'ChromeDriverTest.testTouchScrollElement',
     ]
 )
 
@@ -1022,6 +1020,23 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     self.assertEquals([100, 200], self._driver.GetWindowPosition())
     self.assertEquals([600, 400], self._driver.GetWindowSize())
 
+  def testWindowMinimize(self):
+    handle_prefix = "CDwindow-"
+    handle = self._driver.GetCurrentWindowHandle()
+    target = handle[len(handle_prefix):]
+    self._driver.SetWindowPosition(100, 200)
+    self._driver.SetWindowSize(500, 300)
+    rect = self._driver.MinimizeWindow()
+    expected_rect = {u'y': 200, u'width': 500, u'height': 300, u'x': 100}
+
+    #check it returned the correct rect
+    for key in expected_rect.keys():
+      self.assertEquals(expected_rect[key], rect[key])
+
+    # check its minimized
+    res = self._driver.SendCommandAndGetResult('Browser.getWindowForTarget', {'targetId': target})
+    self.assertEquals('minimized', res['bounds']['windowState'])
+
   def testWindowFullScreen(self):
     self._driver.SetWindowPosition(100, 200)
     self._driver.SetWindowSize(500, 300)
@@ -1359,6 +1374,16 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     self._driver.TouchUp(location['x'] + 1, location['y'] + 1)
     self.assertEquals('events: touchstart touchmove touchend', events.GetText())
 
+  def testGetElementRect(self):
+    self._driver.Load(self.GetHttpUrlForFile(
+        '/chromedriver/absolute_position_element.html'))
+    target = self._driver.FindElement('id', 'target')
+    rect = target.GetRect()
+    self.assertEquals(18, rect['x'])
+    self.assertEquals(10, rect['y'])
+    self.assertEquals(200, rect['height'])
+    self.assertEquals(210, rect['width'])
+
   def testTouchScrollElement(self):
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/touch_action_tests.html'))
@@ -1434,15 +1459,6 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
                             2.0)
     width_after_pinch = self._driver.ExecuteScript('return window.innerWidth;')
     self.assertAlmostEqual(2.0, float(width_before_pinch) / width_after_pinch)
-
-  def testBrowserDoesntSupportSyntheticGestures(self):
-    # WebView on KitKat does not support synthetic gesture commands in DevTools,
-    # so touch action tests have been disabled for chromedriver_webview_shell.
-    # TODO(samuong): when this test starts failing, re-enable touch tests and
-    # delete this test.
-    if _ANDROID_PACKAGE_KEY:
-      if _ANDROID_PACKAGE_KEY == 'chromedriver_webview_shell':
-        self.assertFalse(self._driver.capabilities['hasTouchScreen'])
 
   def testHasTouchScreen(self):
     self.assertIn('hasTouchScreen', self._driver.capabilities)

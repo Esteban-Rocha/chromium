@@ -74,7 +74,6 @@ class CursorManager;
 class DelegatedFrameHost;
 class DelegatedFrameHostClient;
 class RenderFrameHostImpl;
-class RenderWidgetHostImpl;
 class RenderWidgetHostView;
 class TouchSelectionControllerClientAura;
 
@@ -168,8 +167,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void SetMainFrameAXTreeID(ui::AXTreeIDRegistry::AXTreeID id) override;
   bool LockMouse() override;
   void UnlockMouse() override;
-  void CreateCompositorFrameSink(
-      CreateCompositorFrameSinkCallback callback) override;
+  bool LockKeyboard(base::Optional<base::flat_set<int>> keys) override;
+  void UnlockKeyboard() override;
+  bool IsKeyboardLocked() override;
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;
@@ -181,7 +181,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void ClearCompositorFrame() override;
   void DidStopFlinging() override;
   void OnDidNavigateMainFrameToNewPage() override;
-  RenderWidgetHostImpl* GetRenderWidgetHostImpl() const override;
   viz::FrameSinkId GetFrameSinkId() override;
   viz::LocalSurfaceId GetLocalSurfaceId() const override;
   bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
@@ -286,6 +285,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Overridden from aura::WindowTreeHostObserver:
   void OnHostMovedInPixels(aura::WindowTreeHost* host,
                            const gfx::Point& new_origin_in_pixels) override;
+
+  // RenderFrameMetadataProvider::Observer
+  void OnRenderFrameMetadataChanged() override;
 
 #if defined(OS_WIN)
   // Gets the HWND of the host window.
@@ -409,6 +411,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            DeviceScaleFactorChanges);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
                            HideThenShow);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
+                           DropFallbackIfResizedWhileHidden);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
+                           DontDropFallbackIfNotResizedWhileHidden);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessHitTestBrowserTest, PopupMenuTest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
                            NewContentRenderingTimeout);
@@ -522,11 +528,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void UpdateNeedsBeginFramesInternal();
 
   // Applies background color without notifying the RenderWidget about
-  // opaqueness changes.
+  // opaqueness changes. This allows us to, when navigating to a new page,
+  // transfer this color to that page. This allows us to pass this background
+  // color to new views on navigation.
   void UpdateBackgroundColorFromRenderer(SkColor color);
-
-  // The model object.
-  RenderWidgetHostImpl* const host_;
 
   const bool is_mus_browser_plugin_guest_;
 
@@ -653,11 +658,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   std::unique_ptr<CursorManager> cursor_manager_;
   int tab_show_sequence_ = 0;
-
-  // Stashes a request to create a CompositorFrameSink if it arrives before
-  // DelegatedFrameHost is created. This is only used with VizDisplayCompositor
-  // feature.
-  CreateCompositorFrameSinkCallback create_frame_sink_callback_;
 
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
 

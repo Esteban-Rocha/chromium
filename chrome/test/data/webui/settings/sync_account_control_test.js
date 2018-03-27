@@ -24,12 +24,8 @@ cr.define('settings_sync_account_control', function() {
     function forcePromoResetWithCount(count, signedIn) {
       browserProxy.setImpressionCount(count);
       // Flipping syncStatus.signedIn will force promo state to be reset.
-      sync_test_util.simulateSyncStatus({
-        signedIn: !signedIn,
-      });
-      sync_test_util.simulateSyncStatus({
-        signedIn: signedIn,
-      });
+      testElement.syncStatus = {signedIn: !signedIn};
+      testElement.syncStatus = {signedIn: signedIn};
     }
 
     suiteSetup(function() {
@@ -45,14 +41,15 @@ cr.define('settings_sync_account_control', function() {
 
       PolymerTest.clearBody();
       testElement = document.createElement('settings-sync-account-control');
+      testElement.syncStatus = {
+        signedIn: true,
+        signedInUsername: 'fakeUsername'
+      };
       document.body.appendChild(testElement);
 
-      Polymer.dom.flush();
-
-      return Promise.all([
-        browserProxy.whenCalled('getSyncStatus'),
-        browserProxy.whenCalled('getStoredAccounts'),
-      ]);
+      return browserProxy.whenCalled('getStoredAccounts').then(() => {
+        Polymer.dom.flush();
+      });
     });
 
     teardown(function() {
@@ -91,8 +88,7 @@ cr.define('settings_sync_account_control', function() {
     });
 
     test('not signed in and no stored accounts', function() {
-      sync_test_util.simulateSyncStatus(
-          {signedIn: false, signedInUsername: ''});
+      testElement.syncStatus = {signedIn: false, signedInUsername: ''};
       sync_test_util.simulateStoredAccounts([]);
 
       assertVisible(testElement.$$('#promo-headers'), true);
@@ -105,8 +101,7 @@ cr.define('settings_sync_account_control', function() {
     });
 
     test('not signed in but has stored accounts', function() {
-      sync_test_util.simulateSyncStatus(
-          {signedIn: false, signedInUsername: ''});
+      testElement.syncStatus = {signedIn: false, signedInUsername: ''};
       sync_test_util.simulateStoredAccounts([
         {
           fullName: 'fooName',
@@ -153,9 +148,9 @@ cr.define('settings_sync_account_control', function() {
           .then(email => {
             assertEquals(email, 'foo@foo.com');
 
-            assertVisible(testElement.$$('#dropdown-arrow'), true);
-            assertFalse(
-                testElement.$$('#sync-logo-container').hasAttribute('syncing'));
+            assertVisible(testElement.$$('paper-icon-button-light'), true);
+            assertFalse(testElement.$$('#sync-icon-container')
+                            .hasAttribute('signed-in'));
 
             testElement.$$('#dropdown-arrow').click();
             Polymer.dom.flush();
@@ -189,8 +184,10 @@ cr.define('settings_sync_account_control', function() {
     });
 
     test('signed in', function() {
-      sync_test_util.simulateSyncStatus(
-          {signedIn: true, signedInUsername: 'bar@bar.com'});
+      testElement.syncStatus = {
+        signedIn: true,
+        signedInUsername: 'bar@bar.com'
+      };
       sync_test_util.simulateStoredAccounts([
         {
           fullName: 'fooName',
@@ -205,10 +202,11 @@ cr.define('settings_sync_account_control', function() {
       ]);
 
       assertVisible(testElement.$$('#avatar-row'), true);
-      assertVisible(testElement.$$('#dropdown-arrow'), false);
+      assertVisible(testElement.$$('paper-icon-button-light'), false);
       assertVisible(testElement.$$('#promo-headers'), false);
       assertTrue(
-          testElement.$$('#sync-logo-container').hasAttribute('syncing'));
+          testElement.$$('#sync-icon-container').hasAttribute('signed-in'));
+
       assertFalse(!!testElement.$$('#menu'));
 
       const userInfo = testElement.$$('#user-info');
@@ -224,6 +222,17 @@ cr.define('settings_sync_account_control', function() {
       Polymer.dom.flush();
 
       assertEquals(settings.getCurrentRoute(), settings.routes.SIGN_OUT);
+
+      testElement.syncStatus = {
+        signedIn: true,
+        signedInUsername: 'bar@bar.com',
+        hasError: true
+      };
+      assertTrue(
+          testElement.$$('#sync-icon-container').hasAttribute('has-error'));
+      assertFalse(userInfo.textContent.includes('barName'));
+      assertFalse(userInfo.textContent.includes('fooName'));
+      assertTrue(userInfo.textContent.includes('Sync isn\'t working'));
     });
   });
 });

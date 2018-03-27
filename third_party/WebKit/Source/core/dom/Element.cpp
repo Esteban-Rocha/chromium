@@ -34,7 +34,6 @@
 #include "bindings/core/v8/scroll_into_view_options_or_boolean.h"
 #include "bindings/core/v8/string_or_trusted_html.h"
 #include "bindings/core/v8/string_or_trusted_script_url.h"
-#include "core/CSSValueKeywords.h"
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPrimitiveValue.h"
@@ -50,6 +49,7 @@
 #include "core/css/resolver/SelectorFilterParentScope.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverStats.h"
+#include "core/css_value_keywords.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/Attr.h"
 #include "core/dom/ComputedAccessibleNode.h"
@@ -238,7 +238,7 @@ void Element::setTabIndex(int value) {
 }
 
 int Element::tabIndex() const {
-  return HasElementFlag(kTabIndexWasSetExplicitly)
+  return HasElementFlag(ElementFlags::kTabIndexWasSetExplicitly)
              ? GetIntegralAttribute(tabindexAttr)
              : 0;
 }
@@ -1541,6 +1541,9 @@ void Element::AttributeChanged(const AttributeModificationParams& params) {
     }
   } else if (name == HTMLNames::nameAttr) {
     SetHasName(!params.new_value.IsNull());
+  } else if (name == HTMLNames::partAttr) {
+    if (RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
+      EnsureElementRareData().SetPart(params.new_value);
   } else if (IsStyledElement()) {
     if (name == styleAttr) {
       StyleAttributeChanged(params.new_value, params.reason);
@@ -1895,7 +1898,7 @@ void Element::RemovedFrom(ContainerNode* insertion_point) {
 
   GetDocument().RemoveFromTopLayer(this);
 
-  ClearElementFlag(kIsInCanvasSubtree);
+  ClearElementFlag(ElementFlags::kIsInCanvasSubtree);
 
   if (HasRareData()) {
     ElementRareData* data = GetElementRareData();
@@ -1960,6 +1963,7 @@ void Element::AttachLayoutTree(AttachContext& context) {
     shadow->Attach(children_context);
 
   ContainerNode::AttachLayoutTree(children_context);
+  SetNonAttachedStyle(nullptr);
   AddCallbackSelectors();
 
   CreateAndAttachPseudoElementIfNeeded(kPseudoIdAfter, children_context);
@@ -2065,7 +2069,8 @@ scoped_refptr<ComputedStyle> Element::StyleForLayoutObject() {
   }
 
   style->UpdateIsStackingContext(this == GetDocument().documentElement(),
-                                 IsInTopLayer());
+                                 IsInTopLayer(),
+                                 IsSVGForeignObjectElement(*this));
 
   return style;
 }
@@ -2278,13 +2283,23 @@ StyleRecalcChange Element::RecalcOwnStyle(StyleRecalcChange change) {
 }
 
 void Element::RecalcStyleForReattach() {
-  scoped_refptr<ComputedStyle> non_attached_style = StyleForLayoutObject();
-  SetNonAttachedStyle(non_attached_style);
-  SetNeedsReattachLayoutTree();
-  if (LayoutObjectIsNeeded(*non_attached_style) ||
-      ShouldStoreNonLayoutObjectComputedStyle(*non_attached_style)) {
-    RecalcShadowIncludingDescendantStylesForReattach();
+  bool recalc_descendants = false;
+  if (ParentComputedStyle()) {
+    scoped_refptr<ComputedStyle> non_attached_style = StyleForLayoutObject();
+    SetNeedsReattachLayoutTree();
+    SetNonAttachedStyle(non_attached_style);
+    recalc_descendants =
+        LayoutObjectIsNeeded(*non_attached_style) ||
+        ShouldStoreNonLayoutObjectComputedStyle(*non_attached_style);
+  } else {
+    // Elements which cannot participate in the flat tree are <content> and
+    // <slot> if SlotInFlatTree is not enabled. Even though we should not
+    // compute their styles for re-attachment, we may need to compute their
+    // children's style if fallback is rendered.
+    recalc_descendants = !CanParticipateInFlatTree();
   }
+  if (recalc_descendants)
+    RecalcShadowIncludingDescendantStylesForReattach();
 }
 
 void Element::RecalcShadowIncludingDescendantStylesForReattach() {
@@ -2535,8 +2550,10 @@ ShadowRoot* Element::createShadowRoot(const ScriptState* script_state,
 
 bool Element::CanAttachShadowRoot() const {
   const AtomicString& tag_name = localName();
-  return IsV0CustomElement() ||
-         GetCustomElementState() != CustomElementState::kUncustomized ||
+  // Checking Is{V0}CustomElement() here is just an optimization
+  // because IsValidName is not cheap.
+  return (IsCustomElement() && CustomElement::IsValidName(tag_name)) ||
+         (IsV0CustomElement() && V0CustomElement::IsValidName(tag_name)) ||
          tag_name == HTMLNames::articleTag || tag_name == HTMLNames::asideTag ||
          tag_name == HTMLNames::blockquoteTag ||
          tag_name == HTMLNames::bodyTag || tag_name == HTMLNames::divTag ||
@@ -2601,7 +2618,6 @@ ShadowRoot& Element::CreateUserAgentShadowRoot() {
 ShadowRoot& Element::AttachShadowRootInternal(ShadowRootType type,
                                               bool delegates_focus) {
   DCHECK(CanAttachShadowRoot());
-  DCHECK(AreAuthorShadowsAllowed());
   DCHECK(type == ShadowRootType::kOpen || type == ShadowRootType::kClosed)
       << type;
   DCHECK(!AlwaysCreateUserAgentShadowRoot());
@@ -3075,7 +3091,7 @@ bool Element::SupportsFocus() const {
   // But supportsFocus must return true when the element is editable, or else
   // it won't be focusable. Furthermore, supportsFocus cannot just return true
   // always or else tabIndex() will change for all HTML elements.
-  return HasElementFlag(kTabIndexWasSetExplicitly) ||
+  return HasElementFlag(ElementFlags::kTabIndexWasSetExplicitly) ||
          IsRootEditableElement(*this) ||
          (IsShadowHost(this) && AuthorShadowRoot() &&
           AuthorShadowRoot()->delegatesFocus()) ||
@@ -3648,10 +3664,18 @@ bool Element::ShouldStoreNonLayoutObjectComputedStyle(
   if (style.Display() == EDisplay::kContents && !NeedsReattachLayoutTree())
     DCHECK(!GetLayoutObject() || IsPseudoElement());
 #endif
-
-  return style.Display() == EDisplay::kContents ||
-         IsHTMLOptGroupElement(*this) || IsHTMLOptionElement(*this) ||
-         IsSVGStopElement(*this);
+  if (style.Display() == EDisplay::kNone)
+    return false;
+  if (IsSVGElement()) {
+    Element* parent_element = LayoutTreeBuilderTraversal::ParentElement(*this);
+    if (parent_element && !parent_element->IsSVGElement())
+      return false;
+    if (IsSVGStopElement(*this))
+      return true;
+  }
+  if (style.Display() == EDisplay::kContents)
+    return true;
+  return IsHTMLOptGroupElement(*this) || IsHTMLOptionElement(*this);
 }
 
 void Element::StoreNonLayoutObjectComputedStyle(
@@ -3986,7 +4010,7 @@ void Element::SetFloatingPointAttribute(const QualifiedName& attribute_name,
 }
 
 void Element::SetContainsFullScreenElement(bool flag) {
-  SetElementFlag(kContainsFullScreenElement, flag);
+  SetElementFlag(ElementFlags::kContainsFullScreenElement, flag);
   // When exiting fullscreen, the element's document may not be active.
   if (flag) {
     DCHECK(GetDocument().IsActive());
@@ -4024,7 +4048,7 @@ void Element::SetContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(
 }
 
 void Element::SetContainsPersistentVideo(bool value) {
-  SetElementFlag(kContainsPersistentVideo, value);
+  SetElementFlag(ElementFlags::kContainsPersistentVideo, value);
   PseudoStateChanged(CSSSelector::kPseudoVideoPersistentAncestor);
 
   // In some rare situations, when the persistent video has been removed from
@@ -4046,7 +4070,7 @@ void Element::SetContainsPersistentVideo(bool value) {
 void Element::SetIsInTopLayer(bool in_top_layer) {
   if (IsInTopLayer() == in_top_layer)
     return;
-  SetElementFlag(kIsInTopLayer, in_top_layer);
+  SetElementFlag(ElementFlags::kIsInTopLayer, in_top_layer);
 
   // We must ensure a reattach occurs so the layoutObject is inserted in the
   // correct sibling order under LayoutView according to its top layer position,
@@ -4790,6 +4814,23 @@ void Element::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
     visitor->TraceWrappersWithManualWriteBarrier(GetElementRareData());
   }
   ContainerNode::TraceWrappers(visitor);
+}
+
+bool Element::HasPartName() const {
+  if (!RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
+    return false;
+  if (HasRareData()) {
+    if (auto* part_names = GetElementRareData()->PartNames()) {
+      return part_names->size() > 0;
+    }
+  }
+  return false;
+}
+
+const SpaceSplitString* Element::PartNames() const {
+  return RuntimeEnabledFeatures::CSSPartPseudoElementEnabled() && HasRareData()
+             ? GetElementRareData()->PartNames()
+             : nullptr;
 }
 
 }  // namespace blink

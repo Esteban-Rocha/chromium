@@ -76,6 +76,7 @@
 #include "core/page/scrolling/RootScrollerController.h"
 #include "core/page/scrolling/RootScrollerUtil.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/page/scrolling/SnapCoordinator.h"
 #include "core/page/scrolling/TopDocumentRootScrollerController.h"
 #include "core/paint/PaintLayerFragment.h"
 #include "core/paint/compositing/CompositedLayerMapping.h"
@@ -452,8 +453,7 @@ void PaintLayerScrollableArea::UpdateScrollOffset(
   DisableCompositingQueryAsserts disabler;
 
   // Update the positions of our child layers (if needed as only fixed layers
-  // should be impacted by a scroll).  We don't update compositing layers,
-  // because we need to do a deep update from the compositing ancestor.
+  // should be impacted by a scroll).
   if (!frame_view->IsInPerformLayout()) {
     // If we're in the middle of layout, we'll just update layers once layout
     // has finished.
@@ -468,8 +468,8 @@ void PaintLayerScrollableArea::UpdateScrollOffset(
       frame_view->SetRootLayerDidScroll();
     else
       frame_view->SetNeedsUpdateGeometries();
-    UpdateCompositingLayersAfterScroll();
   }
+  UpdateCompositingLayersAfterScroll();
 
   GetLayoutBox()->DispatchFakeMouseMoveEventSoon(frame->GetEventHandler());
 
@@ -874,17 +874,26 @@ void PaintLayerScrollableArea::UpdateScrollOrigin() {
 }
 
 void PaintLayerScrollableArea::UpdateScrollDimensions() {
-  if (overflow_rect_.Size() != GetLayoutBox()->LayoutOverflowRect().Size())
+  LayoutRect new_overflow_rect = GetLayoutBox()->LayoutOverflowRect();
+  GetLayoutBox()->FlipForWritingMode(new_overflow_rect);
+
+  // The layout viewport can be larger than the document's layout overflow when
+  // top controls are hidden.  Expand the overflow here to ensure that our
+  // contents size >= visible size.
+  new_overflow_rect.Unite(
+      LayoutRect(new_overflow_rect.Location(),
+                 LayoutContentRect(kExcludeScrollbars).Size()));
+
+  if (overflow_rect_.Size() != new_overflow_rect.Size())
     ContentsResized();
-  overflow_rect_ = GetLayoutBox()->LayoutOverflowRect();
-  GetLayoutBox()->FlipForWritingMode(overflow_rect_);
+  overflow_rect_ = new_overflow_rect;
   UpdateScrollOrigin();
 }
 
 void PaintLayerScrollableArea::UpdateScrollbarEnabledState() {
   bool force_disable =
       GetPageScrollbarTheme().ShouldDisableInvisibleScrollbars() &&
-      ScrollbarsHidden();
+      ScrollbarsHiddenIfOverlay();
 
   if (HorizontalScrollbar())
     HorizontalScrollbar()->SetEnabled(HasHorizontalOverflow() &&
@@ -1605,6 +1614,17 @@ int PaintLayerScrollableArea::HorizontalScrollbarHeight(
   return HorizontalScrollbar()->ScrollbarThickness();
 }
 
+void PaintLayerScrollableArea::SnapAfterScrollbarDragging(
+    ScrollbarOrientation orientation) {
+  SnapCoordinator* snap_coordinator =
+      GetLayoutBox()->GetDocument().GetSnapCoordinator();
+  if (!snap_coordinator)
+    return;
+  snap_coordinator->PerformSnapping(*GetLayoutBox(),
+                                    orientation == kHorizontalScrollbar,
+                                    orientation == kVerticalScrollbar);
+}
+
 void PaintLayerScrollableArea::PositionOverflowControls() {
   if (!HasScrollbar() && !GetLayoutBox()->CanResize())
     return;
@@ -1852,6 +1872,12 @@ void PaintLayerScrollableArea::InvalidateStickyConstraintsFor(
   }
 }
 
+bool PaintLayerScrollableArea::HasStickyDescendants() const {
+  if (const PaintLayerScrollableAreaRareData* d = RareData())
+    return !d->sticky_constraints_map_.IsEmpty();
+  return false;
+}
+
 bool PaintLayerScrollableArea::HasNonCompositedStickyDescendants() const {
   if (const PaintLayerScrollableAreaRareData* d = RareData()) {
     for (const PaintLayer* sticky_layer : d->sticky_constraints_map_.Keys()) {
@@ -1868,13 +1894,6 @@ void PaintLayerScrollableArea::InvalidatePaintForStickyDescendants() {
       sticky_layer->GetLayoutObject()
           .SetShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
     }
-  }
-}
-
-void PaintLayerScrollableArea::UpdateLayerPositionForStickyDescendants() {
-  if (PaintLayerScrollableAreaRareData* d = RareData()) {
-    for (PaintLayer* sticky_layer : d->sticky_constraints_map_.Keys())
-      sticky_layer->UpdateLayerPosition();
   }
 }
 
@@ -1993,9 +2012,10 @@ void PaintLayerScrollableArea::Resize(const IntPoint& pos,
 }
 
 LayoutRect PaintLayerScrollableArea::ScrollIntoView(
-    const LayoutRect& rect,
+    const LayoutRect& absolute_rect,
     const WebScrollIntoViewParams& params) {
-  LayoutRect local_expose_rect = AbsoluteToLocal(*GetLayoutBox(), rect);
+  LayoutRect local_expose_rect =
+      AbsoluteToLocal(*GetLayoutBox(), absolute_rect);
   LayoutSize border_origin_to_scroll_origin =
       LayoutSize(-GetLayoutBox()->BorderLeft(), -GetLayoutBox()->BorderTop()) +
       LayoutSize(GetScrollOffset());
@@ -2131,14 +2151,6 @@ ScrollingCoordinator* PaintLayerScrollableArea::GetScrollingCoordinator()
   return page->GetScrollingCoordinator();
 }
 
-bool PaintLayerScrollableArea::UsesCompositedScrolling() const {
-  // See https://codereview.chromium.org/176633003/ for the tests that fail
-  // without this disabler.
-  DisableCompositingQueryAsserts disabler;
-  return Layer()->HasCompositedLayerMapping() &&
-         Layer()->GetCompositedLayerMapping()->ScrollingLayer();
-}
-
 bool PaintLayerScrollableArea::ShouldScrollOnMainThread() const {
   if (HasBeenDisposed())
     return true;
@@ -2170,12 +2182,7 @@ bool PaintLayerScrollableArea::ComputeNeedsCompositedScrolling(
     const PaintLayer* layer) {
   non_composited_main_thread_scrolling_reasons_ = 0;
 
-  // The root scroller needs composited scrolling layers even if it doesn't
-  // actually have scrolling since CC has these assumptions baked in for the
-  // viewport. If we're in non-RootLayerScrolling mode, the root layer will be
-  // the global root scroller (by default) but it doesn't actually handle
-  // scrolls itself so we don't need composited scrolling for it.
-  if (RootScrollerUtil::IsGlobal(*layer) && !Layer()->IsScrolledByFrameView())
+  if (CompositingReasonFinder::RequiresCompositingForRootScroller(*layer))
     return true;
 
   if (!layer->ScrollsOverflow())

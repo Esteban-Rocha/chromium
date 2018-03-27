@@ -163,7 +163,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(content::ResizeParams)
   IPC_STRUCT_TRAITS_MEMBER(screen_info)
   IPC_STRUCT_TRAITS_MEMBER(new_size)
-  IPC_STRUCT_TRAITS_MEMBER(physical_backing_size)
+  IPC_STRUCT_TRAITS_MEMBER(compositor_viewport_pixel_size)
   IPC_STRUCT_TRAITS_MEMBER(browser_controls_shrink_blink_size)
   IPC_STRUCT_TRAITS_MEMBER(scroll_focused_node_into_view)
   IPC_STRUCT_TRAITS_MEMBER(top_controls_height)
@@ -525,9 +525,6 @@ IPC_MESSAGE_ROUTED3(ViewMsg_ResolveTapDisambiguation,
                     gfx::Point /* tap_viewport_offset */,
                     bool /* is_long_press */)
 
-// Fetches complete rendered content of a web page as plain text.
-IPC_MESSAGE_ROUTED0(ViewMsg_GetRenderedText)
-
 IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 
 // Sent by the browser to ask the renderer to redraw. Robust to events that can
@@ -536,9 +533,11 @@ IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 IPC_MESSAGE_ROUTED1(ViewMsg_ForceRedraw,
                     ui::LatencyInfo /* latency_info */)
 
-// Sets the viewport intersection on the widget for an out-of-process iframe.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetViewportIntersection,
-                    gfx::Rect /* viewport_intersection */)
+// Sets the viewport intersection and compositor raster area on the widget for
+// an out-of-process iframe.
+IPC_MESSAGE_ROUTED2(ViewMsg_SetViewportIntersection,
+                    gfx::Rect /* viewport_intersection */,
+                    gfx::Rect /* compositor_visible_rect */)
 
 // Sets the inert bit on an out-of-process iframe.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetIsInert, bool /* inert */)
@@ -759,11 +758,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_SelectWordAroundCaretAck,
                     bool /* did_select */,
                     int /* start_adjust */,
                     int /* end_adjust */)
-
-#if defined(OS_MACOSX)
-// Receives content of a web page as plain text.
-IPC_MESSAGE_ROUTED1(ViewMsg_GetRenderedTextCompleted, std::string)
-#endif
 
 // Adding a new message? Stick to the sort order above: first platform
 // independent ViewMsg, then ifdefs for platform specific ViewMsg, then platform

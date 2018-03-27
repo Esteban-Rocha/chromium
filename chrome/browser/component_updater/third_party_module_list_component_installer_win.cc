@@ -19,6 +19,7 @@
 #include "base/values.h"
 #include "base/version.h"
 #include "chrome/browser/conflicts/module_database_win.h"
+#include "chrome/browser/conflicts/third_party_conflicts_manager_win.h"
 #include "components/component_updater/component_updater_paths.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -142,7 +143,9 @@ void RegisterThirdPartyModuleListComponent(ComponentUpdateService* cus) {
   if (!database)
     return;
   ThirdPartyConflictsManager* manager =
-      &database->third_party_conflicts_manager();
+      database->third_party_conflicts_manager();
+  if (!manager)
+    return;
   auto installer = base::MakeRefCounted<ComponentInstaller>(
       std::make_unique<ThirdPartyModuleListComponentInstallerPolicy>(manager));
   installer->Register(cus, base::OnceClosure());

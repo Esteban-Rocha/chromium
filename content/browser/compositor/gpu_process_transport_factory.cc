@@ -50,6 +50,7 @@
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu_stream_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -60,7 +61,7 @@
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "gpu/ipc/host/gpu_memory_buffer_support.h"
-#include "gpu/vulkan/features.h"
+#include "gpu/vulkan/buildflags.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -494,15 +495,15 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       }
       display_output_surface =
           std::make_unique<SoftwareBrowserCompositorOutputSurface>(
-              CreateSoftwareOutputDevice(compositor->widget()), vsync_callback,
-              compositor->task_runner());
+              CreateSoftwareOutputDevice(compositor->widget()),
+              std::move(vsync_callback), compositor->task_runner());
     } else {
       DCHECK(context_provider);
       const auto& capabilities = context_provider->ContextCapabilities();
       if (data->surface_handle == gpu::kNullSurfaceHandle) {
         display_output_surface =
             std::make_unique<OffscreenBrowserCompositorOutputSurface>(
-                context_provider, vsync_callback,
+                context_provider, std::move(vsync_callback),
                 std::unique_ptr<viz::CompositorOverlayCandidateValidator>());
       } else if (capabilities.surfaceless) {
 #if defined(OS_MACOSX)
@@ -516,11 +517,13 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
                                             disable_overlay_ca_layers),
             GetGpuMemoryBufferManager());
 #else
+        DCHECK(capabilities.texture_format_bgra8888);
         auto gpu_output_surface =
             std::make_unique<GpuSurfacelessBrowserCompositorOutputSurface>(
-                context_provider, data->surface_handle, vsync_callback,
+                context_provider, data->surface_handle,
+                std::move(vsync_callback),
                 CreateOverlayCandidateValidator(compositor->widget()),
-                GL_TEXTURE_2D, GL_RGB,
+                GL_TEXTURE_2D, GL_BGRA_EXT,
                 display::DisplaySnapshot::PrimaryFormat(),
                 GetGpuMemoryBufferManager());
         gpu_vsync_control = gpu_output_surface.get();
@@ -537,7 +540,8 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 #endif
         auto gpu_output_surface =
             std::make_unique<GpuBrowserCompositorOutputSurface>(
-                context_provider, vsync_callback, std::move(validator));
+                context_provider, std::move(vsync_callback),
+                std::move(validator));
         gpu_vsync_control = gpu_output_surface.get();
         display_output_surface = std::move(gpu_output_surface);
       }

@@ -8,8 +8,8 @@
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/common/pref_font_webkit_names.h"
-#include "extensions/features/features.h"
-#include "media/media_features.h"
+#include "extensions/buildflags/buildflags.h"
+#include "media/media_buildflags.h"
 #include "ppapi/features/features.h"
 
 namespace prefs {
@@ -115,6 +115,10 @@ const char kSiteEngagementLastUpdateTime[] = "profile.last_engagement_time";
 // 4: restore the URLs defined in kURLsToRestoreOnStartup.
 // 5: open the New Tab Page on startup.
 const char kRestoreOnStartup[] = "session.restore_on_startup";
+
+// A boolean pref to indicate whether or not Chrome should be performing
+// tab-under protection (i.e. blocking navigations it detects as tab-unders).
+const char kTabUnderProtection[] = "tab_under_protection";
 
 // The URLs to restore on startup or when the home button is pressed. The URLs
 // are only restored on startup if kRestoreOnStartup is 4.
@@ -903,6 +907,11 @@ const char kCastReceiverEnabled[] = "cast_receiver.enabled";
 // allow user sign in. If the string is empty or blank no restrictions will
 // be applied. See base::Version for exact string format.
 const char kMinimumAllowedChromeVersion[] = "minimum_req.version";
+
+// Boolean preference that triggers chrome://settings/syncSetup to be opened
+// on user session start.
+const char kShowSyncSettingsOnSessionStart[] =
+    "start_sync_settings_on_session_start";
 
 #endif  // defined(OS_CHROMEOS)
 
@@ -2093,44 +2102,9 @@ const char kRLZDisabled[] = "rlz.disabled";
 #endif
 
 #if BUILDFLAG(ENABLE_APP_LIST)
-// The directory in user data dir that contains the profile to be used with the
-// app launcher.
-const char kAppListProfile[] = "app_list.profile";
-
-// The number of times the app launcher was launched since last ping and
-// the time of the last ping.
-const char kAppListLaunchCount[] = "app_list.launch_count";
-const char kLastAppListLaunchPing[] = "app_list.last_launch_ping";
-
-// The number of times the an app was launched from the app launcher since last
-// ping and the time of the last ping.
-const char kAppListAppLaunchCount[] = "app_list.app_launch_count";
-const char kLastAppListAppLaunchPing[] = "app_list.last_app_launch_ping";
-
-// A boolean that tracks whether the user has ever enabled the app launcher.
-const char kAppLauncherHasBeenEnabled[] =
-    "apps.app_launcher.has_been_enabled";
-
-// An enum indicating how the app launcher was enabled. E.g., via webstore, app
-// install, command line, etc. For UMA.
-const char kAppListEnableMethod[] = "app_list.how_enabled";
-
-// The time that the app launcher was enabled. Cleared when UMA is recorded.
-const char kAppListEnableTime[] = "app_list.when_enabled";
-
 // Keeps local state of app list while sync service is not available.
 const char kAppListLocalState[] = "app_list.local_state";
-
-// A dictionary that tracks the Drive app to Chrome app mapping. The key is
-// a Drive app id and the value is the corresponding Chrome app id. The pref
-// is unsynable and used to track local mappings only.
-const char kAppLauncherDriveAppMapping[] =
-    "apps.app_launcher.drive_app_mapping";
-
-// A list of Drive app ids that tracks the uninstallable Drive apps.
-const char kAppLauncherUninstalledDriveApps[] =
-    "apps.app_launcher.uninstalled_drive_apps";
-#endif  // BUILDFLAG(ENABLE_APP_LIST)
+#endif
 
 #if defined(OS_WIN)
 // If set, the user requested to launch the app with this extension id while
@@ -2564,6 +2538,9 @@ const char kWebDriverOverridesIncompatiblePolicies[] =
 #if !defined(OS_ANDROID)
 // Boolean that specifies whether media (audio/video) autoplay is allowed.
 const char kAutoplayAllowed[] = "media.autoplay_allowed";
+
+// Holds URL patterns that specify URLs that will be allowed to autoplay.
+const char kAutoplayWhitelist[] = "media.autoplay_whitelist";
 #endif  // !defined(OS_ANDROID)
 
 }  // namespace prefs

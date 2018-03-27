@@ -33,6 +33,7 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
 #include "core/CoreExport.h"
 #include "core/exported/WebPagePopupImpl.h"
@@ -47,8 +48,7 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/TouchAction.h"
-#include "platform/heap/Handle.h"
-#include "platform/scheduler/child/web_scheduler.h"
+#include "platform/heap/Member.h"
 #include "platform/wtf/Compiler.h"
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/StdLibExtras.h"
@@ -91,14 +91,10 @@ class WebLocalFrameImpl;
 class CompositorMutatorImpl;
 class WebRemoteFrame;
 class WebSettingsImpl;
-class WebViewScheduler;
 
-class CORE_EXPORT WebViewImpl final
-    : public WebView,
-      public RefCounted<WebViewImpl>,
-      public PageWidgetEventHandler,
-      public WebScheduler::InterventionReporter,
-      public WebViewScheduler::WebViewSchedulerDelegate {
+class CORE_EXPORT WebViewImpl final : public WebView,
+                                      public RefCounted<WebViewImpl>,
+                                      public PageWidgetEventHandler {
  public:
   static WebViewImpl* Create(WebViewClient*,
                              mojom::PageVisibilityState,
@@ -236,13 +232,7 @@ class CORE_EXPORT WebViewImpl final
   void SetShowFPSCounter(bool) override;
   void SetShowScrollBottleneckRects(bool) override;
   void AcceptLanguagesChanged() override;
-
-  // WebScheduler::InterventionReporter implementation:
-  void ReportIntervention(const WebString& message) override;
-
-  // WebViewScheduler::WebViewSchedulerDelegate implementation:
-  void RequestBeginMainFrameNotExpected(bool new_state) override;
-  void SetPageFrozen(bool frozen) override;
+  void FreezePage() override;
 
   void DidUpdateFullscreenSize();
 
@@ -357,7 +347,7 @@ class CORE_EXPORT WebViewImpl final
     return link_highlights_timeline_.get();
   }
 
-  WebViewScheduler* Scheduler() const override;
+  PageScheduler* Scheduler() const override;
   void SetVisibilityState(mojom::PageVisibilityState, bool) override;
 
   bool HasOpenedPopup() const { return page_popup_.get(); }
@@ -449,6 +439,8 @@ class CORE_EXPORT WebViewImpl final
 
   void ForceNextWebGLContextCreationToFail() override;
   void ForceNextDrawingBufferCreationToFail() override;
+
+  void SetHasHighMediaEngagement(bool) override;
 
   IntSize MainFrameSize();
   WebDisplayMode DisplayMode() const { return display_mode_; }
@@ -554,8 +546,10 @@ class CORE_EXPORT WebViewImpl final
   LocalFrame* FocusedLocalFrameInWidget() const;
   LocalFrame* FocusedLocalFrameAvailableForIme() const;
 
-  CompositorMutatorImpl& Mutator();
-  CompositorMutatorImpl* CompositorMutator();
+  // Create or return cached mutation distributor.  The WeakPtr must only be
+  // dereferenced on the returned |mutator_task_runner|.
+  base::WeakPtr<CompositorMutatorImpl> EnsureCompositorMutator(
+      scoped_refptr<base::SingleThreadTaskRunner>* mutator_task_runner);
 
   WebViewClient* client_;  // Can be 0 (e.g. unittests, shared workers, etc.)
 
@@ -663,9 +657,10 @@ class CORE_EXPORT WebViewImpl final
   FloatSize elastic_overscroll_;
 
   // This is owned by the LayerTreeHostImpl, and should only be used on the
-  // compositor thread. The LayerTreeHostImpl is indirectly owned by this
-  // class so this pointer should be valid until this class is destructed.
-  CrossThreadPersistent<CompositorMutatorImpl> mutator_;
+  // compositor thread, so we keep the TaskRunner where you post tasks to
+  // make that happen.
+  base::WeakPtr<CompositorMutatorImpl> mutator_;
+  scoped_refptr<base::SingleThreadTaskRunner> mutator_task_runner_;
 
   Persistent<EventListener> popup_mouse_wheel_event_listener_;
 
@@ -674,8 +669,6 @@ class CORE_EXPORT WebViewImpl final
   WeakPersistent<WebLocalFrameImpl> local_root_with_empty_mouse_wheel_listener_;
 
   WebPageImportanceSignals page_importance_signals_;
-
-  std::unique_ptr<WebViewScheduler> scheduler_;
 
   // TODO(lfg): This is used in order to disable compositor visibility while
   // the page is still visible. This is needed until the WebView and WebWidget

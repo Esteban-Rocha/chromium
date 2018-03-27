@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <algorithm>
 
+#include "base/stl_util.h"
 #include "cc/paint/image_transfer_cache_entry.h"
 #include "cc/paint/paint_flags.h"
 #include "cc/paint/paint_image_builder.h"
@@ -383,19 +384,21 @@ void PaintOpReader::Read(sk_sp<SkColorSpace>* color_space) {
 }
 
 void PaintOpReader::Read(scoped_refptr<PaintTextBlob>* paint_blob) {
-  sk_sp<SkData> data;
-  Read(&data);
-  if (!data || !valid_) {
+  size_t data_bytes = 0u;
+  ReadSimple(&data_bytes);
+  // Skia expects aligned data size, make sure we don't pass it incorrect data.
+  if (remaining_bytes_ < data_bytes || data_bytes == 0u ||
+      !SkIsAlign4(data_bytes)) {
     SetInvalid();
-    return;
   }
 
-  // Skia expects the following to be true, make sure we don't pass it incorrect
-  // data.
-  if (!data->data() || !SkIsAlign4(data->size())) {
-    SetInvalid();
+  if (!valid_)
     return;
-  }
+
+  sk_sp<SkData> data =
+      SkData::MakeWithoutCopy(const_cast<const char*>(memory_), data_bytes);
+  memory_ += data_bytes;
+  remaining_bytes_ -= data_bytes;
 
   TypefacesCatalog catalog;
   catalog.transfer_cache = transfer_cache_;
@@ -506,7 +509,7 @@ void PaintOpReader::Read(SkMatrix* matrix) {
 }
 
 void PaintOpReader::Read(SkColorType* color_type) {
-  uint32_t raw_color_type;
+  uint32_t raw_color_type = kUnknown_SkColorType;
   ReadSimple(&raw_color_type);
 
   if (raw_color_type > kLastEnum_SkColorType) {
@@ -666,7 +669,7 @@ void PaintOpReader::ReadColorFilterPaintFilter(
     return;
   filter->reset(new ColorFilterPaintFilter(std::move(color_filter),
                                            std::move(input),
-                                           crop_rect ? &*crop_rect : nullptr));
+                                           base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadBlurPaintFilter(
@@ -685,7 +688,7 @@ void PaintOpReader::ReadBlurPaintFilter(
     return;
   filter->reset(new BlurPaintFilter(sigma_x, sigma_y, tile_mode,
                                     std::move(input),
-                                    crop_rect ? &*crop_rect : nullptr));
+                                    base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadDropShadowPaintFilter(
@@ -714,7 +717,7 @@ void PaintOpReader::ReadDropShadowPaintFilter(
     return;
   filter->reset(new DropShadowPaintFilter(dx, dy, sigma_x, sigma_y, color,
                                           shadow_mode, std::move(input),
-                                          crop_rect ? &*crop_rect : nullptr));
+                                          base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadMagnifierPaintFilter(
@@ -730,7 +733,7 @@ void PaintOpReader::ReadMagnifierPaintFilter(
   if (!valid_)
     return;
   filter->reset(new MagnifierPaintFilter(src_rect, inset, std::move(input),
-                                         crop_rect ? &*crop_rect : nullptr));
+                                         base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadComposePaintFilter(
@@ -762,7 +765,7 @@ void PaintOpReader::ReadAlphaThresholdPaintFilter(
     return;
   filter->reset(new AlphaThresholdPaintFilter(
       region, inner_min, outer_max, std::move(input),
-      crop_rect ? &*crop_rect : nullptr));
+      base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadXfermodePaintFilter(
@@ -784,7 +787,7 @@ void PaintOpReader::ReadXfermodePaintFilter(
 
   filter->reset(new XfermodePaintFilter(blend_mode, std::move(background),
                                         std::move(foreground),
-                                        crop_rect ? &*crop_rect : nullptr));
+                                        base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadArithmeticPaintFilter(
@@ -808,7 +811,7 @@ void PaintOpReader::ReadArithmeticPaintFilter(
     return;
   filter->reset(new ArithmeticPaintFilter(
       k1, k2, k3, k4, enforce_pm_color, std::move(background),
-      std::move(foreground), crop_rect ? &*crop_rect : nullptr));
+      std::move(foreground), base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadMatrixConvolutionPaintFilter(
@@ -848,7 +851,7 @@ void PaintOpReader::ReadMatrixConvolutionPaintFilter(
       static_cast<MatrixConvolutionPaintFilter::TileMode>(tile_mode_int);
   filter->reset(new MatrixConvolutionPaintFilter(
       kernel_size, kernel.data(), gain, bias, kernel_offset, tile_mode,
-      convolve_alpha, std::move(input), crop_rect ? &*crop_rect : nullptr));
+      convolve_alpha, std::move(input), base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadDisplacementMapEffectPaintFilter(
@@ -883,7 +886,7 @@ void PaintOpReader::ReadDisplacementMapEffectPaintFilter(
           channel_y_int);
   filter->reset(new DisplacementMapEffectPaintFilter(
       channel_x, channel_y, scale, std::move(displacement), std::move(color),
-      crop_rect ? &*crop_rect : nullptr));
+      base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadImagePaintFilter(
@@ -937,7 +940,7 @@ void PaintOpReader::ReadMergePaintFilter(
     return;
   filter->reset(new MergePaintFilter(inputs.data(),
                                      static_cast<int>(input_count),
-                                     crop_rect ? &*crop_rect : nullptr));
+                                     base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadMorphologyPaintFilter(
@@ -961,7 +964,7 @@ void PaintOpReader::ReadMorphologyPaintFilter(
       static_cast<MorphologyPaintFilter::MorphType>(morph_type_int);
   filter->reset(new MorphologyPaintFilter(morph_type, radius_x, radius_y,
                                           std::move(input),
-                                          crop_rect ? &*crop_rect : nullptr));
+                                          base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadOffsetPaintFilter(
@@ -977,7 +980,7 @@ void PaintOpReader::ReadOffsetPaintFilter(
   if (!valid_)
     return;
   filter->reset(new OffsetPaintFilter(dx, dy, std::move(input),
-                                      crop_rect ? &*crop_rect : nullptr));
+                                      base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadTilePaintFilter(
@@ -1022,7 +1025,7 @@ void PaintOpReader::ReadTurbulencePaintFilter(
       static_cast<TurbulencePaintFilter::TurbulenceType>(turbulence_type_int);
   filter->reset(new TurbulencePaintFilter(
       turbulence_type, base_frequency_x, base_frequency_y, num_octaves, seed,
-      &tile_size, crop_rect ? &*crop_rect : nullptr));
+      &tile_size, base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadPaintFlagsPaintFilter(
@@ -1034,7 +1037,7 @@ void PaintOpReader::ReadPaintFlagsPaintFilter(
   if (!valid_)
     return;
   filter->reset(
-      new PaintFlagsPaintFilter(flags, crop_rect ? &*crop_rect : nullptr));
+      new PaintFlagsPaintFilter(flags, base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadMatrixPaintFilter(
@@ -1083,7 +1086,7 @@ void PaintOpReader::ReadLightingDistantPaintFilter(
       static_cast<PaintFilter::LightingType>(lighting_type_int);
   filter->reset(new LightingDistantPaintFilter(
       lighting_type, direction, light_color, surface_scale, kconstant,
-      shininess, std::move(input), crop_rect ? &*crop_rect : nullptr));
+      shininess, std::move(input), base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadLightingPointPaintFilter(
@@ -1114,7 +1117,7 @@ void PaintOpReader::ReadLightingPointPaintFilter(
       static_cast<PaintFilter::LightingType>(lighting_type_int);
   filter->reset(new LightingPointPaintFilter(
       lighting_type, location, light_color, surface_scale, kconstant, shininess,
-      std::move(input), crop_rect ? &*crop_rect : nullptr));
+      std::move(input), base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::ReadLightingSpotPaintFilter(
@@ -1153,7 +1156,7 @@ void PaintOpReader::ReadLightingSpotPaintFilter(
   filter->reset(new LightingSpotPaintFilter(
       lighting_type, location, target, specular_exponent, cutoff_angle,
       light_color, surface_scale, kconstant, shininess, std::move(input),
-      crop_rect ? &*crop_rect : nullptr));
+      base::OptionalOrNullptr(crop_rect)));
 }
 
 void PaintOpReader::Read(sk_sp<PaintRecord>* record) {

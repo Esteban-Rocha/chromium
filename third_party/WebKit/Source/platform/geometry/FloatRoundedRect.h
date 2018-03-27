@@ -73,7 +73,10 @@ class PLATFORM_EXPORT FloatRoundedRect {
     const FloatSize& BottomLeft() const { return bottom_left_; }
     const FloatSize& BottomRight() const { return bottom_right_; }
 
-    bool IsZero() const;
+    bool IsZero() const {
+      return top_left_.IsZero() && top_right_.IsZero() &&
+             bottom_left_.IsZero() && bottom_right_.IsZero();
+    }
 
     void Scale(float factor);
     // Multiply all radii by |factor| and floor the result to the nearest
@@ -167,6 +170,8 @@ class PLATFORM_EXPORT FloatRoundedRect {
 
   // Tests whether the quad intersects any part of this rounded rectangle.
   // This only works for convex quads.
+  // This intersection is edge-inclusive and will return true even if the
+  // intersecting area is empty (i.e., the intersection is a line or a point).
   bool IntersectsQuad(const FloatQuad&) const;
 
   void AdjustRadii();

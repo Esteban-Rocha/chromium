@@ -38,6 +38,10 @@ class MockServiceWorkerObjectHost
 
  private:
   // Implements blink::mojom::ServiceWorkerObjectHost.
+  void PostMessageToServiceWorker(
+      ::blink::TransferableMessage message) override {
+    NOTREACHED();
+  }
   void TerminateForTesting(TerminateForTestingCallback callback) override {
     NOTREACHED();
   }
@@ -54,8 +58,7 @@ class ServiceWorkerDispatcherTest : public testing::Test {
   ServiceWorkerDispatcherTest() {}
 
   void SetUp() override {
-    dispatcher_ = std::make_unique<ServiceWorkerDispatcher>(
-        nullptr /* thread_safe_sender */);
+    dispatcher_ = std::make_unique<ServiceWorkerDispatcher>();
   }
 
   bool ContainsServiceWorker(int handle_id) {

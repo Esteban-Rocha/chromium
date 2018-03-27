@@ -26,7 +26,7 @@ bool IsGestureEventFromTouchpad(const blink::WebInputEvent& event) {
   DCHECK(blink::WebInputEvent::IsGestureEventType(event.GetType()));
   const blink::WebGestureEvent& gesture =
       static_cast<const blink::WebGestureEvent&>(event);
-  return gesture.source_device == blink::kWebGestureDeviceTouchpad;
+  return gesture.SourceDevice() == blink::kWebGestureDeviceTouchpad;
 }
 
 float ClampAbsoluteValue(float value, float max_abs) {
@@ -152,8 +152,7 @@ void OverscrollController::OnDidOverscroll(
     const ui::DidOverscrollParams& params) {
   // TODO(sunyunjia): We should also decide whether to trigger overscroll,
   // update scroll_state_ here. See https://crbug.com/799467.
-  if (delegate_)
-    delegate_->OnOverscrollBehaviorUpdate(params.overscroll_behavior);
+  behavior_ = params.overscroll_behavior;
 }
 
 void OverscrollController::ReceivedEventACK(const blink::WebInputEvent& event,
@@ -335,7 +334,7 @@ bool OverscrollController::ProcessEventForOverscroll(
       event_processed = ProcessOverscroll(
           gesture.data.scroll_update.delta_x,
           gesture.data.scroll_update.delta_y,
-          gesture.source_device == blink::kWebGestureDeviceTouchpad);
+          gesture.SourceDevice() == blink::kWebGestureDeviceTouchpad);
       break;
     }
     case blink::WebInputEvent::kGestureFlingStart: {
@@ -499,8 +498,10 @@ void OverscrollController::SetOverscrollMode(OverscrollMode mode,
     scroll_state_ = ScrollState::OVERSCROLLING;
     locked_mode_ = overscroll_mode_;
   }
-  if (delegate_)
-    delegate_->OnOverscrollModeChange(old_mode, overscroll_mode_, source);
+  if (delegate_) {
+    delegate_->OnOverscrollModeChange(old_mode, overscroll_mode_, source,
+                                      behavior_);
+  }
 }
 
 void OverscrollController::ResetScrollState() {

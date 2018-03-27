@@ -46,7 +46,6 @@
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/common/content_switches.h"
@@ -75,7 +74,6 @@
 #endif
 
 #if defined(OS_MACOSX)
-#include "content/common/mac/font_loader.h"
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
 #endif
 #if defined(OS_LINUX)
@@ -196,17 +194,6 @@ void RenderMessageFilter::CreateFullscreenWidget(
   std::move(callback).Run(route_id);
 }
 
-void RenderMessageFilter::LoadFont(const base::string16& font_name,
-                                   float font_point_size,
-                                   LoadFontCallback callback) {
-#if defined(OS_MACOSX)
-  FontLoader::LoadFont(font_name, font_point_size, std::move(callback));
-#else
-  // TODO(https://crbug.com/676224): remove this reporting.
-  mojo::ReportBadMessage("LoadFont is OS_MACOSX only.");
-#endif  // defined(OS_MACOSX)
-}
-
 #if defined(OS_LINUX)
 void RenderMessageFilter::SetThreadPriorityOnFileThread(
     base::PlatformThreadId ns_tid,
@@ -228,9 +215,9 @@ void RenderMessageFilter::SetThreadPriorityOnFileThread(
 }
 #endif
 
+#if defined(OS_LINUX)
 void RenderMessageFilter::SetThreadPriority(int32_t ns_tid,
                                             base::ThreadPriority priority) {
-#if defined(OS_LINUX)
   constexpr base::TaskTraits kTraits = {
       base::MayBlock(), base::TaskPriority::USER_BLOCKING,
       base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN};
@@ -238,10 +225,8 @@ void RenderMessageFilter::SetThreadPriority(int32_t ns_tid,
       FROM_HERE, kTraits,
       base::BindOnce(&RenderMessageFilter::SetThreadPriorityOnFileThread, this,
                      static_cast<base::PlatformThreadId>(ns_tid), priority));
-#else
-  mojo::ReportBadMessage("SetThreadPriority is only supported on OS_LINUX");
-#endif
 }
+#endif
 
 void RenderMessageFilter::DidGenerateCacheableMetadata(
     const GURL& url,

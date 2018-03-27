@@ -167,6 +167,7 @@ src:*third_party/webrtc/modules/desktop_capture/x11/x_server_pixel_buffer.cc
 src:*media/cdm/*
 src:*third_party/swiftshader/*
 src:*base/native_library_unittest.cc
+src:*chrome/browser/ui/libgtkui/app_indicator_icon.cc
 
 # chrome/browser/ui/views/frame/global_menu_bar_x11.cc
 fun:*GlobalMenuBarX11*
@@ -187,8 +188,6 @@ fun:*LocaleConvertCase*
 # Casts away const qualifier
 # third_party/boringssl/src/crypto/pem/pem_lib.c
 fun:*PEM_ASN1_write*
-
-src:*third_party/sqlite/*
 
 # PropertyCallbackArguments::Call methods cast function pointers
 src:*v8/src/api-arguments-inl.h

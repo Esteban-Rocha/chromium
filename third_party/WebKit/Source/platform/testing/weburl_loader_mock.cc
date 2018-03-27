@@ -4,6 +4,8 @@
 
 #include "platform/testing/weburl_loader_mock.h"
 
+#include <utility>
+
 #include "platform/SharedBuffer.h"
 #include "platform/testing/weburl_loader_mock_factory_impl.h"
 #include "public/platform/URLConversion.h"
@@ -48,7 +50,7 @@ void WebURLLoaderMock::ServeAsynchronousRequest(
   // will just proxy to the client.
   std::unique_ptr<WebURLLoaderTestDelegate> default_delegate;
   if (!delegate) {
-    default_delegate = WTF::WrapUnique(new WebURLLoaderTestDelegate());
+    default_delegate = std::make_unique<WebURLLoaderTestDelegate>();
     delegate = default_delegate.get();
   }
 
@@ -101,12 +103,14 @@ WebURL WebURLLoaderMock::ServeRedirect(
   return redirect_url;
 }
 
-void WebURLLoaderMock::LoadSynchronously(const WebURLRequest& request,
-                                         WebURLResponse& response,
-                                         base::Optional<WebURLError>& error,
-                                         WebData& data,
-                                         int64_t& encoded_data_length,
-                                         int64_t& encoded_body_length) {
+void WebURLLoaderMock::LoadSynchronously(
+    const WebURLRequest& request,
+    WebURLResponse& response,
+    base::Optional<WebURLError>& error,
+    WebData& data,
+    int64_t& encoded_data_length,
+    int64_t& encoded_body_length,
+    base::Optional<int64_t>& downloaded_file_length) {
   if (factory_->IsMockedURL(request.Url())) {
     factory_->LoadSynchronously(request, &response, &error, &data,
                                 &encoded_data_length);
@@ -115,7 +119,8 @@ void WebURLLoaderMock::LoadSynchronously(const WebURLRequest& request,
   AssertFallbackLoaderAvailability(request.Url(), default_loader_.get());
   using_default_loader_ = true;
   default_loader_->LoadSynchronously(request, response, error, data,
-                                     encoded_data_length, encoded_body_length);
+                                     encoded_data_length, encoded_body_length,
+                                     downloaded_file_length);
 }
 
 void WebURLLoaderMock::LoadAsynchronously(const WebURLRequest& request,

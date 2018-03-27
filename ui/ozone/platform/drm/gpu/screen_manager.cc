@@ -32,9 +32,9 @@ namespace {
 void FillModesetBuffer(const scoped_refptr<DrmDevice>& drm,
                        HardwareDisplayController* controller,
                        ScanoutBuffer* buffer) {
-  DrmConsoleBuffer modeset_buffer(drm, buffer->GetFramebufferId());
+  DrmConsoleBuffer modeset_buffer(drm, buffer->GetOpaqueFramebufferId());
   if (!modeset_buffer.Initialize()) {
-    VLOG(2) << "Failed to grab framebuffer " << buffer->GetFramebufferId();
+    VLOG(2) << "Failed to grab framebuffer " << buffer->GetOpaqueFramebufferId();
     return;
   }
 
@@ -378,7 +378,8 @@ OverlayPlane ScreenManager::GetModesetBuffer(
   if (!buffer) {
     LOG(ERROR) << "Failed to create scanout buffer";
     return OverlayPlane(nullptr, 0, gfx::OVERLAY_TRANSFORM_INVALID, gfx::Rect(),
-                        gfx::RectF(), base::kInvalidPlatformFile);
+                        gfx::RectF(), /* enable_blend */ true,
+                        base::kInvalidPlatformFile);
   }
 
   FillModesetBuffer(drm, controller, buffer.get());

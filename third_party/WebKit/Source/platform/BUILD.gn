@@ -46,18 +46,17 @@ action("runtime_enabled_features") {
   script = "../build/scripts/make_runtime_features.py"
 
   runtime_enabled_features_json5 = "runtime_enabled_features.json5"
-  inputs =
-      scripts_for_json5_files + [
-        runtime_enabled_features_json5,
-        "../build/scripts/templates/runtime_enabled_features.cc.tmpl",
-        "../build/scripts/templates/runtime_enabled_features.h.tmpl",
-        "../build/scripts/templates/RuntimeEnabledFeaturesTestHelpers.h.tmpl",
-      ]
+  inputs = scripts_for_json5_files + [
+             runtime_enabled_features_json5,
+             "../build/scripts/templates/runtime_enabled_features.cc.tmpl",
+             "../build/scripts/templates/runtime_enabled_features.h.tmpl",
+             "../build/scripts/templates/runtime_enabled_features_test_helpers.h.tmpl",
+           ]
 
   outputs = [
     "$blink_platform_output_dir/runtime_enabled_features.cc",
     "$blink_platform_output_dir/runtime_enabled_features.h",
-    "$blink_platform_output_dir/testing/RuntimeEnabledFeaturesTestHelpers.h",
+    "$blink_platform_output_dir/testing/runtime_enabled_features_test_helpers.h",
   ]
 
   args = [
@@ -70,12 +69,12 @@ action("runtime_enabled_features") {
 action("color_data") {
   script = "../build/scripts/gperf.py"
 
-  color_data_gperf = "ColorData.gperf"
+  color_data_gperf = "color_data.gperf"
   inputs = [
     color_data_gperf,
   ]
 
-  output_file = "$blink_platform_output_dir/ColorData.cpp"
+  output_file = "$blink_platform_output_dir/color_data.cc"
   outputs = [
     output_file,
   ]
@@ -102,7 +101,7 @@ action("color_data") {
 compiled_action("character_data") {
   tool = ":character_data_generator"
   outputs = [
-    "$blink_platform_output_dir/CharacterPropertyData.cpp",
+    "$blink_platform_output_dir/character_property_data.cc",
   ]
   args = rebase_path(outputs, root_build_dir)
 }
@@ -230,7 +229,7 @@ declare_args() {
 }
 
 buildflag_header("rcs_count_everything") {
-  header = "RuntimeCallStatsCountEverything.h"
+  header = "runtime_call_stats_count_everything.h"
 
   header_dir = "blink/platform/bindings"
 
@@ -320,6 +319,7 @@ jumbo_component("platform") {
     "FileMetadata.cpp",
     "FileMetadata.h",
     "FileSystemType.h",
+    "FrameScheduler.h",
     "Histogram.cpp",
     "Histogram.h",
     "InstanceCounters.cpp",
@@ -368,8 +368,6 @@ jumbo_component("platform") {
     "ResolutionUnits.h",
     "ScopedOrientationChangeIndicator.cpp",
     "ScopedOrientationChangeIndicator.h",
-    "SecureTextInput.cpp",
-    "SecureTextInput.h",
     "SerializedResource.h",
     "SharedBuffer.cpp",
     "SharedBuffer.h",
@@ -390,7 +388,6 @@ jumbo_component("platform") {
     "UkmTimeAggregator.h",
     "WaitableEvent.cpp",
     "WaitableEvent.h",
-    "WebFrameScheduler.h",
     "WebGestureEvent.cpp",
     "WebIconSizesParser.cpp",
     "WebMouseEvent.cpp",
@@ -1054,6 +1051,8 @@ jumbo_component("platform") {
     "graphics/VideoFrameSubmitter.h",
     "graphics/WebGraphicsContext3DProviderWrapper.cpp",
     "graphics/WebGraphicsContext3DProviderWrapper.h",
+    "graphics/compositing/ChunkToLayerMapper.cpp",
+    "graphics/compositing/ChunkToLayerMapper.h",
     "graphics/compositing/CompositedLayerRasterInvalidator.cpp",
     "graphics/compositing/CompositedLayerRasterInvalidator.h",
     "graphics/compositing/ContentLayerClientImpl.cpp",
@@ -1743,7 +1742,7 @@ jumbo_static_library("test_support") {
 
   deps = [
     "//base/test:test_support",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//third_party/WebKit/Source/platform/blob:test_support",
     "//third_party/WebKit/Source/platform/loader:test_support",
     "//third_party/WebKit/Source/platform/network:test_support",
@@ -1857,6 +1856,7 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "graphics/PlaceholderImageTest.cpp",
     "graphics/StaticBitmapImageTest.cpp",
     "graphics/VideoFrameSubmitterTest.cpp",
+    "graphics/compositing/ChunkToLayerMapperTest.cpp",
     "graphics/compositing/CompositedLayerRasterInvalidatorTest.cpp",
     "graphics/compositing/PaintArtifactCompositorTest.cpp",
     "graphics/compositing/PaintChunksToCcLayerTest.cpp",
@@ -1914,6 +1914,7 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "text/PlatformLocaleTest.cpp",
     "text/SegmentedStringTest.cpp",
     "text/SuffixTreeTest.cpp",
+    "text/TextBoundariesTest.cpp",
     "text/TextBreakIteratorTest.cpp",
     "text/TextEncodingDetectorTest.cpp",
     "text/TextRunTest.cpp",
@@ -1966,7 +1967,7 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "//cc/blink",
     "//device/base/synchronization",
     "//mojo/common:test_common_custom_types_blink",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//mojo/public/cpp/bindings/tests:for_blink_tests",
     "//mojo/public/cpp/test_support:test_utils",
     "//mojo/public/interfaces/bindings/tests:test_interfaces_blink",
@@ -2009,7 +2010,7 @@ executable("image_decode_bench") {
   deps = [
     ":platform",
     "//build/config:exe_and_shlib_deps",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//third_party/WebKit/Source/platform/wtf",
   ]
 

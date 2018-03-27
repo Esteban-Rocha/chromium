@@ -30,8 +30,10 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "base/location.h"
+#include "base/memory/ptr_util.h"
 #include "build/build_config.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/WebTaskRunner.h"
@@ -49,7 +51,6 @@
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/wtf/HashTraits.h"
 #include "platform/wtf/LinkedHashSet.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -348,26 +349,43 @@ struct HashTraits<blink::KeyWithCopyingMoveConstructor>
 
 namespace blink {
 
-class TestGCScope {
+class TestGCCollectGarbageScope {
  public:
-  explicit TestGCScope(BlinkGC::StackState state)
-      : state_(ThreadState::Current()),
-        safe_point_scope_(state),
-        persistent_lock_(ProcessHeap::CrossThreadPersistentMutex()) {
-    DCHECK(state_->CheckThread());
-    state_->MarkPhasePrologue(state, BlinkGC::kGCWithSweep,
-                              BlinkGC::kPreciseGC);
+  explicit TestGCCollectGarbageScope(BlinkGC::StackState state) {
+    DCHECK(ThreadState::Current()->CheckThread());
   }
 
-  ~TestGCScope() {
-    state_->MarkPhaseEpilogue(BlinkGC::kGCWithSweep);
-    state_->PreSweep(BlinkGC::kGCWithSweep);
+  ~TestGCCollectGarbageScope() { ThreadState::Current()->CompleteSweep(); }
+};
+
+class TestGCMarkingScope : public TestGCCollectGarbageScope {
+ public:
+  explicit TestGCMarkingScope(BlinkGC::StackState state)
+      : TestGCCollectGarbageScope(state),
+        atomic_pause_scope_(ThreadState::Current()),
+        persistent_lock_(ProcessHeap::CrossThreadPersistentMutex()) {
+    ThreadState::Current()->MarkPhasePrologue(state, BlinkGC::kAtomicMarking,
+                                              BlinkGC::kPreciseGC);
+  }
+  ~TestGCMarkingScope() {
+    ThreadState::Current()->MarkPhaseEpilogue(BlinkGC::kAtomicMarking);
+    ThreadState::Current()->PreSweep(BlinkGC::kAtomicMarking,
+                                     BlinkGC::kEagerSweeping);
   }
 
  private:
-  ThreadState* state_;
-  SafePointScope safe_point_scope_;
+  ThreadState::AtomicPauseScope atomic_pause_scope_;
   RecursiveMutexLocker persistent_lock_;
+};
+
+class TestGCScope : public TestGCMarkingScope {
+ public:
+  explicit TestGCScope(BlinkGC::StackState state)
+      : TestGCMarkingScope(state), safe_point_scope_(state) {}
+  ~TestGCScope() {}
+
+ private:
+  SafePointScope safe_point_scope_;
 };
 
 class SimpleObject : public GarbageCollected<SimpleObject> {
@@ -484,7 +502,7 @@ class ThreadedTesterBase {
     for (int i = 0; i < kNumberOfThreads; i++) {
       threads.push_back(Platform::Current()->CreateThread(
           WebThreadCreationParams(WebThreadType::kTestThread)
-              .SetThreadName("blink gc testing thread")));
+              .SetThreadNameForTest("blink gc testing thread")));
       PostCrossThreadTask(
           *threads.back()->GetTaskRunner(), FROM_HERE,
           CrossThreadBind(ThreadFunc, CrossThreadUnretained(tester)));
@@ -544,8 +562,8 @@ class ThreadedHeapTester : public ThreadedTesterBase {
 
   std::unique_ptr<GlobalIntWrapperPersistent> CreateGlobalPersistent(
       int value) {
-    return WTF::WrapUnique(
-        new GlobalIntWrapperPersistent(IntWrapper::Create(value)));
+    return std::make_unique<GlobalIntWrapperPersistent>(
+        IntWrapper::Create(value));
   }
 
   void AddGlobalPersistent() {
@@ -1927,9 +1945,9 @@ TEST(HeapTest, LazySweepingPages) {
   EXPECT_EQ(0, SimpleFinalizedObject::destructor_calls_);
   for (int i = 0; i < 1000; i++)
     SimpleFinalizedObject::Create();
-  ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                         BlinkGC::kGCWithoutSweep,
-                                         BlinkGC::kForcedGC);
+  ThreadState::Current()->CollectGarbage(
+      BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
+      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
   EXPECT_EQ(0, SimpleFinalizedObject::destructor_calls_);
   for (int i = 0; i < 10000; i++)
     SimpleFinalizedObject::Create();
@@ -1955,9 +1973,9 @@ TEST(HeapTest, LazySweepingLargeObjectPages) {
   EXPECT_EQ(0, LargeHeapObject::destructor_calls_);
   for (int i = 0; i < 10; i++)
     LargeHeapObject::Create();
-  ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                         BlinkGC::kGCWithoutSweep,
-                                         BlinkGC::kForcedGC);
+  ThreadState::Current()->CollectGarbage(
+      BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
+      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
   EXPECT_EQ(0, LargeHeapObject::destructor_calls_);
   for (int i = 0; i < 10; i++) {
     LargeHeapObject::Create();
@@ -1966,9 +1984,9 @@ TEST(HeapTest, LazySweepingLargeObjectPages) {
   LargeHeapObject::Create();
   LargeHeapObject::Create();
   EXPECT_EQ(10, LargeHeapObject::destructor_calls_);
-  ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                         BlinkGC::kGCWithoutSweep,
-                                         BlinkGC::kForcedGC);
+  ThreadState::Current()->CollectGarbage(
+      BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
+      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
   EXPECT_EQ(10, LargeHeapObject::destructor_calls_);
   PreciselyCollectGarbage();
   EXPECT_EQ(22, LargeHeapObject::destructor_calls_);
@@ -2040,9 +2058,9 @@ TEST(HeapTest, EagerlySweepingPages) {
     SimpleFinalizedEagerObject::Create();
   for (int i = 0; i < 100; i++)
     SimpleFinalizedObjectInstanceOfTemplate::Create();
-  ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                         BlinkGC::kGCWithoutSweep,
-                                         BlinkGC::kForcedGC);
+  ThreadState::Current()->CollectGarbage(
+      BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
+      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
   EXPECT_EQ(0, SimpleFinalizedObject::destructor_calls_);
   EXPECT_EQ(100, SimpleFinalizedEagerObject::destructor_calls_);
   EXPECT_EQ(100, SimpleFinalizedObjectInstanceOfTemplate::destructor_calls_);
@@ -3989,7 +4007,6 @@ TEST(HeapTest, CheckAndMarkPointer) {
   // to allocate anything again. We do this by forcing a GC after doing the
   // checkAndMarkPointer tests.
   {
-    ThreadState::GCForbiddenScope gc_scope(ThreadState::Current());
     TestGCScope scope(BlinkGC::kHeapPointersOnStack);
     MarkingVisitor visitor(ThreadState::Current(),
                            MarkingVisitor::kGlobalMarking);
@@ -4014,7 +4031,6 @@ TEST(HeapTest, CheckAndMarkPointer) {
   // however we don't rely on that below since we don't have any allocations.
   ClearOutOldGarbage();
   {
-    ThreadState::GCForbiddenScope gc_scope(ThreadState::Current());
     TestGCScope scope(BlinkGC::kHeapPointersOnStack);
     MarkingVisitor visitor(ThreadState::Current(),
                            MarkingVisitor::kGlobalMarking);
@@ -4696,7 +4712,7 @@ TEST(HeapTest, DestructorsCalled) {
   HeapHashMap<Member<IntWrapper>, std::unique_ptr<SimpleClassWithDestructor>>
       map;
   SimpleClassWithDestructor* has_destructor = new SimpleClassWithDestructor();
-  map.insert(IntWrapper::Create(1), WTF::WrapUnique(has_destructor));
+  map.insert(IntWrapper::Create(1), base::WrapUnique(has_destructor));
   SimpleClassWithDestructor::was_destructed_ = false;
   map.clear();
   EXPECT_TRUE(SimpleClassWithDestructor::was_destructed_);
@@ -5486,7 +5502,7 @@ class ThreadedStrongificationTester {
     std::unique_ptr<WebThread> worker_thread =
         Platform::Current()->CreateThread(
             WebThreadCreationParams(WebThreadType::kTestThread)
-                .SetThreadName("Test Worker Thread"));
+                .SetThreadNameForTest("Test Worker Thread"));
     PostCrossThreadTask(*worker_thread->GetTaskRunner(), FROM_HERE,
                         CrossThreadBind(WorkerThreadMain));
 
@@ -5587,7 +5603,7 @@ class MemberSameThreadCheckTester {
     std::unique_ptr<WebThread> worker_thread =
         Platform::Current()->CreateThread(
             WebThreadCreationParams(WebThreadType::kTestThread)
-                .SetThreadName("Test Worker Thread"));
+                .SetThreadNameForTest("Test Worker Thread"));
     PostCrossThreadTask(
         *worker_thread->GetTaskRunner(), FROM_HERE,
         CrossThreadBind(&MemberSameThreadCheckTester::WorkerThreadMain,
@@ -5632,7 +5648,7 @@ class PersistentSameThreadCheckTester {
     std::unique_ptr<WebThread> worker_thread =
         Platform::Current()->CreateThread(
             WebThreadCreationParams(WebThreadType::kTestThread)
-                .SetThreadName("Test Worker Thread"));
+                .SetThreadNameForTest("Test Worker Thread"));
     PostCrossThreadTask(
         *worker_thread->GetTaskRunner(), FROM_HERE,
         CrossThreadBind(&PersistentSameThreadCheckTester::WorkerThreadMain,
@@ -5677,7 +5693,7 @@ class MarkingSameThreadCheckTester {
     std::unique_ptr<WebThread> worker_thread =
         Platform::Current()->CreateThread(
             WebThreadCreationParams(WebThreadType::kTestThread)
-                .SetThreadName("Test Worker Thread"));
+                .SetThreadNameForTest("Test Worker Thread"));
     Persistent<MainThreadObject> main_thread_object = new MainThreadObject();
     PostCrossThreadTask(
         *worker_thread->GetTaskRunner(), FROM_HERE,
@@ -6451,9 +6467,9 @@ void WorkerThreadMainForCrossThreadWeakPersistentTest(
   ParkWorkerThread();
 
   // Step 4: Run a GC.
-  ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                         BlinkGC::kGCWithSweep,
-                                         BlinkGC::kForcedGC);
+  ThreadState::Current()->CollectGarbage(
+      BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
+      BlinkGC::kEagerSweeping, BlinkGC::kForcedGC);
   WakeMainThread();
   ParkWorkerThread();
 
@@ -6477,7 +6493,7 @@ TEST(HeapTest, CrossThreadWeakPersistent) {
   MutexLocker main_thread_mutex_locker(MainThreadMutex());
   std::unique_ptr<WebThread> worker_thread = Platform::Current()->CreateThread(
       WebThreadCreationParams(WebThreadType::kTestThread)
-          .SetThreadName("Test Worker Thread"));
+          .SetThreadNameForTest("Test Worker Thread"));
   DestructorLockingObject* object = nullptr;
   PostCrossThreadTask(
       *worker_thread->GetTaskRunner(), FROM_HERE,

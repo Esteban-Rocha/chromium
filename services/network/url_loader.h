@@ -53,6 +53,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
       mojom::URLLoaderClientPtr url_loader_client,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
       uint32_t process_id,
+      uint32_t request_id,
       scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
       base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder);
   ~URLLoader() override;
@@ -120,6 +121,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   bool is_load_timing_enabled_;
   uint32_t process_id_;
   uint32_t render_frame_id_;
+  uint32_t request_id_;
   bool connected_;
   const bool keepalive_;
   std::unique_ptr<net::URLRequest> url_request_;
@@ -161,6 +163,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   // -1, we still need to check whether it is from network before reporting it
   // as BodyReadFromNetBeforePaused.
   int64_t body_read_before_paused_ = -1;
+
+  // This is used to compute the delta since last time received
+  // encoded body size was reported to the client.
+  int64_t reported_total_encoded_bytes_ = 0;
 
   scoped_refptr<ResourceSchedulerClient> resource_scheduler_client_;
 

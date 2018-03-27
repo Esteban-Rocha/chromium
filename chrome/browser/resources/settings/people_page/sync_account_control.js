@@ -16,7 +16,7 @@ Polymer({
   behaviors: [WebUIListenerBehavior],
   properties: {
     /**
-     * The current sync status, supplied by SyncBrowserProxy.
+     * The current sync status, supplied by parent element.
      * @type {!settings.SyncStatus}
      */
     syncStatus: Object,
@@ -65,15 +65,14 @@ Polymer({
   /** @private {?settings.SyncBrowserProxy} */
   syncBrowserProxy_: null,
 
+  created: function() {
+    this.syncBrowserProxy_ = settings.SyncBrowserProxyImpl.getInstance();
+  },
+
   /** @override */
   attached: function() {
-    this.syncBrowserProxy_ = settings.SyncBrowserProxyImpl.getInstance();
-    this.syncBrowserProxy_.getSyncStatus().then(
-        this.handleSyncStatus_.bind(this));
     this.syncBrowserProxy_.getStoredAccounts().then(
         this.handleStoredAccounts_.bind(this));
-    this.addWebUIListener(
-        'sync-status-changed', this.handleSyncStatus_.bind(this));
     this.addWebUIListener(
         'stored-accounts-updated', this.handleStoredAccounts_.bind(this));
   },
@@ -115,7 +114,10 @@ Polymer({
    * @return {string}
    * @private
    */
-  getNameDisplay_: function(label, name) {
+  getNameDisplay_: function(label, name, errorLabel) {
+    if (this.syncStatus.hasError === true)
+      return errorLabel;
+
     return this.syncStatus.signedIn ?
         loadTimeData.substituteString(label, name) :
         name;
@@ -132,20 +134,19 @@ Polymer({
   },
 
   /**
+   * @return {string}
+   * @private
+   */
+  getSyncIcon_: function() {
+    return this.syncStatus.hasError ? 'settings:sync-problem' : 'settings:sync';
+  },
+
+  /**
    * @param {!Array<!settings.StoredAccount>} accounts
    * @private
    */
   handleStoredAccounts_: function(accounts) {
     this.storedAccounts_ = accounts;
-  },
-
-  /**
-   * Handler for when the sync state is pushed from the browser.
-   * @param {!settings.SyncStatus} syncStatus
-   * @private
-   */
-  handleSyncStatus_: function(syncStatus) {
-    this.syncStatus = syncStatus;
   },
 
   /**

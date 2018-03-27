@@ -20,19 +20,19 @@
 #include "core/layout/svg/SVGResources.h"
 
 #include <memory>
+#include <utility>
+
 #include "core/layout/svg/LayoutSVGResourceClipper.h"
 #include "core/layout/svg/LayoutSVGResourceFilter.h"
 #include "core/layout/svg/LayoutSVGResourceMarker.h"
 #include "core/layout/svg/LayoutSVGResourceMasker.h"
 #include "core/layout/svg/LayoutSVGResourcePaintServer.h"
 #include "core/style/ComputedStyle.h"
-#include "core/svg/SVGGradientElement.h"
 #include "core/svg/SVGPatternElement.h"
 #include "core/svg/SVGResource.h"
 #include "core/svg/SVGTreeScopeResources.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg_names.h"
-#include "platform/wtf/PtrUtil.h"
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -100,41 +100,6 @@ static HashSet<AtomicString>& FillAndStrokeTags() {
   return tag_list;
 }
 
-static HashSet<AtomicString>& ChainableResourceTags() {
-  DEFINE_STATIC_LOCAL(HashSet<AtomicString>, tag_list,
-                      ({
-                          linearGradientTag.LocalName(), patternTag.LocalName(),
-                          radialGradientTag.LocalName(),
-                      }));
-  return tag_list;
-}
-
-static inline AtomicString TargetReferenceFromResource(SVGElement& element) {
-  String target;
-  if (auto* pattern = ToSVGPatternElementOrNull(element))
-    target = pattern->href()->CurrentValue()->Value();
-  else if (auto* gradient = ToSVGGradientElementOrNull(element))
-    target = gradient->href()->CurrentValue()->Value();
-  else
-    NOTREACHED();
-
-  return SVGURIReference::FragmentIdentifierFromIRIString(
-      target, element.GetTreeScope());
-}
-
-static inline bool SvgPaintTypeHasURL(SVGPaintType paint_type) {
-  switch (paint_type) {
-    case SVG_PAINTTYPE_URI_NONE:
-    case SVG_PAINTTYPE_URI_CURRENTCOLOR:
-    case SVG_PAINTTYPE_URI_RGBCOLOR:
-    case SVG_PAINTTYPE_URI:
-      return true;
-    default:
-      break;
-  }
-  return false;
-}
-
 namespace {
 
 template <typename ContainerType>
@@ -158,7 +123,7 @@ template <typename ContainerType>
 ContainerType* AttachToResource(SVGTreeScopeResources& tree_scope_resources,
                                 const AtomicString& id,
                                 SVGElement& element) {
-  SVGResource* resource = tree_scope_resources.ResourceForId(id);
+  LocalSVGResource* resource = tree_scope_resources.ResourceForId(id);
   if (!resource)
     return nullptr;
   if (LayoutSVGResourceContainer* container = resource->ResourceContainer()) {
@@ -178,7 +143,7 @@ bool SVGResources::HasResourceData() const {
 static inline SVGResources& EnsureResources(
     std::unique_ptr<SVGResources>& resources) {
   if (!resources)
-    resources = WTF::WrapUnique(new SVGResources);
+    resources = std::make_unique<SVGResources>();
 
   return *resources.get();
 }
@@ -252,25 +217,26 @@ std::unique_ptr<SVGResources> SVGResources::BuildResources(
   }
 
   if (FillAndStrokeTags().Contains(tag_name)) {
-    if (style.HasFill() && SvgPaintTypeHasURL(style.FillPaintType())) {
+    if (style.HasFill() && style.FillPaint().HasUrl()) {
       AtomicString id = SVGURIReference::FragmentIdentifierFromIRIString(
-          style.FillPaintUri(), tree_scope);
+          style.FillPaint().GetUrl(), tree_scope);
       EnsureResources(resources).SetFill(
           AttachToResource<LayoutSVGResourcePaintServer>(tree_scope_resources,
                                                          id, element));
     }
 
-    if (style.HasStroke() && SvgPaintTypeHasURL(style.StrokePaintType())) {
+    if (style.HasStroke() && style.StrokePaint().HasUrl()) {
       AtomicString id = SVGURIReference::FragmentIdentifierFromIRIString(
-          style.StrokePaintUri(), tree_scope);
+          style.StrokePaint().GetUrl(), tree_scope);
       EnsureResources(resources).SetStroke(
           AttachToResource<LayoutSVGResourcePaintServer>(tree_scope_resources,
                                                          id, element));
     }
   }
 
-  if (ChainableResourceTags().Contains(tag_name)) {
-    AtomicString id = TargetReferenceFromResource(element);
+  if (auto* pattern = ToSVGPatternElementOrNull(element)) {
+    AtomicString id = SVGURIReference::FragmentIdentifierFromIRIString(
+        pattern->HrefString(), tree_scope);
     EnsureResources(resources).SetLinkedResource(
         AttachToResource<LayoutSVGResourceContainer>(tree_scope_resources, id,
                                                      element));
@@ -336,12 +302,11 @@ InvalidationModeMask SVGResources::RemoveClientFromCacheAffectingObjectBounds(
     clipper->RemoveClientFromCache(client);
   if (LayoutSVGResourceFilter* filter = clipper_filter_masker_data_->filter) {
     if (filter->RemoveClientFromCache(client))
-      invalidation_flags |= LayoutSVGResourceContainer::kPaintInvalidation;
+      invalidation_flags |= SVGResourceClient::kPaintInvalidation;
   }
   if (LayoutSVGResourceMasker* masker = clipper_filter_masker_data_->masker)
     masker->RemoveClientFromCache(client);
-  return invalidation_flags |
-         LayoutSVGResourceContainer::kBoundariesInvalidation;
+  return invalidation_flags | SVGResourceClient::kBoundariesInvalidation;
 }
 
 InvalidationModeMask SVGResources::RemoveClientFromCache(
@@ -356,7 +321,7 @@ InvalidationModeMask SVGResources::RemoveClientFromCache(
     linked_resource_->RemoveClientFromCache(client);
     // The only linked resources are gradients and patterns, i.e
     // always a paint server.
-    return LayoutSVGResourceContainer::kPaintInvalidation;
+    return SVGResourceClient::kPaintInvalidation;
   }
 
   InvalidationModeMask invalidation_flags =
@@ -369,7 +334,7 @@ InvalidationModeMask SVGResources::RemoveClientFromCache(
       marker->RemoveClientFromCache(client);
     if (LayoutSVGResourceMarker* marker = marker_data_->marker_end)
       marker->RemoveClientFromCache(client);
-    invalidation_flags |= LayoutSVGResourceContainer::kBoundariesInvalidation;
+    invalidation_flags |= SVGResourceClient::kBoundariesInvalidation;
   }
 
   if (fill_stroke_data_) {
@@ -377,7 +342,7 @@ InvalidationModeMask SVGResources::RemoveClientFromCache(
       fill->RemoveClientFromCache(client);
     if (LayoutSVGResourcePaintServer* stroke = fill_stroke_data_->stroke)
       stroke->RemoveClientFromCache(client);
-    invalidation_flags |= LayoutSVGResourceContainer::kPaintInvalidation;
+    invalidation_flags |= SVGResourceClient::kPaintInvalidation;
   }
 
   return invalidation_flags;

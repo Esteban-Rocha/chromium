@@ -18,16 +18,20 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/engagement/site_engagement_service.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/blocked_content/list_item_position.h"
 #include "chrome/browser/ui/blocked_content/popup_tracker.h"
 #include "chrome/browser/ui/blocked_content/tab_under_navigation_throttle.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/prefs/pref_service.h"
 #include "components/ukm/content/source_url_recorder.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "components/ukm/ukm_source.h"
+#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/test_utils.h"
@@ -49,6 +53,7 @@ constexpr char kTabUnderVisibleTimeBefore[] = "Tab.TabUnder.VisibleTimeBefore";
 constexpr char kPopupToTabUnder[] = "Tab.TabUnder.PopupToTabUnderTime";
 constexpr char kTabUnderActionOTR[] = "Tab.TabUnderAction.OTR";
 constexpr char kTabUnderActionNonOTR[] = "Tab.TabUnderAction.NonOTR";
+constexpr char kEngagementScore[] = "Tab.TabUnder.EngagementScore";
 
 class PopupOpenerTabHelperTest : public ChromeRenderViewHostTestHarness {
  public:
@@ -441,6 +446,15 @@ TEST_F(BlockTabUnderTest, SameOriginRedirect_NoBlocking) {
   ExpectUIShown(false);
 }
 
+TEST_F(BlockTabUnderTest, SameSiteRedirect_NoBlocking) {
+  EXPECT_TRUE(
+      NavigateAndCommitWithoutGesture(GURL("https://sub1.blah.co.uk/")));
+  SimulatePopup();
+  EXPECT_TRUE(
+      NavigateAndCommitWithoutGesture(GURL("https://sub2.blah.co.uk/path")));
+  ExpectUIShown(false);
+}
+
 TEST_F(BlockTabUnderTest, BrowserInitiatedNavigation_NoBlocking) {
   EXPECT_TRUE(NavigateAndCommitWithoutGesture(GURL("https://first.test/")));
   SimulatePopup();
@@ -673,4 +687,65 @@ TEST_F(BlockTabUnderTest, SlowRedirectAfterPopup_IsNotBlocked) {
             candidate_navigation->GetLastThrottleCheckResult());
   candidate_navigation->Commit();
   EXPECT_EQ(main_rfh(), candidate_navigation->GetFinalRenderFrameHost());
+}
+
+TEST_F(BlockTabUnderTest, SiteEngagement_None) {
+  EXPECT_TRUE(NavigateAndCommitWithoutGesture(GURL("https://first.test/")));
+  SimulatePopup();
+  const GURL blocked_url("https://example.test/");
+  EXPECT_FALSE(NavigateAndCommitWithoutGesture(blocked_url));
+  ExpectUIShown(true);
+  histogram_tester()->ExpectUniqueSample(kEngagementScore, 0, 1);
+}
+
+TEST_F(BlockTabUnderTest, SiteEngagement_Some) {
+  EXPECT_TRUE(NavigateAndCommitWithoutGesture(GURL("https://first.test/")));
+  SimulatePopup();
+  const GURL blocked_url("https://example.test/");
+
+  auto* site_engagement_service = SiteEngagementService::Get(profile());
+  site_engagement_service->AddPointsForTesting(blocked_url, 1);
+
+  EXPECT_TRUE(NavigateAndCommitWithoutGesture(blocked_url));
+  ExpectUIShown(false);
+  histogram_tester()->ExpectTotalCount(kEngagementScore, 1);
+  auto samples = histogram_tester()->GetAllSamples(kEngagementScore);
+  EXPECT_LT(0, samples[0].min);
+}
+
+TEST_F(BlockTabUnderTest, SiteEngagementNoThreshold_Blocks) {
+  base::test::ScopedFeatureList scoped_features;
+  scoped_features.InitAndEnableFeatureWithParameters(
+      TabUnderNavigationThrottle::kBlockTabUnders,
+      {{"engagement_threshold", "-1"}});
+
+  EXPECT_TRUE(NavigateAndCommitWithoutGesture(GURL("https://first.test/")));
+  SimulatePopup();
+  const GURL blocked_url("https://example.test/");
+
+  auto* site_engagement_service = SiteEngagementService::Get(profile());
+  site_engagement_service->AddPointsForTesting(blocked_url, 1);
+
+  EXPECT_FALSE(NavigateAndCommitWithoutGesture(blocked_url));
+  ExpectUIShown(true);
+  histogram_tester()->ExpectTotalCount(kEngagementScore, 1);
+  auto samples = histogram_tester()->GetAllSamples(kEngagementScore);
+  EXPECT_LT(0, samples[0].min);
+}
+
+TEST_F(BlockTabUnderTest, ControlledByPrefs) {
+  // Turn feature off via prefs.
+  PrefService* prefs =
+      user_prefs::UserPrefs::Get(web_contents()->GetBrowserContext());
+  prefs->SetBoolean(prefs::kTabUnderProtection, false);
+  EXPECT_TRUE(NavigateAndCommitWithoutGesture(GURL("https://first.test/")));
+  SimulatePopup();
+
+  EXPECT_TRUE(NavigateAndCommitWithoutGesture(GURL("https://example.test1/")));
+  ExpectUIShown(false);
+
+  // Turn feature back on.
+  prefs->SetBoolean(prefs::kTabUnderProtection, true);
+  EXPECT_FALSE(NavigateAndCommitWithoutGesture(GURL("https://example.test2/")));
+  ExpectUIShown(true);
 }

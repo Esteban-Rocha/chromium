@@ -4,7 +4,6 @@
 
 #include "core/css/parser/CSSPropertyParser.h"
 
-#include "core/StylePropertyShorthand.h"
 #include "core/css/CSSInheritedValue.h"
 #include "core/css/CSSInitialValue.h"
 #include "core/css/CSSPendingSubstitutionValue.h"
@@ -17,8 +16,9 @@
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 #include "core/css/parser/CSSVariableParser.h"
 #include "core/css/properties/CSSParsingUtils.h"
-#include "core/css/properties/CSSProperty.h"
 #include "core/css/properties/Shorthand.h"
+#include "core/css/properties/css_property.h"
+#include "core/style_property_shorthand.h"
 #include "platform/runtime_enabled_features.h"
 
 namespace blink {
@@ -89,6 +89,10 @@ bool CSSPropertyParser::ParseValueStart(CSSPropertyID unresolved_property,
   CSSParserTokenRange original_range = range_;
   CSSPropertyID property_id = resolveCSSPropertyID(unresolved_property);
   const CSSProperty& property = CSSProperty::Get(property_id);
+  // If a CSSPropertyID is only a known descriptor (@fontface, @viewport), not a
+  // style property, it will not be a valid declaration.
+  if (!property.IsProperty())
+    return false;
   bool is_shorthand = property.IsShorthand();
   DCHECK(context_);
   if (is_shorthand) {

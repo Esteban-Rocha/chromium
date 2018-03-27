@@ -623,7 +623,7 @@ uint64_t LeafCertHashForTesting() {
 class MockCommonCertSets : public CommonCertSets {
  public:
   MockCommonCertSets(QuicStringPiece cert, uint64_t hash, uint32_t index)
-      : cert_(cert.as_string()), hash_(hash), index_(index) {}
+      : cert_(cert), hash_(hash), index_(index) {}
 
   QuicStringPiece GetCommonHashes() const override {
     QUIC_BUG << "not implemented";
@@ -901,7 +901,7 @@ CryptoHandshakeMessage CreateCHLO(
       CryptoFramer::ConstructHandshakeMessage(msg, Perspective::IS_CLIENT));
   std::unique_ptr<CryptoHandshakeMessage> parsed(CryptoFramer::ParseMessage(
       bytes->AsStringPiece(), Perspective::IS_CLIENT));
-  CHECK(parsed.get());
+  CHECK(parsed);
 
   return *parsed;
 }

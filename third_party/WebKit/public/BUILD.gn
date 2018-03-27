@@ -281,6 +281,7 @@ source_set("blink_headers") {
     "platform/WebPrescientNetworking.h",
     "platform/WebPrivatePtr.h",
     "platform/WebPublicSuffixList.h",
+    "platform/WebRTCAPIName.h",
     "platform/WebRTCAnswerOptions.h",
     "platform/WebRTCCertificate.h",
     "platform/WebRTCCertificateGenerator.h",
@@ -769,7 +770,6 @@ mojom("mojo_bindings") {
     "platform/modules/presentation/presentation.mojom",
     "platform/modules/webauth/authenticator.mojom",
     "platform/modules/webdatabase/web_database.mojom",
-    "platform/modules/websockets/websocket.mojom",
     "platform/oom_intervention.mojom",
     "platform/referrer.mojom",
     "platform/reporting.mojom",
@@ -789,6 +789,7 @@ mojom("mojo_bindings") {
     "//components/payments/mojom",
     "//device/bluetooth/public/mojom",
     "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//services/device/public/mojom",
     "//services/network/public/mojom",
     "//services/service_manager/public/mojom",
@@ -836,6 +837,7 @@ mojom("android_mojo_bindings") {
   public_deps = [
     "//components/payments/mojom",
     "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//ui/gfx/geometry/mojo",
     "//url/mojom:url_mojom_gurl",
   ]
@@ -940,6 +942,8 @@ group("generate_mojo_bindings") {
     # variant of the generated files.
     ":core_mojo_bindings__generator",
     ":core_mojo_bindings_blink__generator",
+    ":media_devices_mojo_bindings__generator",
+    ":media_devices_mojo_bindings_blink__generator",
     ":mojo_bindings__generator",
     ":mojo_bindings_blink__generator",
     ":offscreen_canvas_mojo_bindings_blink__generator",

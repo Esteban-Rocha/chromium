@@ -13,20 +13,23 @@
 
 #include "base/macros.h"
 #include "build/build_config.h"
-#include "chrome/browser/media/router/discovery/dial/dial_media_sink_service.h"
-#include "chrome/browser/media/router/discovery/dial/dial_url_fetcher.h"
-#include "chrome/browser/media/router/discovery/mdns/cast_media_sink_service.h"
-#include "chrome/browser/media/router/discovery/mdns/cast_media_sink_service_impl.h"
 #include "chrome/browser/media/router/issue_manager.h"
 #include "chrome/browser/media/router/issues_observer.h"
 #include "chrome/browser/media/router/media_routes_observer.h"
 #include "chrome/browser/media/router/media_sinks_observer.h"
-#include "chrome/common/media_router/discovery/media_sink_internal.h"
 #include "content/public/browser/presentation_service_delegate.h"
 #include "content/public/common/presentation_connection_message.h"
+#include "testing/gmock/include/gmock/gmock.h"
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/media/router/discovery/dial/dial_media_sink_service.h"
+#include "chrome/browser/media/router/discovery/dial/dial_url_fetcher.h"
+#include "chrome/browser/media/router/discovery/mdns/cast_media_sink_service.h"
+#include "chrome/browser/media/router/discovery/mdns/cast_media_sink_service_impl.h"
+#include "chrome/common/media_router/discovery/media_sink_internal.h"
 #include "net/base/ip_endpoint.h"
 #include "services/network/test/test_url_loader_factory.h"
-#include "testing/gmock/include/gmock/gmock.h"
+#endif  // !defined(OS_ANDROID)
 
 namespace media_router {
 
@@ -123,6 +126,12 @@ class MockDialMediaSinkService : public DialMediaSinkService {
                void(const OnSinksDiscoveredCallback&,
                     const OnDialSinkAddedCallback&));
   MOCK_METHOD0(OnUserGesture, void());
+  MOCK_METHOD2(StartMonitoringAvailableSinksForApp,
+               DialMediaSinkService::SinkQueryByAppSubscription(
+                   const std::string&,
+                   const SinkQueryByAppCallback&));
+  MOCK_METHOD1(GetCachedAvailableSinks,
+               std::vector<MediaSinkInternal>(const std::string& app_name));
 };
 
 class MockCastMediaSinkService : public CastMediaSinkService {
@@ -149,7 +158,6 @@ class TestDialURLFetcher : public DialURLFetcher {
  private:
   network::TestURLLoaderFactory* const factory_;
 };
-#endif  // !defined(OS_ANDROID)
 
 // Helper function to create an IP endpoint object.
 // If |num| is 1, returns 192.168.0.101:8009;
@@ -171,6 +179,8 @@ MediaSinkInternal CreateDialSink(int num);
 
 // Helper function to create a Cast sink.
 MediaSinkInternal CreateCastSink(int num);
+
+#endif  // !defined(OS_ANDROID)
 
 }  // namespace media_router
 

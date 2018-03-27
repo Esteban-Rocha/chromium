@@ -25,6 +25,7 @@
 <translation id="1525508553941733066">LOẠI BỎ</translation>
 <translation id="15373452373711364">Con trỏ chuột lớn</translation>
 <translation id="1550523713251050646">Nhấp để xem các tùy chọn khác</translation>
+<translation id="1567387640189251553">Một bàn phím khác đã được kết nối kể từ lần gần đây nhất bạn nhập mật khẩu của mình. Bàn phím này có thể đang cố gắng đánh cắp thao tác nhấn phím của bạn.</translation>
 <translation id="1608626060424371292">Xóa người dùng này</translation>
 <translation id="1621499497873603021">Thời gian còn lại cho đến khi pin hết, <ph name="TIME_LEFT" /></translation>
 <translation id="1658406695958299976">Rất tiếc, chúng tôi vẫn không thể xác minh được mật khẩu của bạn. Lưu ý: nếu gần đây bạn đã đổi mật khẩu thì mật khẩu mới của bạn sẽ được áp dụng sau khi bạn đăng xuất. Vui lòng sử dụng mật khẩu cũ của bạn tại đây.</translation>
@@ -40,6 +41,7 @@
 <translation id="1882897271359938046">Đang phản chiếu tới <ph name="DISPLAY_NAME" /></translation>
 <translation id="1919743966458266018">Phím tắt để mở trình quản lý tác vụ đã thay đổi. Vui lòng sử dụng <ph name="NEW_SHORTCUT" /> thay vì <ph name="OLD_SHORTCUT" />.</translation>
 <translation id="1923539912171292317">Nhấp chuột tự động</translation>
+<translation id="1928739107511554905">Để cập nhật, hãy dùng màn hình cảm ứng để khởi động lại Chromebook bằng bàn phím đã kết nối.</translation>
 <translation id="1942830294380034169">Nút tràn</translation>
 <translation id="1951012854035635156">Trợ lý</translation>
 <translation id="1957803754585243749">0°</translation>
@@ -52,6 +54,7 @@
 <translation id="2122028596993374965">Dừng truyền <ph name="TAB_NAME" /> sang <ph name="RECEIVER_NAME" /></translation>
 <translation id="2127372758936585790">Bộ sạc công suất thấp</translation>
 <translation id="2144487987174258011">Khởi động lại để cập nhật Adobe Flash Player</translation>
+<translation id="2191905770366256395">Bàn phím có thể tháo rời của bạn cần có một bản cập nhật quan trọng</translation>
 <translation id="2208323208084708176">Chế độ màn hình đồng nhất</translation>
 <translation id="2220572644011485463">Mã PIN hoặc mật khẩu</translation>
 <translation id="225680501294068881">Đang quét tìm thiết bị...</translation>
@@ -60,6 +63,7 @@
 <translation id="2292698582925480719">Tỷ lệ hiển thị</translation>
 <translation id="2303600792989757991">Tổng quan về chuyển đổi cửa sổ</translation>
 <translation id="2338501278241028356">Bật Bluetooth để khám phá các thiết bị lân cận</translation>
+<translation id="2351266942280602854">Ngôn ngữ và phương thức nhập</translation>
 <translation id="2352467521400612932">Cài đặt bút cảm ứng</translation>
 <translation id="2354174487190027830">Kích hoạt <ph name="NAME" /></translation>
 <translation id="2365393535144473978">Bật dữ liệu di động sẽ bật Bluetooth.</translation>
@@ -75,6 +79,7 @@
 <translation id="2653659639078652383">Gửi</translation>
 <translation id="2675319268637823299">Quản trị viên không cho phép đăng nhập nhiều tài khoản đối với <ph name="USER_EMAIL" />.
     Tất cả người dùng phải đăng xuất để tiếp tục.</translation>
+<translation id="2718395828230677721">Đèn đọc sách</translation>
 <translation id="2727977024730340865">Được cắm vào bộ sạc công suất thấp. Việc sạc pin có thể không được đảm bảo.</translation>
 <translation id="2761704814324807722">Khay trạng thái, thời gian <ph name="TIME" />, <ph name="BATTERY" /></translation>
 <translation id="277257480934873581">Đang kết nối lại với <ph name="NAME" /></translation>
@@ -101,6 +106,7 @@
 <translation id="3126069444801937830">Khởi động lại để cập nhật</translation>
 <translation id="3147142846278915599">Trình khởi chạy (đang đồng bộ hóa ứng dụng...)</translation>
 <translation id="315116470104423982">Dữ liệu di động</translation>
+<translation id="3151786313568798007">Hướng</translation>
 <translation id="3153444934357957346">Bạn chỉ có thể có tối đa <ph name="MULTI_PROFILE_USER_LIMIT" /> tài khoản khi sử dụng tính năng đăng nhập nhiều tài khoản.</translation>
 <translation id="3236488194889173876">Không có mạng di động nào</translation>
 <translation id="3294437725009624529">Khách</translation>
@@ -122,6 +128,7 @@
 <translation id="3621202678540785336">Thiết bị vào</translation>
 <translation id="3626281679859535460">Độ sáng</translation>
 <translation id="3631369015426612114">Cho phép thông báo từ các nguồn sau</translation>
+<translation id="3705722231355495246">-</translation>
 <translation id="3712407551474845318">Chụp một vùng màn hình</translation>
 <translation id="371370241367527062">Micrô mặt trước</translation>
 <translation id="3771549900096082774">Chế độ tương phản cao</translation>
@@ -133,6 +140,7 @@
 <translation id="3891340733213178823">Nhấn Ctrl+Shift+Q hai lần để đăng xuất.</translation>
 <translation id="3893630138897523026">ChromeVox (phản hồi bằng giọng nói)</translation>
 <translation id="3899995891769452915">Nhập bằng giọng nói</translation>
+<translation id="3900355044994618856">Phiên hoạt động của bạn sẽ kết thúc sau <ph name="SESSION_TIME_REMAINING" /></translation>
 <translation id="3901991538546252627">Đang kết nối với <ph name="NAME" /></translation>
 <translation id="394485226368336402">Cài đặt âm thanh</translation>
 <translation id="397105322502079400">Đang tính...</translation>
@@ -166,6 +174,7 @@
 <translation id="4905614135390995787">Phím tắt để chuyển đổi Chế độ tương phản cao đã thay đổi. Vui lòng sử dụng <ph name="NEW_SHORTCUT" /> thay vì <ph name="OLD_SHORTCUT" />.</translation>
 <translation id="4918086044614829423">Chấp nhận</translation>
 <translation id="4961318399572185831">Truyền màn hình</translation>
+<translation id="5136175204352732067">Đã kết nối bàn phím khác</translation>
 <translation id="5168181903108465623">Có thiết bị truyền</translation>
 <translation id="5207949376430453814">Đánh dấu điểm chèn văn bản</translation>
 <translation id="5222676887888702881">Đăng xuất</translation>
@@ -177,6 +186,7 @@
 <translation id="5431825016875453137">OpenVPN / L2TP</translation>
 <translation id="544691375626129091">Tất cả người dùng hiện có mặt đã được thêm vào phiên này.</translation>
 <translation id="5457599981699367932">Duyệt với tư cách Khách</translation>
+<translation id="54609108002486618">Được quản lý</translation>
 <translation id="553675580533261935">Thoát phiên</translation>
 <translation id="5548285847212963613">Tiện ích "<ph name="EXTENSION_NAME" />" có thể giúp kết nối với mạng này.</translation>
 <translation id="5571066253365925590">Đã bật bluetooth</translation>
@@ -201,6 +211,7 @@
 <translation id="5977415296283489383">Tai nghe</translation>
 <translation id="5978382165065462689">Chia sẻ quyền kiểm soát màn hình của bạn qua Trợ giúp từ xa.</translation>
 <translation id="5980301590375426705">Thoát khỏi phiên khách</translation>
+<translation id="598882571027504733">Để cập nhật, hãy khởi động lại Chromebook bằng bàn phím đã kết nối.</translation>
 <translation id="5992218262414051481">Đã bật Chế độ tương phản cao. Nhấn lại Ctrl+Search+H để tắt.</translation>
 <translation id="6018164090099858612">Đang thoát chế độ phản chiếu</translation>
 <translation id="6043212731627905357">Màn hình này không tương thích với <ph name="DEVICE_TYPE" /> của bạn (màn hình không được hỗ trợ).</translation>
@@ -254,6 +265,7 @@ Chỉ sử dụng tính năng này với các tài khoản mà bạn tin tưởn
 <translation id="7066646422045619941">Mạng này bị quản trị viên của bạn tắt.</translation>
 <translation id="7067196344162293536">Tự động xoay</translation>
 <translation id="7098389117866926363">Thiết bị USB-C (cổng bên trái ở phía sau)</translation>
+<translation id="7131634465328662194">Bạn sẽ tự động bị đăng xuất.</translation>
 <translation id="7165278925115064263">Alt+Shift+K</translation>
 <translation id="7168224885072002358">Sẽ hoàn nguyên về độ phân giải cũ sau <ph name="TIMEOUT_SECONDS" /></translation>
 <translation id="7256634071279256947">Micrô mặt sau</translation>
@@ -310,9 +322,11 @@ Chỉ sử dụng tính năng này với các tài khoản mà bạn tin tưởn
 <translation id="8484916590211895857"><ph name="NAME" />: Đang kết nối lại...</translation>
 <translation id="8517041960877371778"><ph name="DEVICE_TYPE" /> của bạn có thể không sạc khi được bật.</translation>
 <translation id="8639760480004882931">Còn <ph name="PERCENTAGE" /></translation>
+<translation id="8649101189709089199">Chọn để nói</translation>
 <translation id="8652175077544655965">Đóng cài đặt</translation>
 <translation id="8673028979667498656">270°</translation>
 <translation id="8676770494376880701">Đã kết nối bộ sạc công suất thấp</translation>
+<translation id="8734991477317290293">Bàn phím này có thể đang cố gắng đánh cắp thao tác nhấn phím của bạn</translation>
 <translation id="8814190375133053267">Wi-Fi</translation>
 <translation id="8814715559352963456">Di chuyển cửa sổ sang màn hình khác có thể gây ra hoạt động không mong muốn.
 
@@ -326,6 +340,7 @@ Các thông báo, cửa sổ và hộp thoại tiếp theo có thể bị phân 
 <translation id="8921624153894383499">Trợ lý Google không hỗ trợ ngôn ngữ này.</translation>
 <translation id="8938800817013097409">Thiết bị USB-C (cổng bên phải ở phía sau)</translation>
 <translation id="8940956008527784070">Pin yếu (<ph name="PERCENTAGE" />%)</translation>
+<translation id="8995603266996330174">Được quản lý bởi <ph name="DOMAIN" /></translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="9079731690316798640">Wi-Fi: <ph name="ADDRESS" /></translation>
 <translation id="9080206825613744995">Micrô đang được sử dụng.</translation>

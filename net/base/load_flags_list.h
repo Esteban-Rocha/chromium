@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// This file intentionally does not have header guards, it's included
+// inside a macro to generate values. The following line silences a
+// presubmit warning that would otherwise be triggered by this:
+// no-include-guard-because-multiply-included
+
 // This is the list of load flags and their values. For the enum values,
 // include the file "net/base/load_flags.h".
 //
@@ -11,10 +16,13 @@
 
 LOAD_FLAG(NORMAL, 0)
 
-// This is "normal reload", meaning an if-none-match/if-modified-since query
+// This is "normal reload", meaning an if-none-match/if-modified-since query. It
+// has no effect on the host cache.
 LOAD_FLAG(VALIDATE_CACHE, 1 << 0)
 
-// This is "shift-reload", meaning a "pragma: no-cache" end-to-end fetch
+// This is "shift-reload", meaning a "pragma: no-cache" end-to-end fetch. It
+// also disables use of the host cache for resolutions that go through the
+// socket pools.
 LOAD_FLAG(BYPASS_CACHE, 1 << 1)
 
 // This is a back/forward style navigation where the cached content should
@@ -26,7 +34,7 @@ LOAD_FLAG(SKIP_CACHE_VALIDATION, 1 << 2)
 LOAD_FLAG(ONLY_FROM_CACHE, 1 << 3)
 
 // This is a navigation that will not use the cache at all.  It does not
-// impact the HTTP request headers.
+// impact the HTTP request headers or use of the host cache.
 LOAD_FLAG(DISABLE_CACHE, 1 << 4)
 
 // If present, causes certificate revocation checks to be skipped on secure

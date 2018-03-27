@@ -9,6 +9,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
+#include "base/trace_event/trace_event.h"
 #include "crypto/sha2.h"
 
 namespace content {
@@ -124,7 +125,7 @@ class StructuredHeaderParser {
       failed_ = true;
       return s;
     }
-    while (input_.front() != '"') {
+    while (!ConsumeChar('"')) {
       size_t len = input_.find_first_of("\"\\");
       if (len == base::StringPiece::npos) {
         DVLOG(1) << "ReadString: missing closing '\"'";
@@ -143,7 +144,6 @@ class StructuredHeaderParser {
         input_.remove_prefix(1);
       }
     }
-    input_.remove_prefix(1);  // Consume '"'
     return s;
   }
 
@@ -188,24 +188,22 @@ class StructuredHeaderParser {
 
 }  // namespace
 
-base::Optional<std::vector<std::string>>
-SignedExchangeHeaderParser::ParseSignedHeaders(
-    const std::string& signed_headers_str) {
-  std::vector<std::string> headers;
-  StructuredHeaderParser parser(signed_headers_str);
-  parser.ParseStringList(&headers);
-  if (!parser.ParsedSuccessfully())
-    return base::nullopt;
-  return headers;
-}
-
+// static
 base::Optional<std::vector<SignedExchangeHeaderParser::Signature>>
 SignedExchangeHeaderParser::ParseSignature(base::StringPiece signature_str) {
+  TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
+                     "SignedExchangeHeaderParser::ParseSignature");
+
   StructuredHeaderParser parser(signature_str);
   std::vector<ParameterisedLabel> values;
   parser.ParseParameterisedLabelList(&values);
-  if (!parser.ParsedSuccessfully())
+  if (!parser.ParsedSuccessfully()) {
+    TRACE_EVENT_END2(TRACE_DISABLED_BY_DEFAULT("loading"),
+                     "SignedExchangeHeaderParser::ParseSignature", "error",
+                     "Failed to parse signature header.", "signature_str",
+                     signature_str.as_string());
     return base::nullopt;
+  }
 
   std::vector<Signature> signatures;
   signatures.reserve(values.size());
@@ -215,28 +213,38 @@ SignedExchangeHeaderParser::ParseSignature(base::StringPiece signature_str) {
     sig.label = value.label;
     sig.sig = value.params["sig"];
     if (sig.sig.empty()) {
-      DVLOG(1) << "ParseSignature: 'sig' parameter is not set";
+      TRACE_EVENT_END2(TRACE_DISABLED_BY_DEFAULT("loading"),
+                       "SignedExchangeHeaderParser::ParseSignature", "error",
+                       "'sig' parameter is not set.", "signature_str",
+                       signature_str.as_string());
       return base::nullopt;
     }
     sig.integrity = value.params["integrity"];
     if (sig.integrity.empty()) {
-      DVLOG(1) << "ParseSignature: 'integrity' parameter is not set";
+      TRACE_EVENT_END2(TRACE_DISABLED_BY_DEFAULT("loading"),
+                       "SignedExchangeHeaderParser::ParseSignature", "error",
+                       "'integrity' parameter is not set.", "signature_str",
+                       signature_str.as_string());
       return base::nullopt;
     }
     sig.cert_url = GURL(value.params["certUrl"]);
     if (!sig.cert_url.is_valid()) {
       // TODO(https://crbug.com/819467) : When we will support "ed25519Key", the
       // params may not have "certUrl".
-      DVLOG(1) << "ParseSignature: 'certUrl' parameter is not a valid URL: "
-               << value.params["certUrl"];
+      TRACE_EVENT_END2(TRACE_DISABLED_BY_DEFAULT("loading"),
+                       "SignedExchangeHeaderParser::ParseSignature", "error",
+                       "'certUrl' parameter is not a valid URL.",
+                       "signature_str", signature_str.as_string());
       return base::nullopt;
     }
     const std::string cert_sha256_string = value.params["certSha256"];
     if (cert_sha256_string.size() != crypto::kSHA256Length) {
       // TODO(https://crbug.com/819467) : When we will support "ed25519Key", the
       // params may not have "certSha256".
-      DVLOG(1) << "ParseSignature: 'certSha256' parameter is not a valid "
-                  "SHA-256 digest.";
+      TRACE_EVENT_END2(TRACE_DISABLED_BY_DEFAULT("loading"),
+                       "SignedExchangeHeaderParser::ParseSignature", "error",
+                       "'certSha256' parameter is not a SHA-256 digest.",
+                       "signature_str", signature_str.as_string());
       return base::nullopt;
     }
     net::SHA256HashValue cert_sha256;
@@ -246,22 +254,49 @@ SignedExchangeHeaderParser::ParseSignature(base::StringPiece signature_str) {
     // sig.ed25519_key = value.params["ed25519Key"];
     sig.validity_url = GURL(value.params["validityUrl"]);
     if (!sig.validity_url.is_valid()) {
-      DVLOG(1) << "ParseSignature: 'validityUrl' parameter is not a valid URL: "
-               << value.params["validityUrl"];
+      TRACE_EVENT_END2(TRACE_DISABLED_BY_DEFAULT("loading"),
+                       "SignedExchangeHeaderParser::ParseSignature", "error",
+                       "'validityUrl' parameter is not a valid URL.",
+                       "signature_str", signature_str.as_string());
       return base::nullopt;
     }
     if (!base::StringToUint64(value.params["date"], &sig.date)) {
-      DVLOG(1) << "ParseSignature: 'date' parameter is not a number: "
-               << sig.date;
+      TRACE_EVENT_END2(TRACE_DISABLED_BY_DEFAULT("loading"),
+                       "SignedExchangeHeaderParser::ParseSignature", "error",
+                       "'date' parameter is not a number.", "signature_str",
+                       signature_str.as_string());
       return base::nullopt;
     }
     if (!base::StringToUint64(value.params["expires"], &sig.expires)) {
-      DVLOG(1) << "ParseSignature: 'expires' parameter is not a number:"
-               << sig.expires;
+      TRACE_EVENT_END2(TRACE_DISABLED_BY_DEFAULT("loading"),
+                       "SignedExchangeHeaderParser::ParseSignature", "error",
+                       "'expires' parameter is not a number.", "signature_str",
+                       signature_str.as_string());
       return base::nullopt;
     }
   }
+  TRACE_EVENT_END0(TRACE_DISABLED_BY_DEFAULT("loading"),
+                   "SignedExchangeHeaderParser::ParseSignature");
   return signatures;
+}
+
+// static
+bool SignedExchangeHeaderParser::GetVersionParamFromContentType(
+    base::StringPiece content_type,
+    base::Optional<std::string>* version_param) {
+  DCHECK(version_param);
+  StructuredHeaderParser parser(content_type);
+  ParameterisedLabel parameterised_label;
+  parser.ParseParameterisedLabel(&parameterised_label);
+  if (!parser.ParsedSuccessfully())
+    return false;
+  const auto it = parameterised_label.params.find("v");
+  if (it == parameterised_label.params.end()) {
+    *version_param = base::nullopt;
+  } else {
+    *version_param = it->second;
+  }
+  return true;
 }
 
 SignedExchangeHeaderParser::Signature::Signature() = default;

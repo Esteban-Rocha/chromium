@@ -26,10 +26,12 @@ namespace autofill {
 struct Suggestion;
 
 extern const base::Feature kAutofillAlwaysFillAddresses;
+extern const base::Feature kAutofillAutoDismissableUpstreamBubble;
 extern const base::Feature kAutofillCreateDataForTest;
 extern const base::Feature kAutofillCreditCardAssist;
 extern const base::Feature kAutofillScanCardholderName;
 extern const base::Feature kAutofillCreditCardAblationExperiment;
+extern const base::Feature kAutofillCreditCardBankNameDisplay;
 extern const base::Feature kAutofillCreditCardPopupLayout;
 extern const base::Feature kAutofillCreditCardLastUsedDateDisplay;
 extern const base::Feature kAutofillDeleteDisusedAddresses;
@@ -81,12 +83,19 @@ bool IsCreditCardUploadEnabled(const PrefService* pref_service,
 // enabled.
 bool IsAutofillCreditCardPopupLayoutExperimentEnabled();
 
+// Returns whether the experiment to make the credit card Upstream bubble non
+// sticky is enabled.
+bool IsAutofillAutoDismissableUpstreamBubbleExperimentEnabled();
+
 // Returns whether Autofill credit card last used date display experiment is
 // enabled.
 bool IsAutofillCreditCardLastUsedDateDisplayExperimentEnabled();
 
 // Returns whether Autofill credit card last used date shows expiration date.
 bool ShowExpirationDateInAutofillCreditCardLastUsedDate();
+
+// Returns whether Autofill credit card bank name display experiment is enabled.
+bool IsAutofillCreditCardBankNameDisplayExperimentEnabled();
 
 // Returns the background color for credit card autofill popup, or
 // |SK_ColorTRANSPARENT| if the new credit card autofill popup layout experiment

@@ -7,15 +7,14 @@
 #include "ash/display/display_move_window_util.h"
 #include "ash/display/window_tree_host_manager.h"
 #include "ash/public/cpp/ash_features.h"
-#include "ash/public/cpp/ash_switches.h"
 #include "ash/session/test_session_controller_client.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "base/command_line.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "ui/display/test/display_manager_test_api.h"
 
 using session_manager::SessionState;
 
@@ -28,10 +27,11 @@ class PersistentWindowControllerTest : public AshTestBase {
 
   // AshTestBase:
   void SetUp() override {
-    scoped_feature_list_.InitAndEnableFeature(
-        features::kDisplayMoveWindowAccels);
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kAshEnablePersistentWindowBounds);
+    // Explicitly enable persistent window bounds and displays move window
+    // accels features for the tests.
+    scoped_feature_list_.InitWithFeatures(
+        {features::kPersistentWindowBounds, features::kDisplayMoveWindowAccels},
+        {});
     AshTestBase::SetUp();
   }
 
@@ -396,6 +396,39 @@ TEST_F(PersistentWindowControllerTest, RecordNumOfWindowsRestored) {
 
   histogram_tester.ExpectTotalCount(
       PersistentWindowController::kNumOfWindowsRestoredHistogramName, 1);
+}
+
+// Tests that swapping primary display shall not do persistent window restore.
+TEST_F(PersistentWindowControllerTest, SwapPrimaryDisplay) {
+  const int64_t internal_display_id =
+      display::test::DisplayManagerTestApi(display_manager())
+          .SetFirstDisplayAsInternalDisplay();
+  const display::ManagedDisplayInfo native_display_info =
+      display::CreateDisplayInfo(internal_display_id,
+                                 gfx::Rect(0, 0, 500, 500));
+  const display::ManagedDisplayInfo secondary_display_info =
+      display::CreateDisplayInfo(10, gfx::Rect(1, 1, 400, 400));
+
+  std::vector<display::ManagedDisplayInfo> display_info_list;
+  display_info_list.push_back(native_display_info);
+  display_info_list.push_back(secondary_display_info);
+  display_manager()->OnNativeDisplaysChanged(display_info_list);
+
+  aura::Window* w1 =
+      CreateTestWindowInShellWithBounds(gfx::Rect(200, 0, 100, 200));
+  aura::Window* w2 =
+      CreateTestWindowInShellWithBounds(gfx::Rect(501, 0, 200, 100));
+  EXPECT_EQ(gfx::Rect(200, 0, 100, 200), w1->GetBoundsInScreen());
+  EXPECT_EQ(gfx::Rect(501, 0, 200, 100), w2->GetBoundsInScreen());
+
+  // Swaps primary display and check window bounds.
+  SwapPrimaryDisplay();
+  ASSERT_EQ(gfx::Rect(-500, 0, 500, 500),
+            display_manager()->GetDisplayForId(internal_display_id).bounds());
+  ASSERT_EQ(gfx::Rect(0, 0, 400, 400),
+            display_manager()->GetDisplayForId(10).bounds());
+  EXPECT_EQ(gfx::Rect(200, 0, 100, 200), w1->GetBoundsInScreen());
+  EXPECT_EQ(gfx::Rect(-499, 0, 200, 100), w2->GetBoundsInScreen());
 }
 
 }  // namespace ash

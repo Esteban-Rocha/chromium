@@ -21,13 +21,13 @@
 <translation id="1113869188872983271">재정렬 실행 취소(&amp;U)</translation>
 <translation id="1126551341858583091">로컬 저장소는 <ph name="CRASH_SIZE" />입니다.</translation>
 <translation id="112840717907525620">정책 캐시 확인</translation>
-<translation id="1132774398110320017">Chrome 자동완성 설정...</translation>
 <translation id="1150979032973867961">이 서버가 <ph name="DOMAIN" />임을 입증할 수 없으며 컴퓨터의 운영체제에서 신뢰하는 보안 인증서가 아닙니다. 서버를 잘못 설정했거나 불법 사용자가 연결을 가로채고 있기 때문일 수 있습니다.</translation>
 <translation id="1151972924205500581">비밀번호를 입력해야 합니다.</translation>
 <translation id="1152921474424827756"><ph name="URL" />의 <ph name="BEGIN_LINK" />캐시된 사본<ph name="END_LINK" />에 액세스</translation>
 <translation id="1158211211994409885"><ph name="HOST_NAME" />와(과)의 연결이 예기치 않게 종료되었습니다.</translation>
 <translation id="1161325031994447685">Wi-Fi에 다시 연결</translation>
 <translation id="1165039591588034296">오류</translation>
+<translation id="1173894706177603556">이름 바꾸기</translation>
 <translation id="1175364870820465910">인쇄(&amp;P)</translation>
 <translation id="1181037720776840403">삭제</translation>
 <translation id="1184214524891303587">발생 가능성이 있는 보안 문제의 세부정보를 Google에 <ph name="BEGIN_WHITEPAPER_LINK" />자동으로 보고<ph name="END_WHITEPAPER_LINK" />합니다. <ph name="PRIVACY_PAGE_LINK" /></translation>
@@ -57,7 +57,6 @@
         <ph name="END_LIST" /></translation>
 <translation id="1339601241726513588">등록 도메인:</translation>
 <translation id="1340482604681802745">수령 주소</translation>
-<translation id="1344588688991793829">Chromium 자동완성 설정...</translation>
 <translation id="1348198688976932919">방문하려는 사이트에 위험한 앱이 있습니다.</translation>
 <translation id="1374468813861204354">제안사항</translation>
 <translation id="1375198122581997741">버전 정보</translation>
@@ -283,7 +282,6 @@
 <translation id="301521992641321250">자동으로 차단됨</translation>
 <translation id="3024663005179499861">잘못된 정책 유형</translation>
 <translation id="3037605927509011580">앗, 이런!</translation>
-<translation id="3039538478787849737">카드를 Google에 저장하시겠어요?</translation>
 <translation id="3041612393474885105">인증서 정보</translation>
 <translation id="3063697135517575841">현재 Chrome에서 카드를 확인할 수 없습니다. 나중에 다시 시도해 주세요.</translation>
 <translation id="3064966200440839136">시크릿 모드를 종료하고 외부 애플리케이션에서 결제합니다. 계속하시겠습니까?</translation>
@@ -666,6 +664,7 @@
 <translation id="5989320800837274978">고정 프록시 서버와 .pac 스크립트 URL이 모두 지정되지 않았습니다.</translation>
 <translation id="5990559369517809815">서버에 대한 요청이 확장 프로그램에 의해 차단되었습니다.</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="6015796118275082299">연도</translation>
 <translation id="6016158022840135739">{COUNT,plural, =1{1페이지}other{#페이지}}</translation>
 <translation id="6017850046339264347"><ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" />에 있는 공격자는 다른 앱인 것처럼 가장하거나 사용자를 추적하는 데 사용될 수 있는 데이터를 수집하는 사기성 앱을 설치할 수도 있습니다. <ph name="BEGIN_LEARN_MORE_LINK" />자세히 알아보기<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="6025416945513303461"><ph name="TYPE_1" />, <ph name="TYPE_2" />, <ph name="TYPE_3" />(동기화됨)</translation>
@@ -804,6 +803,7 @@
 <translation id="7275334191706090484">관리 북마크</translation>
 <translation id="7298195798382681320">권장</translation>
 <translation id="7309308571273880165"><ph name="CRASH_TIME" />에 캡처된 비정상 종료 보고서(사용자가 업로드를 요청했으나 아직 업로드되지 않음)</translation>
+<translation id="7320336641823683070">연결 도움말</translation>
 <translation id="7334320624316649418">재정렬 다시 실행(&amp;R)</translation>
 <translation id="733923710415886693">서버 인증서가 인증서 투명성 정책을 사용하여 공개되지 않았습니다.</translation>
 <translation id="7353601530677266744">명령줄</translation>
@@ -888,6 +888,7 @@
 <translation id="782886543891417279">사용 중인 Wi-Fi(<ph name="WIFI_NAME" />)에서 로그인 페이지 방문을 요청할 수 있습니다.</translation>
 <translation id="785549533363645510">하지만 흔적이 아예 남지 않는 것은 아닙니다. 시크릿 모드로 탐색해도 회사, 인터넷 서비스 제공업체 또는 방문한 웹사이트에 저장된 흔적까지 없앨 수는 없습니다.</translation>
 <translation id="7855695075675558090"><ph name="TOTAL_LABEL" /> <ph name="CURRENCY_CODE" /> <ph name="FORMATTED_TOTAL_AMOUNT" /></translation>
+<translation id="7862185352068345852">사이트에서 나가시겠습니까?</translation>
 <translation id="7878176543348854470">직불카드 및 선불카드를 사용할 수 있습니다.</translation>
 <translation id="7878562273885520351">비밀번호가 도용될 수도 있음</translation>
 <translation id="7887683347370398519">CVC를 확인한 후 다시 시도하세요.</translation>
@@ -910,6 +911,7 @@
 <translation id="8041940743680923270">전체 기본값 사용(요청)</translation>
 <translation id="8042918947222776840">수령 방법 선택</translation>
 <translation id="8057711352706143257">'<ph name="SOFTWARE_NAME" />이(가) 올바르게 설정되지 않았습니다. 일반적으로 '<ph name="SOFTWARE_NAME" />'을(를) 제거하면 문제가 해결됩니다. <ph name="FURTHER_EXPLANATION" /></translation>
+<translation id="8079031581361219619">사이트를 새로고침하시겠습니까?</translation>
 <translation id="8088680233425245692">글을 조회하지 못했습니다.</translation>
 <translation id="8091372947890762290">활성화 요청이 서버에서 대기 중</translation>
 <translation id="8094917007353911263">사용 중인 네트워크에서 <ph name="BEGIN_BOLD" /><ph name="LOGIN_URL" /><ph name="END_BOLD" /> 방문을 요청할 수 있습니다.</translation>
@@ -925,6 +927,7 @@
 <translation id="8201077131113104583">ID가 '<ph name="EXTENSION_ID" />'인 확장 프로그램에 대한 잘못된 업데이트 URL</translation>
 <translation id="8202097416529803614">주문 요약</translation>
 <translation id="8205463626947051446">사이트에 방해가 되는 광고를 표시하는 경향이 있음</translation>
+<translation id="8211406090763984747">이 연결은 안전합니다.</translation>
 <translation id="8218327578424803826">지정된 위치:</translation>
 <translation id="8225771182978767009">컴퓨터를 설정한 사용자가 이 사이트를 차단했습니다.</translation>
 <translation id="822964464349305906"><ph name="TYPE_1" />, <ph name="TYPE_2" /></translation>
@@ -1009,6 +1012,7 @@
 <translation id="8957210676456822347">캡티브 포털 승인</translation>
 <translation id="8971063699422889582">서버 인증서가 만료되었습니다.</translation>
 <translation id="8978053250194585037">Google 세이프 브라우징이 최근 <ph name="SITE" />에서 <ph name="BEGIN_LINK" />피싱을 감지<ph name="END_LINK" />했습니다. 피싱 사이트는 사용자를 속이기 위해 다른 웹사이트인 것처럼 가장합니다.</translation>
+<translation id="8987927404178983737">월</translation>
 <translation id="8989148748219918422"><ph name="ORGANIZATION" /> [<ph name="COUNTRY" />]</translation>
 <translation id="8996941253935762404">방문하려는 사이트에 유해한 프로그램이 있습니다.</translation>
 <translation id="8997023839087525404">서버에서 인증서 투명성 정책을 사용하여 공개되지 않은 인증서를 제시했습니다. 인증서 투명성 정책은 인증서가 신뢰할 수 있으며 공격자로부터 사용자를 보호하고 있음을 보장하기 위한 것으로 일부 인증서의 경우 필수사항입니다.</translation>

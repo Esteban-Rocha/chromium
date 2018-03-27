@@ -13,6 +13,8 @@
 #include "net/quic/platform/api/quic_str_cat.h"
 #include "net/quic/platform/api/quic_string.h"
 
+using net::SpdyPriority;
+
 namespace net {
 
 #define ENDPOINT \
@@ -40,10 +42,14 @@ size_t GetReceivedFlowControlWindow(QuicSession* session) {
 
 }  // namespace
 
-QuicStream::QuicStream(QuicStreamId id, QuicSession* session)
+// static
+const SpdyPriority QuicStream::kDefaultPriority;
+
+QuicStream::QuicStream(QuicStreamId id, QuicSession* session, bool is_static)
     : sequencer_(this, session->connection()->clock()),
       id_(id),
       session_(session),
+      priority_(kDefaultPriority),
       stream_bytes_read_(0),
       stream_error_(QUIC_STREAM_NO_ERROR),
       connection_error_(QUIC_NO_ERROR),
@@ -72,9 +78,12 @@ QuicStream::QuicStream(QuicStreamId id, QuicSession* session)
       ack_listener_(nullptr),
       send_buffer_(
           session->connection()->helper()->GetStreamSendBufferAllocator()),
-      buffered_data_threshold_(
-          GetQuicFlag(FLAGS_quic_buffered_data_threshold)) {
+      buffered_data_threshold_(GetQuicFlag(FLAGS_quic_buffered_data_threshold)),
+      is_static_(is_static) {
   SetFromConfig();
+  if (session_->register_streams_early()) {
+    session_->RegisterStreamPriority(id, is_static_, priority_);
+  }
 }
 
 QuicStream::~QuicStream() {
@@ -84,6 +93,9 @@ QuicStream::~QuicStream() {
         << " gets destroyed while waiting for acks. stream_bytes_outstanding = "
         << send_buffer_.stream_bytes_outstanding()
         << ", fin_outstanding: " << fin_outstanding_;
+  }
+  if (session_ != nullptr && session_->register_streams_early()) {
+    session_->UnregisterStreamPriority(id(), is_static_);
   }
 }
 
@@ -213,6 +225,16 @@ void QuicStream::CloseConnectionWithDetails(QuicErrorCode error,
                                             const QuicString& details) {
   session()->connection()->CloseConnection(
       error, details, ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+}
+
+SpdyPriority QuicStream::priority() const {
+  return priority_;
+}
+
+void QuicStream::SetPriority(SpdyPriority priority) {
+  DCHECK_EQ(0u, stream_bytes_written());
+  priority_ = priority;
+  session_->UpdateStreamPriority(id(), priority);
 }
 
 void QuicStream::WriteOrBufferData(
@@ -503,6 +525,10 @@ void QuicStream::OnClose() {
     // written on this stream before termination. Done here if needed, using a
     // RST_STREAM frame.
     QUIC_DLOG(INFO) << ENDPOINT << "Sending RST_STREAM in OnClose: " << id();
+    if (GetQuicReloadableFlag(quic_reset_stream_is_not_zombie)) {
+      QUIC_FLAG_COUNT(quic_reloadable_flag_quic_reset_stream_is_not_zombie);
+      session_->OnStreamDoneWaitingForAcks(id_);
+    }
     session_->SendRstStream(id(), QUIC_RST_ACKNOWLEDGEMENT,
                             stream_bytes_written());
     rst_sent_ = true;

@@ -29,6 +29,7 @@
 
 #include "build/build_config.h"
 #include "core/clipboard/DataObject.h"
+#include "core/clipboard/DataTransferAccessPolicy.h"
 #include "core/clipboard/DataTransferItem.h"
 #include "core/clipboard/DataTransferItemList.h"
 #include "core/editing/EphemeralRange.h"
@@ -110,7 +111,7 @@ class DraggedNodeImageBuilder {
     // If the absolute bounding box is large enough to be possibly a memory
     // or IPC payload issue, clip it to the visible content rect.
     if (absolute_bounding_box.Size().Area() > visible_rect.Size().Area()) {
-      absolute_bounding_box.Intersect(IntRect(visible_rect));
+      absolute_bounding_box.Intersect(EnclosingIntRect(visible_rect));
     }
 
     FloatRect bounding_box =
@@ -132,13 +133,17 @@ class DraggedNodeImageBuilder {
     dragged_layout_object->GetDocument().Lifecycle().AdvanceTo(
         DocumentLifecycle::kPaintClean);
 
+    FloatPoint paint_offset = dragged_layout_object->LocalToAncestorPoint(
+        FloatPoint(), &layer->GetLayoutObject(), kUseTransforms);
     PropertyTreeState border_box_properties = PropertyTreeState::Root();
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
       border_box_properties =
           layer->GetLayoutObject().FirstFragment().LocalBorderBoxProperties();
+      // In SPv175+ we paint in the containing transform node's space. Add the
+      // offset from the layer to this transform space.
+      paint_offset +=
+          FloatPoint(layer->GetLayoutObject().FirstFragment().PaintOffset());
     }
-    FloatPoint paint_offset = dragged_layout_object->LocalToAncestorPoint(
-        FloatPoint(), &layer->GetLayoutObject(), kUseTransforms);
     return DataTransfer::CreateDragImageForFrame(
         *local_frame_, 1.0f,
         LayoutObject::ShouldRespectImageOrientation(dragged_layout_object),
@@ -218,8 +223,8 @@ static String NormalizeType(const String& type,
 }
 
 DataTransfer* DataTransfer::Create() {
-  DataTransfer* data =
-      Create(kCopyAndPaste, kDataTransferWritable, DataObject::Create());
+  DataTransfer* data = Create(
+      kCopyAndPaste, DataTransferAccessPolicy::kWritable, DataObject::Create());
   data->drop_effect_ = "none";
   data->effect_allowed_ = "none";
   return data;
@@ -365,7 +370,7 @@ void DataTransfer::SetDragImageElement(Node* node, const IntPoint& loc) {
 FloatRect DataTransfer::ClipByVisualViewport(const FloatRect& absolute_rect,
                                              const LocalFrame& frame) {
   IntRect viewport_in_root_frame =
-      IntRect(frame.GetPage()->GetVisualViewport().VisibleRect());
+      EnclosingIntRect(frame.GetPage()->GetVisualViewport().VisibleRect());
   FloatRect absolute_viewport =
       frame.View()->RootFrameToAbsolute(viewport_in_root_frame);
   return Intersection(absolute_viewport, absolute_rect);
@@ -533,27 +538,29 @@ void DataTransfer::WriteSelection(const FrameSelection& selection) {
 
 void DataTransfer::SetAccessPolicy(DataTransferAccessPolicy policy) {
   // once you go numb, can never go back
-  DCHECK(policy_ != kDataTransferNumb || policy == kDataTransferNumb);
+  DCHECK(policy_ != DataTransferAccessPolicy::kNumb ||
+         policy == DataTransferAccessPolicy::kNumb);
   policy_ = policy;
 }
 
 bool DataTransfer::CanReadTypes() const {
-  return policy_ == kDataTransferReadable ||
-         policy_ == kDataTransferTypesReadable ||
-         policy_ == kDataTransferWritable;
+  return policy_ == DataTransferAccessPolicy::kReadable ||
+         policy_ == DataTransferAccessPolicy::kTypesReadable ||
+         policy_ == DataTransferAccessPolicy::kWritable;
 }
 
 bool DataTransfer::CanReadData() const {
-  return policy_ == kDataTransferReadable || policy_ == kDataTransferWritable;
+  return policy_ == DataTransferAccessPolicy::kReadable ||
+         policy_ == DataTransferAccessPolicy::kWritable;
 }
 
 bool DataTransfer::CanWriteData() const {
-  return policy_ == kDataTransferWritable;
+  return policy_ == DataTransferAccessPolicy::kWritable;
 }
 
 bool DataTransfer::CanSetDragImage() const {
-  return policy_ == kDataTransferImageWritable ||
-         policy_ == kDataTransferWritable;
+  return policy_ == DataTransferAccessPolicy::kImageWritable ||
+         policy_ == DataTransferAccessPolicy::kWritable;
 }
 
 DragOperation DataTransfer::SourceOperation() const {

@@ -97,24 +97,20 @@ void ExtensionViewViews::RenderViewCreated(
 void ExtensionViewViews::HandleKeyboardEvent(
     content::WebContents* source,
     const content::NativeWebKeyboardEvent& event) {
-  if (browser_) {
-    // Handle lower priority browser shortcuts such as Ctrl-f.
-    browser_->HandleKeyboardEvent(source, event);
-    return;
-  }
-
   unhandled_keyboard_event_handler_.HandleKeyboardEvent(event,
                                                         GetFocusManager());
 }
 
-void ExtensionViewViews::DidStopLoading() {
-  // We wait to show the ExtensionViewViews until it has loaded, and the view
-  // has actually been created. These can happen in different orders.
-  // TODO(devlin): Can they? Isn't the view created during construction?
-  if (!visible() && host_->has_loaded_once()) {
-    SetVisible(true);
-    ResizeDueToAutoResize(web_contents(), pending_preferred_size_);
-  }
+void ExtensionViewViews::OnLoaded() {
+  DCHECK(host_->has_loaded_once());
+
+  // ExtensionPopup delegates showing the view to OnLoaded(). ExtensionDialog
+  // handles visibility directly.
+  if (visible())
+    return;
+
+  SetVisible(true);
+  ResizeDueToAutoResize(web_contents(), pending_preferred_size_);
 }
 
 gfx::NativeCursor ExtensionViewViews::GetCursor(const ui::MouseEvent& event) {

@@ -11,7 +11,7 @@
 #include "core/loader/modulescript/ModuleScriptFetchRequest.h"
 #include "core/loader/modulescript/ModuleScriptLoaderClient.h"
 #include "core/loader/modulescript/ModuleScriptLoaderRegistry.h"
-#include "core/loader/modulescript/WorkletModuleScriptFetcher.h"
+#include "core/loader/modulescript/WorkerOrWorkletModuleScriptFetcher.h"
 #include "core/origin_trials/OriginTrialContext.h"
 #include "core/script/Modulator.h"
 #include "core/script/ModuleScript.h"
@@ -20,6 +20,7 @@
 #include "core/workers/GlobalScopeCreationParams.h"
 #include "core/workers/MainThreadWorkletGlobalScope.h"
 #include "core/workers/MainThreadWorkletReportingProxy.h"
+#include "core/workers/WorkletModuleResponsesMap.h"
 #include "platform/heap/Handle.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/testing/FetchTestingPlatformSupport.h"
@@ -65,13 +66,11 @@ class ModuleScriptLoaderTestModulator final : public DummyModulator {
  public:
   ModuleScriptLoaderTestModulator(
       scoped_refptr<ScriptState> script_state,
-      scoped_refptr<const SecurityOrigin> security_origin)
+      scoped_refptr<const SecurityOrigin> security_origin,
+      ResourceFetcher* fetcher)
       : script_state_(std::move(script_state)),
-        security_origin_(std::move(security_origin)) {
-    auto* fetch_context =
-        MockFetchContext::Create(MockFetchContext::kShouldLoadNewResource);
-    fetcher_ = ResourceFetcher::Create(fetch_context);
-  }
+        security_origin_(std::move(security_origin)),
+        fetcher_(fetcher) {}
 
   ~ModuleScriptLoaderTestModulator() override = default;
 
@@ -109,8 +108,8 @@ class ModuleScriptLoaderTestModulator final : public DummyModulator {
     if (execution_context->IsDocument())
       return new DocumentModuleScriptFetcher(Fetcher());
     auto* global_scope = ToWorkletGlobalScope(execution_context);
-    return new WorkletModuleScriptFetcher(
-        global_scope->ModuleResponsesMapProxy());
+    return new WorkerOrWorkletModuleScriptFetcher(
+        global_scope->ModuleFetchCoordinatorProxy());
   }
 
   ResourceFetcher* Fetcher() const { return fetcher_.Get(); }
@@ -163,12 +162,18 @@ void ModuleScriptLoaderTest::SetUp() {
 }
 
 void ModuleScriptLoaderTest::InitializeForDocument() {
+  auto* fetch_context =
+      MockFetchContext::Create(MockFetchContext::kShouldLoadNewResource);
+  auto* fetcher = ResourceFetcher::Create(fetch_context);
   modulator_ = new ModuleScriptLoaderTestModulator(
-      ToScriptStateForMainWorld(&GetFrame()),
-      GetDocument().GetSecurityOrigin());
+      ToScriptStateForMainWorld(&GetFrame()), GetDocument().GetSecurityOrigin(),
+      fetcher);
 }
 
 void ModuleScriptLoaderTest::InitializeForWorklet() {
+  auto* fetch_context =
+      MockFetchContext::Create(MockFetchContext::kShouldLoadNewResource);
+  auto* fetcher = ResourceFetcher::Create(fetch_context);
   reporting_proxy_ =
       std::make_unique<MainThreadWorkletReportingProxy>(&GetDocument());
   auto creation_params = std::make_unique<GlobalScopeCreationParams>(
@@ -179,18 +184,13 @@ void ModuleScriptLoaderTest::InitializeForWorklet() {
       GetDocument().AddressSpace(),
       OriginTrialContext::GetTokens(&GetDocument()).get(),
       base::UnguessableToken::Create(), nullptr /* worker_settings */,
-      kV8CacheOptionsDefault);
+      kV8CacheOptionsDefault, new WorkletModuleResponsesMap(fetcher));
   global_scope_ = new MainThreadWorkletGlobalScope(
       &GetFrame(), std::move(creation_params), *reporting_proxy_);
   global_scope_->ScriptController()->InitializeContextIfNeeded("Dummy Context");
   modulator_ = new ModuleScriptLoaderTestModulator(
       global_scope_->ScriptController()->GetScriptState(),
-      GetDocument().GetSecurityOrigin());
-  global_scope_->SetModuleResponsesMapProxyForTesting(
-      WorkletModuleResponsesMapProxy::Create(
-          new WorkletModuleResponsesMap(modulator_->Fetcher()),
-          GetDocument().GetTaskRunner(TaskType::kInternalTest),
-          global_scope_->GetTaskRunner(TaskType::kInternalTest)));
+      GetDocument().GetSecurityOrigin(), fetcher);
 }
 
 void ModuleScriptLoaderTest::TestFetchDataURL(
@@ -350,8 +350,8 @@ TEST_F(ModuleScriptLoaderTest, FetchURL_OnWorklet) {
   EXPECT_FALSE(client->WasNotifyFinished())
       << "ModuleScriptLoader unexpectedly finished synchronously.";
 
-  // Advance until WorkletModuleScriptFetcher finishes looking up a cache in
-  // WorkletModuleResponsesMap and issues a fetch request so that
+  // Advance until WorkerOrWorkletModuleScriptFetcher finishes looking up a
+  // cache in WorkletModuleResponsesMap and issues a fetch request so that
   // ServeAsynchronousRequests() can serve for the pending request.
   platform_->RunUntilIdle();
   platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();

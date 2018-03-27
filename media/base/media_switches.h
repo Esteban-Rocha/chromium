@@ -12,8 +12,7 @@
 #include "base/feature_list.h"
 #include "build/build_config.h"
 #include "media/base/media_export.h"
-#include "media/media_features.h"
-#include "ppapi/features/features.h"
+#include "media/media_buildflags.h"
 
 namespace base {
 class CommandLine;
@@ -53,13 +52,8 @@ MEDIA_EXPORT extern const char kUseCras[];
 MEDIA_EXPORT extern const char
     kUnsafelyAllowProtectedMediaIdentifierForDomain[];
 
-#if !defined(OS_ANDROID) || BUILDFLAG(ENABLE_PLUGINS)
 MEDIA_EXPORT extern const char kEnableAudioFocus[];
-#endif  // !defined(OS_ANDROID) || BUILDFLAG(ENABLE_PLUGINS)
-
-#if BUILDFLAG(ENABLE_PLUGINS)
 MEDIA_EXPORT extern const char kEnableAudioFocusDuckFlash[];
-#endif  // BUILDFLAG(ENABLE_PLUGINS)
 
 #if BUILDFLAG(ENABLE_RUNTIME_MEDIA_RENDERER_SELECTION)
 MEDIA_EXPORT extern const char kDisableMojoRenderer[];
@@ -126,6 +120,7 @@ MEDIA_EXPORT extern const base::Feature kOverflowIconsForMediaControls;
 MEDIA_EXPORT extern const base::Feature kOverlayFullscreenVideo;
 MEDIA_EXPORT extern const base::Feature kPictureInPicture;
 MEDIA_EXPORT extern const base::Feature kPreloadMediaEngagementData;
+MEDIA_EXPORT extern const base::Feature kPreloadMetadataSuspend;
 MEDIA_EXPORT extern const base::Feature kResumeBackgroundVideo;
 MEDIA_EXPORT extern const base::Feature kSpecCompliantCanPlayThrough;
 MEDIA_EXPORT extern const base::Feature kSupportExperimentalCdmInterface;
@@ -158,11 +153,9 @@ MEDIA_EXPORT extern const base::Feature kMediaFoundationVideoCapture;
 MEDIA_EXPORT std::string GetEffectiveAutoplayPolicy(
     const base::CommandLine& command_line);
 
-#if BUILDFLAG(ENABLE_PLUGINS)
 // Based on the command line of the current process, determine if
 // audio focus duck flash should be enabled.
 MEDIA_EXPORT bool IsAudioFocusDuckFlashEnabled();
-#endif  // BUILDFLAG(ENABLE_PLUGINS)
 
 }  // namespace media
 

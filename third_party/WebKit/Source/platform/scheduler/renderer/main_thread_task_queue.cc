@@ -44,6 +44,8 @@ const char* MainThreadTaskQueue::NameForQueueType(
       return "ipc_tq";
     case MainThreadTaskQueue::QueueType::kInput:
       return "input_tq";
+    case MainThreadTaskQueue::QueueType::kDetached:
+      return "detached_tq";
     case MainThreadTaskQueue::QueueType::kOther:
       return "other_tq";
     case MainThreadTaskQueue::QueueType::kCount:
@@ -76,6 +78,7 @@ MainThreadTaskQueue::QueueClass MainThreadTaskQueue::QueueClassForQueueType(
     case QueueType::kCompositor:
     case QueueType::kInput:
       return QueueClass::kCompositor;
+    case QueueType::kDetached:
     case QueueType::kOther:
     case QueueType::kCount:
       DCHECK(false);
@@ -99,9 +102,13 @@ MainThreadTaskQueue::MainThreadTaskQueue(
       can_be_stopped_(params.can_be_stopped),
       used_for_important_tasks_(params.used_for_important_tasks),
       renderer_scheduler_(renderer_scheduler),
-      web_frame_scheduler_(nullptr) {
+      frame_scheduler_(nullptr) {
   if (GetTaskQueueImpl()) {
     // TaskQueueImpl may be null for tests.
+    // TODO(scheduler-dev): Consider mapping directly to
+    // RendererSchedulerImpl::OnTaskStarted/Completed. At the moment this
+    // is not possible due to task queue being created inside
+    // RendererScheduler's constructor.
     GetTaskQueueImpl()->SetOnTaskStartedHandler(base::BindRepeating(
         &MainThreadTaskQueue::OnTaskStarted, base::Unretained(this)));
     GetTaskQueueImpl()->SetOnTaskCompletedHandler(base::BindRepeating(
@@ -130,29 +137,37 @@ void MainThreadTaskQueue::DetachFromRendererScheduler() {
   // Frame has already been detached.
   if (!renderer_scheduler_)
     return;
-  renderer_scheduler_->OnShutdownTaskQueue(this);
-  renderer_scheduler_ = nullptr;
-  web_frame_scheduler_ = nullptr;
 
   if (GetTaskQueueImpl()) {
     GetTaskQueueImpl()->SetOnTaskStartedHandler(
-        internal::TaskQueueImpl::OnTaskStartedHandler());
+        base::BindRepeating(&RendererSchedulerImpl::OnTaskStarted,
+                            renderer_scheduler_->GetWeakPtr(), nullptr));
     GetTaskQueueImpl()->SetOnTaskCompletedHandler(
-        internal::TaskQueueImpl::OnTaskCompletedHandler());
+        base::BindRepeating(&RendererSchedulerImpl::OnTaskCompleted,
+                            renderer_scheduler_->GetWeakPtr(), nullptr));
   }
+
+  ClearReferencesToSchedulers();
 }
 
 void MainThreadTaskQueue::ShutdownTaskQueue() {
-  DetachFromRendererScheduler();
+  ClearReferencesToSchedulers();
   TaskQueue::ShutdownTaskQueue();
 }
 
-WebFrameScheduler* MainThreadTaskQueue::GetFrameScheduler() const {
-  return web_frame_scheduler_;
+void MainThreadTaskQueue::ClearReferencesToSchedulers() {
+  if (renderer_scheduler_)
+    renderer_scheduler_->OnShutdownTaskQueue(this);
+  renderer_scheduler_ = nullptr;
+  frame_scheduler_ = nullptr;
 }
 
-void MainThreadTaskQueue::SetFrameScheduler(WebFrameScheduler* frame) {
-  web_frame_scheduler_ = frame;
+FrameScheduler* MainThreadTaskQueue::GetFrameScheduler() const {
+  return frame_scheduler_;
+}
+
+void MainThreadTaskQueue::SetFrameScheduler(FrameScheduler* frame) {
+  frame_scheduler_ = frame;
 }
 
 }  // namespace scheduler

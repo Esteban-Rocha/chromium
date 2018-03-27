@@ -69,11 +69,9 @@ const int64_t kDownloadId = 42LL;
 
 }  // namespace
 
-class OfflinePageModelTaskifiedTest
-    : public testing::Test,
-      public OfflinePageModel::Observer,
-      public OfflinePageTestArchiver::Observer,
-      public base::SupportsWeakPtr<OfflinePageModelTaskifiedTest> {
+class OfflinePageModelTaskifiedTest : public testing::Test,
+                                      public OfflinePageModel::Observer,
+                                      public OfflinePageTestArchiver::Observer {
  public:
   OfflinePageModelTaskifiedTest();
   ~OfflinePageModelTaskifiedTest() override;
@@ -233,7 +231,7 @@ void OfflinePageModelTaskifiedTest::BuildModel() {
   model_ = std::make_unique<OfflinePageModelTaskified>(
       store_test_util()->ReleaseStore(), std::move(archive_manager),
       std::move(download_manager), base::ThreadTaskRunnerHandle::Get(),
-      task_runner_->DeprecatedGetMockClock());
+      task_runner_->GetMockClock());
   model_->AddObserver(this);
   histogram_tester_ = std::make_unique<base::HistogramTester>();
   ResetResults();
@@ -1447,6 +1445,35 @@ TEST_F(OfflinePageModelTaskifiedTest, ClearStorage) {
       static_cast<int>(ClearStorageResult::UNNECESSARY), 2);
   histogram_tester()->ExpectTotalCount(
       "OfflinePages.ClearTemporaryPages.BatchSize", 0);
+}
+
+TEST_F(OfflinePageModelTaskifiedTest, MaintenanceTasksAreDisabled) {
+  // The maintenance tasks should not be executed when disabled by tests.
+  model()->DoNotRunMaintenanceTasksForTesting();
+
+  // With that setting GetAllPages and saving a page should not schedule
+  // maintenance tasks.
+  base::MockCallback<MultipleOfflinePageItemCallback> callback;
+  model()->GetAllPages(callback.Get());
+  auto archiver = BuildArchiver(kTestUrl, ArchiverResult::SUCCESSFULLY_CREATED);
+  SavePageWithExpectedResult(kTestUrl, kTestClientId1, kTestUrl2,
+                             kEmptyRequestOrigin, std::move(archiver),
+                             SavePageResult::SUCCESS);
+  PumpLoop();
+  EXPECT_EQ(base::Time(), last_maintenance_tasks_schedule_time());
+
+  // Advance the clock considerably and confirm no runs happened.
+  task_runner()->FastForwardBy(base::TimeDelta::FromDays(1));
+  PumpLoop();
+  EXPECT_EQ(base::Time(), last_maintenance_tasks_schedule_time());
+  histogram_tester()->ExpectTotalCount(
+      "OfflinePages.ClearTemporaryPages.Result", 0);
+  histogram_tester()->ExpectTotalCount(
+      "OfflinePages.ClearTemporaryPages.BatchSize", 0);
+  histogram_tester()->ExpectTotalCount(
+      "OfflinePages.ConsistencyCheck.Temporary.Result", 0);
+  histogram_tester()->ExpectTotalCount(
+      "OfflinePages.ConsistencyCheck.Persistent.Result", 0);
 }
 
 }  // namespace offline_pages

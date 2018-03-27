@@ -6,8 +6,8 @@
 
 #include "core/html/HTMLIFrameElement.h"
 #include "core/layout/LayoutBoxModelObject.h"
-#include "core/layout/LayoutTestHelper.h"
 #include "core/layout/LayoutView.h"
+#include "core/testing/CoreUnitTestHelper.h"
 #include "platform/testing/PaintTestConfigurations.h"
 #include "platform/testing/UnitTestHelpers.h"
 
@@ -1224,6 +1224,27 @@ TEST_P(PaintLayerTest, ReferenceClipPathWithPageZoom) {
   EXPECT_EQ(body, GetDocument().ElementFromPoint(60, 151));
 }
 
+TEST_P(PaintLayerTest, FragmentedHitTest) {
+  SetHtmlInnerHTML(R"HTML(
+    <style>
+    div {
+      break-inside: avoid-column;
+      width: 50px;
+      height: 50px;
+      position: relative;
+    }
+    </style>
+    <ul style="column-count: 4; position: relative">
+      <div></div>
+      <div id=target style=" position: relative; transform: translateY(0px);">
+      </div>
+    </ul>
+  )HTML");
+
+  auto* target = GetDocument().getElementById("target");
+  EXPECT_EQ(target, GetDocument().ElementFromPoint(280, 30));
+}
+
 TEST_P(PaintLayerTest, SquashingOffsets) {
   if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
     return;
@@ -1251,8 +1272,8 @@ TEST_P(PaintLayerTest, SquashingOffsets) {
       squashed->GetLayoutObject(), rect);
   EXPECT_EQ(LayoutRect(0, 0, 200, 200), rect);
 
-  EXPECT_EQ(LayoutPoint(0, 0),
-            squashed->ComputeOffsetFromTransformedAncestor());
+  EXPECT_EQ(LayoutPoint(0, 0), squashed->ComputeOffsetFromAncestor(
+                                   squashed->TransformAncestorOrRoot()));
 
   GetDocument().View()->LayoutViewportScrollableArea()->ScrollBy(
       ScrollOffset(0, 25), kUserScroll);
@@ -1266,8 +1287,8 @@ TEST_P(PaintLayerTest, SquashingOffsets) {
       squashed->GetLayoutObject(), rect);
   EXPECT_EQ(LayoutRect(0, 0, 200, 200), rect);
 
-  EXPECT_EQ(LayoutPoint(0, 0),
-            squashed->ComputeOffsetFromTransformedAncestor());
+  EXPECT_EQ(LayoutPoint(0, 0), squashed->ComputeOffsetFromAncestor(
+                                   squashed->TransformAncestorOrRoot()));
 }
 
 TEST_P(PaintLayerTest, HitTestWithIgnoreClipping) {

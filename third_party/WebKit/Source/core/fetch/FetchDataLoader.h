@@ -53,6 +53,9 @@ class CORE_EXPORT FetchDataLoader
 
     virtual void DidFetchDataLoadFailed() = 0;
 
+    // This function is called when an abort has been signalled.
+    virtual void Abort() = 0;
+
     void Trace(blink::Visitor* visitor) override {}
   };
 
@@ -63,7 +66,8 @@ class CORE_EXPORT FetchDataLoader
       const String& multipart_boundary);
   static FetchDataLoader* CreateLoaderAsString();
   static FetchDataLoader* CreateLoaderAsDataPipe(
-      mojo::ScopedDataPipeProducerHandle out_data_pipe);
+      mojo::ScopedDataPipeProducerHandle out_data_pipe,
+      scoped_refptr<base::SingleThreadTaskRunner>);
 
   virtual ~FetchDataLoader() {}
 

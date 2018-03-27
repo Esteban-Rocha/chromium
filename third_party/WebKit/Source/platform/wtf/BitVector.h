@@ -26,14 +26,12 @@
 #ifndef BitVector_h
 #define BitVector_h
 
+#include "base/bit_cast.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/WTFExport.h"
 
 namespace WTF {
-
-class PrintStream;
 
 // This is a space-efficient, resizeable bitvector class. In the common case it
 // occupies one word, but if necessary, it will inflate this one word to point
@@ -156,8 +154,6 @@ class WTF_EXPORT BitVector {
       Clear(bit);
   }
 
-  void Dump(PrintStream& out);
-
  private:
   static unsigned BitsInPointer() { return sizeof(void*) << 3; }
 
@@ -178,9 +174,9 @@ class WTF_EXPORT BitVector {
     size_t NumWords() const {
       return (num_bits_ + BitsInPointer() - 1) / BitsInPointer();
     }
-    uintptr_t* Bits() { return BitwiseCast<uintptr_t*>(this + 1); }
+    uintptr_t* Bits() { return bit_cast<uintptr_t*>(this + 1); }
     const uintptr_t* Bits() const {
-      return BitwiseCast<const uintptr_t*>(this + 1);
+      return bit_cast<const uintptr_t*>(this + 1);
     }
 
     static OutOfLineBits* Create(size_t num_bits);
@@ -196,10 +192,10 @@ class WTF_EXPORT BitVector {
   bool IsInline() const { return bits_or_pointer_ >> MaxInlineBits(); }
 
   const OutOfLineBits* GetOutOfLineBits() const {
-    return BitwiseCast<const OutOfLineBits*>(bits_or_pointer_ << 1);
+    return bit_cast<const OutOfLineBits*>(bits_or_pointer_ << 1);
   }
   OutOfLineBits* GetOutOfLineBits() {
-    return BitwiseCast<OutOfLineBits*>(bits_or_pointer_ << 1);
+    return bit_cast<OutOfLineBits*>(bits_or_pointer_ << 1);
   }
 
   void ResizeOutOfLine(size_t num_bits);

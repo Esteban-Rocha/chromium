@@ -61,9 +61,6 @@ class PowerButtonControllerTestApi {
   // True if |controller_|'s menu has a sign out item.
   bool MenuHasSignOutItem() const;
 
-  // True if should turn screen off when tapping the power button.
-  bool ShouldTurnScreenOffForTap() const;
-
   PowerButtonScreenshotController* GetScreenshotController();
 
   void SetPowerButtonType(PowerButtonController::ButtonType button_type);
@@ -71,6 +68,8 @@ class PowerButtonControllerTestApi {
   void SetTickClock(base::TickClock* tick_clock);
 
   void SetTurnScreenOffForTap(bool turn_screen_off_for_tap);
+
+  void SetShowMenuAnimationDone(bool show_menu_animation_done);
 
  private:
   PowerButtonController* controller_;  // Not owned.

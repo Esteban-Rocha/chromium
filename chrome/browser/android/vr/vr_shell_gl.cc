@@ -24,9 +24,9 @@
 #include "chrome/browser/android/vr/vr_controller.h"
 #include "chrome/browser/android/vr/vr_metrics_util.h"
 #include "chrome/browser/android/vr/vr_shell.h"
-#include "chrome/browser/android/vr/vr_usage_monitor.h"
 #include "chrome/browser/vr/assets_loader.h"
 #include "chrome/browser/vr/elements/ui_element.h"
+#include "chrome/browser/vr/metrics/session_metrics_helper.h"
 #include "chrome/browser/vr/model/assets.h"
 #include "chrome/browser/vr/model/camera_model.h"
 #include "chrome/browser/vr/model/model.h"
@@ -54,14 +54,14 @@
 namespace vr {
 
 namespace {
-static constexpr float kZNear = 0.1f;
-static constexpr float kZFar = 10000.0f;
+constexpr float kZNear = 0.1f;
+constexpr float kZFar = 10000.0f;
 
 // GVR buffer indices for use with viewport->SetSourceBufferIndex
 // or frame.BindBuffer. We use one for world content (with reprojection)
 // including main VrShell and WebVR content plus world-space UI.
-static constexpr int kFramePrimaryBuffer = 0;
-static constexpr int kFrameWebVrBrowserUiBuffer = 1;
+constexpr int kFramePrimaryBuffer = 0;
+constexpr int kFrameWebVrBrowserUiBuffer = 1;
 
 // When display UI on top of WebVR, we use a seperate buffer. Normally, the
 // buffer is set to recommended size to get best visual (i.e the buffer for
@@ -71,52 +71,57 @@ static constexpr int kFrameWebVrBrowserUiBuffer = 1;
 // elements. This allows us rendering UI at the same quality with a smaller
 // buffer.
 // Use 2 for now, we can probably make the buffer even smaller.
-static constexpr float kWebVrBrowserUiSizeFactor = 2.f;
+constexpr float kWebVrBrowserUiSizeFactor = 2.f;
 
 // The GVR viewport list has two entries (left eye and right eye) for each
 // GVR buffer.
-static constexpr int kViewportListPrimaryOffset = 0;
-static constexpr int kViewportListWebVrBrowserUiOffset = 2;
+constexpr int kViewportListPrimaryOffset = 0;
+constexpr int kViewportListWebVrBrowserUiOffset = 2;
 
 // Buffer size large enough to handle the current backlog of poses which is
 // 2-3 frames.
-static constexpr unsigned kPoseRingBufferSize = 8;
+constexpr unsigned kPoseRingBufferSize = 8;
 
 // Number of frames to use for sliding averages for pose timings,
 // as used for estimating prediction times.
-static constexpr unsigned kWebVRSlidingAverageSize = 5;
+constexpr unsigned kWebVRSlidingAverageSize = 5;
 
 // Criteria for considering holding the app button in combination with
 // controller movement as a gesture.
-static constexpr float kMinAppButtonGestureAngleRad = 0.25;
+constexpr float kMinAppButtonGestureAngleRad = 0.25;
+
+// Exceeding pressing the appbutton for longer than this threshold will result
+// in a long press.
+constexpr base::TimeDelta kLongPressThreshold =
+    base::TimeDelta::FromMilliseconds(900);
 
 // Timeout for checking for the WebVR rendering GL fence. If the timeout is
 // reached, yield to let other tasks execute before rechecking.
-static constexpr base::TimeDelta kWebVRFenceCheckTimeout =
+constexpr base::TimeDelta kWebVRFenceCheckTimeout =
     base::TimeDelta::FromMicroseconds(2000);
 
 // Polling interval for checking for the WebVR rendering GL fence. Used as
 // an alternative to kWebVRFenceCheckTimeout if the GPU workaround is active.
 // The actual interval may be longer due to PostDelayedTask's resolution.
-static constexpr base::TimeDelta kWebVRFenceCheckPollInterval =
+constexpr base::TimeDelta kWebVRFenceCheckPollInterval =
     base::TimeDelta::FromMicroseconds(500);
 
-static constexpr int kWebVrInitialFrameTimeoutSeconds = 5;
-static constexpr int kWebVrSpinnerTimeoutSeconds = 2;
+constexpr int kWebVrInitialFrameTimeoutSeconds = 5;
+constexpr int kWebVrSpinnerTimeoutSeconds = 2;
 
 // Heuristic time limit to detect overstuffed GVR buffers for a
 // >60fps capable web app.
-static constexpr base::TimeDelta kWebVrSlowAcquireThreshold =
+constexpr base::TimeDelta kWebVrSlowAcquireThreshold =
     base::TimeDelta::FromMilliseconds(2);
 
 // If running too fast, allow dropping frames occasionally to let GVR catch up.
 // Drop at most one frame in MaxDropRate.
-static constexpr int kWebVrUnstuffMaxDropRate = 11;
+constexpr int kWebVrUnstuffMaxDropRate = 11;
 
-static constexpr int kNumSamplesPerPixelBrowserUi = 2;
-static constexpr int kNumSamplesPerPixelWebVr = 1;
+constexpr int kNumSamplesPerPixelBrowserUi = 2;
+constexpr int kNumSamplesPerPixelWebVr = 1;
 
-static constexpr float kRedrawSceneAngleDeltaDegrees = 1.0;
+constexpr float kRedrawSceneAngleDeltaDegrees = 1.0;
 
 gfx::Transform PerspectiveMatrixFromView(const gvr::Rectf& fov,
                                          float z_near,
@@ -452,6 +457,8 @@ void VrShellGl::ConnectPresentingService(
   // direct-draw-to-shared-buffer optimization.
   DVLOG(1) << "preserveDrawingBuffer="
            << present_options->preserve_drawing_buffer;
+
+  report_webxr_input_ = present_options->webxr_input;
 }
 
 void VrShellGl::OnSwapContents(int new_content_id) {
@@ -734,8 +741,9 @@ void VrShellGl::HandleControllerInput(const gfx::Point3F& laser_origin,
 
   HandleControllerAppButtonActivity(controller_direction);
 
-  if (ShouldDrawWebVr())
+  if (ShouldDrawWebVr() && !ShouldSendGesturesToWebVr()) {
     return;
+  }
 
   ControllerModel controller_model;
   controller_->GetTransform(&controller_model.transform);
@@ -764,6 +772,7 @@ void VrShellGl::HandleControllerInput(const gfx::Point3F& laser_origin,
   controller_model.touching_touchpad = controller_->IsTouching();
   controller_model.touchpad_touch_position =
       gfx::PointF(controller_->TouchPosX(), controller_->TouchPosY());
+  controller_model.app_button_long_pressed = app_button_long_pressed_;
   controller_model_ = controller_model;
 
   ReticleModel reticle_model;
@@ -792,6 +801,8 @@ void VrShellGl::HandleControllerAppButtonActivity(
   if (controller_->ButtonDownHappened(
           gvr::ControllerButton::GVR_CONTROLLER_BUTTON_APP)) {
     controller_start_direction_ = controller_direction;
+    app_button_down_time_ = base::TimeTicks::Now();
+    app_button_long_pressed_ = false;
   }
 
   if (controller_->ButtonUpHappened(
@@ -818,15 +829,23 @@ void VrShellGl::HandleControllerAppButtonActivity(
         // UI state in the midst of frame rendering.
         base::ThreadTaskRunnerHandle::Get()->PostTask(
             FROM_HERE,
-            base::BindRepeating(&Ui::OnAppButtonGesturePerformed,
+            base::BindRepeating(&Ui::OnAppButtonSwipePerformed,
                                 base::Unretained(ui_.get()), direction));
       }
     }
-    if (direction == PlatformController::kSwipeDirectionNone) {
+    if (direction == PlatformController::kSwipeDirectionNone &&
+        !app_button_long_pressed_) {
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::BindRepeating(&Ui::OnAppButtonClicked,
                                          base::Unretained(ui_.get())));
     }
+  }
+
+  if (!app_button_long_pressed_ &&
+      controller_->ButtonState(
+          gvr::ControllerButton::GVR_CONTROLLER_BUTTON_APP) &&
+      (base::TimeTicks::Now() - app_button_down_time_) > kLongPressThreshold) {
+    app_button_long_pressed_ = true;
   }
 }
 
@@ -1292,6 +1311,10 @@ bool VrShellGl::ShouldDrawWebVr() {
   return web_vr_mode_ && ui_->ShouldRenderWebVr() && webvr_frames_received_ > 0;
 }
 
+bool VrShellGl::ShouldSendGesturesToWebVr() {
+  return ui_->IsAppButtonLongPressed() != app_button_long_pressed_;
+}
+
 void VrShellGl::DrawWebVr() {
   TRACE_EVENT0("gpu", "VrShellGl::DrawWebVr");
   // Don't need face culling, depth testing, blending, etc. Turn it all off.
@@ -1573,6 +1596,17 @@ void VrShellGl::SendVSync(base::TimeTicks time, GetVSyncCallback callback) {
       device::GvrDelegate::GetVRPosePtrWithNeckModel(gvr_api_.get(), &head_mat,
                                                      prediction_nanos);
 
+  if (report_webxr_input_) {
+    std::vector<device::mojom::XRInputSourceStatePtr> input_states;
+
+    device::mojom::XRInputSourceStatePtr input_state =
+        cardboard_ ? GetGazeInputSourceState()
+                   : controller_->GetInputSourceState();
+
+    input_states.push_back(std::move(input_state));
+    pose->input_state = std::move(input_states);
+  }
+
   webvr_head_pose_[frame_index % kPoseRingBufferSize] = head_mat;
   webvr_frame_oustanding_[frame_index % kPoseRingBufferSize] = true;
   webvr_time_pose_[frame_index % kPoseRingBufferSize] = base::TimeTicks::Now();
@@ -1594,6 +1628,42 @@ void VrShellGl::ClosePresentationBindings() {
              device::mojom::VRPresentationProvider::VSyncStatus::CLOSING);
   }
   binding_.Close();
+}
+
+device::mojom::XRInputSourceStatePtr VrShellGl::GetGazeInputSourceState() {
+  device::mojom::XRInputSourceStatePtr state =
+      device::mojom::XRInputSourceState::New();
+
+  // Only one gaze input source to worry about, so it can have a static id.
+  state->source_id = 1;
+
+  // Report any trigger state changes made since the last call and reset the
+  // state here.
+  state->primary_input_pressed = cardboard_trigger_pressed_;
+  state->primary_input_clicked = cardboard_trigger_clicked_;
+  cardboard_trigger_clicked_ = false;
+
+  state->description = device::mojom::XRInputSourceDescription::New();
+
+  // It's a gaze-cursor-based device.
+  state->description->pointer_origin = device::mojom::XRPointerOrigin::HEAD;
+  state->description->emulated_position = true;
+
+  // No implicit handedness
+  state->description->handedness = device::mojom::XRHandedness::NONE;
+
+  // Pointer and grip transforms are omitted since this is a gaze-based source.
+
+  return state;
+}
+
+void VrShellGl::OnTriggerEvent(bool pressed) {
+  if (pressed) {
+    cardboard_trigger_pressed_ = true;
+  } else if (cardboard_trigger_pressed_) {
+    cardboard_trigger_pressed_ = false;
+    cardboard_trigger_clicked_ = true;
+  }
 }
 
 void VrShellGl::AcceptDoffPromptForTesting() {

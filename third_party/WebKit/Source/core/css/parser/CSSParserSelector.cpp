@@ -21,10 +21,15 @@
 #include "core/css/parser/CSSParserSelector.h"
 
 #include <memory>
+#include <utility>
+
+#include "base/memory/ptr_util.h"
 #include "core/css/CSSSelectorList.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
+
+using RelationType = CSSSelector::RelationType;
+using PseudoType = CSSSelector::PseudoType;
 
 CSSParserSelector::CSSParserSelector()
     : selector_(std::make_unique<CSSSelector>()) {}
@@ -51,7 +56,7 @@ void CSSParserSelector::AdoptSelectorVector(
     Vector<std::unique_ptr<CSSParserSelector>>& selector_vector) {
   CSSSelectorList* selector_list = new CSSSelectorList(
       CSSSelectorList::AdoptSelectorVector(selector_vector));
-  selector_->SetSelectorList(WTF::WrapUnique(selector_list));
+  selector_->SetSelectorList(base::WrapUnique(selector_list));
 }
 
 void CSSParserSelector::SetSelectorList(
@@ -108,6 +113,27 @@ void CSSParserSelector::PrependTagSelector(const QualifiedName& tag_q_name,
 bool CSSParserSelector::IsHostPseudoSelector() const {
   return GetPseudoType() == CSSSelector::kPseudoHost ||
          GetPseudoType() == CSSSelector::kPseudoHostContext;
+}
+
+RelationType CSSParserSelector::GetImplicitShadowCombinatorForMatching() const {
+  switch (GetPseudoType()) {
+    case PseudoType::kPseudoSlotted:
+      return RelationType::kShadowSlot;
+    case PseudoType::kPseudoWebKitCustomElement:
+    case PseudoType::kPseudoBlinkInternalElement:
+    case PseudoType::kPseudoCue:
+    case PseudoType::kPseudoPlaceholder:
+    case PseudoType::kPseudoShadow:
+      return RelationType::kShadowPseudo;
+    case PseudoType::kPseudoPart:
+      return RelationType::kShadowPart;
+    default:
+      return RelationType::kSubSelector;
+  }
+}
+
+bool CSSParserSelector::NeedsImplicitShadowCombinatorForMatching() const {
+  return GetImplicitShadowCombinatorForMatching() != RelationType::kSubSelector;
 }
 
 }  // namespace blink

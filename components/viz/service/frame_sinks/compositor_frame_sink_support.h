@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/surface_info.h"
@@ -27,6 +28,7 @@
 namespace viz {
 
 class FrameSinkManagerImpl;
+class LatestLocalSurfaceIdLookupDelegate;
 class Surface;
 class SurfaceManager;
 
@@ -45,7 +47,9 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
 
   using AggregatedDamageCallback =
       base::RepeatingCallback<void(const LocalSurfaceId& local_surface_id,
-                                   const gfx::Rect& damage_rect)>;
+                                   const gfx::Size& frame_size_in_pixels,
+                                   const gfx::Rect& damage_rect,
+                                   base::TimeTicks expected_display_time)>;
 
   static const uint64_t kFrameIndexStart = 2;
 
@@ -66,11 +70,14 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
     return last_activated_surface_id_.local_surface_id();
   }
 
+  bool is_root() const { return is_root_; }
+
   FrameSinkManagerImpl* frame_sink_manager() { return frame_sink_manager_; }
 
   // Viz hit-test setup is only called when |is_root_| is true (except on
   // android webview).
-  void SetUpHitTest();
+  void SetUpHitTest(
+      LatestLocalSurfaceIdLookupDelegate* local_surface_id_lookup_delegate);
 
   // The provided callback will be run every time a surface owned by this object
   // or one of its descendents is determined to be damaged at aggregation time.
@@ -173,8 +180,9 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   Surface* CreateSurface(const SurfaceInfo& surface_info);
 
   void OnAggregatedDamage(const LocalSurfaceId& local_surface_id,
+                          const gfx::Size& frame_size_in_pixels,
                           const gfx::Rect& damage_rect,
-                          const CompositorFrame& frame) const;
+                          base::TimeTicks expected_display_time) const;
 
   mojom::CompositorFrameSinkClient* const client_;
 

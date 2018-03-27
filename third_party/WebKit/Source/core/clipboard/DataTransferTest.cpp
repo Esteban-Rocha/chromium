@@ -9,9 +9,9 @@
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/LayoutTestHelper.h"
+#include "core/testing/CoreUnitTestHelper.h"
 #include "platform/DragImage.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
@@ -313,6 +313,40 @@ TEST_P(DataTransferTest, NodeImageWithScrolling) {
   const auto image = DataTransfer::NodeImage(GetFrame(), target);
 
   EXPECT_EQ(IntSize(200, 100), image->Size());
+}
+
+TEST_P(DataTransferTest, NodeImageInOffsetStackingContext) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      * { margin: 0; }
+      #container {
+        position: absolute;
+        top: 4px;
+        z-index: 10;
+      }
+      #drag {
+        width: 5px;
+        height: 5px;
+        background: #0F0;
+      }
+    </style>
+    <div id="container">
+      <div id="drag" draggable="true"></div>
+    </div>
+  )HTML");
+  Element& drag = *GetDocument().getElementById("drag");
+  const auto image = DataTransfer::NodeImage(GetFrame(), drag);
+  constexpr int drag_width = 5;
+  constexpr int drag_height = 5;
+  EXPECT_EQ(IntSize(drag_width, drag_height), image->Size());
+
+  // The dragged image should be (drag_width x drag_height) and fully green.
+  Color green = 0xFF00FF00;
+  const SkBitmap& bitmap = image->Bitmap();
+  for (int x = 0; x < drag_width; ++x) {
+    for (int y = 0; y < drag_height; ++y)
+      EXPECT_EQ(green, bitmap.getColor(x, y));
+  }
 }
 
 }  // namespace blink

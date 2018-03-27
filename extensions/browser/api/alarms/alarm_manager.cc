@@ -20,6 +20,7 @@
 #include "extensions/browser/api/alarms/alarms_api_constants.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_registry_factory.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/state_store.h"
 #include "extensions/common/api/alarms.h"
@@ -109,7 +110,7 @@ std::unique_ptr<base::ListValue> AlarmsToValue(
 
 AlarmManager::AlarmManager(content::BrowserContext* context)
     : browser_context_(context),
-      clock_(new base::DefaultClock()),
+      clock_(base::DefaultClock::GetInstance()),
       delegate_(new DefaultAlarmDelegate(context)),
       extension_registry_observer_(this) {
   extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context_));
@@ -224,12 +225,17 @@ AlarmManager::AlarmIterator AlarmManager::GetAlarmIterator(
 }
 
 void AlarmManager::SetClockForTesting(base::Clock* clock) {
-  clock_.reset(clock);
+  clock_ = clock;
 }
 
 static base::LazyInstance<
     BrowserContextKeyedAPIFactory<AlarmManager>>::DestructorAtExit g_factory =
     LAZY_INSTANCE_INITIALIZER;
+
+template <>
+void BrowserContextKeyedAPIFactory<AlarmManager>::DeclareFactoryDependencies() {
+  DependsOn(ExtensionRegistryFactory::GetInstance());
+}
 
 // static
 BrowserContextKeyedAPIFactory<AlarmManager>*

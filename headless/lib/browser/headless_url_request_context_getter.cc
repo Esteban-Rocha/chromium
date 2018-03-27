@@ -25,9 +25,10 @@
 #include "net/http/http_auth_scheme.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/default_channel_id_store.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
 
@@ -146,8 +147,33 @@ HeadlessURLRequestContextGetter::GetURLRequestContext() {
     builder.set_data_enabled(true);
     builder.set_file_enabled(true);
     if (proxy_config_) {
+      net::NetworkTrafficAnnotationTag traffic_annotation =
+          net::DefineNetworkTrafficAnnotation("proxy_config_headless", R"(
+        semantics {
+          sender: "Proxy Config"
+          description:
+            "Creates a proxy based on configuration received from headless "
+            "command prompt."
+          trigger:
+            "User starts headless with proxy config."
+          data:
+            "Proxy configurations."
+          destination: OTHER
+          destination_other:
+            "The proxy server specified in the configuration."
+        }
+        policy {
+          cookies_allowed: NO
+          setting:
+            "This config is only used for headless mode and provided by user."
+          policy_exception_justification:
+            "This config is only used for headless mode and provided by user."
+        })");
+
       builder.set_proxy_resolution_service(
-          net::ProxyResolutionService::CreateFixed(*proxy_config_));
+          net::ProxyResolutionService::CreateFixed(
+              net::ProxyConfigWithAnnotation(*proxy_config_,
+                                             traffic_annotation)));
     } else {
       builder.set_proxy_config_service(std::move(proxy_config_service_));
     }

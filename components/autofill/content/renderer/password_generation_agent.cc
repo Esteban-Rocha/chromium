@@ -164,6 +164,9 @@ PasswordGenerationAgent::PasswordGenerationAgent(
       editing_popup_shown_(false),
       enabled_(password_generation::IsPasswordGenerationEnabled()),
       form_classifier_enabled_(false),
+      mark_generation_element_(
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kShowAutofillSignatures)),
       password_agent_(password_agent),
       binding_(this) {
   LogBoolean(Logger::STRING_GENERATION_RENDERER_ENABLED, enabled_);
@@ -176,6 +179,14 @@ PasswordGenerationAgent::~PasswordGenerationAgent() {}
 void PasswordGenerationAgent::BindRequest(
     mojom::PasswordGenerationAgentRequest request) {
   binding_.Bind(std::move(request));
+}
+
+void PasswordGenerationAgent::DidCommitProvisionalLoad(
+    bool /*is_new_navigation*/, bool is_same_document_navigation) {
+  if (is_same_document_navigation)
+    return;
+  generation_element_.Reset();
+  last_focused_password_element_.Reset();
 }
 
 void PasswordGenerationAgent::DidFinishDocumentLoad() {
@@ -456,6 +467,8 @@ void PasswordGenerationAgent::DetermineGenerationElement() {
     generation_form_data_.reset(new AccountCreationFormData(
         possible_form_data.form, std::move(password_elements)));
     generation_element_ = generation_form_data_->password_elements[0];
+    if (mark_generation_element_)
+      generation_element_.SetAttribute("password_creation_field", "1");
     generation_element_.SetAttribute("aria-autocomplete", "list");
     password_generation::LogPasswordGenerationEvent(
         password_generation::GENERATION_AVAILABLE);

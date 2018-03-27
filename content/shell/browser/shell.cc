@@ -42,7 +42,7 @@
 #include "content/shell/common/layout_test/layout_test_switches.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "third_party/WebKit/public/web/WebPresentationReceiverFlags.h"
 
 namespace content {
@@ -167,7 +167,7 @@ void Shell::CloseAllWindows() {
 void Shell::SetShellCreatedCallback(
     base::Callback<void(Shell*)> shell_created_callback) {
   DCHECK(shell_created_callback_.is_null());
-  shell_created_callback_ = shell_created_callback;
+  shell_created_callback_ = std::move(shell_created_callback);
 }
 
 Shell* Shell::FromRenderViewHost(RenderViewHost* rvh) {

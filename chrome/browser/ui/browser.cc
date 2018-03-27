@@ -202,10 +202,10 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/background_info.h"
-#include "extensions/features/features.h"
 #include "net/base/filename_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/cookie_monster.h"
@@ -293,24 +293,12 @@ const extensions::Extension* GetExtensionForOrigin(
 // Browser, CreateParams:
 
 Browser::CreateParams::CreateParams(Profile* profile, bool user_gesture)
-    : type(TYPE_TABBED),
-      profile(profile),
-      trusted_source(false),
-      initial_show_state(ui::SHOW_STATE_DEFAULT),
-      is_session_restore(false),
-      user_gesture(user_gesture),
-      window(NULL) {}
+    : CreateParams(TYPE_TABBED, profile, user_gesture) {}
 
 Browser::CreateParams::CreateParams(Type type,
                                     Profile* profile,
                                     bool user_gesture)
-    : type(type),
-      profile(profile),
-      trusted_source(false),
-      initial_show_state(ui::SHOW_STATE_DEFAULT),
-      is_session_restore(false),
-      user_gesture(user_gesture),
-      window(NULL) {}
+    : type(type), profile(profile), user_gesture(user_gesture) {}
 
 Browser::CreateParams::CreateParams(const CreateParams& other) = default;
 
@@ -449,6 +437,9 @@ Browser::Browser(const CreateParams& params)
 
   ProfileMetrics::LogProfileLaunch(profile_);
 
+  if (params.skip_window_init_for_testing)
+    return;
+
   window_ = params.window ? params.window
                           : CreateBrowserWindow(this, params.user_gesture);
 
@@ -476,12 +467,7 @@ Browser::Browser(const CreateParams& params)
   exclusive_access_manager_.reset(
       new ExclusiveAccessManager(window_->GetExclusiveAccessContext()));
 
-  // TODO(beng): Move BrowserList::AddBrowser() to the end of this function and
-  //             replace uses of this with BL's notifications.
   BrowserList::AddBrowser(this);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_BROWSER_WINDOW_READY, content::Source<Browser>(this),
-      content::NotificationService::NoDetails());
 }
 
 Browser::~Browser() {
@@ -660,6 +646,16 @@ base::string16 Browser::GetWindowTitleFromWebContents(
   // On Mac, we don't want to suffix the page title with the application name.
   return title;
 #endif
+
+  // If there is no title and this is an app, fall back on the app name. This
+  // ensures that the native window gets a title which is important for a11y,
+  // for example the window selector uses the Aura window title.
+  if (title.empty() && is_app() && include_app_name) {
+    return base::UTF8ToUTF16(hosted_app_controller_
+                                 ? hosted_app_controller_->GetAppShortName()
+                                 : app_name());
+  }
+
   // Include the app name in window titles for tabbed browser windows when
   // requested with |include_app_name|.
   return (!is_app() && include_app_name) ?

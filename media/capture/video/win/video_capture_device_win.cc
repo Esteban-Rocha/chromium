@@ -321,6 +321,7 @@ VideoPixelFormat VideoCaptureDeviceWin::TranslateMediaSubtypeToPixelFormat(
       {kMediaSubTypeI420, PIXEL_FORMAT_I420},
       {MEDIASUBTYPE_IYUV, PIXEL_FORMAT_I420},
       {MEDIASUBTYPE_RGB24, PIXEL_FORMAT_RGB24},
+      {MEDIASUBTYPE_RGB32, PIXEL_FORMAT_RGB32},
       {MEDIASUBTYPE_YUY2, PIXEL_FORMAT_YUY2},
       {MEDIASUBTYPE_MJPG, PIXEL_FORMAT_MJPEG},
       {MEDIASUBTYPE_UYVY, PIXEL_FORMAT_UYVY},
@@ -858,7 +859,8 @@ void VideoCaptureDeviceWin::FrameReceived(const uint8_t* buffer,
   if (timestamp == kNoTimestamp)
     timestamp = base::TimeTicks::Now() - first_ref_time_;
 
-  client_->OnIncomingCapturedData(buffer, length, format, GetCameraRotation(),
+  client_->OnIncomingCapturedData(buffer, length, format,
+                                  GetCameraRotation(device_descriptor_.facing),
                                   base::TimeTicks::Now(), timestamp);
 
   while (!take_photo_callbacks_.empty()) {

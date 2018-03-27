@@ -102,12 +102,15 @@ V4L2VideoEncodeAccelerator::OutputRecord::OutputRecord()
 
 V4L2VideoEncodeAccelerator::OutputRecord::~OutputRecord() {}
 
-V4L2VideoEncodeAccelerator::ImageProcessorInputRecord::
-    ImageProcessorInputRecord()
-    : force_keyframe(false) {}
+V4L2VideoEncodeAccelerator::InputFrameInfo::InputFrameInfo()
+    : InputFrameInfo(nullptr, false) {}
 
-V4L2VideoEncodeAccelerator::ImageProcessorInputRecord::
-    ~ImageProcessorInputRecord() {}
+V4L2VideoEncodeAccelerator::InputFrameInfo::InputFrameInfo(
+    scoped_refptr<VideoFrame> frame,
+    bool force_keyframe)
+    : frame(frame), force_keyframe(force_keyframe) {}
+
+V4L2VideoEncodeAccelerator::InputFrameInfo::~InputFrameInfo() {}
 
 V4L2VideoEncodeAccelerator::V4L2VideoEncodeAccelerator(
     const scoped_refptr<V4L2Device>& device)
@@ -286,10 +289,7 @@ void V4L2VideoEncodeAccelerator::Encode(const scoped_refptr<VideoFrame>& frame,
         NOTIFY_ERROR(kPlatformFailureError);
       }
     } else {
-      ImageProcessorInputRecord record;
-      record.frame = frame;
-      record.force_keyframe = force_keyframe;
-      image_processor_input_queue_.push(record);
+      image_processor_input_queue_.emplace(frame, force_keyframe);
     }
   } else {
     encoder_thread_.task_runner()->PostTask(
@@ -442,9 +442,9 @@ void V4L2VideoEncodeAccelerator::ReuseImageProcessorOutputBuffer(
   DVLOGF(4) << "output_buffer_index=" << output_buffer_index;
   free_image_processor_output_buffers_.push_back(output_buffer_index);
   if (!image_processor_input_queue_.empty()) {
-    ImageProcessorInputRecord record = image_processor_input_queue_.front();
+    InputFrameInfo frame_info = image_processor_input_queue_.front();
     image_processor_input_queue_.pop();
-    Encode(record.frame, record.force_keyframe);
+    Encode(frame_info.frame, frame_info.force_keyframe);
   }
 }
 
@@ -530,26 +530,8 @@ void V4L2VideoEncodeAccelerator::EncodeTask(
     return;
   }
 
-  encoder_input_queue_.push(frame);
+  encoder_input_queue_.emplace(frame, force_keyframe);
   Enqueue();
-
-  if (force_keyframe) {
-    // TODO(posciak): this presently makes for slightly imprecise encoding
-    // parameters updates.  To precisely align the parameter updates with the
-    // incoming input frame, we should queue the parameters together with the
-    // frame onto encoder_input_queue_ and apply them when the input is about
-    // to be queued to the codec.
-    std::vector<struct v4l2_ext_control> ctrls;
-    struct v4l2_ext_control ctrl;
-    memset(&ctrl, 0, sizeof(ctrl));
-    ctrl.id = V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME;
-    ctrls.push_back(ctrl);
-    if (!SetExtCtrls(ctrls)) {
-      VLOGF(1) << "Failed requesting keyframe";
-      NOTIFY_ERROR(kPlatformFailureError);
-      return;
-    }
-  }
 }
 
 void V4L2VideoEncodeAccelerator::UseOutputBitstreamBufferTask(
@@ -637,7 +619,7 @@ void V4L2VideoEncodeAccelerator::Enqueue() {
   const int old_inputs_queued = input_buffer_queued_count_;
   while (!encoder_input_queue_.empty() && !free_input_buffers_.empty()) {
     // A null frame indicates a flush.
-    if (encoder_input_queue_.front() == nullptr) {
+    if (encoder_input_queue_.front().frame == nullptr) {
       DVLOGF(3) << "All input frames needed to be flushed are enqueued.";
       encoder_input_queue_.pop();
 
@@ -743,39 +725,56 @@ void V4L2VideoEncodeAccelerator::Dequeue() {
       NOTIFY_ERROR(kPlatformFailureError);
       return;
     }
-    if ((encoder_state_ == kFlushing) && (dqbuf.flags & V4L2_BUF_FLAG_LAST)) {
+    const bool key_frame = ((dqbuf.flags & V4L2_BUF_FLAG_KEYFRAME) != 0);
+    OutputRecord& output_record = output_buffer_map_[dqbuf.index];
+    DCHECK(output_record.at_device);
+    DCHECK(output_record.buffer_ref);
+
+    bool flush_done =
+        (encoder_state_ == kFlushing) && (dqbuf.flags & V4L2_BUF_FLAG_LAST);
+    if (flush_done && (dqbuf.m.planes[0].bytesused == 0)) {
+      // Empty buffer for indicating Flush has finished. Recycle the buffer
+      // directly instead of sending to the client.
+      VLOGF(4) << "Recycle the empty buffer directly.";
+      encoder_thread_.task_runner()->PostTask(
+          FROM_HERE,
+          base::Bind(&V4L2VideoEncodeAccelerator::UseOutputBitstreamBufferTask,
+                     base::Unretained(this),
+                     base::Passed(&output_record.buffer_ref)));
+    } else {
+      int32_t bitstream_buffer_id = output_record.buffer_ref->id;
+      size_t output_data_size = CopyIntoOutputBuffer(
+          static_cast<uint8_t*>(output_record.address),
+          base::checked_cast<size_t>(dqbuf.m.planes[0].bytesused),
+          std::move(output_record.buffer_ref));
+
+      DVLOGF(4) << "returning "
+                << "bitstream_buffer_id=" << bitstream_buffer_id
+                << ", size=" << output_data_size << ", key_frame=" << key_frame;
+
+      child_task_runner_->PostTask(
+          FROM_HERE,
+          base::Bind(&Client::BitstreamBufferReady, client_,
+                     bitstream_buffer_id, output_data_size, key_frame,
+                     base::TimeDelta::FromMicroseconds(
+                         dqbuf.timestamp.tv_usec +
+                         dqbuf.timestamp.tv_sec *
+                             base::Time::kMicrosecondsPerSecond)));
+    }
+
+    if (flush_done) {
+      // Notify client that flush has finished successfully. The flush callback
+      // should be called after notifying the last buffer is ready.
       DVLOGF(3) << "Flush completed. Start the encoder again.";
       encoder_state_ = kEncoding;
-      // Notify client that flush has finished successfully.
-      std::move(flush_callback_).Run(true);
+      child_task_runner_->PostTask(
+          FROM_HERE, base::BindOnce(std::move(flush_callback_), true));
       // Start the encoder again.
       struct v4l2_encoder_cmd cmd;
       memset(&cmd, 0, sizeof(cmd));
       cmd.cmd = V4L2_ENC_CMD_START;
       IOCTL_OR_ERROR_RETURN(VIDIOC_ENCODER_CMD, &cmd);
     }
-    const bool key_frame = ((dqbuf.flags & V4L2_BUF_FLAG_KEYFRAME) != 0);
-    OutputRecord& output_record = output_buffer_map_[dqbuf.index];
-    DCHECK(output_record.at_device);
-    DCHECK(output_record.buffer_ref);
-
-    int32_t bitstream_buffer_id = output_record.buffer_ref->id;
-    size_t output_data_size = CopyIntoOutputBuffer(
-        static_cast<uint8_t*>(output_record.address),
-        base::checked_cast<size_t>(dqbuf.m.planes[0].bytesused),
-        std::move(output_record.buffer_ref));
-
-    DVLOGF(4) << "returning "
-              << "bitstream_buffer_id=" << bitstream_buffer_id
-              << ", size=" << output_data_size << ", key_frame=" << key_frame;
-
-    child_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&Client::BitstreamBufferReady, client_,
-                              bitstream_buffer_id, output_data_size, key_frame,
-                              base::TimeDelta::FromMicroseconds(
-                                  dqbuf.timestamp.tv_usec +
-                                  dqbuf.timestamp.tv_sec *
-                                      base::Time::kMicrosecondsPerSecond)));
 
     output_record.at_device = false;
     free_output_buffers_.push_back(dqbuf.index);
@@ -789,7 +788,21 @@ bool V4L2VideoEncodeAccelerator::EnqueueInputRecord() {
   DCHECK(!encoder_input_queue_.empty());
 
   // Enqueue an input (VIDEO_OUTPUT) buffer.
-  scoped_refptr<VideoFrame> frame = encoder_input_queue_.front();
+  InputFrameInfo frame_info = encoder_input_queue_.front();
+  if (frame_info.force_keyframe) {
+    std::vector<struct v4l2_ext_control> ctrls;
+    struct v4l2_ext_control ctrl;
+    memset(&ctrl, 0, sizeof(ctrl));
+    ctrl.id = V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME;
+    ctrls.push_back(ctrl);
+    if (!SetExtCtrls(ctrls)) {
+      VLOGF(1) << "Failed requesting keyframe";
+      NOTIFY_ERROR(kPlatformFailureError);
+      return false;
+    }
+  }
+
+  scoped_refptr<VideoFrame> frame = frame_info.frame;
   const int index = free_input_buffers_.back();
   InputRecord& input_record = input_buffer_map_[index];
   DCHECK(!input_record.at_device);

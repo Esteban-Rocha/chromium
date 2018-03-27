@@ -123,6 +123,7 @@ static void ExtractSelectorValues(const CSSSelector* selector,
         case CSSSelector::kPseudoAnyLink:
         case CSSSelector::kPseudoFocus:
         case CSSSelector::kPseudoPlaceholder:
+        case CSSSelector::kPseudoPart:
         case CSSSelector::kPseudoHost:
         case CSSSelector::kPseudoHostContext:
           pseudo_type = selector->GetPseudoType();
@@ -207,6 +208,11 @@ bool RuleSet::FindBestRuleSetAndAdd(const CSSSelector& component,
     case CSSSelector::kPseudoHost:
     case CSSSelector::kPseudoHostContext:
       shadow_host_rules_.push_back(rule_data);
+      return true;
+    case CSSSelector::kPseudoPart:
+      if (RuntimeEnabledFeatures::CSSPartPseudoElementEnabled()) {
+        part_pseudo_rules_.push_back(rule_data);
+      }
       return true;
     default:
       break;
@@ -369,6 +375,7 @@ void RuleSet::CompactRules() {
   font_face_rules_.ShrinkToFit();
   keyframes_rules_.ShrinkToFit();
   deep_combinator_or_shadow_pseudo_rules_.ShrinkToFit();
+  part_pseudo_rules_.ShrinkToFit();
   content_pseudo_element_rules_.ShrinkToFit();
   slotted_pseudo_element_rules_.ShrinkToFit();
 }
@@ -402,6 +409,7 @@ void RuleSet::Trace(blink::Visitor* visitor) {
   visitor->Trace(font_face_rules_);
   visitor->Trace(keyframes_rules_);
   visitor->Trace(deep_combinator_or_shadow_pseudo_rules_);
+  visitor->Trace(part_pseudo_rules_);
   visitor->Trace(content_pseudo_element_rules_);
   visitor->Trace(slotted_pseudo_element_rules_);
   visitor->Trace(pending_rules_);

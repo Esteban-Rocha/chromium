@@ -108,7 +108,7 @@ class Range;
 namespace network {
 class ResourceRequestBody;
 struct ResourceResponse;
-}
+}  // namespace network
 
 namespace content {
 class AssociatedInterfaceProviderImpl;
@@ -494,7 +494,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Request a one-time snapshot of the accessibility tree without changing
   // the accessibility mode.
-  void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback);
+  void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback,
+                             ui::AXMode ax_mode);
 
   // Resets the accessibility serializer in the renderer.
   void AccessibilityReset();
@@ -697,16 +698,21 @@ class CONTENT_EXPORT RenderFrameHostImpl
     return active_sandbox_flags_;
   }
 
-  // Call |FlushForTesting()| on Network Service and FrameNavigationControl
+  // Calls |FlushForTesting()| on Network Service and FrameNavigationControl
   // related interfaces to make sure all in-flight mojo messages have been
   // received by the other end. For test use only.
   void FlushNetworkAndNavigationInterfacesForTesting();
 
-  // Notifies the render frame that a user gesture was received.
-  void SetHasReceivedUserGesture();
+  // Notifies the render frame about a user activation from the browser side.
+  void NotifyUserActivation();
 
   // Returns the current size for this frame.
   const base::Optional<gfx::Size>& frame_size() const { return frame_size_; }
+
+  // Re-creates loader factories and pushes them to |RenderFrame|.
+  // Used in case we need to add or remove intercepting proxies to the
+  // running renderer, or in case of Network Service connection errors.
+  void UpdateSubresourceLoaderFactories();
 
  protected:
   friend class RenderFrameHostFactory;
@@ -750,6 +756,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            RenderViewHostIsNotReusedAfterDelayedSwapOutACK);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+                           RenderViewHostStaysActiveWithLateSwapoutACK);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            LoadEventForwardingWhilePendingDeletion);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            ContextMenuAfterCrossProcessNavigation);
@@ -790,12 +798,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnVisualStateResponse(uint64_t id);
   void OnRunJavaScriptDialog(const base::string16& message,
                              const base::string16& default_prompt,
-                             const GURL& frame_url,
                              JavaScriptDialogType dialog_type,
                              IPC::Message* reply_msg);
-  void OnRunBeforeUnloadConfirm(const GURL& frame_url,
-                                bool is_reload,
-                                IPC::Message* reply_msg);
+  void OnRunBeforeUnloadConfirm(bool is_reload, IPC::Message* reply_msg);
   void OnRunFileChooser(const FileChooserParams& params);
   void OnTextSurroundingSelectionResponse(const base::string16& content,
                                           uint32_t start_offset,
@@ -892,11 +897,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void BeginNavigation(const CommonNavigationParams& common_params,
                        mojom::BeginNavigationParamsPtr begin_params) override;
   void SubresourceResponseStarted(const GURL& url,
-                                  const GURL& referrer,
-                                  const std::string& method,
-                                  ResourceType resource_type,
-                                  const std::string& ip,
-                                  uint32_t cert_status) override;
+                                  net::CertStatus cert_status) override;
+  void SubresourceLoadComplete(
+      mojom::SubresourceLoadInfoPtr subresource_load_info) override;
   void DidChangeName(const std::string& name,
                      const std::string& unique_name) override;
   void EnforceInsecureRequestPolicy(
@@ -950,10 +953,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void UpdatePermissionsForNavigation(
       const CommonNavigationParams& common_params,
       const RequestNavigationParams& request_params);
-
-  // Handle Network Service connection errors. Will re-create broken Network
-  // Service-backed factories and send to |RenderFrame|.
-  void OnNetworkServiceConnectionError();
 
   // Creates a Network Service-backed factory from appropriate |NetworkContext|
   // and sets a connection error handler to trigger
@@ -1020,6 +1019,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   void BindMediaInterfaceFactoryRequest(
       media::mojom::InterfaceFactoryRequest request);
+
+  void CreateWebSocket(network::mojom::WebSocketRequest request);
 
   // Callback for connection error on the media::mojom::InterfaceFactory client.
   void OnMediaInterfaceFactoryConnectionError();

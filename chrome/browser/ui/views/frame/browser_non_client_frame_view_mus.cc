@@ -225,6 +225,11 @@ void BrowserNonClientFrameViewMus::UpdateMinimumSize() {
   }
 }
 
+int BrowserNonClientFrameViewMus::GetTabStripLeftInset() const {
+  return BrowserNonClientFrameView::GetTabStripLeftInset() +
+         frame_values().normal_insets.left();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // views::NonClientFrameView:
 
@@ -380,15 +385,6 @@ void BrowserNonClientFrameViewMus::TabStripDeleted(TabStrip* tab_strip) {
   tab_strip_ = nullptr;
 }
 
-int BrowserNonClientFrameViewMus::GetTabStripLeftInset() const {
-  const int avatar_right =
-      profile_indicator_icon()
-          ? (kAvatarIconPadding + GetIncognitoAvatarIcon().width())
-          : 0;
-  return avatar_right + kAvatarIconPadding +
-         frame_values().normal_insets.left();
-}
-
 int BrowserNonClientFrameViewMus::GetTabStripRightInset() const {
   const int frame_right_insets = frame_values().normal_insets.right() +
                                  frame_values().max_title_bar_button_width;
@@ -447,9 +443,8 @@ int BrowserNonClientFrameViewMus::GetHeaderHeight() const {
 #if defined(OS_CHROMEOS)
   // TODO: move ash_layout_constants to ash/public/cpp.
   const bool restored = !frame()->IsMaximized() && !frame()->IsFullscreen();
-  return GetAshLayoutSize(restored
-                              ? AshLayoutSize::BROWSER_RESTORED_CAPTION_BUTTON
-                              : AshLayoutSize::BROWSER_MAXIMIZED_CAPTION_BUTTON)
+  return GetAshLayoutSize(restored ? AshLayoutSize::kBrowserCaptionRestored
+                                   : AshLayoutSize::kBrowserCaptionMaximized)
       .height();
 #else
   return views::WindowManagerFrameValues::instance().normal_insets.top();

@@ -26,7 +26,6 @@
 #include "platform/graphics/Canvas2DLayerBridge.h"
 
 #include <utility>
-#include <vector>
 
 #include "base/location.h"
 #include "base/memory/scoped_refptr.h"
@@ -51,8 +50,8 @@
 #include "platform/graphics/test/FakeGLES2Interface.h"
 #include "platform/graphics/test/FakeWebGraphicsContext3DProvider.h"
 #include "platform/scheduler/child/web_scheduler.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/TestingPlatformSupport.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 #include "skia/ext/texture_handle.h"

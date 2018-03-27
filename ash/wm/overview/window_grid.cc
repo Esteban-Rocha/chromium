@@ -158,6 +158,7 @@ class WindowGrid::ShieldView : public views::View {
     label_container_->SetPaintToLayer();
     label_container_->layer()->SetFillsBoundsOpaquely(false);
     label_container_->layer()->SetOpacity(kNoItemsIndicatorBackgroundOpacity);
+    label_container_->SetVisible(false);
 
     AddChildView(background_view_);
     AddChildView(label_container_);
@@ -296,8 +297,14 @@ void WindowGrid::PrepareForOverview() {
 
 void WindowGrid::PositionWindows(bool animate,
                                  WindowSelectorItem* ignored_item) {
-  if (window_selector_->IsShuttingDown() || window_list_.empty())
+  if (window_selector_->IsShuttingDown())
     return;
+  if (window_list_.empty()) {
+    if (IsNewOverviewUi())
+      ShowNoRecentsWindowMessage(/*visible=*/true);
+    return;
+  }
+
   DCHECK(shield_widget_.get());
   // Keep the background shield widget covering the whole screen.
   aura::Window* widget_window = shield_widget_->GetNativeWindow();
@@ -516,8 +523,6 @@ void WindowGrid::AddItem(aura::Window* window) {
   window_list_.push_back(
       std::make_unique<WindowSelectorItem>(window, window_selector_, this));
   window_list_.back()->PrepareForOverview();
-  if (shield_view_)
-    shield_view_->SetLabelVisibility(false);
 
   PositionWindows(/*animate=*/true);
 }
@@ -533,8 +538,6 @@ void WindowGrid::RemoveItem(WindowSelectorItem* selector_item) {
     window_state_observer_.Remove(
         wm::GetWindowState(selector_item->GetWindow()));
     window_list_.erase(iter);
-    if (shield_view_)
-      shield_view_->SetLabelVisibility(empty());
   }
 }
 
@@ -590,6 +593,15 @@ void WindowGrid::SetSelectionWidgetVisibility(bool visible) {
     selection_widget_->Hide();
 }
 
+void WindowGrid::ShowNoRecentsWindowMessage(bool visible) {
+  // Only show the warning on the grid associated with primary root.
+  if (root_window_ != Shell::GetPrimaryRootWindow())
+    return;
+
+  if (shield_view_)
+    shield_view_->SetLabelVisibility(visible);
+}
+
 void WindowGrid::UpdateCannotSnapWarningVisibility() {
   for (auto& window_selector_item : window_list_)
     window_selector_item->UpdateCannotSnapWarningVisibility();
@@ -618,6 +630,7 @@ void WindowGrid::OnWindowDestroying(aura::Window* window) {
   window_list_.erase(iter);
 
   if (empty()) {
+    selection_widget_.reset();
     // If the grid is now empty, notify the window selector so that it erases us
     // from its grid list.
     window_selector_->OnGridEmpty(this);
@@ -792,7 +805,6 @@ void WindowGrid::InitShieldWidget() {
     // Create |shield_view_| and animate its background and label if needed.
     shield_view_ = new ShieldView();
     shield_view_->SetBackgroundColor(shield_color);
-    shield_view_->SetLabelVisibility(empty());
     shield_view_->SetGridBounds(bounds_);
     shield_widget_->SetContentsView(shield_view_);
     shield_widget_->SetOpacity(initial_opacity);

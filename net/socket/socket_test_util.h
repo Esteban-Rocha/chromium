@@ -360,6 +360,9 @@ struct SSLSocketDataProvider {
   SSLSocketDataProvider(const SSLSocketDataProvider& other);
   ~SSLSocketDataProvider();
 
+  // Returns whether MockConnect data has been consumed.
+  bool ConnectDataConsumed() const { return is_connect_data_consumed; }
+
   // Result for Connect().
   MockConnect connect;
 
@@ -374,6 +377,8 @@ struct SSLSocketDataProvider {
 
   ChannelIDService* channel_id_service;
   base::Optional<NextProtoVector> next_protos_expected_in_ssl_config;
+
+  bool is_connect_data_consumed = false;
 };
 
 // Uses the sequence_number field in the mock reads and writes to
@@ -528,7 +533,6 @@ class MockClientSocketFactory : public ClientSocketFactory {
   // ClientSocketFactory
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
-      const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLogSource& source) override;
   std::unique_ptr<StreamSocket> CreateTransportClientSocket(
@@ -799,6 +803,7 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   int ConnectUsingDefaultNetwork(const IPEndPoint& address) override;
   NetworkChangeNotifier::NetworkHandle GetBoundNetwork() const override;
   void ApplySocketTag(const SocketTag& tag) override;
+  void SetMsgConfirm(bool confirm) override {}
 
   // AsyncSocket implementation.
   void OnReadComplete(const MockRead& data) override;
@@ -1144,7 +1149,6 @@ class MockTaggingClientSocketFactory : public MockClientSocketFactory {
   // ClientSocketFactory implementation.
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
-      const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLogSource& source) override;
   std::unique_ptr<StreamSocket> CreateTransportClientSocket(

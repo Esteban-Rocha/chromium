@@ -269,6 +269,10 @@ std::string PaintOpTypeToString(PaintOpType type) {
   return "UNKNOWN";
 }
 
+std::ostream& operator<<(std::ostream& os, PaintOpType type) {
+  return os << PaintOpTypeToString(type);
+}
+
 template <typename T>
 size_t SimpleSerialize(const PaintOp* op, void* memory, size_t size) {
   if (sizeof(T) > size)
@@ -1232,6 +1236,8 @@ void DrawRecordOp::Raster(const DrawRecordOp* op,
                           SkCanvas* canvas,
                           const PlaybackParams& params) {
   // Don't use drawPicture here, as it adds an implicit clip.
+  // TODO(enne): Temporary CHECK debugging for http://crbug.com/823835
+  CHECK(op->record);
   op->record->Playback(canvas, params);
 }
 
@@ -1889,7 +1895,8 @@ bool PaintOp::GetBounds(const PaintOp* op, SkRect* rect) {
 
 // static
 bool PaintOp::QuickRejectDraw(const PaintOp* op, const SkCanvas* canvas) {
-  DCHECK(op->IsDrawOp());
+  if (!op->IsDrawOp())
+    return false;
 
   SkRect rect;
   if (!PaintOp::GetBounds(op, &rect))
@@ -1933,7 +1940,7 @@ void PaintOp::DestroyThis() {
 }
 
 bool PaintOpWithFlags::HasDiscardableImagesFromFlags() const {
-  return IsDrawOp() && flags.HasDiscardableImages();
+  return flags.HasDiscardableImages();
 }
 
 void PaintOpWithFlags::RasterWithFlags(SkCanvas* canvas,

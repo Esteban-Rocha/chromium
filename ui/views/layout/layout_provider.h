@@ -32,6 +32,8 @@ enum InsetsMetric {
   // The margins around the icon/title of a dialog. The bottom margin is implied
   // by the content insets and the other margins overlap with INSETS_DIALOG.
   INSETS_DIALOG_TITLE,
+  // The margins around the edges of a tooltip bubble.
+  INSETS_TOOLTIP_BUBBLE,
   // Padding to add to vector image buttons to increase their click and touch
   // target size.
   INSETS_VECTOR_IMAGE_BUTTON,
@@ -98,7 +100,10 @@ enum DistanceMetric {
   DISTANCE_UNRELATED_CONTROL_VERTICAL,
 
   // Embedders must start DistanceMetric enum values from here.
-  VIEWS_DISTANCE_END
+  VIEWS_DISTANCE_END,
+
+  // All Distance enum values must be below this value.
+  VIEWS_DISTANCE_MAX = 0x2000
 };
 
 // The type of a dialog content element. TEXT should be used for Labels or other

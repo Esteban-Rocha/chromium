@@ -5,7 +5,7 @@
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//chromeos/assistant/assistant.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//printing/features/features.gni")
 import("//services/service_manager/public/service_manifest.gni")
@@ -30,7 +30,6 @@ source_set("chromeos") {
     "//chrome/app/theme:theme_resources",
     "//chromeos:power_manager_proto",
     "//components/policy/proto",
-    "//components/wallpaper",
     "//content/app/resources",
     "//ui/chromeos/resources",
     "//ui/chromeos/strings",
@@ -81,6 +80,7 @@ source_set("chromeos") {
     "//components/crash/content/app",
     "//components/crx_file",
     "//components/cryptauth",
+    "//components/cryptauth/proto",
     "//components/device_event_log",
     "//components/download/content/public",
     "//components/drive",
@@ -130,7 +130,6 @@ source_set("chromeos") {
     "//components/viz/host",
     "//services/identity/public/cpp",
     "//services/metrics/public/cpp:ukm_builders",
-    "//services/network:network_service",
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
     "//third_party/fontconfig",
     "//third_party/metrics_proto",
@@ -172,7 +171,6 @@ source_set("chromeos") {
     "//services/ui/public/interfaces/display",
 
     # TODO: care about enable_basic_printing and enable_print_preview.
-    "//ash/app_list/presenter:mojom",
     "//components/sync",
     "//printing",
     "//services/ui/public/cpp",
@@ -491,6 +489,14 @@ source_set("chromeos") {
     "chrome_browser_main_chromeos.h",
     "chrome_service_name.cc",
     "chrome_service_name.h",
+    "crostini/crostini_registry_service.cc",
+    "crostini/crostini_registry_service.h",
+    "crostini/crostini_registry_service_factory.cc",
+    "crostini/crostini_registry_service_factory.h",
+    "cryptauth/chrome_cryptauth_service.cc",
+    "cryptauth/chrome_cryptauth_service.h",
+    "cryptauth/chrome_cryptauth_service_factory.cc",
+    "cryptauth/chrome_cryptauth_service_factory.h",
     "customization/customization_document.cc",
     "customization/customization_document.h",
     "customization/customization_wallpaper_downloader.cc",
@@ -986,6 +992,10 @@ source_set("chromeos") {
     "login/screens/controller_pairing_screen_view.cc",
     "login/screens/controller_pairing_screen_view.h",
     "login/screens/core_oobe_view.h",
+    "login/screens/demo_setup_screen.cc",
+    "login/screens/demo_setup_screen.h",
+    "login/screens/demo_setup_screen_view.cc",
+    "login/screens/demo_setup_screen_view.h",
     "login/screens/device_disabled_screen.cc",
     "login/screens/device_disabled_screen.h",
     "login/screens/device_disabled_screen_view.h",
@@ -1429,13 +1439,13 @@ source_set("chromeos") {
     "power/ml/real_boot_clock.h",
     "power/ml/recent_events_counter.cc",
     "power/ml/recent_events_counter.h",
-    "power/ml/user_activity_logger.cc",
-    "power/ml/user_activity_logger.h",
-    "power/ml/user_activity_logger_delegate.h",
-    "power/ml/user_activity_logger_delegate_ukm.cc",
-    "power/ml/user_activity_logger_delegate_ukm.h",
-    "power/ml/user_activity_logging_controller.cc",
-    "power/ml/user_activity_logging_controller.h",
+    "power/ml/user_activity_controller.cc",
+    "power/ml/user_activity_controller.h",
+    "power/ml/user_activity_manager.cc",
+    "power/ml/user_activity_manager.h",
+    "power/ml/user_activity_ukm_logger.h",
+    "power/ml/user_activity_ukm_logger_impl.cc",
+    "power/ml/user_activity_ukm_logger_impl.h",
     "power/power_data_collector.cc",
     "power/power_data_collector.h",
     "power/power_metrics_reporter.cc",
@@ -1492,13 +1502,8 @@ source_set("chromeos") {
     "printing/usb_printer_util.h",
     "printing/zeroconf_printer_detector.cc",
     "printing/zeroconf_printer_detector.h",
-    "profiles/avatar_menu_actions_chromeos.cc",
-    "profiles/avatar_menu_actions_chromeos.h",
-    "profiles/avatar_menu_chromeos.cc",
     "profiles/profile_helper.cc",
     "profiles/profile_helper.h",
-    "profiles/profile_list_chromeos.cc",
-    "profiles/profile_list_chromeos.h",
     "profiles/profile_util.cc",
     "profiles/profile_util.h",
     "proxy_cros_settings_parser.cc",
@@ -1545,6 +1550,8 @@ source_set("chromeos") {
     "smb_client/discovery/host_locator.h",
     "smb_client/discovery/in_memory_host_locator.cc",
     "smb_client/discovery/in_memory_host_locator.h",
+    "smb_client/discovery/network_scanner.cc",
+    "smb_client/discovery/network_scanner.h",
     "smb_client/smb_file_system.cc",
     "smb_client/smb_file_system.h",
     "smb_client/smb_provider.cc",
@@ -1553,6 +1560,8 @@ source_set("chromeos") {
     "smb_client/smb_service.h",
     "smb_client/smb_service_factory.cc",
     "smb_client/smb_service_factory.h",
+    "smb_client/smb_task_queue.cc",
+    "smb_client/smb_task_queue.h",
     "smb_client/temp_file_manager.cc",
     "smb_client/temp_file_manager.h",
     "status/network_menu.cc",
@@ -1692,6 +1701,13 @@ source_set("chromeos") {
       "//chromeos/services/assistant:lib",
       "//chromeos/services/assistant/public/mojom",
     ]
+
+    sources += [
+      "assistant/assistant_client.cc",
+      "assistant/assistant_client.h",
+      "assistant/platform_audio_input_host.cc",
+      "assistant/platform_audio_input_host.h",
+    ]
   }
 
   if (use_cups) {
@@ -1766,6 +1782,7 @@ static_library("test_support") {
     "//skia",
     "//testing/gmock",
     "//testing/gtest",
+    "//ui/file_manager/file_manager/test:create_test_main",
   ]
 }
 
@@ -2013,8 +2030,8 @@ source_set("unit_tests") {
     "power/ml/idle_event_notifier_unittest.cc",
     "power/ml/real_boot_clock_unittest.cc",
     "power/ml/recent_events_counter_unittest.cc",
-    "power/ml/user_activity_logger_delegate_ukm_unittest.cc",
-    "power/ml/user_activity_logger_unittest.cc",
+    "power/ml/user_activity_manager_unittest.cc",
+    "power/ml/user_activity_ukm_logger_unittest.cc",
     "power/power_data_collector_unittest.cc",
     "power/power_metrics_reporter_unittest.cc",
     "power/power_prefs_unittest.cc",
@@ -2028,7 +2045,6 @@ source_set("unit_tests") {
     "printing/specifics_translation_unittest.cc",
     "printing/synced_printers_manager_unittest.cc",
     "printing/zeroconf_printer_detector_unittest.cc",
-    "profiles/profile_list_chromeos_unittest.cc",
     "proxy_config_service_impl_unittest.cc",
     "resource_reporter/resource_reporter_unittest.cc",
     "session_length_limiter_unittest.cc",
@@ -2042,7 +2058,9 @@ source_set("unit_tests") {
     "settings/shutdown_policy_handler_unittest.cc",
     "settings/stub_cros_settings_provider_unittest.cc",
     "smb_client/discovery/in_memory_host_locator_unittest.cc",
+    "smb_client/discovery/network_scanner_unittest.cc",
     "smb_client/smb_service_unittest.cc",
+    "smb_client/smb_task_queue_unittest.cc",
     "smb_client/temp_file_manager_unittest.cc",
     "system/automatic_reboot_manager_unittest.cc",
     "system/device_disabling_manager_unittest.cc",
@@ -2146,6 +2164,7 @@ source_set("unit_tests") {
     "//third_party/WebKit/public:blink_headers",
     "//third_party/icu",
     "//third_party/leveldatabase",
+    "//ui/arc:test_support",
     "//ui/base/ime",
     "//ui/chromeos/resources",
   ]

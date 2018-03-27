@@ -12,6 +12,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "components/viz/common/features.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/devtools_frame_trace_recorder.h"
@@ -42,12 +43,14 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/content_features.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
@@ -272,6 +275,7 @@ void RenderFrameDevToolsAgentHost::ApplyOverrides(
   net::HttpRequestHeaders headers;
   headers.AddHeadersFromString(begin_params->headers);
   for (auto* network : protocol::NetworkHandler::ForAgentHost(agent_host)) {
+    // TODO(caseq): consider chaining intercepting proxies from multiple agents.
     if (!network->enabled())
       continue;
     *report_raw_headers = true;
@@ -286,6 +290,27 @@ void RenderFrameDevToolsAgentHost::ApplyOverrides(
   }
 
   begin_params->headers = headers.ToString();
+}
+
+// static
+bool RenderFrameDevToolsAgentHost::WillCreateURLLoaderFactory(
+    RenderFrameHostImpl* rfh,
+    bool is_navigation,
+    network::mojom::URLLoaderFactoryRequest* target_factory_request) {
+  FrameTreeNode* frame_tree_node = rfh->frame_tree_node();
+  base::UnguessableToken frame_token = frame_tree_node->devtools_frame_token();
+  frame_tree_node = GetFrameTreeNodeAncestor(frame_tree_node);
+  RenderFrameDevToolsAgentHost* agent_host = FindAgentHost(frame_tree_node);
+  if (!agent_host)
+    return false;
+  int process_id = is_navigation ? 0 : rfh->GetProcess()->GetID();
+  for (auto* network : protocol::NetworkHandler::ForAgentHost(agent_host)) {
+    if (network->MaybeCreateProxyForInterception(frame_token, process_id,
+                                                 target_factory_request)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // static
@@ -377,7 +402,12 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
     session->AttachToAgent(agent_ptr_);
 
   if (sessions().size() == 1) {
-    frame_trace_recorder_.reset(new DevToolsFrameTraceRecorder());
+    // Taking screenshots using the video capture API is done in TracingHandler.
+    if (!base::FeatureList::IsEnabled(features::kVizDisplayCompositor) &&
+        !base::FeatureList::IsEnabled(
+            features::kUseVideoCaptureApiForDevToolsSnapshots)) {
+      frame_trace_recorder_.reset(new DevToolsFrameTraceRecorder());
+    }
     GrantPolicy();
 #if defined(OS_ANDROID)
     GetWakeLock()->RequestWakeLock();
@@ -671,8 +701,6 @@ void RenderFrameDevToolsAgentHost::DidReceiveCompositorFrame() {
           ->last_frame_metadata();
   for (auto* page : protocol::PageHandler::ForAgentHost(this))
     page->OnSwapCompositorFrame(metadata.Clone());
-  for (auto* input : protocol::InputHandler::ForAgentHost(this))
-    input->OnSwapCompositorFrame(metadata);
 
   if (!frame_trace_recorder_)
     return;
@@ -681,6 +709,12 @@ void RenderFrameDevToolsAgentHost::DidReceiveCompositorFrame() {
     did_initiate_recording |= tracing->did_initiate_recording();
   if (did_initiate_recording)
     frame_trace_recorder_->OnSwapCompositorFrame(frame_host_, metadata);
+}
+
+void RenderFrameDevToolsAgentHost::OnPageScaleFactorChanged(
+    float page_scale_factor) {
+  for (auto* input : protocol::InputHandler::ForAgentHost(this))
+    input->OnPageScaleFactorChanged(page_scale_factor);
 }
 
 void RenderFrameDevToolsAgentHost::DisconnectWebContents() {
@@ -831,8 +865,6 @@ void RenderFrameDevToolsAgentHost::SynchronousSwapCompositorFrame(
     viz::CompositorFrameMetadata frame_metadata) {
   for (auto* page : protocol::PageHandler::ForAgentHost(this))
     page->OnSynchronousSwapCompositorFrame(frame_metadata.Clone());
-  for (auto* input : protocol::InputHandler::ForAgentHost(this))
-    input->OnSwapCompositorFrame(frame_metadata);
 
   if (!frame_trace_recorder_)
     return;

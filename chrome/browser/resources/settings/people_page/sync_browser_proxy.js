@@ -180,8 +180,9 @@ cr.define('settings', function() {
     /**
      * Function to invoke when leaving the sync page so that the C++ layer can
      * be notified that the sync UI is no longer open.
+     * @param {boolean} didAbort
      */
-    didNavigateAwayFromSyncPage() {}
+    didNavigateAwayFromSyncPage(didAbort) {}
 
     /**
      * Sets which types of data to sync.
@@ -189,6 +190,13 @@ cr.define('settings', function() {
      * @return {!Promise<!settings.PageStatus>}
      */
     setSyncDatatypes(syncPrefs) {}
+
+    /**
+     * Sets the syncAllDataTypes pref.
+     * @param {boolean} syncEverything
+     * @return {!Promise<!settings.PageStatus>}
+     */
+    setSyncEverything(syncEverything) {}
 
     /**
      * Sets the sync encryption options.
@@ -267,14 +275,19 @@ cr.define('settings', function() {
     }
 
     /** @override */
-    didNavigateAwayFromSyncPage() {
-      chrome.send('SyncSetupDidClosePage');
+    didNavigateAwayFromSyncPage(didAbort) {
+      chrome.send('SyncSetupDidClosePage', [didAbort]);
     }
 
     /** @override */
     setSyncDatatypes(syncPrefs) {
       return cr.sendWithPromise(
           'SyncSetupSetDatatypes', JSON.stringify(syncPrefs));
+    }
+
+    /** @override */
+    setSyncEverything(syncEverything) {
+      return cr.sendWithPromise('SyncSetupSetSyncEverything', syncEverything);
     }
 
     /** @override */

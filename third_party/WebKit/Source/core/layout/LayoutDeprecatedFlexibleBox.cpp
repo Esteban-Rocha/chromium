@@ -334,8 +334,7 @@ void LayoutDeprecatedFlexibleBox::StyleWillChange(
     StyleDifference diff,
     const ComputedStyle& new_style) {
   const ComputedStyle* old_style = Style();
-  if (old_style && !old_style->LineClamp().IsNone() &&
-      new_style.LineClamp().IsNone())
+  if (old_style && old_style->HasLineClamp() && !new_style.HasLineClamp())
     ClearLineClamp();
 
   LayoutBlock::StyleWillChange(diff, new_style);
@@ -344,7 +343,7 @@ void LayoutDeprecatedFlexibleBox::StyleWillChange(
 void LayoutDeprecatedFlexibleBox::ComputeIntrinsicLogicalWidths(
     LayoutUnit& min_logical_width,
     LayoutUnit& max_logical_width) const {
-  if (HasMultipleLines() || IsVertical()) {
+  if (IsVertical()) {
     for (LayoutBox* child = FirstChildBox(); child;
          child = child->NextSiblingBox()) {
       if (ChildDoesNotAffectWidthOrFlexing(child))
@@ -387,9 +386,6 @@ void LayoutDeprecatedFlexibleBox::UpdateBlockLayout(bool relayout_children) {
   if (Style()->BoxDirection() !=
       ComputedStyleInitialValues::InitialBoxDirection())
     UseCounter::Count(GetDocument(), WebFeature::kWebkitBoxDirectionNotInitial);
-
-  if (Style()->BoxLines() != ComputedStyleInitialValues::InitialBoxLines())
-    UseCounter::Count(GetDocument(), WebFeature::kWebkitBoxLinesNotInitial);
 
   if (Style()->BoxPack() != ComputedStyleInitialValues::InitialBoxPack())
     UseCounter::Count(GetDocument(), WebFeature::kWebkitBoxPackNotInitial);
@@ -460,19 +456,11 @@ void LayoutDeprecatedFlexibleBox::UpdateBlockLayout(bool relayout_children) {
 static void GatherFlexChildrenInfo(FlexBoxIterator& iterator,
                                    Document& document,
                                    bool relayout_children,
-                                   unsigned& highest_flex_group,
-                                   unsigned& lowest_flex_group,
                                    bool& have_flex) {
   for (LayoutBox* child = iterator.First(); child; child = iterator.Next()) {
     if (child->Style()->BoxFlex() !=
         ComputedStyleInitialValues::InitialBoxFlex())
       UseCounter::Count(document, WebFeature::kWebkitBoxChildFlexNotInitial);
-
-    if (child->Style()->BoxFlexGroup() !=
-        ComputedStyleInitialValues::InitialBoxFlexGroup()) {
-      UseCounter::Count(document,
-                        WebFeature::kWebkitBoxChildFlexGroupNotInitial);
-    }
 
     if (child->Style()->BoxOrdinalGroup() !=
         ComputedStyleInitialValues::InitialBoxOrdinalGroup()) {
@@ -490,13 +478,6 @@ static void GatherFlexChildrenInfo(FlexBoxIterator& iterator,
       if (!relayout_children)
         child->SetChildNeedsLayout(kMarkOnlyThis);
       have_flex = true;
-      unsigned flex_group = child->Style()->BoxFlexGroup();
-      if (lowest_flex_group == 0)
-        lowest_flex_group = flex_group;
-      if (flex_group < lowest_flex_group)
-        lowest_flex_group = flex_group;
-      if (flex_group > highest_flex_group)
-        highest_flex_group = flex_group;
     }
   }
 }
@@ -513,11 +494,8 @@ void LayoutDeprecatedFlexibleBox::LayoutHorizontalBox(bool relayout_children) {
   LayoutUnit remaining_space;
 
   FlexBoxIterator iterator(this);
-  unsigned highest_flex_group = 0;
-  unsigned lowest_flex_group = 0;
   bool have_flex = false, flexing_children = false;
-  GatherFlexChildrenInfo(iterator, GetDocument(), relayout_children,
-                         highest_flex_group, lowest_flex_group, have_flex);
+  GatherFlexChildrenInfo(iterator, GetDocument(), relayout_children, have_flex);
 
   PaintLayerScrollableArea::DelayScrollOffsetClampScope delay_clamp_scope;
 
@@ -686,100 +664,82 @@ void LayoutDeprecatedFlexibleBox::LayoutHorizontalBox(bool relayout_children) {
       if (!remaining_space)
         break;
 
-      // Allocate the remaining space among the flexible objects.  If we are
-      // trying to grow, then we go from the lowest flex group to the highest
-      // flex group.  For shrinking, we go from the highest flex group to the
-      // lowest group.
+      // Allocate the remaining space among the flexible objects.
       bool expanding = remaining_space > 0;
-      unsigned start = expanding ? lowest_flex_group : highest_flex_group;
-      unsigned end = expanding ? highest_flex_group : lowest_flex_group;
-      for (unsigned i = start; i <= end && remaining_space; i++) {
-        // Always start off by assuming the group can get all the remaining
-        // space.
-        LayoutUnit group_remaining_space = remaining_space;
-        do {
-          // Flexing consists of multiple passes, since we have to change
-          // ratios every time an object hits its max/min-width For a given
-          // pass, we always start off by computing the totalFlex of all
-          // objects that can grow/shrink at all, and computing the allowed
-          // growth before an object hits its min/max width (and thus forces a
-          // totalFlex recomputation).
-          LayoutUnit group_remaining_space_at_beginning = group_remaining_space;
-          float total_flex = 0.0f;
-          for (LayoutBox* child = iterator.First(); child;
-               child = iterator.Next()) {
-            if (AllowedChildFlex(child, expanding, i))
-              total_flex += child->Style()->BoxFlex();
+      do {
+        // Flexing consists of multiple passes, since we have to change
+        // ratios every time an object hits its max/min-width For a given
+        // pass, we always start off by computing the totalFlex of all
+        // objects that can grow/shrink at all, and computing the allowed
+        // growth before an object hits its min/max width (and thus forces a
+        // totalFlex recomputation).
+        LayoutUnit remaining_space_at_beginning = remaining_space;
+        float total_flex = 0.0f;
+        for (LayoutBox* child = iterator.First(); child;
+             child = iterator.Next()) {
+          if (AllowedChildFlex(child, expanding))
+            total_flex += child->Style()->BoxFlex();
+        }
+        LayoutUnit space_available_this_pass = remaining_space;
+        for (LayoutBox* child = iterator.First(); child;
+             child = iterator.Next()) {
+          LayoutUnit allowed_flex = AllowedChildFlex(child, expanding);
+          if (allowed_flex) {
+            LayoutUnit projected_flex =
+                (allowed_flex == LayoutUnit::Max())
+                    ? allowed_flex
+                    : LayoutUnit(allowed_flex *
+                                 (total_flex / child->Style()->BoxFlex()));
+            space_available_this_pass =
+                expanding ? std::min(space_available_this_pass, projected_flex)
+                          : std::max(space_available_this_pass, projected_flex);
           }
-          LayoutUnit space_available_this_pass = group_remaining_space;
-          for (LayoutBox* child = iterator.First(); child;
-               child = iterator.Next()) {
-            LayoutUnit allowed_flex = AllowedChildFlex(child, expanding, i);
-            if (allowed_flex) {
-              LayoutUnit projected_flex =
-                  (allowed_flex == LayoutUnit::Max())
-                      ? allowed_flex
-                      : LayoutUnit(allowed_flex *
-                                   (total_flex / child->Style()->BoxFlex()));
-              space_available_this_pass =
-                  expanding
-                      ? std::min(space_available_this_pass, projected_flex)
-                      : std::max(space_available_this_pass, projected_flex);
-            }
-          }
+        }
 
-          // The flex groups may not have any flexible objects this time around.
-          if (!space_available_this_pass || total_flex == 0.0f) {
-            // If we just couldn't grow/shrink any more, then it's time to
-            // transition to the next flex group.
-            group_remaining_space = LayoutUnit();
+        // If we can't grow/shrink anymore, break.
+        if (!space_available_this_pass || total_flex == 0.0f)
+          break;
+
+        // Now distribute the space to objects.
+        for (LayoutBox* child = iterator.First();
+             child && space_available_this_pass && total_flex;
+             child = iterator.Next()) {
+          if (child->Style()->Visibility() == EVisibility::kCollapse)
             continue;
-          }
 
-          // Now distribute the space to objects.
-          for (LayoutBox* child = iterator.First();
-               child && space_available_this_pass && total_flex;
-               child = iterator.Next()) {
-            if (child->Style()->Visibility() == EVisibility::kCollapse)
-              continue;
-
-            if (AllowedChildFlex(child, expanding, i)) {
-              LayoutUnit space_add =
-                  LayoutUnit(space_available_this_pass *
-                             (child->Style()->BoxFlex() / total_flex));
-              if (space_add) {
-                child->SetOverrideLogicalContentWidth(
-                    ContentWidthForChild(child) + space_add);
-                flexing_children = true;
-                relayout_children = true;
-              }
-
-              space_available_this_pass -= space_add;
-              remaining_space -= space_add;
-              group_remaining_space -= space_add;
-
-              total_flex -= child->Style()->BoxFlex();
-            }
-          }
-          if (group_remaining_space == group_remaining_space_at_beginning) {
-            // This is not advancing, avoid getting stuck by distributing the
-            // remaining pixels.
+          if (AllowedChildFlex(child, expanding)) {
             LayoutUnit space_add =
-                LayoutUnit(group_remaining_space > 0 ? 1 : -1);
-            for (LayoutBox* child = iterator.First();
-                 child && group_remaining_space; child = iterator.Next()) {
-              if (AllowedChildFlex(child, expanding, i)) {
-                child->SetOverrideLogicalContentWidth(
-                    ContentWidthForChild(child) + space_add);
-                flexing_children = true;
-                relayout_children = true;
-                remaining_space -= space_add;
-                group_remaining_space -= space_add;
-              }
+                LayoutUnit(space_available_this_pass *
+                           (child->Style()->BoxFlex() / total_flex));
+            if (space_add) {
+              child->SetOverrideLogicalContentWidth(
+                  ContentWidthForChild(child) + space_add);
+              flexing_children = true;
+              relayout_children = true;
+            }
+
+            space_available_this_pass -= space_add;
+            remaining_space -= space_add;
+
+            total_flex -= child->Style()->BoxFlex();
+          }
+        }
+        if (remaining_space == remaining_space_at_beginning) {
+          // This is not advancing, avoid getting stuck by distributing the
+          // remaining pixels.
+          LayoutUnit space_add = LayoutUnit(remaining_space > 0 ? 1 : -1);
+          for (LayoutBox* child = iterator.First(); child && remaining_space;
+               child = iterator.Next()) {
+            if (AllowedChildFlex(child, expanding)) {
+              child->SetOverrideLogicalContentWidth(
+                  ContentWidthForChild(child) + space_add);
+              flexing_children = true;
+              relayout_children = true;
+              remaining_space -= space_add;
             }
           }
-        } while (AbsoluteValue(group_remaining_space) >= 1);
-      }
+        }
+      } while (AbsoluteValue(remaining_space) >= 1);
 
       // We didn't find any children that could grow.
       if (have_flex && !flexing_children)
@@ -859,17 +819,13 @@ void LayoutDeprecatedFlexibleBox::LayoutVerticalBox(bool relayout_children) {
   LayoutUnit remaining_space;
 
   FlexBoxIterator iterator(this);
-  unsigned highest_flex_group = 0;
-  unsigned lowest_flex_group = 0;
   bool have_flex = false, flexing_children = false;
-  GatherFlexChildrenInfo(iterator, GetDocument(), relayout_children,
-                         highest_flex_group, lowest_flex_group, have_flex);
+  GatherFlexChildrenInfo(iterator, GetDocument(), relayout_children, have_flex);
 
   // We confine the line clamp ugliness to vertical flexible boxes (thus keeping
   // it out of
   // mainstream block layout); this is not really part of the XUL box model.
-  bool have_line_clamp = !Style()->LineClamp().IsNone();
-  if (have_line_clamp)
+  if (Style()->HasLineClamp())
     ApplyLineClamp(iterator, relayout_children);
 
   PaintLayerScrollableArea::DelayScrollOffsetClampScope delay_clamp_scope;
@@ -897,7 +853,7 @@ void LayoutDeprecatedFlexibleBox::LayoutVerticalBox(bool relayout_children) {
       }
 
       SubtreeLayoutScope layout_scope(*child);
-      if (!have_line_clamp &&
+      if (!Style()->HasLineClamp() &&
           (relayout_children || (child->IsAtomicInlineLevel() &&
                                  (child->Style()->Width().IsPercentOrCalc() ||
                                   child->Style()->Height().IsPercentOrCalc()))))
@@ -996,98 +952,80 @@ void LayoutDeprecatedFlexibleBox::LayoutVerticalBox(bool relayout_children) {
       if (!remaining_space)
         break;
 
-      // Allocate the remaining space among the flexible objects.  If we are
-      // trying to grow, then we go from the lowest flex group to the highest
-      // flex group.  For shrinking, we go from the highest flex group to the
-      // lowest group.
+      // Allocate the remaining space among the flexible objects.
       bool expanding = remaining_space > 0;
-      unsigned start = expanding ? lowest_flex_group : highest_flex_group;
-      unsigned end = expanding ? highest_flex_group : lowest_flex_group;
-      for (unsigned i = start; i <= end && remaining_space; i++) {
-        // Always start off by assuming the group can get all the remaining
-        // space.
-        LayoutUnit group_remaining_space = remaining_space;
-        do {
-          // Flexing consists of multiple passes, since we have to change
-          // ratios every time an object hits its max/min-width For a given
-          // pass, we always start off by computing the totalFlex of all
-          // objects that can grow/shrink at all, and computing the allowed
-          // growth before an object hits its min/max width (and thus forces a
-          // totalFlex recomputation).
-          LayoutUnit group_remaining_space_at_beginning = group_remaining_space;
-          float total_flex = 0.0f;
-          for (LayoutBox* child = iterator.First(); child;
-               child = iterator.Next()) {
-            if (AllowedChildFlex(child, expanding, i))
-              total_flex += child->Style()->BoxFlex();
+      do {
+        // Flexing consists of multiple passes, since we have to change
+        // ratios every time an object hits its max/min-width For a given
+        // pass, we always start off by computing the totalFlex of all
+        // objects that can grow/shrink at all, and computing the allowed
+        // growth before an object hits its min/max width (and thus forces a
+        // totalFlex recomputation).
+        LayoutUnit remaining_space_at_beginning = remaining_space;
+        float total_flex = 0.0f;
+        for (LayoutBox* child = iterator.First(); child;
+             child = iterator.Next()) {
+          if (AllowedChildFlex(child, expanding))
+            total_flex += child->Style()->BoxFlex();
+        }
+        LayoutUnit space_available_this_pass = remaining_space;
+        for (LayoutBox* child = iterator.First(); child;
+             child = iterator.Next()) {
+          LayoutUnit allowed_flex = AllowedChildFlex(child, expanding);
+          if (allowed_flex) {
+            LayoutUnit projected_flex =
+                (allowed_flex == LayoutUnit::Max())
+                    ? allowed_flex
+                    : static_cast<LayoutUnit>(
+                          allowed_flex *
+                          (total_flex / child->Style()->BoxFlex()));
+            space_available_this_pass =
+                expanding ? std::min(space_available_this_pass, projected_flex)
+                          : std::max(space_available_this_pass, projected_flex);
           }
-          LayoutUnit space_available_this_pass = group_remaining_space;
-          for (LayoutBox* child = iterator.First(); child;
-               child = iterator.Next()) {
-            LayoutUnit allowed_flex = AllowedChildFlex(child, expanding, i);
-            if (allowed_flex) {
-              LayoutUnit projected_flex =
-                  (allowed_flex == LayoutUnit::Max())
-                      ? allowed_flex
-                      : static_cast<LayoutUnit>(
-                            allowed_flex *
-                            (total_flex / child->Style()->BoxFlex()));
-              space_available_this_pass =
-                  expanding
-                      ? std::min(space_available_this_pass, projected_flex)
-                      : std::max(space_available_this_pass, projected_flex);
+        }
+
+        // If we can't grow/shrink anymore, break.
+        if (!space_available_this_pass || total_flex == 0.0f)
+          break;
+
+        // Now distribute the space to objects.
+        for (LayoutBox* child = iterator.First();
+             child && space_available_this_pass && total_flex;
+             child = iterator.Next()) {
+          if (AllowedChildFlex(child, expanding)) {
+            LayoutUnit space_add = static_cast<LayoutUnit>(
+                space_available_this_pass *
+                (child->Style()->BoxFlex() / total_flex));
+            if (space_add) {
+              child->SetOverrideLogicalContentHeight(
+                  ContentHeightForChild(child) + space_add);
+              flexing_children = true;
+              relayout_children = true;
             }
-          }
 
-          // The flex groups may not have any flexible objects this time around.
-          if (!space_available_this_pass || total_flex == 0.0f) {
-            // If we just couldn't grow/shrink any more, then it's time to
-            // transition to the next flex group.
-            group_remaining_space = LayoutUnit();
-            continue;
-          }
+            space_available_this_pass -= space_add;
+            remaining_space -= space_add;
 
-          // Now distribute the space to objects.
-          for (LayoutBox* child = iterator.First();
-               child && space_available_this_pass && total_flex;
+            total_flex -= child->Style()->BoxFlex();
+          }
+        }
+        if (remaining_space == remaining_space_at_beginning) {
+          // This is not advancing, avoid getting stuck by distributing the
+          // remaining pixels.
+          LayoutUnit space_add = LayoutUnit(remaining_space > 0 ? 1 : -1);
+          for (LayoutBox* child = iterator.First(); child && remaining_space;
                child = iterator.Next()) {
-            if (AllowedChildFlex(child, expanding, i)) {
-              LayoutUnit space_add = static_cast<LayoutUnit>(
-                  space_available_this_pass *
-                  (child->Style()->BoxFlex() / total_flex));
-              if (space_add) {
-                child->SetOverrideLogicalContentHeight(
-                    ContentHeightForChild(child) + space_add);
-                flexing_children = true;
-                relayout_children = true;
-              }
-
-              space_available_this_pass -= space_add;
+            if (AllowedChildFlex(child, expanding)) {
+              child->SetOverrideLogicalContentHeight(
+                  ContentHeightForChild(child) + space_add);
+              flexing_children = true;
+              relayout_children = true;
               remaining_space -= space_add;
-              group_remaining_space -= space_add;
-
-              total_flex -= child->Style()->BoxFlex();
             }
           }
-          if (group_remaining_space == group_remaining_space_at_beginning) {
-            // This is not advancing, avoid getting stuck by distributing the
-            // remaining pixels.
-            LayoutUnit space_add =
-                LayoutUnit(group_remaining_space > 0 ? 1 : -1);
-            for (LayoutBox* child = iterator.First();
-                 child && group_remaining_space; child = iterator.Next()) {
-              if (AllowedChildFlex(child, expanding, i)) {
-                child->SetOverrideLogicalContentHeight(
-                    ContentHeightForChild(child) + space_add);
-                flexing_children = true;
-                relayout_children = true;
-                remaining_space -= space_add;
-                group_remaining_space -= space_add;
-              }
-            }
-          }
-        } while (AbsoluteValue(group_remaining_space) >= 1);
-      }
+        }
+      } while (AbsoluteValue(remaining_space) >= 1);
 
       // We didn't find any children that could grow.
       if (have_flex && !flexing_children)
@@ -1157,9 +1095,6 @@ void LayoutDeprecatedFlexibleBox::ApplyLineClamp(FlexBoxIterator& iterator,
   UseCounter::Count(GetDocument(), WebFeature::kLineClamp);
   UseCounter::Count(GetDocument(), WebFeature::kWebkitBoxLineClamp);
 
-  if (Style()->LineClamp().IsPercentage())
-    UseCounter::Count(GetDocument(), WebFeature::kWebkitBoxLineClampPercentage);
-
   LayoutBox* child = FirstChildBox();
   if (!child) {
     UseCounter::Count(GetDocument(), WebFeature::kWebkitBoxLineClampNoChildren);
@@ -1205,11 +1140,9 @@ void LayoutDeprecatedFlexibleBox::ApplyLineClamp(FlexBoxIterator& iterator,
   // Get the number of lines and then alter all block flow children with auto
   // height to use the
   // specified height. We always try to leave room for at least one line.
-  LineClampValue line_clamp = Style()->LineClamp();
-  int num_visible_lines =
-      line_clamp.IsPercentage()
-          ? std::max(1, (max_line_count + 1) * line_clamp.Value() / 100)
-          : line_clamp.Value();
+  int num_visible_lines = Style()->LineClamp();
+  DCHECK_GT(num_visible_lines, 0);
+
   if (num_visible_lines >= max_line_count)
     return;
 
@@ -1324,11 +1257,9 @@ void LayoutDeprecatedFlexibleBox::PlaceChild(LayoutBox* child,
 }
 
 LayoutUnit LayoutDeprecatedFlexibleBox::AllowedChildFlex(LayoutBox* child,
-                                                         bool expanding,
-                                                         unsigned group) {
+                                                         bool expanding) {
   if (ChildDoesNotAffectWidthOrFlexing(child) ||
-      child->Style()->BoxFlex() == 0.0f ||
-      child->Style()->BoxFlexGroup() != group)
+      child->Style()->BoxFlex() == 0.0f)
     return LayoutUnit();
 
   if (expanding) {

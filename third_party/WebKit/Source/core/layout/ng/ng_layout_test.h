@@ -6,8 +6,8 @@
 #define NGLayoutTest_h
 
 #include "core/frame/LocalFrameClient.h"
-#include "core/layout/LayoutTestHelper.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "core/testing/CoreUnitTestHelper.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 

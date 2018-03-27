@@ -4,10 +4,8 @@
 
 #include "core/script/WorkletModulatorImpl.h"
 
-#include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "core/loader/modulescript/WorkletModuleScriptFetcher.h"
+#include "core/loader/modulescript/WorkerOrWorkletModuleScriptFetcher.h"
 #include "core/workers/WorkletGlobalScope.h"
-#include "platform/bindings/V8ThrowException.h"
 
 namespace blink {
 
@@ -26,17 +24,13 @@ const SecurityOrigin* WorkletModulatorImpl::GetSecurityOriginForFetch() {
 
 ModuleScriptFetcher* WorkletModulatorImpl::CreateModuleScriptFetcher() {
   auto global_scope = ToWorkletGlobalScope(GetExecutionContext());
-  return new WorkletModuleScriptFetcher(
-      global_scope->ModuleResponsesMapProxy());
+  return new WorkerOrWorkletModuleScriptFetcher(
+      global_scope->ModuleFetchCoordinatorProxy());
 }
 
-void WorkletModulatorImpl::ResolveDynamically(const String&,
-                                              const KURL&,
-                                              const ReferrerScriptInfo&,
-                                              ScriptPromiseResolver* resolver) {
-  resolver->Reject(V8ThrowException::CreateTypeError(
-      GetScriptState()->GetIsolate(),
-      "import() is disallowed on WorkletGlobalScope."));
+bool WorkletModulatorImpl::IsDynamicImportForbidden(String* reason) {
+  *reason = "import() is disallowed on WorkletGlobalScope.";
+  return true;
 }
 
 }  // namespace blink

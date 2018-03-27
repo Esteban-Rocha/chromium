@@ -52,7 +52,7 @@
 #include "components/policy/proto/device_management_backend.pb.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
@@ -633,16 +633,16 @@ void PolicyUIHandler::RegisterMessages() {
   registry->AddObserver(this);
 
   web_ui()->RegisterMessageCallback(
-      "initialized",
-      base::Bind(&PolicyUIHandler::HandleInitialized, base::Unretained(this)));
+      "initialized", base::BindRepeating(&PolicyUIHandler::HandleInitialized,
+                                         base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "reloadPolicies",
-      base::Bind(&PolicyUIHandler::HandleReloadPolicies,
-                 base::Unretained(this)));
+      base::BindRepeating(&PolicyUIHandler::HandleReloadPolicies,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "exportPoliciesJSON",
-      base::Bind(&PolicyUIHandler::HandleExportPoliciesJSON,
-                 base::Unretained(this)));
+      base::BindRepeating(&PolicyUIHandler::HandleExportPoliciesJSON,
+                          base::Unretained(this)));
 }
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)

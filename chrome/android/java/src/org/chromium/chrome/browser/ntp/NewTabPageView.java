@@ -317,8 +317,7 @@ public class NewTabPageView
         // Set up snippets
         NewTabPageAdapter newTabPageAdapter =
                 new NewTabPageAdapter(mManager, mNewTabPageLayout, /* logoView = */ null, mUiConfig,
-                        offlinePageBridge, mContextMenuManager, /* tileGroupDelegate = */ null,
-                        /* suggestionsCarousel = */ null);
+                        offlinePageBridge, mContextMenuManager, /* tileGroupDelegate = */ null);
         newTabPageAdapter.refreshSuggestions();
         mRecyclerView.setAdapter(newTabPageAdapter);
         mRecyclerView.getLinearLayoutManager().scrollToPosition(scrollPosition);
@@ -363,6 +362,8 @@ public class NewTabPageView
                 NewTabPageView.this.onDestroy();
             }
         });
+
+        initializeShortcuts();
 
         mInitialized = true;
 
@@ -1064,5 +1065,20 @@ public class NewTabPageView
     private void onDestroy() {
         mTab.getWindowAndroid().removeContextMenuCloseListener(mContextMenuManager);
         VrShellDelegate.unregisterVrModeObserver(this);
+    }
+
+    private void initializeShortcuts() {
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.NTP_SHORTCUTS)) return;
+
+        ViewGroup shortcuts =
+                (ViewGroup) mRecyclerView.getAboveTheFoldView().findViewById(R.id.shortcuts);
+        shortcuts.setVisibility(View.VISIBLE);
+
+        shortcuts.findViewById(R.id.bookmarks_button)
+                .setOnClickListener(view -> mManager.getNavigationDelegate().navigateToBookmarks());
+
+        shortcuts.findViewById(R.id.downloads_button)
+                .setOnClickListener(
+                        view -> mManager.getNavigationDelegate().navigateToDownloadManager());
     }
 }

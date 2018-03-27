@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env vpython
 # Copyright 2018 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -13,7 +13,7 @@ from core import oauth_api
 from core import upload_results_to_perf_dashboard
 from core import results_merger
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, join, basename
 
 
 RESULTS_URL = 'https://chromeperf.appspot.com'
@@ -22,6 +22,9 @@ def _upload_perf_results(json_to_upload, name, configuration_name,
     build_properties, oauth_file, tmp_dir):
   """Upload the contents of result JSON(s) to the perf dashboard."""
   build_properties = json.loads(build_properties)
+  if not configuration_name:
+    # we are deprecating perf-id crbug.com/817823
+    configuration_name = build_properties['buildername']
   args = [
       '--tmp-dir', tmp_dir,
       '--buildername', build_properties['buildername'],
@@ -92,36 +95,41 @@ def _process_perf_results(output_json, configuration_name,
 
   # We need to keep track of disabled benchmarks so we don't try to
   # upload the results.
-  disabled_benchmarks = []
   test_results_list = []
   tmpfile_dir = tempfile.mkdtemp('resultscache')
   try:
-    for directory in benchmark_directory_list:
-      with open(join(directory, 'test_results.json')) as json_data:
-        json_results = json.load(json_data)
-        if json_results.get('version') == 3:
-          # Non-telemetry tests don't have written json results but
-          # if they are executing then they are enabled and will generate
-          # chartjson results.
-          if not bool(json_results.get('tests')):
-            disabled_benchmarks.append(directory)
-        if '.reference' in directory:
-          # We don't need to upload reference build data to the
-          # flakiness dashboard since we don't monitor the ref build
-          continue
-        test_results_list.append(json_results)
-    _merge_json_output(output_json, test_results_list)
-
     with oauth_api.with_access_token(service_account_file) as oauth_file:
       for directory in benchmark_directory_list:
-        print 'Uploading perf results from %s benchmark' % directory
-        if directory in disabled_benchmarks:
+        # Obtain the test name we are running
+        benchmark_name = basename(directory)
+        disabled = False
+        with open(join(directory, 'test_results.json')) as json_data:
+          json_results = json.load(json_data)
+          if not json_results:
+            # Output is null meaning the test didn't produce any results.
+            # Want to output an error and continue loading the rest of the
+            # test results.
+            print 'No results produced for %s, skipping upload' % directory
+            continue
+          if json_results.get('version') == 3:
+            # Non-telemetry tests don't have written json results but
+            # if they are executing then they are enabled and will generate
+            # chartjson results.
+            if not bool(json_results.get('tests')):
+              disabled = True
+          if not '.reference' in directory:
+            # We don't need to upload reference build data to the
+            # flakiness dashboard since we don't monitor the ref build
+            test_results_list.append(json_results)
+        if disabled:
           # We don't upload disabled benchmarks
-          print 'Benchmark %s disabled' % directory
+          print 'Benchmark %s disabled' % benchmark_name
           continue
+        print 'Uploading perf results from %s benchmark' % benchmark_name
         _upload_perf_results(join(directory, 'perf_results.json'),
-            directory, configuration_name, build_properties,
+            benchmark_name, configuration_name, build_properties,
             oauth_file, tmpfile_dir)
+      _merge_json_output(output_json, test_results_list)
   finally:
     shutil.rmtree(tmpfile_dir)
   return 0

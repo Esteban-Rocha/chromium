@@ -60,8 +60,20 @@ CastSideSwipeOrigin CastSystemGestureEventHandler::GetDragPosition(
   return CastSideSwipeOrigin::NONE;
 }
 
-void CastSystemGestureEventHandler::OnGestureEvent(ui::GestureEvent* event) {
-  gfx::Point gesture_location(event->location());
+void CastSystemGestureEventHandler::OnEvent(ui::Event* event) {
+  if (current_swipe_ != CastSideSwipeOrigin::NONE &&
+      (event->IsTouchEvent() || event->IsGestureEvent())) {
+    // If we're in the process of handling a swipe, prevent the underlying touch
+    // or gesture event from being propagated out to other users.
+    event->StopPropagation();
+  }
+
+  // From here-on in, we're only interested in gestures.
+  if (!event->IsGestureEvent()) {
+    return;
+  }
+  ui::GestureEvent* gesture_event = event->AsGestureEvent();
+  gfx::Point gesture_location(gesture_event->location());
   aura::Window* target = static_cast<aura::Window*>(event->target());
 
   // Convert the event's point to the point on the physical screen.
@@ -76,17 +88,19 @@ void CastSystemGestureEventHandler::OnGestureEvent(ui::GestureEvent* event) {
 
   // Detect the beginning of a system gesture swipe.
   if (side_swipe_origin != CastSideSwipeOrigin::NONE &&
-      event->type() == ui::ET_GESTURE_SCROLL_BEGIN) {
+      (event->type() == ui::ET_SCROLL_FLING_START ||
+       event->type() == ui::ET_GESTURE_BEGIN)) {
     for (auto* side_swipe_handler : swipe_gesture_handlers_) {
       // Let the subscriber know about the swipe. If it is actually consumed by
       // them, it will be marked as handled.
-      side_swipe_handler->OnSideSwipeBegin(side_swipe_origin, event);
+      side_swipe_handler->OnSideSwipeBegin(side_swipe_origin, gesture_event);
 
       // If handled, remember the origin and then stop the further propagation
       // of the event.
       if (event->handled()) {
         current_swipe_ = side_swipe_origin;
         event->StopPropagation();
+
         break;
       }
     }
@@ -95,16 +109,14 @@ void CastSystemGestureEventHandler::OnGestureEvent(ui::GestureEvent* event) {
 
   // Detect the end of a system gesture swipe.
   if (current_swipe_ != CastSideSwipeOrigin::NONE &&
-      (event->type() == ui::ET_SCROLL_FLING_START ||
-       event->type() == ui::ET_GESTURE_SCROLL_END)) {
+      event->type() == ui::ET_GESTURE_END) {
     for (auto* side_swipe_handler : swipe_gesture_handlers_) {
-      side_swipe_handler->OnSideSwipeEnd(current_swipe_, event);
+      side_swipe_handler->OnSideSwipeEnd(current_swipe_, gesture_event);
     }
     current_swipe_ = CastSideSwipeOrigin::NONE;
 
-    // Prevent this event from being used for other gesture uses.
+    // Prevent the gesture from being used for other gesture uses.
     target->CleanupGestureState();
-    event->StopPropagation();
   }
 }
 

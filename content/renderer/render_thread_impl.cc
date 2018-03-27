@@ -54,6 +54,7 @@
 #include "components/viz/client/client_shared_bitmap_manager.h"
 #include "components/viz/client/hit_test_data_provider.h"
 #include "components/viz/client/hit_test_data_provider_draw_quad.h"
+#include "components/viz/client/hit_test_data_provider_surface_layer.h"
 #include "components/viz/client/local_surface_id_provider.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
@@ -84,8 +85,6 @@
 #include "content/renderer/appcache/appcache_dispatcher.h"
 #include "content/renderer/appcache/appcache_frontend_impl.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
-#include "content/renderer/cache_storage/cache_storage_dispatcher.h"
-#include "content/renderer/cache_storage/cache_storage_message_filter.h"
 #include "content/renderer/categorized_worker_pool.h"
 #include "content/renderer/dom_storage/dom_storage_dispatcher.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
@@ -137,7 +136,7 @@
 #include "ipc/ipc_platform_file.h"
 #include "media/base/media.h"
 #include "media/base/media_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/message_pipe.h"
@@ -385,6 +384,15 @@ scoped_refptr<ui::ContextProviderCommandBuffer> CreateOffscreenContext(
   attributes.enable_raster_interface = support_raster_interface;
   attributes.enable_oop_rasterization = support_oop_rasterization;
 
+  bool enable_raster_decoder =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableRasterDecoder);
+  // --enable-raster-decoder supports raster interface, but not
+  // gles2 interface
+  attributes.enable_raster_decoder = enable_raster_decoder &&
+                                     support_raster_interface &&
+                                     !support_gles2_interface;
+
   const bool automatic_flushes = false;
   return base::MakeRefCounted<ui::ContextProviderCommandBuffer>(
       std::move(gpu_channel_host), gpu_memory_buffer_manager, stream_id,
@@ -522,7 +530,8 @@ class ResourceUsageReporterImpl : public content::mojom::ResourceUsageReporter {
     base::RepeatingClosure collect = base::BindRepeating(
         &ResourceUsageReporterImpl::CollectOnWorkerThread,
         base::ThreadTaskRunnerHandle::Get(), weak_factory_.GetWeakPtr());
-    workers_to_go_ = RenderThread::Get()->PostTaskToAllWebWorkers(collect);
+    workers_to_go_ =
+        RenderThread::Get()->PostTaskToAllWebWorkers(std::move(collect));
     if (workers_to_go_) {
       // The guard task to send out partial stats
       // in case some workers are not responsive.
@@ -836,8 +845,6 @@ void RenderThreadImpl::Init(
       GetRendererScheduler()->IPCTaskRunner());
   dom_storage_dispatcher_.reset(new DomStorageDispatcher());
   main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher());
-  main_thread_cache_storage_dispatcher_.reset(
-      new CacheStorageDispatcher(thread_safe_sender()));
   file_system_dispatcher_.reset(new FileSystemDispatcher());
 
   vc_manager_.reset(new VideoCaptureImplManager());
@@ -895,10 +902,6 @@ void RenderThreadImpl::Init(
 
   midi_message_filter_ = new MidiMessageFilter(GetIOTaskRunner());
   AddFilter(midi_message_filter_.get());
-
-  AddFilter((new CacheStorageMessageFilter(
-                 thread_safe_sender(), GetRendererScheduler()->IPCTaskRunner()))
-                ->GetFilter());
 
 #if defined(USE_AURA)
   if (features::IsMusEnabled())
@@ -996,14 +999,6 @@ void RenderThreadImpl::Init(
     DCHECK_GE(gpu_rasterization_msaa_sample_count_, 0);
   } else {
     gpu_rasterization_msaa_sample_count_ = -1;
-  }
-
-  if (command_line.HasSwitch(switches::kDisableDistanceFieldText)) {
-    is_distance_field_text_enabled_ = false;
-  } else if (command_line.HasSwitch(switches::kEnableDistanceFieldText)) {
-    is_distance_field_text_enabled_ = true;
-  } else {
-    is_distance_field_text_enabled_ = false;
   }
 
   // Note that under Linux, the media library will normally already have
@@ -1284,12 +1279,13 @@ void RenderThreadImpl::SetResourceDispatcherDelegate(
 }
 
 void RenderThreadImpl::InitializeCompositorThread() {
-  base::Thread::Options options;
+  blink::WebThreadCreationParams params(
+      blink::WebThreadType::kCompositorThread);
 #if defined(OS_ANDROID)
-  options.priority = base::ThreadPriority::DISPLAY;
+  params.thread_options.priority = base::ThreadPriority::DISPLAY;
 #endif
   compositor_thread_ =
-      blink::scheduler::WebThreadBase::CreateCompositorThread(options);
+      blink::scheduler::WebThreadBase::CreateCompositorThread(params);
   blink_platform_impl_->SetCompositorThread(compositor_thread_.get());
   compositor_task_runner_ = compositor_thread_->GetTaskRunner();
   compositor_task_runner_->PostTask(
@@ -1539,23 +1535,14 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
   DCHECK(IsMainThread());
 
   if (!gpu_factories_.empty()) {
-    scoped_refptr<ui::ContextProviderCommandBuffer> shared_context_provider =
-        gpu_factories_.back()->ContextProviderMainThread();
-    if (shared_context_provider) {
-      viz::ContextProvider::ScopedContextLock lock(
-          shared_context_provider.get());
-      if (lock.ContextGL()->GetGraphicsResetStatusKHR() == GL_NO_ERROR)
-        return gpu_factories_.back().get();
+    if (gpu_factories_.back()->ContextProviderMainThread())
+      return gpu_factories_.back().get();
 
-      scoped_refptr<base::SingleThreadTaskRunner> media_task_runner =
-          GetMediaThreadTaskRunner();
-      media_task_runner->PostTask(
-          FROM_HERE,
-          base::BindOnce(
-              base::IgnoreResult(
-                  &GpuVideoAcceleratorFactoriesImpl::CheckContextLost),
-              base::Unretained(gpu_factories_.back().get())));
-    }
+    GetMediaThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::BindOnce(base::IgnoreResult(
+                           &GpuVideoAcceleratorFactoriesImpl::CheckContextLost),
+                       base::Unretained(gpu_factories_.back().get())));
   }
 
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
@@ -1567,7 +1554,7 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
   // This context is only used to create textures and mailbox them, so
   // use lower limits than the default.
   gpu::SharedMemoryLimits limits = gpu::SharedMemoryLimits::ForMailboxContext();
-  bool support_locking = true;
+  bool support_locking = false;
   bool support_gles2_interface = true;
   bool support_raster_interface = false;
   bool support_oop_rasterization = false;
@@ -1577,12 +1564,7 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
           support_locking, support_gles2_interface, support_raster_interface,
           support_oop_rasterization, ui::command_buffer_metrics::MEDIA_CONTEXT,
           kGpuStreamIdMedia, kGpuStreamPriorityMedia);
-  auto result = media_context_provider->BindToCurrentThread();
-  if (result != gpu::ContextResult::kSuccess)
-    return nullptr;
 
-  scoped_refptr<base::SingleThreadTaskRunner> media_task_runner =
-      GetMediaThreadTaskRunner();
   const bool enable_video_accelerator =
       !cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode) &&
       (gpu_channel_host->gpu_feature_info()
@@ -1605,7 +1587,7 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
 
   gpu_factories_.push_back(GpuVideoAcceleratorFactoriesImpl::Create(
       std::move(gpu_channel_host), base::ThreadTaskRunnerHandle::Get(),
-      media_task_runner, std::move(media_context_provider),
+      GetMediaThreadTaskRunner(), std::move(media_context_provider),
       enable_gpu_memory_buffer_video_frames, enable_video_accelerator,
       vea_provider.PassInterface()));
   gpu_factories_.back()->SetRenderingColorSpace(rendering_color_space_);
@@ -1629,7 +1611,7 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
 
   bool support_locking = false;
   bool support_gles2_interface = true;
-  bool support_raster_interface = true;
+  bool support_raster_interface = false;
   bool support_oop_rasterization = false;
   shared_main_thread_contexts_ = CreateOffscreenContext(
       std::move(gpu_channel_host), GetGpuMemoryBufferManager(),
@@ -1721,10 +1703,6 @@ int RenderThreadImpl::GetGpuRasterizationMSAASampleCount() {
 
 bool RenderThreadImpl::IsLcdTextEnabled() {
   return is_lcd_text_enabled_;
-}
-
-bool RenderThreadImpl::IsDistanceFieldTextEnabled() {
-  return is_distance_field_text_enabled_;
 }
 
 bool RenderThreadImpl::IsZeroCopyEnabled() {
@@ -2098,6 +2076,9 @@ void RenderThreadImpl::RequestNewLayerTreeFrameSink(
     params.hit_test_data_provider =
         std::make_unique<viz::HitTestDataProviderDrawQuad>(
             true /* should_ask_for_child_region */);
+  } else if (features::IsVizHitTestingSurfaceLayerEnabled()) {
+    params.hit_test_data_provider =
+        std::make_unique<viz::HitTestDataProviderSurfaceLayer>();
   }
 
   // The renderer runs animations and layout for animate_only BeginFrames.
@@ -2656,7 +2637,8 @@ void RenderThreadImpl::OnTrimMemoryImmediately() {
 void RenderThreadImpl::OnRendererInterfaceRequest(
     mojom::RendererAssociatedRequest request) {
   DCHECK(!renderer_binding_.is_bound());
-  renderer_binding_.Bind(std::move(request));
+  renderer_binding_.Bind(std::move(request),
+                         GetRendererScheduler()->IPCTaskRunner());
 }
 
 bool RenderThreadImpl::NeedsToRecordFirstActivePaint(

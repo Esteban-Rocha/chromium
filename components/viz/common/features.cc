@@ -23,6 +23,10 @@ const base::Feature kEnableSurfaceSynchronization{
     "SurfaceSynchronization", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
 
+// Enables DumpWithoutCrashing of surface invariants violations.
+const base::Feature kEnableInvariantsViolationLogging{
+    "InvariantsViolationLogging", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables running the display compositor as part of the viz service in the GPU
 // process. This is also referred to as out-of-process display compositor
 // (OOP-D).
@@ -33,11 +37,19 @@ const base::Feature kVizDisplayCompositor{"VizDisplayCompositor",
 const base::Feature kEnableVizHitTestDrawQuad{
     "VizHitTestDrawQuad", base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kEnableVizHitTestSurfaceLayer{
+    "VizHitTestSurfaceLayer", base::FEATURE_DISABLED_BY_DEFAULT};
+
 bool IsSurfaceSynchronizationEnabled() {
   auto* command_line = base::CommandLine::ForCurrentProcess();
   return base::FeatureList::IsEnabled(kEnableSurfaceSynchronization) ||
          command_line->HasSwitch(switches::kEnableSurfaceSynchronization) ||
          base::FeatureList::IsEnabled(kVizDisplayCompositor);
+}
+
+bool IsSurfaceInvariantsViolationLoggingEnabled() {
+  return IsSurfaceSynchronizationEnabled() &&
+         base::FeatureList::IsEnabled(kEnableInvariantsViolationLogging);
 }
 
 bool IsVizHitTestingDrawQuadEnabled() {
@@ -55,7 +67,8 @@ bool IsVizHitTestingSurfaceLayerEnabled() {
   // TODO(riajiang): Check kVizDisplayCompositor feature when it works with
   // that config.
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUseVizHitTestSurfaceLayer);
+             switches::kUseVizHitTestSurfaceLayer) ||
+         base::FeatureList::IsEnabled(kEnableVizHitTestSurfaceLayer);
 }
 
 bool IsDrawOcclusionEnabled() {

@@ -19,8 +19,10 @@
 #include "chrome/browser/vr/assets_load_status.h"
 #include "chrome/browser/vr/content_input_delegate.h"
 #include "chrome/browser/vr/exit_vr_prompt_choice.h"
+#include "chrome/browser/vr/model/capturing_state_model.h"
 #include "chrome/browser/vr/speech_recognizer.h"
 #include "chrome/browser/vr/ui.h"
+#include "chrome/browser/vr/ui_browser_interface.h"
 #include "chrome/browser/vr/ui_unsupported_mode.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "device/vr/android/gvr/cardboard_gamepad_data_provider.h"
@@ -53,7 +55,6 @@ class AutocompleteController;
 class ToolbarHelper;
 class VrGLThread;
 class VrInputConnection;
-class VrMetricsHelper;
 class VrShellDelegate;
 class VrWebContentsObserver;
 struct AutocompleteRequest;
@@ -105,6 +106,9 @@ class VrShell : device::GvrGamepadDataProvider,
   bool IsDisplayingUrlForTesting(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
+  base::android::ScopedJavaLocalRef<jobject> GetVrInputConnectionForTesting(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& obj);
   void OnFullscreenChanged(bool enabled);
   void OnLoadProgressChanged(JNIEnv* env,
                              const base::android::JavaParamRef<jobject>& obj,
@@ -123,8 +127,12 @@ class VrShell : device::GvrGamepadDataProvider,
                     jboolean incognito,
                     jint id);
   void OnContentPaused(bool paused);
-  void Navigate(GURL url);
+  void Navigate(GURL url, NavigationMethod method);
   void NavigateBack();
+  void NavigateForward();
+  void ReloadTab();
+  void OpenNewTab(bool incognito);
+  void CloseAllIncognitoTabs();
   void ExitCct();
   void CloseHostedDialog();
   void ToggleCardboardGamepad(bool enabled);
@@ -171,8 +179,6 @@ class VrShell : device::GvrGamepadDataProvider,
                            jint content_height,
                            jint overlay_width,
                            jint overlay_height);
-
-  void SetHighAccuracyLocation(bool high_accuracy_location);
 
   void ForceExitVr();
   void ExitPresent();
@@ -237,9 +243,7 @@ class VrShell : device::GvrGamepadDataProvider,
   void PostToGlThread(const base::Location& from_here, base::OnceClosure task);
   void SetUiState();
 
-  void ProcessTabArray(JNIEnv* env, jobjectArray tabs, bool incognito);
-
-  void PollMediaAccessFlag();
+  void PollCapturingState();
 
   bool HasDaydreamSupport(JNIEnv* env);
 
@@ -250,8 +254,6 @@ class VrShell : device::GvrGamepadDataProvider,
   void LoadAssets();
   void OnAssetsComponentReady();
   void OnAssetsComponentWaitTimeout();
-
-  bool vr_shell_enabled_;
 
   bool webvr_mode_ = false;
   bool web_vr_autopresentation_expected_ = false;
@@ -268,7 +270,6 @@ class VrShell : device::GvrGamepadDataProvider,
 
   std::unique_ptr<AndroidUiGestureTarget> android_ui_gesture_target_;
   std::unique_ptr<AndroidUiGestureTarget> dialog_gesture_target_;
-  std::unique_ptr<VrMetricsHelper> metrics_helper_;
 
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   std::unique_ptr<VrGLThread> gl_thread_;
@@ -284,12 +285,8 @@ class VrShell : device::GvrGamepadDataProvider,
 
   device::mojom::GeolocationConfigPtr geolocation_config_;
 
-  base::CancelableClosure poll_capturing_media_task_;
-  bool is_capturing_audio_ = false;
-  bool is_capturing_video_ = false;
-  bool is_capturing_screen_ = false;
-  bool is_bluetooth_connected_ = false;
-  bool high_accuracy_location_ = false;
+  base::CancelableClosure poll_capturing_state_task_;
+  CapturingStateModel capturing_state_;
 
   // Are we currently providing a gamepad factory to the gamepad manager?
   bool gvr_gamepad_source_active_ = false;
@@ -317,6 +314,8 @@ class VrShell : device::GvrGamepadDataProvider,
   gl::SurfaceTexture* ui_surface_texture_ = nullptr;
 
   base::Timer waiting_for_assets_component_timer_;
+
+  std::set<int> incognito_tab_ids_;
 
   base::WeakPtrFactory<VrShell> weak_ptr_factory_;
 

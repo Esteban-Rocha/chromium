@@ -12,9 +12,7 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/scheduler/renderer/main_thread_task_queue.h"
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
-#include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/RefCounted.h"
 #include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
@@ -642,9 +640,9 @@ TEST_F(TimerTest, DestructOnHeapTimer) {
   owner->StartOneShot(TimeDelta(), FROM_HERE);
 
   owner = nullptr;
-  ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                         BlinkGC::kGCWithSweep,
-                                         BlinkGC::kForcedGC);
+  ThreadState::Current()->CollectGarbage(
+      BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
+      BlinkGC::kEagerSweeping, BlinkGC::kForcedGC);
   EXPECT_TRUE(record->OwnerIsDestructed());
 
   EXPECT_FALSE(record->TimerHasFired());
@@ -662,9 +660,9 @@ TEST_F(TimerTest, MarkOnHeapTimerAsUnreachable) {
   owner->StartOneShot(TimeDelta(), FROM_HERE);
 
   owner = nullptr;
-  ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                         BlinkGC::kGCWithoutSweep,
-                                         BlinkGC::kForcedGC);
+  ThreadState::Current()->CollectGarbage(
+      BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
+      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
   EXPECT_FALSE(record->OwnerIsDestructed());
 
   {

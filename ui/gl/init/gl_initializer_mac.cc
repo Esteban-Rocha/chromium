@@ -134,26 +134,35 @@ bool InitializeStaticCGLInternal(GLImplementation implementation) {
 }
 
 #if BUILDFLAG(USE_EGL_ON_MAC)
-const char kGLESv2ANGLELibraryName[] = "libGLESv2.dylib";
-const char kEGLANGLELibraryName[] = "libEGL.dylib";
+const char kGLESv2ANGLELibraryName[] = "Libraries/libGLESv2.dylib";
+const char kEGLANGLELibraryName[] = "Libraries/libEGL.dylib";
+
+const char kGLESv2SwiftShaderLibraryName[] =
+    "Libraries/libswiftshader_libGLESv2.dylib";
+const char kEGLSwiftShaderLibraryName[] =
+    "Libraries/libswiftshader_libEGL.dylib";
 
 bool InitializeStaticEGLInternal(GLImplementation implementation) {
+  base::FilePath module_path = base::mac::FrameworkBundlePath();
+  base::FilePath glesv2_path;
+  base::FilePath egl_path;
   if (implementation == kGLImplementationSwiftShaderGL) {
+#if BUILDFLAG(ENABLE_SWIFTSHADER)
+    glesv2_path = module_path.Append(kGLESv2SwiftShaderLibraryName);
+    egl_path = module_path.Append(kEGLSwiftShaderLibraryName);
+#else
     return false;
+#endif
+  } else {
+    glesv2_path = module_path.Append(kGLESv2ANGLELibraryName);
+    egl_path = module_path.Append(kEGLANGLELibraryName);
   }
 
-  base::FilePath module_path;
-  if (!PathService::Get(base::DIR_MODULE, &module_path)) {
-    return false;
-  }
-
-  base::FilePath glesv2_path = module_path.Append(kGLESv2ANGLELibraryName);
   base::NativeLibrary gles_library = LoadLibraryAndPrintError(glesv2_path);
   if (!gles_library) {
     return false;
   }
 
-  base::FilePath egl_path = module_path.Append(kEGLANGLELibraryName);
   base::NativeLibrary egl_library = LoadLibraryAndPrintError(egl_path);
   if (!egl_library) {
     base::UnloadNativeLibrary(gles_library);
@@ -172,9 +181,11 @@ bool InitializeStaticEGLInternal(GLImplementation implementation) {
   }
 
   SetGLGetProcAddressProc(get_proc_address);
-  AddGLNativeLibrary(egl_library);
+  // FIXME: SwiftShader must load symbols from libGLESv2 before libEGL on MacOS
+  // currently
   AddGLNativeLibrary(gles_library);
-  SetGLImplementation(kGLImplementationEGLGLES2);
+  AddGLNativeLibrary(egl_library);
+  SetGLImplementation(implementation);
 
   InitializeStaticGLBindingsGL();
   InitializeStaticGLBindingsEGL();
@@ -197,6 +208,7 @@ bool InitializeGLOneOffPlatform() {
       return true;
 #if BUILDFLAG(USE_EGL_ON_MAC)
     case kGLImplementationEGLGLES2:
+    case kGLImplementationSwiftShaderGL:
       if (!GLSurfaceEGL::InitializeOneOff(0)) {
         LOG(ERROR) << "GLSurfaceEGL::InitializeOneOff failed.";
         return false;
@@ -229,6 +241,7 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       return InitializeStaticCGLInternal(implementation);
 #if BUILDFLAG(USE_EGL_ON_MAC)
     case kGLImplementationEGLGLES2:
+    case kGLImplementationSwiftShaderGL:
       return InitializeStaticEGLInternal(implementation);
 #endif  // BUILDFLAG(USE_EGL_ON_MAC)
     case kGLImplementationMockGL:

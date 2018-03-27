@@ -8,16 +8,19 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
+#include "build/build_config.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
 #include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
@@ -593,6 +596,13 @@ IN_PROC_BROWSER_TEST_F(BrowserSideNavigationBaseBrowserTest,
 // properly.
 IN_PROC_BROWSER_TEST_F(BrowserSideNavigationBaseBrowserTest,
                        CancelRequestAfterReadyToCommit) {
+// TODO(https://crbug.com/820959). Test temporarily disabled on Windows with
+// NavigationMojoResponse.
+#if defined(OS_WIN)
+  if (IsNavigationMojoResponseEnabled())
+    return;
+#endif
+
   // This test cancels the request using the ResourceDispatchHost. With the
   // NetworkService, it is not used so the request is not canceled.
   // TODO(arthursonzogni): Find a way to cancel a request from the browser

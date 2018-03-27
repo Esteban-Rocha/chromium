@@ -31,6 +31,9 @@
 #include "platform/blob/BlobData.h"
 
 #include <memory>
+#include <utility>
+
+#include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/single_thread_task_runner.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
@@ -43,7 +46,6 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/text/LineEnding.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/CString.h"
 #include "platform/wtf/text/TextEncoding.h"
@@ -80,11 +82,6 @@ bool IsValidBlobType(const String& type) {
   return true;
 }
 
-void BindBytesProvider(std::unique_ptr<BlobBytesProvider> provider,
-                       BytesProviderRequest request) {
-  mojo::MakeStrongBinding(std::move(provider), std::move(request));
-}
-
 mojom::blink::BlobRegistry* g_blob_registry_for_testing = nullptr;
 
 mojom::blink::BlobRegistry* GetThreadSpecificRegistry() {
@@ -110,13 +107,13 @@ constexpr long long BlobData::kToEndOfFile;
 RawData::RawData() = default;
 
 std::unique_ptr<BlobData> BlobData::Create() {
-  return WTF::WrapUnique(
+  return base::WrapUnique(
       new BlobData(FileCompositionStatus::NO_UNKNOWN_SIZE_FILES));
 }
 
 std::unique_ptr<BlobData> BlobData::CreateForFileWithUnknownSize(
     const String& path) {
-  std::unique_ptr<BlobData> data = WTF::WrapUnique(
+  std::unique_ptr<BlobData> data = base::WrapUnique(
       new BlobData(FileCompositionStatus::SINGLE_UNKNOWN_SIZE_FILE));
   data->elements_.push_back(DataElement::NewFile(DataElementFile::New(
       WebStringToFilePath(path), 0, BlobData::kToEndOfFile, WTF::Time())));
@@ -126,7 +123,7 @@ std::unique_ptr<BlobData> BlobData::CreateForFileWithUnknownSize(
 std::unique_ptr<BlobData> BlobData::CreateForFileWithUnknownSize(
     const String& path,
     double expected_modification_time) {
-  std::unique_ptr<BlobData> data = WTF::WrapUnique(
+  std::unique_ptr<BlobData> data = base::WrapUnique(
       new BlobData(FileCompositionStatus::SINGLE_UNKNOWN_SIZE_FILE));
   data->elements_.push_back(DataElement::NewFile(DataElementFile::New(
       WebStringToFilePath(path), 0, BlobData::kToEndOfFile,
@@ -137,7 +134,7 @@ std::unique_ptr<BlobData> BlobData::CreateForFileWithUnknownSize(
 std::unique_ptr<BlobData> BlobData::CreateForFileSystemURLWithUnknownSize(
     const KURL& file_system_url,
     double expected_modification_time) {
-  std::unique_ptr<BlobData> data = WTF::WrapUnique(
+  std::unique_ptr<BlobData> data = base::WrapUnique(
       new BlobData(FileCompositionStatus::SINGLE_UNKNOWN_SIZE_FILE));
   data->elements_.push_back(
       DataElement::NewFileFilesystem(DataElementFilesystemURL::New(
@@ -289,21 +286,9 @@ void BlobData::AppendDataInternal(base::span<const char> data,
     }
   } else {
     BytesProviderPtrInfo bytes_provider_info;
-    auto provider = std::make_unique<BlobBytesProvider>();
-    last_bytes_provider_ = provider.get();
+    last_bytes_provider_ =
+        BlobBytesProvider::CreateAndBind(MakeRequest(&bytes_provider_info));
 
-    scoped_refptr<base::SingleThreadTaskRunner> file_runner =
-        Platform::Current()->FileTaskRunner();
-    if (file_runner) {
-      // TODO(mek): Considering binding BytesProvider on the IO thread
-      // instead, only using the File thread for actual file operations.
-      PostCrossThreadTask(
-          *file_runner, FROM_HERE,
-          CrossThreadBind(&BindBytesProvider, WTF::Passed(std::move(provider)),
-                          WTF::Passed(MakeRequest(&bytes_provider_info))));
-    } else {
-      BindBytesProvider(std::move(provider), MakeRequest(&bytes_provider_info));
-    }
     auto bytes_element = DataElementBytes::New(data.length(), WTF::nullopt,
                                                std::move(bytes_provider_info));
     if (should_embed_bytes) {

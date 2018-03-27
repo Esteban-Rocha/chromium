@@ -6,6 +6,7 @@ package org.chromium.chromecast.shell;
 
 import android.app.Fragment;
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -37,6 +38,10 @@ public class CastWebContentsFragment extends Fragment {
     private CastWebContentsSurfaceHelper mSurfaceHelper;
 
     private View mFragmentRootView;
+
+    private String mAppId;
+
+    private int mInitialVisiblityPriority;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -76,6 +81,10 @@ public class CastWebContentsFragment extends Fragment {
     public void onStart() {
         Log.d(TAG, "onStart");
         super.onStart();
+
+        sendIntentSync(CastWebContentsIntentUtils.onVisibilityChange(mSurfaceHelper.getInstanceId(),
+                CastWebContentsIntentUtils.VISIBITY_TYPE_FULL_SCREEN));
+
         if (mSurfaceHelper != null) {
             return;
         }
@@ -83,18 +92,25 @@ public class CastWebContentsFragment extends Fragment {
                     (FrameLayout) getView().findViewById(R.id.web_contents_container),
                     true /* showInFragment */);
         Bundle bundle = getArguments();
-        bundle.setClassLoader(WebContents.class.getClassLoader());
-        String uriString = bundle.getString(CastWebContentsComponent.INTENT_EXTRA_URI);
+
+        String uriString = CastWebContentsIntentUtils.getUriString(bundle);
         if (uriString == null) {
             return;
         }
         Uri uri = Uri.parse(uriString);
-        WebContents webContents = (WebContents) bundle.getParcelable(
-                CastWebContentsComponent.ACTION_EXTRA_WEB_CONTENTS);
 
-        boolean touchInputEnabled =
-                bundle.getBoolean(CastWebContentsComponent.ACTION_EXTRA_TOUCH_INPUT_ENABLED, false);
+        WebContents webContents = CastWebContentsIntentUtils.getWebContents(bundle);
+        mAppId = CastWebContentsIntentUtils.getAppId(bundle);
+        mInitialVisiblityPriority = CastWebContentsIntentUtils.getVisibilityPriority(bundle);
+        boolean touchInputEnabled = CastWebContentsIntentUtils.isTouchable(bundle);
+
         mSurfaceHelper.onNewWebContents(uri, webContents, touchInputEnabled);
+    }
+
+    @Override
+    public void setArguments(Bundle args) {
+        super.setArguments(args);
+        args.setClassLoader(WebContents.class.getClassLoader());
     }
 
     @Override
@@ -118,6 +134,8 @@ public class CastWebContentsFragment extends Fragment {
     @Override
     public void onStop() {
         Log.d(TAG, "onStop");
+        sendIntentSync(CastWebContentsIntentUtils.onVisibilityChange(
+                mSurfaceHelper.getInstanceId(), CastWebContentsIntentUtils.VISIBITY_TYPE_HIDDEN));
         super.onStop();
     }
 
@@ -128,5 +146,9 @@ public class CastWebContentsFragment extends Fragment {
             mSurfaceHelper.onDestroy();
         }
         super.onDestroy();
+    }
+
+    private void sendIntentSync(Intent in) {
+        CastWebContentsIntentUtils.getLocalBroadcastManager().sendBroadcastSync(in);
     }
 }

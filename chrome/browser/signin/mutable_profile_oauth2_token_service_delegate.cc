@@ -31,6 +31,27 @@ namespace {
 const char kAccountIdPrefix[] = "AccountId-";
 const size_t kAccountIdPrefixLength = 10;
 
+// Used to records token state transitions in histograms.
+// Do not change existing values, new values can only be added at the end.
+enum class TokenStateTransition {
+  // Update events.
+  kNoneToInvalid = 0,
+  kNoneToRegular,
+  kInvalidToRegular,
+  kRegularToInvalid,
+  kRegularToRegular,
+
+  // Revocation events.
+  kInvalidToNone,
+  kRegularToNone,
+
+  // Load events.
+  kLoadRegular,
+  kLoadInvalid,
+
+  kCount
+};
+
 // Enum for the Signin.LoadTokenFromDB histogram.
 // Do not modify, or add or delete other than directly before
 // NUM_LOAD_TOKEN_FROM_DB_STATUS.
@@ -45,6 +66,57 @@ enum class LoadTokenFromDBStatus {
 
   NUM_LOAD_TOKEN_FROM_DB_STATUS
 };
+
+// Adds a sample to the TokenStateTransition histogram. Encapsuled in a function
+// to reduce executable size, because histogram macros may generate a lot of
+// code.
+void RecordTokenStateTransition(TokenStateTransition transition) {
+  UMA_HISTOGRAM_ENUMERATION("Signin.TokenStateTransition", transition,
+                            TokenStateTransition::kCount);
+}
+
+// Record metrics when a token was updated.
+void RecordTokenChanged(const std::string& existing_token,
+                        const std::string& new_token) {
+  DCHECK_NE(existing_token, new_token);
+  DCHECK(!new_token.empty());
+  TokenStateTransition transition = TokenStateTransition::kCount;
+  if (existing_token.empty()) {
+    transition =
+        (new_token ==
+         MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken)
+            ? TokenStateTransition::kNoneToInvalid
+            : TokenStateTransition::kNoneToRegular;
+  } else if (existing_token ==
+             MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken) {
+    transition = TokenStateTransition::kInvalidToRegular;
+  } else {
+    // Existing token is a regular token.
+    transition =
+        (new_token ==
+         MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken)
+            ? TokenStateTransition::kRegularToInvalid
+            : transition = TokenStateTransition::kRegularToRegular;
+  }
+  DCHECK_NE(TokenStateTransition::kCount, transition);
+  RecordTokenStateTransition(transition);
+}
+
+// Record metrics when a token was loaded.
+void RecordTokenLoaded(const std::string& token) {
+  RecordTokenStateTransition(
+      (token == MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken)
+          ? TokenStateTransition::kLoadInvalid
+          : TokenStateTransition::kLoadRegular);
+}
+
+// Record metrics when a token was revoked.
+void RecordTokenRevoked(const std::string& token) {
+  RecordTokenStateTransition(
+      (token == MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken)
+          ? TokenStateTransition::kInvalidToNone
+          : TokenStateTransition::kRegularToNone);
+}
 
 std::string ApplyAccountIdPrefix(const std::string& account_id) {
   return kAccountIdPrefix + account_id;
@@ -117,6 +189,10 @@ bool ShouldMigrateToDice(signin::AccountConsistencyMethod account_consistency,
 
 }  // namespace
 
+// static
+const char MutableProfileOAuth2TokenServiceDelegate::kInvalidRefreshToken[] =
+    "invalid_refresh_token";
+
 // This class sends a request to GAIA to revoke the given refresh token from
 // the server.  This is a best effort attempt only.  This class deletes itself
 // when done successfully or otherwise.
@@ -176,6 +252,9 @@ MutableProfileOAuth2TokenServiceDelegate::AccountStatus::AccountStatus(
       last_auth_error_(GoogleServiceAuthError::NONE) {
   DCHECK(signin_error_controller_);
   DCHECK(!account_id_.empty());
+}
+
+void MutableProfileOAuth2TokenServiceDelegate::AccountStatus::Initialize() {
   signin_error_controller_->AddProvider(this);
 }
 
@@ -276,7 +355,8 @@ bool MutableProfileOAuth2TokenServiceDelegate::RefreshTokenHasError(
 void MutableProfileOAuth2TokenServiceDelegate::UpdateAuthError(
     const std::string& account_id,
     const GoogleServiceAuthError& error) {
-  VLOG(1) << "MutablePO2TS::UpdateAuthError. Error: " << error.state();
+  VLOG(1) << "MutablePO2TS::UpdateAuthError. Error: " << error.state()
+          << " account_id=" << account_id;
   backoff_entry_.InformOfRequest(!error.IsTransientError());
   ValidateAccountId(account_id);
 
@@ -418,8 +498,7 @@ void MutableProfileOAuth2TokenServiceDelegate::OnWebDataServiceRequestDone(
       load_credentials_state_ =
           LOAD_CREDENTIALS_FINISHED_WITH_NO_TOKEN_FOR_PRIMARY_ACCOUNT;
     }
-    refresh_tokens_[loading_primary_account_id_].reset(new AccountStatus(
-        signin_error_controller_, loading_primary_account_id_, std::string()));
+    AddAccountStatus(loading_primary_account_id_, std::string());
   }
 
   // If we don't have a refresh token for a known account, signal an error.
@@ -549,10 +628,11 @@ void MutableProfileOAuth2TokenServiceDelegate::LoadAllCredentialsIntoMemory(
             LoadTokenFromDBStatus::NUM_LOAD_TOKEN_FROM_DB_STATUS);
 
         if (load_account) {
-          refresh_tokens_[account_id].reset(new AccountStatus(
-              signin_error_controller_, account_id, refresh_token));
+          RecordTokenLoaded(refresh_token);
+          UpdateCredentialsInMemory(account_id, refresh_token);
           FireRefreshTokenAvailable(account_id);
         } else {
+          RecordTokenRevoked(refresh_token);
           RevokeCredentialsOnServer(refresh_token);
           ClearPersistedCredentials(account_id);
           FireRefreshTokenRevoked(account_id);
@@ -577,35 +657,47 @@ void MutableProfileOAuth2TokenServiceDelegate::UpdateCredentials(
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!account_id.empty());
   DCHECK(!refresh_token.empty());
-  ValidateAccountId(account_id);
 
+  ValidateAccountId(account_id);
   signin_metrics::LogSigninAddAccount();
 
-  bool refresh_token_present = refresh_tokens_.count(account_id) > 0;
-  if (!refresh_token_present ||
-      refresh_tokens_[account_id]->refresh_token() != refresh_token) {
+  const std::string& existing_token = GetRefreshToken(account_id);
+  if (existing_token != refresh_token) {
     ScopedBatchChange batch(this);
-
-    // If token present, and different from the new one, cancel its requests,
-    // and clear the entries in cache related to that account.
-    if (refresh_token_present) {
-      VLOG(1) << "MutablePO2TS::UpdateCredentials; Refresh Token was present. "
-              << "account_id=" << account_id;
-      RevokeCredentialsOnServer(refresh_tokens_[account_id]->refresh_token());
-      refresh_tokens_[account_id]->set_refresh_token(refresh_token);
-    } else {
-      VLOG(1) << "MutablePO2TS::UpdateCredentials; Refresh Token was absent. "
-              << "account_id=" << account_id;
-      refresh_tokens_[account_id].reset(new AccountStatus(
-          signin_error_controller_, account_id, refresh_token));
-    }
-
-    // Save the token in memory and in persistent store.
+    RecordTokenChanged(existing_token, refresh_token);
+    UpdateCredentialsInMemory(account_id, refresh_token);
     PersistCredentials(account_id, refresh_token);
-
-    UpdateAuthError(account_id, GoogleServiceAuthError::AuthErrorNone());
     FireRefreshTokenAvailable(account_id);
   }
+}
+
+void MutableProfileOAuth2TokenServiceDelegate::UpdateCredentialsInMemory(
+    const std::string& account_id,
+    const std::string& refresh_token) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(!account_id.empty());
+  DCHECK(!refresh_token.empty());
+
+  bool refresh_token_present = refresh_tokens_.count(account_id) > 0;
+  // If token present, and different from the new one, cancel its requests,
+  // and clear the entries in cache related to that account.
+  if (refresh_token_present) {
+    DCHECK_NE(refresh_token, refresh_tokens_[account_id]->refresh_token());
+    VLOG(1) << "MutablePO2TS::UpdateCredentials; Refresh Token was present. "
+            << "account_id=" << account_id;
+    RevokeCredentialsOnServer(refresh_tokens_[account_id]->refresh_token());
+    refresh_tokens_[account_id]->set_refresh_token(refresh_token);
+  } else {
+    VLOG(1) << "MutablePO2TS::UpdateCredentials; Refresh Token was absent. "
+            << "account_id=" << account_id;
+    AddAccountStatus(account_id, refresh_token);
+  }
+
+  UpdateAuthError(account_id,
+                  (refresh_token == kInvalidRefreshToken)
+                      ? GoogleServiceAuthError(
+                            GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS)
+                      : GoogleServiceAuthError::AuthErrorNone());
 }
 
 void MutableProfileOAuth2TokenServiceDelegate::PersistCredentials(
@@ -628,9 +720,13 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeAllCredentials() {
 
   VLOG(1) << "MutablePO2TS::RevokeAllCredentials";
   CancelWebTokenFetch();
-  AccountStatusMap tokens = refresh_tokens_;
-  for (auto& token : tokens)
-    RevokeCredentials(token.first);
+
+  // Make a temporary copy of the account ids.
+  std::vector<std::string> accounts;
+  for (const auto& token : refresh_tokens_)
+    accounts.push_back(token.first);
+  for (const std::string& account : accounts)
+    RevokeCredentials(account);
 
   DCHECK_EQ(0u, refresh_tokens_.size());
 
@@ -648,7 +744,9 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeCredentials(
   if (refresh_tokens_.count(account_id) > 0) {
     VLOG(1) << "MutablePO2TS::RevokeCredentials for account_id=" << account_id;
     ScopedBatchChange batch(this);
-    RevokeCredentialsOnServer(refresh_tokens_[account_id]->refresh_token());
+    const std::string& token = refresh_tokens_[account_id]->refresh_token();
+    RecordTokenRevoked(token);
+    RevokeCredentialsOnServer(token);
     refresh_tokens_.erase(account_id);
     ClearPersistedCredentials(account_id);
     FireRefreshTokenRevoked(account_id);
@@ -667,6 +765,9 @@ void MutableProfileOAuth2TokenServiceDelegate::ClearPersistedCredentials(
 
 void MutableProfileOAuth2TokenServiceDelegate::RevokeCredentialsOnServer(
     const std::string& refresh_token) {
+  if (refresh_token == kInvalidRefreshToken)
+    return;
+
   // Keep track or all server revoke requests.  This way they can be deleted
   // before the token service is shutdown and won't outlive the profile.
   server_revokes_.push_back(
@@ -699,4 +800,14 @@ void MutableProfileOAuth2TokenServiceDelegate::OnNetworkChanged(
 const net::BackoffEntry*
     MutableProfileOAuth2TokenServiceDelegate::BackoffEntry() const {
   return &backoff_entry_;
+}
+
+void MutableProfileOAuth2TokenServiceDelegate::AddAccountStatus(
+    const std::string& account_id,
+    const std::string& refresh_token) {
+  DCHECK_EQ(0u, refresh_tokens_.count(account_id));
+  AccountStatus* status =
+      new AccountStatus(signin_error_controller_, account_id, refresh_token);
+  refresh_tokens_[account_id].reset(status);
+  status->Initialize();
 }

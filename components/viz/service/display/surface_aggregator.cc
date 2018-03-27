@@ -91,6 +91,7 @@ SurfaceAggregator::SurfaceAggregator(SurfaceManager* manager,
 SurfaceAggregator::~SurfaceAggregator() {
   // Notify client of all surfaces being removed.
   contained_surfaces_.clear();
+  contained_frame_sinks_.clear();
   ProcessAddedAndRemovedSurfaces();
 }
 
@@ -194,7 +195,6 @@ void SurfaceAggregator::HandleSurfaceQuad(
     bool* damage_rect_in_quad_space_valid) {
   SurfaceId primary_surface_id = surface_quad->primary_surface_id;
   Surface* primary_surface = manager_->GetSurfaceForId(primary_surface_id);
-
   if (primary_surface && primary_surface->HasActiveFrame()) {
     EmitSurfaceContent(primary_surface, parent_device_scale_factor,
                        surface_quad->shared_quad_state, surface_quad->rect,
@@ -328,7 +328,10 @@ void SurfaceAggregator::EmitSurfaceContent(
   const auto& child_to_parent_map =
       provider_ ? provider_->GetChildToParentMap(ChildIdForSurface(surface))
                 : empty_map;
-  bool merge_pass = source_sqs->opacity == 1.f && copy_requests.empty();
+  gfx::Transform combined_transform = scaled_quad_to_target_transform;
+  combined_transform.ConcatTransform(target_transform);
+  bool merge_pass = source_sqs->opacity == 1.f && copy_requests.empty() &&
+                    combined_transform.Preserves2dAxisAlignment();
 
   const RenderPassList& referenced_passes = render_pass_list;
   // TODO(fsamuel): Move this to a separate helper function.
@@ -423,6 +426,12 @@ void SurfaceAggregator::EmitSurfaceContent(
   } else {
     auto* shared_quad_state = CopyAndScaleSharedQuadState(
         source_sqs, scaled_quad_to_target_transform, target_transform,
+        gfx::ScaleToEnclosingRect(source_sqs->quad_layer_rect,
+                                  layer_to_content_scale_x,
+                                  layer_to_content_scale_y),
+        gfx::ScaleToEnclosingRect(source_sqs->visible_quad_layer_rect,
+                                  layer_to_content_scale_x,
+                                  layer_to_content_scale_y),
         clip_rect, dest_pass, layer_to_content_scale_x,
         layer_to_content_scale_y);
 
@@ -486,15 +495,17 @@ void SurfaceAggregator::EmitGutterQuadsIfNecessary(
   if (has_transparent_background)
     return;
 
-  SharedQuadState* shared_quad_state = nullptr;
   if (fallback_rect.width() < primary_rect.width()) {
-    shared_quad_state = CopySharedQuadState(
-        primary_shared_quad_state, target_transform, clip_rect, dest_pass);
-
     // The right gutter also includes the bottom-right corner, if necessary.
     gfx::Rect right_gutter_rect(fallback_rect.right(), primary_rect.y(),
                                 primary_rect.width() - fallback_rect.width(),
                                 primary_rect.height());
+
+    SharedQuadState* shared_quad_state = CopyAndScaleSharedQuadState(
+        primary_shared_quad_state,
+        primary_shared_quad_state->quad_to_target_transform, target_transform,
+        right_gutter_rect, right_gutter_rect, clip_rect, dest_pass, 1.0f, 1.0f);
+
     auto* right_gutter =
         dest_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
     right_gutter->SetNew(shared_quad_state, right_gutter_rect,
@@ -502,14 +513,16 @@ void SurfaceAggregator::EmitGutterQuadsIfNecessary(
   }
 
   if (fallback_rect.height() < primary_rect.height()) {
-    if (!shared_quad_state) {
-      shared_quad_state = CopySharedQuadState(
-          primary_shared_quad_state, target_transform, clip_rect, dest_pass);
-    }
-
     gfx::Rect bottom_gutter_rect(
         primary_rect.x(), fallback_rect.bottom(), fallback_rect.width(),
         primary_rect.height() - fallback_rect.height());
+
+    SharedQuadState* shared_quad_state = CopyAndScaleSharedQuadState(
+        primary_shared_quad_state,
+        primary_shared_quad_state->quad_to_target_transform, target_transform,
+        bottom_gutter_rect, bottom_gutter_rect, clip_rect, dest_pass, 1.0f,
+        1.0f);
+
     auto* bottom_gutter =
         dest_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
     bottom_gutter->SetNew(shared_quad_state, bottom_gutter_rect,
@@ -585,6 +598,7 @@ SharedQuadState* SurfaceAggregator::CopySharedQuadState(
     RenderPass* dest_render_pass) {
   return CopyAndScaleSharedQuadState(
       source_sqs, source_sqs->quad_to_target_transform, target_transform,
+      source_sqs->quad_layer_rect, source_sqs->visible_quad_layer_rect,
       clip_rect, dest_render_pass, 1.0f, 1.0f);
 }
 
@@ -592,6 +606,8 @@ SharedQuadState* SurfaceAggregator::CopyAndScaleSharedQuadState(
     const SharedQuadState* source_sqs,
     const gfx::Transform& scaled_quad_to_target_transform,
     const gfx::Transform& target_transform,
+    const gfx::Rect& quad_layer_rect,
+    const gfx::Rect& visible_quad_layer_rect,
     const ClipData& clip_rect,
     RenderPass* dest_render_pass,
     float x_scale,
@@ -610,14 +626,8 @@ SharedQuadState* SurfaceAggregator::CopyAndScaleSharedQuadState(
   gfx::Transform new_transform = scaled_quad_to_target_transform;
   new_transform.ConcatTransform(target_transform);
 
-  gfx::Rect scaled_quad_layer_rect(
-      gfx::ScaleToEnclosingRect(source_sqs->quad_layer_rect, x_scale, y_scale));
-
-  gfx::Rect scaled_visible_quad_layer_rect(gfx::ScaleToEnclosingRect(
-      source_sqs->visible_quad_layer_rect, x_scale, y_scale));
-
   shared_quad_state->SetAll(
-      new_transform, scaled_quad_layer_rect, scaled_visible_quad_layer_rect,
+      new_transform, quad_layer_rect, visible_quad_layer_rect,
       new_clip_rect.rect, new_clip_rect.is_clipped,
       source_sqs->are_contents_opaque, source_sqs->opacity,
       source_sqs->blend_mode, source_sqs->sorting_context_id);
@@ -841,6 +851,9 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
     return gfx::Rect();
 
   contained_surfaces_[surface->surface_id()] = surface->GetActiveFrameIndex();
+  contained_frame_sinks_[surface->surface_id().frame_sink_id()] =
+      std::max(surface->surface_id().local_surface_id(),
+               contained_frame_sinks_[surface->surface_id().frame_sink_id()]);
   if (!surface->HasActiveFrame())
     return gfx::Rect();
 
@@ -1040,6 +1053,22 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
 
   CHECK(debug_weak_this.get());
 
+  if (!damage_rect.IsEmpty()) {
+    // The following call can cause one or more copy requests to be added to the
+    // Surface. Therefore, no code before this point should have assumed
+    // anything about the presence or absence of copy requests after this point.
+    surface->NotifyAggregatedDamage(damage_rect, expected_display_time_);
+  }
+
+  // If any CopyOutputRequests were made at FrameSink level, make sure we grab
+  // them too.
+  surface->TakeCopyOutputRequestsFromClient();
+
+  if (will_draw)
+    surface->OnWillBeDrawn();
+
+  CHECK(debug_weak_this.get());
+
   for (const auto& surface_id : frame.metadata.referenced_surfaces) {
     if (!contained_surfaces_.count(surface_id)) {
       result->undrawn_surfaces.insert(surface_id);
@@ -1048,18 +1077,6 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
         PrewalkTree(undrawn_surface, false, 0, false /* will_draw */, result);
     }
   }
-
-  CHECK(debug_weak_this.get());
-
-  if (!damage_rect.IsEmpty()) {
-    // The following call can cause one or more copy requests to be added to the
-    // Surface. Therefore, no code before this point should have assumed
-    // anything about the presence or absence of copy requests after this point.
-    surface->NotifyAggregatedDamage(damage_rect);
-  }
-
-  if (will_draw)
-    surface->OnWillBeDrawn();
 
   CHECK(debug_weak_this.get());
   for (const auto& render_pass : frame.render_pass_list) {
@@ -1140,12 +1157,19 @@ void SurfaceAggregator::PropagateCopyRequestPasses() {
   }
 }
 
-CompositorFrame SurfaceAggregator::Aggregate(const SurfaceId& surface_id) {
+CompositorFrame SurfaceAggregator::Aggregate(
+    const SurfaceId& surface_id,
+    base::TimeTicks expected_display_time) {
+  DCHECK(!expected_display_time.is_null());
+
   uma_stats_.Reset();
 
   Surface* surface = manager_->GetSurfaceForId(surface_id);
   DCHECK(surface);
   contained_surfaces_[surface_id] = surface->GetActiveFrameIndex();
+  contained_frame_sinks_[surface_id.frame_sink_id()] =
+      std::max(surface_id.local_surface_id(),
+               contained_frame_sinks_[surface_id.frame_sink_id()]);
 
   if (!surface->HasActiveFrame())
     return {};
@@ -1156,6 +1180,7 @@ CompositorFrame SurfaceAggregator::Aggregate(const SurfaceId& surface_id) {
   CompositorFrame frame;
 
   dest_pass_list_ = &frame.render_pass_list;
+  expected_display_time_ = expected_display_time;
 
   valid_surfaces_.clear();
   has_cached_render_passes_ = false;
@@ -1195,9 +1220,12 @@ CompositorFrame SurfaceAggregator::Aggregate(const SurfaceId& surface_id) {
     return {};
 
   dest_pass_list_ = nullptr;
+  expected_display_time_ = base::TimeTicks();
   ProcessAddedAndRemovedSurfaces();
   contained_surfaces_.swap(previous_contained_surfaces_);
   contained_surfaces_.clear();
+  contained_frame_sinks_.swap(previous_contained_frame_sinks_);
+  contained_frame_sinks_.clear();
 
   for (auto it : previous_contained_surfaces_) {
     Surface* surface = manager_->GetSurfaceForId(it.first);

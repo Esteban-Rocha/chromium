@@ -24,9 +24,9 @@
 #include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_thread.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "ipc/ipc_channel_proxy.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "ppapi/features/features.h"
 #include "printing/features/features.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
@@ -154,11 +154,12 @@ class ChromeContentRendererClient
                   bool is_initial_navigation,
                   bool is_server_redirect,
                   bool* send_referrer) override;
-  bool WillSendRequest(
-      blink::WebLocalFrame* frame,
-      ui::PageTransition transition_type,
-      const blink::WebURL& url,
-      GURL* new_url) override;
+  void WillSendRequest(blink::WebLocalFrame* frame,
+                       ui::PageTransition transition_type,
+                       const blink::WebURL& url,
+                       const url::Origin* initiator_origin,
+                       GURL* new_url,
+                       bool* attach_same_site_cookies) override;
   bool IsPrefetchOnly(content::RenderFrame* render_frame,
                       const blink::WebURLRequest& request) override;
   unsigned long long VisitedLinkHash(const char* canonical_url,
@@ -169,13 +170,13 @@ class ChromeContentRendererClient
       const content::RenderFrame* render_frame,
       blink::mojom::PageVisibilityState* override_state) override;
   bool IsExternalPepperPlugin(const std::string& module_name) override;
+  bool IsOriginIsolatedPepperPlugin(const base::FilePath& plugin_path) override;
   std::unique_ptr<blink::WebSocketHandshakeThrottle>
   CreateWebSocketHandshakeThrottle() override;
   std::unique_ptr<blink::WebSpeechSynthesizer> OverrideSpeechSynthesizer(
       blink::WebSpeechSynthesizerClient* client) override;
   bool ShouldReportDetailedMessageForSource(
       const base::string16& source) const override;
-  bool ShouldGatherSiteIsolationStats() const override;
   std::unique_ptr<blink::WebContentSettingsClient>
   CreateWorkerContentSettingsClient(
       content::RenderFrame* render_frame) override;

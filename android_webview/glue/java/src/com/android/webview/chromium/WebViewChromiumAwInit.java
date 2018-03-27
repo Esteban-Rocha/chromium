@@ -14,7 +14,6 @@ import android.os.Process;
 import android.util.Log;
 import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
-import android.webkit.ServiceWorkerController;
 import android.webkit.TokenBindingService;
 import android.webkit.WebStorage;
 import android.webkit.WebViewDatabase;
@@ -30,13 +29,11 @@ import org.chromium.android_webview.AwCookieManager;
 import org.chromium.android_webview.AwNetworkChangeNotifierRegistrationPolicy;
 import org.chromium.android_webview.AwQuotaManagerBridge;
 import org.chromium.android_webview.AwResource;
-import org.chromium.android_webview.AwSwitches;
+import org.chromium.android_webview.AwServiceWorkerController;
 import org.chromium.android_webview.AwTracingController;
 import org.chromium.android_webview.HttpAuthDatabase;
 import org.chromium.android_webview.command_line.CommandLineUtil;
-import org.chromium.android_webview.services.AwVariationsSeedHandler;
 import org.chromium.base.BuildConfig;
-import org.chromium.base.CommandLine;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.PathService;
 import org.chromium.base.ThreadUtils;
@@ -66,7 +63,7 @@ public class WebViewChromiumAwInit {
     private WebIconDatabaseAdapter mWebIconDatabase;
     private WebStorageAdapter mWebStorage;
     private WebViewDatabaseAdapter mWebViewDatabase;
-    private Object mServiceWorkerController;
+    private AwServiceWorkerController mServiceWorkerController;
     private AwTracingController mAwTracingController;
 
     // Guards accees to the other members, and is notifyAll() signalled on the UI thread
@@ -112,11 +109,10 @@ public class WebViewChromiumAwInit {
             return;
         }
 
-        // Make sure that ResourceProvider is initialized before starting the browser process.
         final PackageInfo webViewPackageInfo = WebViewFactory.getLoadedPackageInfo();
-        final String webViewPackageName = webViewPackageInfo.packageName;
         final Context context = ContextUtils.getApplicationContext();
 
+        // Make sure that ResourceProvider is initialized before starting the browser process.
         Thread startUpResourcesThread = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -148,16 +144,9 @@ public class WebViewChromiumAwInit {
         }
         // NOTE: Finished writing Java resources. From this point on, it's safe to use them.
 
-        // The WebView package name is used to locate the separate Service to which we copy crash
-        // minidumps. This package name must be set before a render process has a chance to crash -
-        // otherwise we might try to copy a minidump without knowing what process to copy it to.
-        // It's also used to determine channel for UMA, so it must be set before initializing UMA.
-        final boolean isExternalService = true;
-        AwBrowserProcess.setWebViewPackageName(webViewPackageName);
-        AwBrowserProcess.configureChildProcessLauncher(webViewPackageName, isExternalService);
+        AwBrowserProcess.configureChildProcessLauncher();
         AwBrowserProcess.start();
-        AwBrowserProcess.handleMinidumpsAndSetMetricsConsent(
-                webViewPackageName, true /* updateMetricsConsent */);
+        AwBrowserProcess.handleMinidumpsAndSetMetricsConsent(true /* updateMetricsConsent */);
 
         mSharedStatics = new SharedStatics();
         if (CommandLineUtil.isBuildDebuggable()) {
@@ -181,18 +170,9 @@ public class WebViewChromiumAwInit {
                 mFactory, awBrowserContext.getGeolocationPermissions());
         mWebStorage = new WebStorageAdapter(mFactory, AwQuotaManagerBridge.getInstance());
         mAwTracingController = awBrowserContext.getTracingController();
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.M) {
-            mServiceWorkerController = new ServiceWorkerControllerAdapter(
-                    awBrowserContext.getServiceWorkerController());
-        }
+        mServiceWorkerController = awBrowserContext.getServiceWorkerController();
 
         mFactory.getRunQueue().drainQueue();
-
-        boolean enableVariations =
-                CommandLine.getInstance().hasSwitch(AwSwitches.ENABLE_WEBVIEW_VARIATIONS);
-        if (enableVariations) {
-            AwVariationsSeedHandler.bindToVariationsService(webViewPackageName);
-        }
     }
 
     private void setUpResources(PackageInfo webViewPackageInfo, Context context) {
@@ -331,13 +311,13 @@ public class WebViewChromiumAwInit {
         return mCookieManager;
     }
 
-    public ServiceWorkerController getServiceWorkerController() {
+    public AwServiceWorkerController getServiceWorkerController() {
         synchronized (mLock) {
             if (mServiceWorkerController == null) {
                 ensureChromiumStartedLocked(true);
             }
         }
-        return (ServiceWorkerController) mServiceWorkerController;
+        return mServiceWorkerController;
     }
 
     public TokenBindingService getTokenBindingService() {

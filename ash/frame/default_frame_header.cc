@@ -5,11 +5,14 @@
 #include "ash/frame/default_frame_header.h"
 
 #include "ash/ash_layout_constants.h"
+#include "ash/frame/caption_buttons/caption_button_model.h"
 #include "ash/frame/caption_buttons/frame_caption_button.h"
 #include "ash/frame/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/frame/frame_header_util.h"
 #include "ash/public/cpp/vector_icons/vector_icons.h"
 #include "ash/resources/grit/ash_resources.h"
+#include "ash/shell.h"
+#include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "base/debug/leak_annotations.h"
 #include "base/logging.h"  // DCHECK
 #include "third_party/skia/include/core/SkPath.h"
@@ -92,7 +95,7 @@ DefaultFrameHeader::DefaultFrameHeader(
   DCHECK(header_view);
   DCHECK(caption_button_container);
   caption_button_container_->SetButtonSize(
-      GetAshLayoutSize(AshLayoutSize::NON_BROWSER_CAPTION_BUTTON));
+      GetAshLayoutSize(AshLayoutSize::kNonBrowserCaption));
   UpdateAllButtonImages();
 }
 
@@ -150,11 +153,14 @@ void DefaultFrameHeader::PaintHeader(gfx::Canvas* canvas, Mode mode) {
 void DefaultFrameHeader::LayoutHeader() {
   // TODO(sky): this needs to reset images as well.
   if (window_style_ == mojom::WindowStyle::BROWSER) {
+    const bool is_in_tablet_mode = Shell::Get()
+                                       ->tablet_mode_controller()
+                                       ->IsTabletModeWindowManagerEnabled();
     const bool use_maximized_size =
-        frame_->IsMaximized() || frame_->IsFullscreen();
+        frame_->IsMaximized() || frame_->IsFullscreen() || is_in_tablet_mode;
     const gfx::Size button_size(GetAshLayoutSize(
-        use_maximized_size ? AshLayoutSize::BROWSER_MAXIMIZED_CAPTION_BUTTON
-                           : AshLayoutSize::BROWSER_RESTORED_CAPTION_BUTTON));
+        use_maximized_size ? AshLayoutSize::kBrowserCaptionMaximized
+                           : AshLayoutSize::kBrowserCaptionRestored));
     caption_button_container_->SetButtonSize(button_size);
   }
 
@@ -306,10 +312,20 @@ void DefaultFrameHeader::PaintHeaderContentSeparator(gfx::Canvas* canvas) {
 
 void DefaultFrameHeader::UpdateAllButtonImages() {
   caption_button_container_->SetUseLightImages(ShouldUseLightImages());
+  if (back_button_) {
+    back_button_->set_use_light_images(ShouldUseLightImages());
+    back_button_->SetImage(CAPTION_BUTTON_ICON_BACK,
+                           FrameCaptionButton::ANIMATE_NO,
+                           kWindowControlBackIcon);
+  }
+
   caption_button_container_->SetButtonImage(CAPTION_BUTTON_ICON_MINIMIZE,
                                             kWindowControlMinimizeIcon);
 
   UpdateSizeButtonImages();
+
+  caption_button_container_->SetButtonImage(CAPTION_BUTTON_ICON_MENU,
+                                            kWindowControlMenuIcon);
 
   caption_button_container_->SetButtonImage(CAPTION_BUTTON_ICON_CLOSE,
                                             kWindowControlCloseIcon);
@@ -322,9 +338,18 @@ void DefaultFrameHeader::UpdateAllButtonImages() {
 }
 
 void DefaultFrameHeader::UpdateSizeButtonImages() {
+  // When |frame_| minimized, avoid tablet mode toggling to update caption
+  // buttons as it would cause mismatch beteen window state and size button.
+  if (frame_->IsMinimized())
+    return;
+  bool use_zoom_icons = caption_button_container_->model()->InZoomMode();
+  const gfx::VectorIcon& restore_icon =
+      use_zoom_icons ? kWindowControlDezoomIcon : kWindowControlRestoreIcon;
+  const gfx::VectorIcon& maximize_icon =
+      use_zoom_icons ? kWindowControlZoomIcon : kWindowControlMaximizeIcon;
   const gfx::VectorIcon& icon = frame_->IsMaximized() || frame_->IsFullscreen()
-                                    ? kWindowControlRestoreIcon
-                                    : kWindowControlMaximizeIcon;
+                                    ? restore_icon
+                                    : maximize_icon;
   caption_button_container_->SetButtonImage(
       CAPTION_BUTTON_ICON_MAXIMIZE_RESTORE, icon);
 }

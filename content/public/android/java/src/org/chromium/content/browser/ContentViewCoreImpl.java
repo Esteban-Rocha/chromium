@@ -5,12 +5,10 @@
 package org.chromium.content.browser;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.os.Build;
 import android.os.SystemClock;
-import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -24,18 +22,16 @@ import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
 import org.chromium.content.browser.accessibility.WebContentsAccessibilityImpl;
-import org.chromium.content.browser.accessibility.captioning.CaptioningBridgeFactory;
-import org.chromium.content.browser.accessibility.captioning.SystemCaptioningBridge;
-import org.chromium.content.browser.accessibility.captioning.TextTrackSettings;
 import org.chromium.content.browser.input.ImeAdapterImpl;
 import org.chromium.content.browser.input.SelectPopup;
 import org.chromium.content.browser.input.TextSuggestionHost;
 import org.chromium.content.browser.selection.SelectionPopupControllerImpl;
 import org.chromium.content.browser.webcontents.WebContentsImpl;
+import org.chromium.content.browser.webcontents.WebContentsUserData;
+import org.chromium.content.browser.webcontents.WebContentsUserData.UserDataFactory;
 import org.chromium.content_public.browser.ActionModeCallbackHelper;
 import org.chromium.content_public.browser.ContentViewCore;
 import org.chromium.content_public.browser.ContentViewCore.InternalAccessDelegate;
-import org.chromium.content_public.browser.GestureStateListener;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.device.gamepad.GamepadList;
@@ -52,8 +48,7 @@ import java.lang.ref.WeakReference;
  * Implementation of the interface {@ContentViewCore}.
  */
 @JNINamespace("content")
-public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObserver,
-                                            SystemCaptioningBridge.SystemCaptioningBridgeListener {
+public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObserver {
     private static final String TAG = "cr_ContentViewCore";
 
     /**
@@ -90,61 +85,18 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
             ContentViewCoreImpl contentViewCore = mWeakContentViewCore.get();
             if (contentViewCore == null) return;
             contentViewCore.hidePopupsAndClearSelection();
-            contentViewCore.resetScrollInProgress();
+            contentViewCore.getGestureListenerManager().resetScrollInProgress();
         }
     }
 
-    /**
-     * A {@link GestureStateListener} updating input/selection UI upon various
-     * gesture events notification.
-     */
-    private class ContentGestureStateListener implements GestureStateListener {
-        @Override
-        public void onFlingStartGesture(int scrollOffsetY, int scrollExtentY) {
-            setTouchScrollInProgress(false);
-        }
-
-        @Override
-        public void onFlingEndGesture(int scrollOffsetY, int scrollExtentY) {
-            // Note that mTouchScrollInProgress should normally be false at this
-            // point, but we reset it anyway as another failsafe.
-            setTouchScrollInProgress(false);
-        }
-
-        @Override
-        public void onScrollStarted(int scrollOffsetY, int scrollExtentY) {
-            setTouchScrollInProgress(true);
-        }
-
-        @Override
-        public void onScrollUpdateGestureConsumed() {
-            destroyPastePopup();
-        }
-
-        @Override
-        public void onScrollEnded(int scrollOffsetY, int scrollExtentY) {
-            setTouchScrollInProgress(false);
-        }
-
-        @Override
-        public void onSingleTap(boolean consumed) {
-            destroyPastePopup();
-        }
-
-        @Override
-        public void onLongPress() {
-            mContainerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-        }
-    }
-
-    private final Context mContext;
-    private final String mProductVersion;
+    private Context mContext;
     private final ObserverList<WindowEventObserver> mWindowEventObservers = new ObserverList<>();
 
     private ViewGroup mContainerView;
     private InternalAccessDelegate mContainerViewInternals;
     private WebContentsImpl mWebContents;
     private WebContentsObserver mWebContentsObserver;
+    private WindowAndroid mWindowAndroid;
 
     // Native pointer to C++ ContentViewCore object which will be set by nativeInit().
     private long mNativeContentViewCore;
@@ -154,12 +106,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
     // Cached copy of all positions and scales as reported by the renderer.
     private RenderCoordinates mRenderCoordinates;
 
-    private boolean mPreserveSelectionOnNextLossOfFocus;
-
-    // Notifies the ContentViewCore when platform closed caption settings have changed
-    // if they are supported. Otherwise does nothing.
-    private final SystemCaptioningBridge mSystemCaptioningBridge;
-
     /**
      * PID used to indicate an invalid render process.
      */
@@ -167,16 +113,21 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
     // if there is no render process.
     public static final int INVALID_RENDER_PROCESS_PID = 0;
 
-    // True if we want to disable Android native event batching and use compositor event queue.
-    private boolean mShouldRequestUnbufferedDispatch;
-
     // A ViewAndroidDelegate that delegates to the current container view.
     private ViewAndroidDelegate mViewAndroidDelegate;
 
     private Boolean mHasViewFocus;
 
     // The list of observers that are notified when ContentViewCore changes its WindowAndroid.
-    private final ObserverList<WindowAndroidChangedObserver> mWindowAndroidChangedObservers;
+    private final ObserverList<WindowAndroidChangedObserver> mWindowAndroidChangedObservers =
+            new ObserverList<>();
+
+    private boolean mInitialized;
+
+    private static final class UserDataFactoryLazyHolder {
+        private static final UserDataFactory<ContentViewCoreImpl> INSTANCE =
+                ContentViewCoreImpl::new;
+    }
 
     /**
      * @param webContents The {@link WebContents} to find a {@link ContentViewCore} of.
@@ -184,24 +135,18 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
      *                    {@code null} if none exists.
      */
     public static ContentViewCoreImpl fromWebContents(WebContents webContents) {
-        return nativeFromWebContentsAndroid(webContents);
+        return WebContentsUserData.fromWebContents(webContents, ContentViewCoreImpl.class, null);
     }
 
     /**
-     * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
-     * a ContentViewCore and before using it.
+     * Constructs a new ContentViewCore.
      *
-     * @param context The context used to create this.
+     * @param webContents {@link WebContents} to be associated with this object.
      */
-    public ContentViewCoreImpl(Context context, String productVersion) {
-        mContext = context;
-        mProductVersion = productVersion;
-        mSystemCaptioningBridge = CaptioningBridgeFactory.getSystemCaptioningBridge(mContext);
-
-        mWindowAndroidChangedObservers = new ObserverList<WindowAndroidChangedObserver>();
+    public ContentViewCoreImpl(WebContents webContents) {
+        mWebContents = (WebContentsImpl) webContents;
     }
 
-    @Override
     public Context getContext() {
         return mContext;
     }
@@ -216,15 +161,8 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         return mWebContents;
     }
 
-    @Override
-    public WindowAndroid getWindowAndroid() {
-        if (mNativeContentViewCore == 0) return null;
-        return nativeGetJavaWindowAndroid(mNativeContentViewCore);
-    }
-
-    @VisibleForTesting
-    void setWebContentsForTesting(WebContentsImpl webContents) {
-        mWebContents = webContents;
+    private WindowAndroid getWindowAndroid() {
+        return mWindowAndroid;
     }
 
     /**
@@ -243,29 +181,31 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         mWindowAndroidChangedObservers.removeObserver(observer);
     }
 
-    // Perform important post-construction set up of the ContentViewCore.
-    // We do not require the containing view in the constructor to allow embedders to create a
-    // ContentViewCore without having fully created its containing view. The containing view
-    // is a vital component of the ContentViewCore, so embedders must exercise caution in what
-    // they do with the ContentViewCore before calling initialize().
-    // We supply the nativeWebContents pointer here rather than in the constructor to allow us
-    // to set the private browsing mode at a later point for the WebView implementation.
-    // Note that the caller remains the owner of the nativeWebContents and is responsible for
-    // deleting it after destroying the ContentViewCore.
-    @Override
-    public void initialize(ViewAndroidDelegate viewDelegate,
-            InternalAccessDelegate internalDispatcher, WebContents webContents,
-            WindowAndroid windowAndroid) {
-        mViewAndroidDelegate = viewDelegate;
+    public static ContentViewCoreImpl create(Context context, String productVersion,
+            WebContents webContents, ViewAndroidDelegate viewDelegate,
+            InternalAccessDelegate internalDispatcher, WindowAndroid windowAndroid) {
+        ContentViewCoreImpl core = WebContentsUserData.fromWebContents(
+                webContents, ContentViewCoreImpl.class, UserDataFactoryLazyHolder.INSTANCE);
+        assert core != null;
+        assert !core.initialized();
+        core.initialize(context, productVersion, viewDelegate, internalDispatcher, windowAndroid);
+        return core;
+    }
 
+    private void initialize(Context context, String productVersion,
+            ViewAndroidDelegate viewDelegate, InternalAccessDelegate internalDispatcher,
+            WindowAndroid windowAndroid) {
+        mContext = context;
+
+        mViewAndroidDelegate = viewDelegate;
+        mWindowAndroid = windowAndroid;
         final float dipScale = windowAndroid.getDisplay().getDipScale();
 
         mNativeContentViewCore =
-                nativeInit(webContents, mViewAndroidDelegate, windowAndroid, dipScale);
-        mWebContents = (WebContentsImpl) nativeGetWebContentsAndroid(mNativeContentViewCore);
+                nativeInit(mWebContents, mViewAndroidDelegate, windowAndroid, dipScale);
         ViewGroup containerView = viewDelegate.getContainerView();
         SelectionPopupControllerImpl controller = SelectionPopupControllerImpl.create(
-                mContext, windowAndroid, webContents, containerView);
+                mContext, windowAndroid, mWebContents, containerView);
         controller.setActionModeCallback(ActionModeCallbackHelper.EMPTY_CALLBACK);
         addWindowAndroidChangedObserver(controller);
 
@@ -273,7 +213,7 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         mRenderCoordinates = mWebContents.getRenderCoordinates();
         mRenderCoordinates.setDeviceScaleFactor(dipScale);
         WebContentsAccessibilityImpl wcax = WebContentsAccessibilityImpl.create(
-                mContext, containerView, webContents, mProductVersion);
+                mContext, containerView, mWebContents, productVersion);
         setContainerViewInternals(internalDispatcher);
 
         ImeAdapterImpl imeAdapter = ImeAdapterImpl.create(mWebContents, mContainerView,
@@ -288,21 +228,22 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         SelectPopup.create(mContext, mWebContents, containerView);
         mWebContentsObserver = new ContentViewWebContentsObserver(this);
 
-        mShouldRequestUnbufferedDispatch = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
-                && ContentFeatureList.isEnabled(ContentFeatureList.REQUEST_UNBUFFERED_DISPATCH)
-                && !nativeUsingSynchronousCompositing(mNativeContentViewCore);
-        getGestureListenerManager().addListener(new ContentGestureStateListener());
-
         mWindowEventObservers.addObserver(controller);
         mWindowEventObservers.addObserver(getGestureListenerManager());
         mWindowEventObservers.addObserver(textSuggestionHost);
         mWindowEventObservers.addObserver(imeAdapter);
         mWindowEventObservers.addObserver(wcax);
+        mInitialized = true;
+    }
+
+    public boolean initialized() {
+        return mInitialized;
     }
 
     @Override
     public void updateWindowAndroid(WindowAndroid windowAndroid) {
         removeDisplayAndroidObserver();
+        mWindowAndroid = windowAndroid;
         nativeUpdateWindowAndroid(mNativeContentViewCore, windowAndroid);
 
         // TODO(yusufo): Rename this call to be general for tab reparenting.
@@ -344,7 +285,7 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         try {
             TraceEvent.begin("ContentViewCore.setContainerView");
             if (mContainerView != null) {
-                hideSelectPopupWithCancelMessage();
+                getSelectPopup().hide();
                 getImeAdapter().setContainerView(containerView);
                 getTextSuggestionHost().setContainerView(containerView);
                 getSelectPopup().setContainerView(containerView);
@@ -436,23 +377,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         return nativeGetTopControlsShrinkBlinkHeightPixForTesting(mNativeContentViewCore);
     }
 
-    @CalledByNative
-    private void requestDisallowInterceptTouchEvent() {
-        mContainerView.requestDisallowInterceptTouchEvent(true);
-    }
-
-    @Override
-    public boolean isScrollInProgress() {
-        return getSelectionPopupController().getScrollInProgress()
-                || getGestureListenerManager().hasPotentiallyActiveFling();
-    }
-
-    private void setTouchScrollInProgress(boolean touchScrollInProgress) {
-        final boolean scrollInProgress =
-                touchScrollInProgress || getGestureListenerManager().hasPotentiallyActiveFling();
-        getSelectionPopupController().setScrollInProgress(touchScrollInProgress, scrollInProgress);
-    }
-
     @Override
     public void onShow() {
         assert mWebContents != null;
@@ -471,30 +395,16 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
     private void hidePopupsAndClearSelection() {
         getSelectionPopupController().destroyActionModeAndUnselect();
         mWebContents.dismissTextHandles();
-        hidePopups();
+        PopupController.hideAll(mWebContents);
     }
 
-    @CalledByNative
     private void hidePopupsAndPreserveSelection() {
-        getSelectionPopupController().destroyActionModeAndKeepSelection();
-        hidePopups();
-    }
-
-    private void hidePopups() {
-        destroyPastePopup();
-        getTapDisambiguator().hidePopup(false);
-        getTextSuggestionHost().hidePopups();
-        hideSelectPopupWithCancelMessage();
+        getSelectionPopupController().hidePopupsAndPreserveSelection();
     }
 
     private void resetGestureDetection() {
         if (mNativeContentViewCore == 0) return;
         nativeResetGestureDetection(mNativeContentViewCore);
-    }
-
-    @Override
-    public boolean isAttachedToWindow() {
-        return mAttachedToWindow;
     }
 
     @SuppressWarnings("javadoc")
@@ -503,21 +413,7 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         mAttachedToWindow = true;
         for (WindowEventObserver observer : mWindowEventObservers) observer.onAttachedToWindow();
         addDisplayAndroidObserverIfNeeded();
-        updateTextSelectionUI(true);
         GamepadList.onAttachedToWindow(mContext);
-        mSystemCaptioningBridge.addListener(this);
-    }
-
-    @Override
-    public void updateTextSelectionUI(boolean focused) {
-        // TODO(jinsukkim): Replace all the null checks against mWebContents to assert stmt.
-        if (mWebContents == null) return;
-        setTextHandlesTemporarilyHidden(!focused);
-        if (focused) {
-            getSelectionPopupController().restoreSelectionPopupsIfNecessary();
-        } else {
-            hidePopupsAndPreserveSelection();
-        }
     }
 
     @SuppressWarnings("javadoc")
@@ -528,14 +424,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         for (WindowEventObserver observer : mWindowEventObservers) observer.onDetachedFromWindow();
         removeDisplayAndroidObserver();
         GamepadList.onDetachedFromWindow();
-
-        // WebView uses PopupWindows for handle rendering, which may remain
-        // unintentionally visible even after the WebView has been detached.
-        // Override the handle visibility explicitly to address this, but
-        // preserve the underlying selection for detachment cases like screen
-        // locking and app switching.
-        updateTextSelectionUI(false);
-        mSystemCaptioningBridge.removeListener(this);
     }
 
     @SuppressWarnings("javadoc")
@@ -551,19 +439,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         } finally {
             TraceEvent.end("ContentViewCore.onConfigurationChanged");
         }
-    }
-
-    @CalledByNative
-    private void onTouchDown(MotionEvent event) {
-        if (mShouldRequestUnbufferedDispatch) requestUnbufferedDispatch(event);
-        cancelRequestToScrollFocusedEditableNodeIntoView();
-        getGestureListenerManager().updateOnTouchDown();
-    }
-
-    private void cancelRequestToScrollFocusedEditableNodeIntoView() {
-        // Zero-ing the rect will prevent |updateAfterSizeChanged()| from
-        // issuing the delayed form focus event.
-        getImeAdapter().getFocusPreOSKViewportRect().setEmpty();
     }
 
     @Override
@@ -600,19 +475,20 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         getJoystick().setScrollEnabled(
                 gainFocus && !getSelectionPopupController().isFocusedNodeEditable());
 
+        SelectionPopupControllerImpl controller = getSelectionPopupController();
         if (gainFocus) {
-            getSelectionPopupController().restoreSelectionPopupsIfNecessary();
+            controller.restoreSelectionPopupsIfNecessary();
         } else {
-            cancelRequestToScrollFocusedEditableNodeIntoView();
-            if (mPreserveSelectionOnNextLossOfFocus) {
-                mPreserveSelectionOnNextLossOfFocus = false;
+            getImeAdapter().cancelRequestToScrollFocusedEditableNodeIntoView();
+            if (controller.getPreserveSelectionOnNextLossOfFocus()) {
+                controller.setPreserveSelectionOnNextLossOfFocus(false);
                 hidePopupsAndPreserveSelection();
             } else {
                 hidePopupsAndClearSelection();
                 // Clear the selection. The selection is cleared on destroying IME
                 // and also here since we may receive destroy first, for example
                 // when focus is lost in webview.
-                getSelectionPopupController().clearSelection();
+                controller.clearSelection();
             }
         }
         if (mNativeContentViewCore != 0) nativeSetFocus(mNativeContentViewCore, gainFocus);
@@ -786,24 +662,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         nativeSendOrientationChangeEvent(mNativeContentViewCore, orientation);
     }
 
-    @Override
-    public void preserveSelectionOnNextLossOfFocus() {
-        mPreserveSelectionOnNextLossOfFocus = true;
-    }
-
-    private void setTextHandlesTemporarilyHidden(boolean hide) {
-        if (mNativeContentViewCore == 0) return;
-        nativeSetTextHandlesTemporarilyHidden(mNativeContentViewCore, hide);
-    }
-
-    /**
-     * Called when the &lt;select&gt; popup needs to be hidden. This calls
-     * nativeSelectMenuItems() with null indices.
-     */
-    private void hideSelectPopupWithCancelMessage() {
-        getSelectPopup().hideWithCancel();
-    }
-
     @VisibleForTesting
     @Override
     public boolean isSelectPopupVisibleForTest() {
@@ -812,43 +670,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
 
     private void destroyPastePopup() {
         getSelectionPopupController().destroyPastePopup();
-    }
-
-    @SuppressWarnings("unused")
-    @CalledByNative
-    private void onRenderProcessChange() {
-        // Immediately sync closed caption settings to the new render process.
-        mSystemCaptioningBridge.syncToListener(this);
-    }
-
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-    private void requestUnbufferedDispatch(MotionEvent touchDownEvent) {
-        mContainerView.requestUnbufferedDispatch(touchDownEvent);
-    }
-
-    @TargetApi(Build.VERSION_CODES.KITKAT)
-    @Override
-    public void onSystemCaptioningChanged(TextTrackSettings settings) {
-        if (mNativeContentViewCore == 0) return;
-        nativeSetTextTrackSettings(mNativeContentViewCore, settings.getTextTracksEnabled(),
-                settings.getTextTrackBackgroundColor(), settings.getTextTrackFontFamily(),
-                settings.getTextTrackFontStyle(), settings.getTextTrackFontVariant(),
-                settings.getTextTrackTextColor(), settings.getTextTrackTextShadow(),
-                settings.getTextTrackTextSize());
-    }
-
-    /**
-     * Reset scroll and fling accounting, notifying listeners as appropriate.
-     * This is useful as a failsafe when the input stream may have been interruped.
-     */
-    private void resetScrollInProgress() {
-        if (!isScrollInProgress()) return;
-
-        final boolean touchScrollInProgress = getSelectionPopupController().getScrollInProgress();
-
-        setTouchScrollInProgress(false);
-        if (touchScrollInProgress) getGestureListenerManager().updateOnScrollEnd();
-        getGestureListenerManager().resetFlingGesture();
     }
 
     // DisplayAndroidObserver method.
@@ -900,10 +721,7 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
 
     private native long nativeInit(WebContents webContents, ViewAndroidDelegate viewAndroidDelegate,
             WindowAndroid window, float dipScale);
-    private static native ContentViewCoreImpl nativeFromWebContentsAndroid(WebContents webContents);
     private native void nativeUpdateWindowAndroid(long nativeContentViewCore, WindowAndroid window);
-    private native WebContents nativeGetWebContentsAndroid(long nativeContentViewCore);
-    private native WindowAndroid nativeGetJavaWindowAndroid(long nativeContentViewCore);
     private native void nativeOnJavaContentViewCoreDestroyed(long nativeContentViewCore);
     private native void nativeSetFocus(long nativeContentViewCore, boolean focused);
     private native void nativeSetDIPScale(long nativeContentViewCore, float dipScale);
@@ -911,16 +729,9 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
             long nativeContentViewCore);
     private native void nativeSendOrientationChangeEvent(
             long nativeContentViewCore, int orientation);
-    private native void nativeSetTextHandlesTemporarilyHidden(
-            long nativeContentViewCore, boolean hidden);
     private native void nativeResetGestureDetection(long nativeContentViewCore);
     private native void nativeSetDoubleTapSupportEnabled(
             long nativeContentViewCore, boolean enabled);
     private native void nativeSetMultiTouchZoomSupportEnabled(
             long nativeContentViewCore, boolean enabled);
-    private native boolean nativeUsingSynchronousCompositing(long nativeContentViewCore);
-    private native void nativeSetTextTrackSettings(long nativeContentViewCore,
-            boolean textTracksEnabled, String textTrackBackgroundColor, String textTrackFontFamily,
-            String textTrackFontStyle, String textTrackFontVariant, String textTrackTextColor,
-            String textTrackTextShadow, String textTrackTextSize);
 }

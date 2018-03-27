@@ -64,7 +64,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/user_agent.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/cert/caching_cert_verifier.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_proc.h"
@@ -84,11 +84,12 @@
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/http_transaction_factory.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
+#include "net/nqe/network_quality_estimator.h"
 #include "net/nqe/network_quality_estimator_params.h"
 #include "net/proxy_resolution/pac_file_fetcher_impl.h"
 #include "net/proxy_resolution/proxy_config_service.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/quic/chromium/quic_utils_chromium.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/url_request/url_fetcher.h"
@@ -142,11 +143,6 @@ class SafeBrowsingURLRequestContext;
 // Quit task, so base::Bind() calls are not refcounted.
 
 namespace {
-
-// Field trial for network quality estimator. Seeds RTT and downstream
-// throughput observations with values that correspond to the connection type
-// determined by the operating system.
-const char kNetworkQualityEstimatorFieldTrialName[] = "NetworkQualityEstimator";
 
 #if defined(OS_MACOSX)
 void ObserveKeychainEvents() {
@@ -427,12 +423,6 @@ IOThread::Globals* IOThread::globals() {
   return globals_;
 }
 
-void IOThread::SetGlobalsForTesting(Globals* globals) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(!globals || !globals_);
-  globals_ = globals;
-}
-
 net_log::ChromeNetLog* IOThread::net_log() {
   return net_log_;
 }
@@ -502,32 +492,6 @@ void IOThread::Init() {
           BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
           BrowserThread::GetTaskRunnerForThread(BrowserThread::UI));
 #endif  // defined(OS_ANDROID)
-
-  std::map<std::string, std::string> network_quality_estimator_params;
-  variations::GetVariationParams(kNetworkQualityEstimatorFieldTrialName,
-                                 &network_quality_estimator_params);
-
-  if (command_line.HasSwitch(switches::kForceEffectiveConnectionType)) {
-    const std::string force_ect_value =
-        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kForceEffectiveConnectionType);
-
-    if (!force_ect_value.empty()) {
-      // If the effective connection type is forced using command line switch,
-      // it overrides the one set by field trial.
-      network_quality_estimator_params[net::kForceEffectiveConnectionType] =
-          force_ect_value;
-    }
-  }
-
-  // Pass ownership.
-  globals_->network_quality_estimator =
-      std::make_unique<net::NetworkQualityEstimator>(
-          std::make_unique<net::NetworkQualityEstimatorParams>(
-              network_quality_estimator_params),
-          net_log_);
-  globals_->network_quality_observer = content::CreateNetworkQualityObserver(
-      globals_->network_quality_estimator.get());
 
   globals_->dns_probe_service =
       std::make_unique<chrome_browser_net::DnsProbeService>();
@@ -784,10 +748,6 @@ void IOThread::ConstructSystemRequestContext() {
   std::unique_ptr<network::URLRequestContextBuilderMojo> builder =
       std::make_unique<network::URLRequestContextBuilderMojo>();
 
-  builder->set_network_quality_estimator(
-      globals_->network_quality_estimator.get());
-
-  builder->set_user_agent(GetUserAgent());
   auto chrome_network_delegate = std::make_unique<ChromeNetworkDelegate>(
       extension_event_router_forwarder(), &system_enable_referrers_);
   // By default, data usage is considered off the record.
@@ -839,9 +799,14 @@ void IOThread::ConstructSystemRequestContext() {
     globals_->quic_disabled = true;
 
   if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-    globals_->system_request_context_owner =
-        std::move(builder)->Create(std::move(network_context_params_).get(),
-                                   !is_quic_allowed_on_init_, net_log_);
+    globals_->deprecated_network_quality_estimator =
+        std::make_unique<net::NetworkQualityEstimator>(
+            std::make_unique<net::NetworkQualityEstimatorParams>(
+                std::map<std::string, std::string>()),
+            net_log_);
+    globals_->system_request_context_owner = std::move(builder)->Create(
+        std::move(network_context_params_).get(), !is_quic_allowed_on_init_,
+        net_log_, globals_->deprecated_network_quality_estimator.get());
     globals_->system_request_context =
         globals_->system_request_context_owner.url_request_context_getter
             ->GetURLRequestContext();
@@ -852,6 +817,11 @@ void IOThread::ConstructSystemRequestContext() {
             std::move(network_context_params_), std::move(builder),
             &globals_->system_request_context);
   }
+
+  // TODO(mmenke): This class currently requires an in-process
+  // NetworkQualityEstimator.  Fix that.
+  globals_->network_quality_observer = content::CreateNetworkQualityObserver(
+      globals_->system_request_context->network_quality_estimator());
 
 #if defined(USE_NSS_CERTS)
   net::SetURLRequestContextForNSSHttpIO(globals_->system_request_context);

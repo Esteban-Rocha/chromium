@@ -27,7 +27,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "media/base/key_system_names.h"
 #include "media/base/media_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "testing/gtest/include/gtest/gtest-spi.h"
 
 #if defined(OS_WIN)
@@ -301,18 +301,11 @@ class EncryptedMediaTestBase : public MediaBrowserTest {
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
     if (IsExternalClearKey(key_system)) {
       RegisterClearKeyCdm(command_line);
-
-      // TODO(xhwang): Update ScopedFeatureList::InitWithFeatures() to accept
-      // vectors so that we can simplify this block.
-        if (support_experimental_cdm_interface) {
-          scoped_feature_list_.InitWithFeatures(
-              {media::kExternalClearKeyForTesting,
-               media::kSupportExperimentalCdmInterface},
-              {});
-        } else {
-          scoped_feature_list_.InitWithFeatures(
-              {media::kExternalClearKeyForTesting}, {});
-        }
+      std::vector<base::Feature> enabled_features = {
+          media::kExternalClearKeyForTesting};
+      if (support_experimental_cdm_interface)
+        enabled_features.push_back(media::kSupportExperimentalCdmInterface);
+      scoped_feature_list_.InitWithFeatures(enabled_features, {});
     }
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
   }
@@ -384,6 +377,17 @@ class EncryptedMediaTestExperimentalCdmInterface
                           session_to_load, false, PlayCount::ONCE,
                           expected_title);
   }
+
+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
+  void TestMP4EncryptionPlayback(const std::string& key_system,
+                                 const std::string& media_file,
+                                 const std::string& expected_title) {
+    // MP4 playback is only supported with MSE.
+    RunEncryptedMediaTest(kDefaultEmePlayer, media_file, kMP4VideoOnly,
+                          key_system, SrcType::MSE, kNoSessionToLoad, false,
+                          PlayCount::ONCE, expected_title);
+  }
+#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 
  protected:
   void SetUpCommandLine(base::CommandLine* command_line) override {
@@ -653,6 +657,15 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_VideoOnly_MP4) {
   TestSimplePlayback("bear-640x360-v_frag-cenc.mp4", kMP4VideoOnly);
 }
 
+IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_VideoOnly_MP4_MDAT) {
+  // MP4 without MSE is not support yet, http://crbug.com/170793.
+  if (CurrentSourceType() != SrcType::MSE) {
+    DVLOG(0) << "Skipping test; Can only play MP4 encrypted streams by MSE.";
+    return;
+  }
+  TestSimplePlayback("bear-640x360-v_frag-cenc-mdat.mp4", kMP4VideoOnly);
+}
+
 IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_VideoOnly_MP4_VP9) {
   // MP4 without MSE is not support yet, http://crbug.com/170793.
   if (CurrentSourceType() != SrcType::MSE) {
@@ -826,5 +839,33 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaTestExperimentalCdmInterface,
       &num_received_message_types));
   EXPECT_EQ(3, num_received_message_types);
 }
+
+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
+// ClearKey key system is covered in
+// content/browser/media/encrypted_media_browsertest.cc.
+IN_PROC_BROWSER_TEST_F(EncryptedMediaTestExperimentalCdmInterface,
+                       Playback_Encryption_CENC) {
+  TestMP4EncryptionPlayback(kExternalClearKeyKeySystem,
+                            "bear-640x360-v_frag-cenc.mp4", media::kEnded);
+}
+
+IN_PROC_BROWSER_TEST_F(EncryptedMediaTestExperimentalCdmInterface,
+                       Playback_Encryption_CBC1) {
+  TestMP4EncryptionPlayback(kExternalClearKeyKeySystem,
+                            "bear-640x360-v_frag-cbc1.mp4", media::kError);
+}
+
+IN_PROC_BROWSER_TEST_F(EncryptedMediaTestExperimentalCdmInterface,
+                       Playback_Encryption_CENS) {
+  TestMP4EncryptionPlayback(kExternalClearKeyKeySystem,
+                            "bear-640x360-v_frag-cens.mp4", media::kError);
+}
+
+IN_PROC_BROWSER_TEST_F(EncryptedMediaTestExperimentalCdmInterface,
+                       Playback_Encryption_CBCS) {
+  TestMP4EncryptionPlayback(kExternalClearKeyKeySystem,
+                            "bear-640x360-v_frag-cbcs.mp4", media::kError);
+}
+#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)

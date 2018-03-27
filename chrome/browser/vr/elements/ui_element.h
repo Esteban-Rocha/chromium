@@ -15,6 +15,7 @@
 #include "cc/animation/animation_target.h"
 #include "cc/animation/transform_operations.h"
 #include "chrome/browser/vr/animation.h"
+#include "chrome/browser/vr/audio_delegate.h"
 #include "chrome/browser/vr/databinding/binding_base.h"
 #include "chrome/browser/vr/elements/corner_radii.h"
 #include "chrome/browser/vr/elements/draw_phase.h"
@@ -22,6 +23,8 @@
 #include "chrome/browser/vr/elements/ui_element_name.h"
 #include "chrome/browser/vr/elements/ui_element_type.h"
 #include "chrome/browser/vr/model/camera_model.h"
+#include "chrome/browser/vr/model/reticle_model.h"
+#include "chrome/browser/vr/model/sounds.h"
 #include "chrome/browser/vr/target_property.h"
 #include "ui/gfx/geometry/point3_f.h"
 #include "ui/gfx/geometry/quaternion.h"
@@ -56,19 +59,20 @@ enum LayoutAlignment {
 
 struct EventHandlers {
   EventHandlers();
+  EventHandlers(const EventHandlers& other);
   ~EventHandlers();
-  base::Callback<void()> hover_enter;
-  base::Callback<void()> hover_leave;
-  base::Callback<void(const gfx::PointF&)> hover_move;
-  base::Callback<void()> button_down;
-  base::Callback<void()> button_up;
+  base::RepeatingCallback<void()> hover_enter;
+  base::RepeatingCallback<void()> hover_leave;
+  base::RepeatingCallback<void(const gfx::PointF&)> hover_move;
+  base::RepeatingCallback<void()> button_down;
+  base::RepeatingCallback<void()> button_up;
   base::RepeatingCallback<void(bool)> focus_change;
 };
 
 struct HitTestRequest {
   gfx::Point3F ray_origin;
   gfx::Point3F ray_target;
-  float max_distance_to_plane;
+  float max_distance_to_plane = 1000.f;
 };
 
 // The result of performing a hit test.
@@ -291,6 +295,11 @@ class UiElement : public cc::AnimationTarget {
     bounds_contain_children_ = bounds_contain_children;
   }
 
+  bool bounds_contain_padding() const { return bounds_contain_padding_; }
+  void set_bounds_contain_padding(bool bounds_contain_padding) {
+    bounds_contain_padding_ = bounds_contain_padding;
+  }
+
   bool contributes_to_parent_bounds() const {
     return contributes_to_parent_bounds_;
   }
@@ -298,11 +307,23 @@ class UiElement : public cc::AnimationTarget {
     contributes_to_parent_bounds_ = value;
   }
 
-  float x_padding() const { return x_padding_; }
-  float y_padding() const { return y_padding_; }
-  void set_padding(float x_padding, float y_padding) {
-    x_padding_ = x_padding;
-    y_padding_ = y_padding;
+  float left_padding() const { return left_padding_; }
+  float right_padding() const { return right_padding_; }
+  float top_padding() const { return top_padding_; }
+  float bottom_padding() const { return bottom_padding_; }
+
+  void set_padding(float x, float y) {
+    left_padding_ = x;
+    right_padding_ = x;
+    top_padding_ = y;
+    bottom_padding_ = y;
+  }
+
+  void set_padding(float left, float top, float right, float bottom) {
+    left_padding_ = left;
+    right_padding_ = right;
+    top_padding_ = top;
+    bottom_padding_ = bottom;
   }
 
   const gfx::Transform& inheritable_transform() const {
@@ -369,7 +390,12 @@ class UiElement : public cc::AnimationTarget {
 
   void AddKeyframeModel(std::unique_ptr<cc::KeyframeModel> keyframe_model);
   void RemoveKeyframeModel(int keyframe_model_id);
+  void RemoveKeyframeModels(int target_property);
   bool IsAnimatingProperty(TargetProperty property) const;
+
+  // Recursive method that sizes and lays out element subtrees. This method may
+  // be overridden by elements that have custom layout requirements.
+  virtual bool SizeAndLayOut();
 
   void DoLayOutChildren();
 
@@ -378,6 +404,9 @@ class UiElement : public cc::AnimationTarget {
   // override for their particular functionality. The base implementation
   // applies anchoring.
   virtual void LayOutChildren();
+
+  UiElement* FirstLaidOutChild() const;
+  UiElement* LastLaidOutChild() const;
 
   virtual gfx::Transform LocalTransform() const;
   virtual gfx::Transform GetTargetLocalTransform() const;
@@ -422,6 +451,9 @@ class UiElement : public cc::AnimationTarget {
     return updated_visibility_this_frame_;
   }
 
+  void set_cursor_type(CursorType cursor_type) { cursor_type_ = cursor_type; }
+  CursorType cursor_type() const { return cursor_type_; }
+
   std::string DebugName() const;
 
 #ifndef NDEBUG
@@ -443,10 +475,21 @@ class UiElement : public cc::AnimationTarget {
   // change your size based on your old size).
   gfx::SizeF stale_size() const;
 
+  // Set the sounds that play when an applicable handler is executed.  Elements
+  // that override element hover and click methods must manage their own sounds.
+  void SetSounds(Sounds sounds, AudioDelegate* delegate);
+
+  bool resizable_by_layout() { return resizable_by_layout_; }
+  void set_resizable_by_layout(bool resizable) {
+    resizable_by_layout_ = resizable;
+  }
+
  protected:
   Animation& animation() { return animation_; }
 
   base::TimeTicks last_frame_time() const { return last_frame_time_; }
+
+  virtual const Sounds& GetSounds() const;
 
   EventHandlers event_handlers_;
 
@@ -519,9 +562,12 @@ class UiElement : public cc::AnimationTarget {
   // size to accommodate all descendants, adding in the padding below along the
   // x and y axes.
   bool bounds_contain_children_ = false;
+  bool bounds_contain_padding_ = true;
   bool contributes_to_parent_bounds_ = true;
-  float x_padding_ = 0.0f;
-  float y_padding_ = 0.0f;
+  float left_padding_ = 0.0f;
+  float right_padding_ = 0.0f;
+  float top_padding_ = 0.0f;
+  float bottom_padding_ = 0.0f;
 
   Animation animation_;
 
@@ -567,6 +613,14 @@ class UiElement : public cc::AnimationTarget {
   std::vector<std::unique_ptr<BindingBase>> bindings_;
 
   UpdatePhase phase_ = kClean;
+
+  AudioDelegate* audio_delegate_ = nullptr;
+  Sounds sounds_;
+
+  // Indicates that this element may be resized by parent layout elements.
+  bool resizable_by_layout_ = false;
+
+  CursorType cursor_type_ = kCursorDefault;
 
   DISALLOW_COPY_AND_ASSIGN(UiElement);
 };

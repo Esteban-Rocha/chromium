@@ -29,7 +29,7 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/surface_manager.h"
 #include "media/base/video_decoder_config.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -151,11 +151,13 @@ std::string GpuVideoDecoder::GetDisplayName() const {
   return kDecoderName;
 }
 
-void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
-                                 bool /* low_delay */,
-                                 CdmContext* cdm_context,
-                                 const InitCB& init_cb,
-                                 const OutputCB& output_cb) {
+void GpuVideoDecoder::Initialize(
+    const VideoDecoderConfig& config,
+    bool /* low_delay */,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& /* waiting_for_decryption_key_cb */) {
   DVLOG(3) << "Initialize()";
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DCHECK(config.IsValidConfig());
@@ -185,9 +187,11 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
 
   VideoDecodeAccelerator::Capabilities capabilities =
       factories_->GetVideoDecodeAcceleratorCapabilities();
-  if (config.is_encrypted() &&
-      !(capabilities.flags &
-        VideoDecodeAccelerator::Capabilities::SUPPORTS_ENCRYPTED_STREAMS)) {
+
+  const bool supports_encrypted_streams =
+      capabilities.flags &
+      VideoDecodeAccelerator::Capabilities::SUPPORTS_ENCRYPTED_STREAMS;
+  if (config.is_encrypted() && (!cdm_context || !supports_encrypted_streams)) {
     DVLOG(1) << "Encrypted stream not supported.";
     bound_init_cb.Run(false);
     return;

@@ -1,5 +1,5 @@
 {
-  // This file specifies all the methods in CSSProperty.h and the necessary
+  // This file specifies all the methods in css_property.h and the necessary
   // information for code generation of the CSSProperty subclasses.
   parameters: {
     // - return_type
@@ -28,11 +28,6 @@
       name: "ParseShorthand",
       return_type: "bool",
       parameters: "(bool, CSSParserTokenRange&, const CSSParserContext&, const CSSParserLocalContext&, HeapVector<CSSPropertyValue, 256>&)",
-    },
-    {
-      name: "IsLayoutDependent",
-      return_type: "bool",
-      parameters: "(const ComputedStyle*, LayoutObject*)",
     },
     {
       name: "CSSValueFromComputedStyleInternal",

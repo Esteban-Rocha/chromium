@@ -23,7 +23,6 @@
 #include "core/layout/svg/LayoutSVGResourceGradient.h"
 
 #include <memory>
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -35,8 +34,10 @@ void LayoutSVGResourceGradient::RemoveAllClientsFromCache(
     bool mark_for_invalidation) {
   gradient_map_.clear();
   should_collect_gradient_attributes_ = true;
+  ToSVGGradientElement(*GetElement()).InvalidateDependentGradients();
   MarkAllClientsForInvalidation(
-      mark_for_invalidation ? kPaintInvalidation : kParentOnlyInvalidation);
+      mark_for_invalidation ? SVGResourceClient::kPaintInvalidation
+                            : SVGResourceClient::kParentOnlyInvalidation);
 }
 
 bool LayoutSVGResourceGradient::RemoveClientFromCache(LayoutObject& client) {
@@ -72,7 +73,7 @@ SVGPaintServer LayoutSVGResourceGradient::PreparePaintServer(
   std::unique_ptr<GradientData>& gradient_data =
       gradient_map_.insert(&object, nullptr).stored_value->value;
   if (!gradient_data)
-    gradient_data = WTF::WrapUnique(new GradientData);
+    gradient_data = std::make_unique<GradientData>();
 
   // Create gradient object
   if (!gradient_data->gradient) {

@@ -19,6 +19,7 @@
 #include "chrome/browser/ui/views/dropdown_bar_host.h"
 #include "chrome/browser/ui/views/dropdown_bar_host_delegate.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
+#include "chrome/browser/ui/views/location_bar/bubble_icon_view.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 #include "components/prefs/pref_member.h"
@@ -31,7 +32,6 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/drag_controller.h"
 
-class BubbleIconView;
 class CommandUpdater;
 class ContentSettingBubbleModelDelegate;
 class FindBarIcon;
@@ -40,6 +40,7 @@ class IntentPickerView;
 class KeywordHintView;
 class LocationIconView;
 class ManagePasswordsIconViews;
+enum class OmniboxPart;
 enum class OmniboxTint;
 class Profile;
 class SelectedKeywordView;
@@ -73,7 +74,8 @@ class LocationBarView : public LocationBar,
                         public DropdownBarHostDelegate,
                         public zoom::ZoomEventManagerObserver,
                         public views::ButtonListener,
-                        public ContentSettingImageView::Delegate {
+                        public ContentSettingImageView::Delegate,
+                        public BubbleIconView::Delegate {
  public:
   class Delegate {
    public:
@@ -89,14 +91,6 @@ class LocationBarView : public LocationBar,
 
    protected:
     virtual ~Delegate() {}
-  };
-
-  enum ColorKind {
-    BACKGROUND = 0,
-    TEXT,
-    SELECTED_TEXT,
-    DEEMPHASIZED_TEXT,
-    SECURITY_CHIP_TEXT,
   };
 
   // The location bar view's class name.
@@ -117,17 +111,16 @@ class LocationBarView : public LocationBar,
   // be called when the receiving instance is attached to a view container.
   bool IsInitialized() const;
 
-  // Returns the appropriate color for the desired kind, based on the user's
-  // system theme.
-  SkColor GetColor(ColorKind kind) const;
+  // Helper to get the color for |part| using the current tint().
+  SkColor GetColor(OmniboxPart part) const;
 
   // Returns the location bar border color blended with the toolbar color.
   // It's guaranteed to be opaque.
   SkColor GetOpaqueBorderColor(bool incognito) const;
 
-  // Returns the color to be used for security text in the context of
+  // Returns the color to be used for the security chip in the context of
   // |security_level|.
-  SkColor GetSecureTextColor(
+  SkColor GetSecurityChipColor(
       security_state::SecurityLevel security_level) const;
 
   // Returns the theme color tint for the location bar and results.
@@ -171,6 +164,10 @@ class LocationBarView : public LocationBar,
   // Returns the screen coordinates of the omnibox (where the URL text appears,
   // not where the icons are shown).
   gfx::Point GetOmniboxViewOrigin() const;
+
+  // Returns the inset from the edge of the location bar where text begins when
+  // only a location icon is showing (no security chip or keyword bubble).
+  int GetTextInsetForNormalInputStart() const;
 
   // Shows |text| as an inline autocompletion.  This is useful for IMEs, where
   // we can't show the autocompletion inside the actual OmniboxView.  See
@@ -224,6 +221,7 @@ class LocationBarView : public LocationBar,
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
   gfx::Size CalculatePreferredSize() const override;
   void Layout() override;
+  void OnThemeChanged() override;
   void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
   // ChromeOmniboxEditController:
@@ -236,6 +234,9 @@ class LocationBarView : public LocationBar,
   ContentSettingBubbleModelDelegate* GetContentSettingBubbleModelDelegate()
       override;
 
+  // BubbleIconView::Delegate:
+  content::WebContents* GetWebContentsForBubbleIconView() override;
+
   // ZoomEventManagerObserver:
   // Updates the view for the zoom icon when default zoom levels change.
   void OnDefaultZoomLevelChanged() override;
@@ -244,6 +245,12 @@ class LocationBarView : public LocationBar,
   void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   static bool IsVirtualKeyboardVisible();
+
+  // Returns the height available for user-entered text in the location bar.
+  static int GetAvailableTextHeight();
+
+  // Returns the height available for text within location bar decorations.
+  static int GetAvailableDecorationTextHeight();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SecurityIndicatorTest, CheckIndicatorText);
@@ -259,10 +266,6 @@ class LocationBarView : public LocationBar,
   // Returns the thickness of any visible edge, in pixels.
   int GetHorizontalEdgeThickness() const;
 
-  // Returns the total amount of space reserved above or below the content,
-  // which is the vertical edge thickness plus the padding next to it.
-  int GetTotalVerticalPadding() const;
-
   // Updates |location_icon_view_| based on the current state and theme.
   void RefreshLocationIcon();
 
@@ -271,21 +274,18 @@ class LocationBarView : public LocationBar,
   // of at least one of the views in |content_setting_views_| changed.
   bool RefreshContentSettingViews();
 
+  // Updates the visibility state of the BubbleIconView (page action) icons
+  // to reflect what actions are available on the current page.
+  // Returns true if the visibility of at least one of the views in
+  // |bubble_icons_| changed.
+  bool RefreshBubbleIconViews();
+
   // Updates the view for the zoom icon based on the current tab's zoom. Returns
   // true if the visibility of the view changed.
   bool RefreshZoomView();
 
-  // Updates |save_credit_card_icon_view_|. Returns true if visibility changed.
-  bool RefreshSaveCreditCardIconView();
-
   // Updates |find_bar_icon_|. Returns true if visibility changed.
   bool RefreshFindBarIcon();
-
-  // Updates the Translate icon based on the current tab's Translate status.
-  void RefreshTranslateIcon();
-
-  // Updates |manage_passwords_icon_view_|. Returns true if visibility changed.
-  bool RefreshManagePasswordsIconView();
 
   // Updates the color of the icon for the "clear all" button.
   void RefreshClearAllButtonIcon();
@@ -355,6 +355,10 @@ class LocationBarView : public LocationBar,
 
   // DropdownBarHostDelegate:
   void SetFocusAndSelection(bool select_all) override;
+
+  // Returns the total amount of space reserved above or below the content,
+  // which is the vertical edge thickness plus the padding next to it.
+  static int GetTotalVerticalPadding();
 
   // The Browser this LocationBarView is in.  Note that at least
   // chromeos::SimpleWebViewDialog uses a LocationBarView outside any browser
@@ -426,8 +430,8 @@ class LocationBarView : public LocationBar,
   // bar is read-only.
   const bool is_popup_mode_;
 
-  // The theme tint. Initialized based on the profile and theme settings.
-  const OmniboxTint tint_;
+  // The theme tint. Updated based on the profile and theme settings.
+  OmniboxTint tint_;
 
   // True if we should show a focus rect while the location entry field is
   // focused. Used when the toolbar is in full keyboard accessibility mode.

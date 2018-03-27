@@ -18,6 +18,7 @@
 #include "base/environment.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
 #include "base/sys_info.h"
@@ -164,6 +165,9 @@ class VADisplayState {
   void SetDrmFd(base::PlatformFile fd) { drm_fd_.reset(HANDLE_EINTR(dup(fd))); }
 
  private:
+  // Implementation of Initialize() called only once.
+  bool InitializeOnce();
+
   // Protected by |va_lock_|.
   int refcount_;
 
@@ -208,12 +212,21 @@ bool VADisplayState::Initialize() {
 #if defined(USE_X11)
       !IsVa_x11Initialized() ||
 #endif
-      !IsVa_drmInitialized())
+      !IsVa_drmInitialized()) {
     return false;
+  }
 
+  // Manual refcounting to ensure the rest of the method is called only once.
   if (refcount_++ > 0)
     return true;
 
+  const bool success = InitializeOnce();
+  UMA_HISTOGRAM_BOOLEAN("Media.VaapiWrapper.VADisplayStateInitializeSuccess",
+                        success);
+  return success;
+}
+
+bool VADisplayState::InitializeOnce() {
   switch (gl::GetGLImplementation()) {
     case gl::kGLImplementationEGLGLES2:
       va_display_ = vaGetDisplayDRM(drm_fd_.get());
@@ -811,14 +824,23 @@ scoped_refptr<VASurface> VaapiWrapper::CreateVASurfaceForPixmap(
   va_attribs[1].value.type = VAGenericValueTypePointer;
   va_attribs[1].value.value.p = &va_attrib_extbuf;
 
-  scoped_refptr<VASurface> va_surface = CreateUnownedSurface(
-      BufferFormatToVARTFormat(pixmap->GetBufferFormat()), size, va_attribs);
-  if (!va_surface) {
-    LOG(ERROR) << "Failed to create VASurface for an Ozone NativePixmap";
-    return nullptr;
+  const unsigned int va_format =
+      BufferFormatToVARTFormat(pixmap->GetBufferFormat());
+
+  VASurfaceID va_surface_id = VA_INVALID_ID;
+  {
+    base::AutoLock auto_lock(*va_lock_);
+    VAStatus va_res =
+        vaCreateSurfaces(va_display_, va_format, size.width(), size.height(),
+                         &va_surface_id, 1, &va_attribs[0], va_attribs.size());
+    VA_SUCCESS_OR_RETURN(va_res, "Failed to create unowned VASurface", nullptr);
   }
 
-  return va_surface;
+  // It's safe to use Unretained() here, because the caller takes care of the
+  // destruction order. All the surfaces will be destroyed before VaapiWrapper.
+  return new VASurface(
+      va_surface_id, size, va_format,
+      base::Bind(&VaapiWrapper::DestroySurface, base::Unretained(this)));
 }
 
 bool VaapiWrapper::SubmitBuffer(VABufferType va_buffer_type,
@@ -1267,33 +1289,7 @@ void VaapiWrapper::DestroySurfaces_Locked() {
   va_surface_format_ = 0;
 }
 
-scoped_refptr<VASurface> VaapiWrapper::CreateUnownedSurface(
-    unsigned int va_format,
-    const gfx::Size& size,
-    const std::vector<VASurfaceAttrib>& va_attribs) {
-  base::AutoLock auto_lock(*va_lock_);
-
-  std::vector<VASurfaceAttrib> attribs(va_attribs);
-  VASurfaceID va_surface_id;
-  VAStatus va_res =
-      vaCreateSurfaces(va_display_, va_format, size.width(), size.height(),
-                       &va_surface_id, 1, &attribs[0], attribs.size());
-
-  scoped_refptr<VASurface> va_surface;
-  VA_SUCCESS_OR_RETURN(va_res, "Failed to create unowned VASurface",
-                       va_surface);
-
-  // This is safe to use Unretained() here, because the VDA takes care
-  // of the destruction order. All the surfaces will be destroyed
-  // before VaapiWrapper.
-  va_surface = new VASurface(
-      va_surface_id, size, va_format,
-      base::Bind(&VaapiWrapper::DestroyUnownedSurface, base::Unretained(this)));
-
-  return va_surface;
-}
-
-void VaapiWrapper::DestroyUnownedSurface(VASurfaceID va_surface_id) {
+void VaapiWrapper::DestroySurface(VASurfaceID va_surface_id) {
   base::AutoLock auto_lock(*va_lock_);
 
   VAStatus va_res = vaDestroySurfaces(va_display_, &va_surface_id, 1);

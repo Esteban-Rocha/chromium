@@ -5,8 +5,8 @@
 #ifndef CSSLayoutDefinition_h
 #define CSSLayoutDefinition_h
 
-#include "core/CSSPropertyNames.h"
 #include "core/css/cssom/CSSStyleValue.h"
+#include "core/css_property_names.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/bindings/TraceWrapperV8Reference.h"
@@ -50,8 +50,13 @@ class CSSLayoutDefinition final
 
     void Trace(blink::Visitor*);
     void TraceWrappers(const ScriptWrappableVisitor*) const override;
+    const char* NameInHeapSnapshot() const override {
+      return "CSSLayoutDefinition::Instance";
+    }
 
    private:
+    void ReportException(ExceptionState*);
+
     Member<CSSLayoutDefinition> definition_;
     TraceWrapperV8Reference<v8::Object> instance_;
   };
@@ -81,6 +86,9 @@ class CSSLayoutDefinition final
 
   void Trace(blink::Visitor* visitor) {}
   void TraceWrappers(const ScriptWrappableVisitor*) const override;
+  const char* NameInHeapSnapshot() const override {
+    return "CSSLayoutDefinition";
+  }
 
  private:
   scoped_refptr<ScriptState> script_state_;

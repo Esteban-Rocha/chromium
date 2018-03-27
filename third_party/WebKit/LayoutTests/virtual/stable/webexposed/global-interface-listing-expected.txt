@@ -194,7 +194,11 @@ interface AudioWorklet : Worklet
     method constructor
 interface AudioWorkletNode : AudioNode
     attribute @@toStringTag
+    getter onprocessorerror
+    getter parameters
+    getter port
     method constructor
+    setter onprocessorerror
 interface BarProp
     attribute @@toStringTag
     getter visible
@@ -3631,7 +3635,6 @@ interface MediaCapabilities
     attribute @@toStringTag
     method constructor
     method decodingInfo
-    method encodingInfo
 interface MediaCapabilitiesInfo
     attribute @@toStringTag
     getter powerEfficient

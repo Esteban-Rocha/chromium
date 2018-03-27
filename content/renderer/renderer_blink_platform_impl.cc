@@ -4,8 +4,10 @@
 
 #include "content/renderer/renderer_blink_platform_impl.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
@@ -127,6 +129,7 @@
 #include "url/gurl.h"
 
 #if defined(OS_MACOSX)
+#include "content/child/child_process_sandbox_support_impl_mac.h"
 #include "content/common/mac/font_loader.h"
 #include "content/renderer/webscrollbarbehavior_impl_mac.h"
 #include "third_party/WebKit/public/platform/mac/WebSandboxSupport.h"
@@ -156,6 +159,7 @@
 #if BUILDFLAG(ENABLE_WEBRTC)
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc/rtc_certificate_generator.h"
+#include "content/renderer/media/webrtc/webrtc_uma_histograms.h"
 #endif
 
 using blink::Platform;
@@ -235,7 +239,7 @@ class RendererBlinkPlatformImpl::FileUtilities : public WebFileUtilitiesImpl {
 class RendererBlinkPlatformImpl::SandboxSupport
     : public blink::WebSandboxSupport {
  public:
-  virtual ~SandboxSupport() {}
+  ~SandboxSupport() override {}
 
 #if defined(OS_MACOSX)
   bool LoadFont(CTFontRef src_font,
@@ -595,9 +599,10 @@ WebIDBFactory* RendererBlinkPlatformImpl::IdbFactory() {
 
 std::unique_ptr<blink::WebServiceWorkerCacheStorage>
 RendererBlinkPlatformImpl::CreateCacheStorage(
-    const blink::WebSecurityOrigin& security_origin) {
-  return std::make_unique<WebServiceWorkerCacheStorageImpl>(
-      thread_safe_sender_.get(), security_origin);
+    service_manager::InterfaceProvider* mojo_provider) {
+  // Requires the Interface Provider from ExecutionContext, because it can be
+  // different of RendererBlinkPlatformImpl::GetInterfaceProvider()
+  return std::make_unique<WebServiceWorkerCacheStorageImpl>(mojo_provider);
 }
 
 //------------------------------------------------------------------------------
@@ -635,33 +640,7 @@ bool RendererBlinkPlatformImpl::FileUtilities::GetFileInfo(
 bool RendererBlinkPlatformImpl::SandboxSupport::LoadFont(CTFontRef src_font,
                                                          CGFontRef* out,
                                                          uint32_t* font_id) {
-  uint32_t font_data_size;
-  base::ScopedCFTypeRef<CFStringRef> name_ref(
-      CTFontCopyPostScriptName(src_font));
-  base::string16 font_name = SysCFStringRefToUTF16(name_ref);
-  float font_point_size = CTFontGetSize(src_font);
-  mojo::ScopedSharedBufferHandle font_data;
-  if (!RenderThreadImpl::current()->render_message_filter()->LoadFont(
-          font_name, font_point_size, &font_data_size, &font_data, font_id)) {
-    *out = NULL;
-    *font_id = 0;
-    return false;
-  }
-
-  if (font_data_size == 0 || !font_data.is_valid() || *font_id == 0) {
-    LOG(ERROR) << "Bad response from RenderProcessHostMsg_LoadFont() for "
-               << font_name;
-    *out = NULL;
-    *font_id = 0;
-    return false;
-  }
-
-  // TODO(jeremy): Need to call back into WebKit to make sure that the font
-  // isn't already activated, based on the font id.  If it's already
-  // activated, don't reactivate it here - crbug.com/72727 .
-
-  return FontLoader::CGFontRefFromBuffer(std::move(font_data), font_data_size,
-                                         out);
+  return content::LoadFont(src_font, out, font_id);
 }
 
 #elif defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
@@ -1028,6 +1007,8 @@ void RendererBlinkPlatformImpl::CreateHTMLAudioElementCapturer(
   blink::WebMediaStreamSource::Capabilities capabilities;
   capabilities.device_id = track_id;
   capabilities.echo_cancellation = std::vector<bool>({false});
+  capabilities.auto_gain_control = std::vector<bool>({false});
+  capabilities.noise_suppression = std::vector<bool>({false});
   web_media_stream_source.SetCapabilities(capabilities);
 
   media_stream_source->ConnectToTrack(web_media_stream_track);
@@ -1044,6 +1025,13 @@ RendererBlinkPlatformImpl::CreateImageCaptureFrameGrabber() {
 #else
   return nullptr;
 #endif  // BUILDFLAG(ENABLE_WEBRTC)
+}
+
+void RendererBlinkPlatformImpl::UpdateWebRTCAPICount(
+    blink::WebRTCAPIName api_name) {
+#if BUILDFLAG(ENABLE_WEBRTC)
+  UpdateWebRTCMethodCount(api_name);
+#endif
 }
 
 //------------------------------------------------------------------------------

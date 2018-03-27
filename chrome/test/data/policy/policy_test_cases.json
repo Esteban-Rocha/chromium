@@ -3633,6 +3633,28 @@
     ]
   },
 
+  "AutoplayWhitelist": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": {
+      "AutoplayWhitelist": [
+        "https://mydomain.com", "https://test.mydomain.com"
+      ]
+    },
+    "pref_mappings": [
+      { "pref": "media.autoplay_whitelist" }
+    ]
+  },
+
+  "TabUnderProtectionEnabled": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": {
+      "TabUnderProtectionEnabled": false
+    },
+    "pref_mappings": [
+      { "pref": "tab_under_protection"}
+    ]
+  },
+
   "----- Chrome Frame policies -------------------------------------------": {},
 
   "ChromeFrameRendererSettings": {

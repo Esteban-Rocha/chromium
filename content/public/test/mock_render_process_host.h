@@ -10,10 +10,12 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/containers/flat_set.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/persistent_memory_allocator.h"
@@ -23,11 +25,15 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_factory.h"
 #include "ipc/ipc_test_sink.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "services/resource_coordinator/public/cpp/process_resource_coordinator.h"
 #include "services/service_manager/public/cpp/identity.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
+
+#if defined(OS_ANDROID)
+#include "content/public/browser/android/child_process_importance.h"
+#endif
 
 class StoragePartition;
 class SiteInstance;
@@ -67,9 +73,8 @@ class MockRenderProcessHost : public RenderProcessHost {
   void AddObserver(RenderProcessHostObserver* observer) override;
   void RemoveObserver(RenderProcessHostObserver* observer) override;
   void ShutdownForBadMessage(CrashReportMode crash_report_mode) override;
-  void WidgetRestored() override;
-  void WidgetHidden() override;
-  int VisibleWidgetCount() const override;
+  void UpdateClientPriority(PriorityClient* client) override;
+  int VisibleClientCount() const override;
   bool IsForGuestsOnly() const override;
   RendererAudioOutputStreamFactoryContext*
   GetRendererAudioOutputStreamFactoryContext() override;
@@ -93,9 +98,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   void AddWidget(RenderWidgetHost* widget) override;
   void RemoveWidget(RenderWidgetHost* widget) override;
 #if defined(OS_ANDROID)
-  void UpdateWidgetImportance(ChildProcessImportance old_value,
-                              ChildProcessImportance new_value) override;
-  ChildProcessImportance ComputeEffectiveImportance() override;
+  ChildProcessImportance GetEffectiveImportance() override;
 #endif
   void SetSuddenTerminationAllowed(bool allowed) override;
   bool SuddenTerminationAllowed() const override;
@@ -115,6 +118,7 @@ class MockRenderProcessHost : public RenderProcessHost {
       bool incoming,
       bool outgoing,
       const WebRtcRtpPacketCallback& packet_callback) override;
+  void SetWebRtcEventLogOutput(int lid, bool enabled) override;
 #endif
   void ResumeDeferredNavigation(const GlobalRequestID& request_id) override;
   void BindInterface(const std::string& interface_name,
@@ -193,6 +197,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   BrowserContext* browser_context_;
   base::ObserverList<RenderProcessHostObserver> observers_;
 
+  base::flat_set<PriorityClient*> priority_clients_;
   int prev_routing_id_;
   base::IDMap<IPC::Listener*> listeners_;
   bool fast_shutdown_started_;

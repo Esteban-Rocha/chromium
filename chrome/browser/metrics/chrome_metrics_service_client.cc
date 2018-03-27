@@ -110,8 +110,8 @@
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/metrics/extensions_metrics_provider.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
-#include "extensions/features/features.h"
 #endif
 
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -712,7 +712,7 @@ void ChromeMetricsServiceClient::CollectFinalHistograms() {
                  weak_ptr_factory_.GetWeakPtr());
 
   scoped_refptr<MetricsMemoryDetails> details(
-      new MetricsMemoryDetails(callback, &memory_growth_tracker_));
+      new MetricsMemoryDetails(callback));
   details->StartFetch();
 
   scoped_refptr<ProcessMemoryMetricsEmitter> emitter(

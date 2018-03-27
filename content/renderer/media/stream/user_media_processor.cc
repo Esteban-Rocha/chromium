@@ -817,16 +817,15 @@ blink::WebMediaStreamSource UserMediaProcessor::InitializeAudioSourceObject(
       base::ThreadTaskRunnerHandle::Get(), weak_factory_.GetWeakPtr());
 
   bool has_sw_echo_cancellation = false;
-  MediaStreamAudioSource* const audio_source =
-      CreateAudioSource(device, source_ready, &has_sw_echo_cancellation);
+  MediaStreamAudioSource* const audio_source = CreateAudioSource(
+      device, std::move(source_ready), &has_sw_echo_cancellation);
   audio_source->SetStopCallback(base::Bind(
       &UserMediaProcessor::OnLocalSourceStopped, weak_factory_.GetWeakPtr()));
 
-  std::vector<bool> echo_cancellation;
-  echo_cancellation.push_back(true);
-  echo_cancellation.push_back(false);
   blink::WebMediaStreamSource::Capabilities capabilities;
-  capabilities.echo_cancellation = echo_cancellation;
+  capabilities.echo_cancellation = {true, false};
+  capabilities.auto_gain_control = {true, false};
+  capabilities.noise_suppression = {true, false};
   capabilities.device_id = blink::WebString::FromUTF8(device.id);
 
   source.SetExtraData(audio_source);  // Takes ownership.

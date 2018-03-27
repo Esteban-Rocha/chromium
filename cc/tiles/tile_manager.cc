@@ -28,9 +28,9 @@
 #include "cc/raster/playback_image_provider.h"
 #include "cc/raster/raster_buffer.h"
 #include "cc/raster/task_category.h"
-#include "cc/resources/resource_util.h"
 #include "cc/tiles/frame_viewer_instrumentation.h"
 #include "cc/tiles/tile.h"
+#include "components/viz/common/resources/resource_sizes.h"
 #include "ui/gfx/geometry/axis_transform2d.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 
@@ -1272,9 +1272,11 @@ void TileManager::OnRasterTaskCompleted(
   TileDrawInfo& draw_info = tile->draw_info();
   bool needs_swizzle =
       raster_buffer_provider_->IsResourceSwizzleRequired(!tile->is_opaque());
+  bool is_premultiplied =
+      raster_buffer_provider_->IsResourcePremultiplied(!tile->is_opaque());
   draw_info.SetResource(std::move(resource),
                         raster_task_was_scheduled_with_checker_images,
-                        needs_swizzle);
+                        needs_swizzle, is_premultiplied);
   if (raster_task_was_scheduled_with_checker_images)
     num_of_tiles_with_checker_images_++;
 
@@ -1713,8 +1715,8 @@ TileManager::MemoryUsage TileManager::MemoryUsage::FromConfig(
   // We can use UncheckedSizeInBytes here since this is used with a tile
   // size which is determined by the compositor (it's at most max texture
   // size).
-  return MemoryUsage(ResourceUtil::UncheckedSizeInBytes<size_t>(size, format),
-                     1);
+  return MemoryUsage(
+      viz::ResourceSizes::UncheckedSizeInBytes<size_t>(size, format), 1);
 }
 
 // static

@@ -24,7 +24,6 @@
 #include "gpu/command_buffer/client/mapped_memory.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
-#include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/common/context_result.h"
 #include "gpu/command_buffer/common/debug_marker_manager.h"
 #include "gpu/command_buffer/common/id_allocator.h"
@@ -105,7 +104,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
       GLuint sk_color,
       GLuint msaa_sample_count,
       GLboolean can_use_lcd_text,
-      GLboolean use_distance_field_text,
       GLint pixel_config,
       const cc::RasterColorSpace& raster_color_space) override;
   void RasterCHROMIUM(const cc::DisplayItemList* list,
@@ -129,7 +127,8 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
                             gfx::OverlayTransform plane_transform,
                             unsigned overlay_texture_id,
                             const gfx::Rect& display_bounds,
-                            const gfx::RectF& uv_rect) override;
+                            const gfx::RectF& uv_rect,
+                            bool enable_blend) override;
   uint64_t ShareGroupTracingGUID() const override;
   void SetErrorMessageCallback(
       base::RepeatingCallback<void(const char*, int32_t)> callback) override;
@@ -256,8 +255,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   base::RepeatingCallback<void(const char*, int32_t)> error_message_callback_;
 
   int current_trace_stack_;
-
-  Capabilities capabilities_;
 
   // Flag to indicate whether the implementation can retain resources, or
   // whether it should aggressively free them.

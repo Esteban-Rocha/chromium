@@ -99,11 +99,11 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_frame_visitor.h"
 #include "content/public/renderer/render_view.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
-#include "extensions/features/features.h"
 #include "ipc/ipc_sync_channel.h"
 #include "media/base/media_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "net/base/net_errors.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/features/features.h"
@@ -537,7 +537,7 @@ void ChromeContentRendererClient::RenderFrameCreated(
   new nacl::NaClHelper(render_frame);
 #endif
 
-#if defined(FULL_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING) || defined(SAFE_BROWSING_DB_REMOTE)
   safe_browsing::ThreatDOMDetails::Create(render_frame, registry);
 #endif
 
@@ -1107,31 +1107,6 @@ bool ChromeContentRendererClient::IsNaClAllowed(
       is_extension_force_installed ||
       is_invoked_by_webstore_installed_extension;
   bool is_nacl_allowed = is_nacl_allowed_by_location || is_nacl_unrestricted;
-  if (is_nacl_allowed) {
-    // Make sure that PPAPI 'dev' interfaces are only available for unpacked
-    // and component extensions.  Also allow dev interfaces when --enable-nacl
-    // is set, but do not allow --enable-nacl to provide dev interfaces to
-    // webstore installed and other normally allowed URLs.
-    std::string dev_attribute("@dev");
-    if (is_extension_unrestricted ||
-        (is_nacl_unrestricted && !is_nacl_allowed_by_location)) {
-      // Add the special '@dev' attribute.
-      std::vector<WebPluginMimeType::Param> mime_params;
-      mime_params.emplace_back(base::ASCIIToUTF16(dev_attribute),
-                               base::string16());
-      AppendParams(mime_params, &params->attribute_names,
-                   &params->attribute_values);
-    } else {
-      // If the params somehow contain '@dev', remove it.
-      size_t attribute_count = params->attribute_names.size();
-      for (size_t i = 0; i < attribute_count; ++i) {
-        if (params->attribute_names[i].Equals(dev_attribute.data(),
-                                              dev_attribute.length())) {
-          params->attribute_names[i] = WebString();
-        }
-      }
-    }
-  }
   return is_nacl_allowed;
 }
 #endif  // BUILDFLAG(ENABLE_NACL)
@@ -1295,22 +1270,25 @@ bool ChromeContentRendererClient::ShouldFork(WebLocalFrame* frame,
   return false;
 }
 
-bool ChromeContentRendererClient::WillSendRequest(
+void ChromeContentRendererClient::WillSendRequest(
     WebLocalFrame* frame,
     ui::PageTransition transition_type,
     const blink::WebURL& url,
-    GURL* new_url) {
+    const url::Origin* initiator_origin,
+    GURL* new_url,
+    bool* attach_same_site_cookies) {
 // Check whether the request should be allowed. If not allowed, we reset the
 // URL to something invalid to prevent the request and cause an error.
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-  if (ChromeExtensionsRendererClient::GetInstance()->WillSendRequest(
-          frame, transition_type, url, new_url)) {
-    return true;
-  }
+  ChromeExtensionsRendererClient::GetInstance()->WillSendRequest(
+      frame, transition_type, url, initiator_origin, new_url,
+      attach_same_site_cookies);
+  if (!new_url->is_empty())
+    return;
 #endif
 
   if (!url.ProtocolIs(chrome::kChromeSearchScheme))
-    return false;
+    return;
 
 #if !defined(OS_ANDROID)
   SearchBox* search_box =
@@ -1325,11 +1303,9 @@ bool ChromeContentRendererClient::WillSendRequest(
       type = SearchBox::THUMB;
 
     if (type != SearchBox::NONE)
-      return search_box->GenerateImageURLFromTransientURL(url, type, new_url);
+      search_box->GenerateImageURLFromTransientURL(url, type, new_url);
   }
 #endif  // !defined(OS_ANDROID)
-
-  return false;
 }
 
 bool ChromeContentRendererClient::IsPrefetchOnly(
@@ -1370,6 +1346,12 @@ bool ChromeContentRendererClient::IsExternalPepperPlugin(
   // We must defer certain plugin events for NaCl instances since we switch
   // from the in-process to the out-of-process proxy after instantiating them.
   return module_name == "Native Client";
+}
+
+bool ChromeContentRendererClient::IsOriginIsolatedPepperPlugin(
+    const base::FilePath& plugin_path) {
+  return plugin_path ==
+         base::FilePath::FromUTF8Unsafe(ChromeContentClient::kPDFPluginPath);
 }
 
 #if BUILDFLAG(ENABLE_PLUGINS) && BUILDFLAG(ENABLE_EXTENSIONS)
@@ -1435,15 +1417,6 @@ bool ChromeContentRendererClient::ShouldReportDetailedMessageForSource(
 #else
   return false;
 #endif
-}
-
-bool ChromeContentRendererClient::ShouldGatherSiteIsolationStats() const {
-  // Site isolation stats are gathered currently for non-extension renderer
-  // processes running a normal web page from the Internet.
-  // TODO(nick): https://crbug.com/268640 Gather stats for extension processes
-  // too; we would need to check the extension's manifest to know which sites
-  // it's allowed to access.
-  return !IsStandaloneExtensionProcess();
 }
 
 std::unique_ptr<blink::WebContentSettingsClient>

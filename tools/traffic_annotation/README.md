@@ -77,8 +77,7 @@ python third_party/depot_tools/upload_to_google_storage.py ^
     tools/traffic_annotation/bin/win32/traffic_annotation_extractor.exe
 sed -i "/^CLANG_REVISION =/d" tools/traffic_annotation/README.md
 sed -i "/^LASTCHANGE=/d" tools/traffic_annotation/README.md
-grep "^CLANG_REVISION =" tools/clang/scripts/update.py >> ^
-    tools/traffic_annotation/README.md
+grep "^CLANG_REVISION =" tools/clang/scripts/update.py >> tools/traffic_annotation/README.md
 cat build/util/LASTCHANGE >> tools/traffic_annotation/README.md
 dos2unix tools/traffic_annotation/README.md
 git commit -a -m 'Roll traffic_annotation checkers'
@@ -99,4 +98,4 @@ and cc the people listed in OWNERS; they'll be on the hook to rebuild and
 re-enable the test.
 
 CLANG_REVISION = '325667'
-LASTCHANGE=c53d184b9f3fc9377bd33b5f81dcd883ed50f7b7-
+LASTCHANGE=0b5b8baa3baf14eaebe56cb3642a016bcfa26e8f-refs/heads/master@{#543662}

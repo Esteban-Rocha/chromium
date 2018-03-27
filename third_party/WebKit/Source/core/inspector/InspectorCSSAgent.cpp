@@ -27,8 +27,6 @@
 
 #include "base/macros.h"
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/CSSPropertyNames.h"
-#include "core/StylePropertyShorthand.h"
 #include "core/animation/css/CSSAnimationData.h"
 #include "core/css/CSSColorValue.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
@@ -56,9 +54,10 @@
 #include "core/css/StyleSheetList.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/css/parser/CSSParserContext.h"
-#include "core/css/properties/CSSProperty.h"
+#include "core/css/properties/css_property.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleRuleUsageTracker.h"
+#include "core/css_property_names.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/DOMNodeIds.h"
 #include "core/dom/Node.h"
@@ -83,6 +82,7 @@
 #include "core/page/Page.h"
 #include "core/style/StyleGeneratedImage.h"
 #include "core/style/StyleImage.h"
+#include "core/style_property_shorthand.h"
 #include "core/svg/SVGElement.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
@@ -151,11 +151,11 @@ HeapVector<Member<Element>> ElementsFromRect(LayoutRect rect,
                          HitTestRequest::kIgnoreClipping);
 
   LayoutPoint center = rect.Center();
-  unsigned left_padding, right_padding, top_padding, bottom_padding;
-  left_padding = right_padding = (rect.Width() / 2).ToUnsigned();
-  top_padding = bottom_padding = (rect.Height() / 2).ToUnsigned();
-  HitTestResult result(request, center, top_padding, right_padding,
-                       bottom_padding, left_padding);
+  LayoutUnit horizontal_padding = rect.Width() / 2;
+  LayoutUnit vertical_padding = rect.Height() / 2;
+  LayoutRectOutsets padding(vertical_padding, horizontal_padding,
+                            vertical_padding, horizontal_padding);
+  HitTestResult result(request, center, padding);
   document.GetFrame()->ContentLayoutObject()->HitTest(result);
   HeapVector<Member<Element>> elements;
   Node* previous_node = nullptr;
@@ -870,6 +870,9 @@ void InspectorCSSAgent::ForcePseudoState(Element* element,
     case CSSSelector::kPseudoFocusWithin:
       force = forced_pseudo_state & kPseudoFocusWithin;
       break;
+    case CSSSelector::kPseudoFocusVisible:
+      force = forced_pseudo_state & kPseudoFocusVisible;
+      break;
     case CSSSelector::kPseudoHover:
       force = forced_pseudo_state & kPseudoHover;
       break;
@@ -1164,7 +1167,7 @@ void InspectorCSSAgent::CollectPlatformFontsForLayoutObject(
 
   FontCachePurgePreventer preventer;
   LayoutText* layout_text = ToLayoutText(layout_object);
-  for (InlineTextBox* box : InlineTextBoxesOf(*layout_text)) {
+  for (InlineTextBox* box : layout_text->TextBoxes()) {
     const ComputedStyle& style = layout_text->StyleRef(box->IsFirstLineStyle());
     const Font& font = style.GetFont();
     TextRun run = box->ConstructTextRunForInspector(style);

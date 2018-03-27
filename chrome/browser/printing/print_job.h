@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
@@ -52,6 +53,15 @@ class PrintJob : public PrintJobWorkerOwner,
   void Initialize(PrintJobWorkerOwner* job,
                   const base::string16& name,
                   int page_count);
+
+#if defined(OS_WIN)
+  // Overwrites the PDF page mapping to fill in values of -1 for all indices
+  // that are not selected. This is needed when the user opens the system
+  // dialog from the link in Print Preview on Windows and then sets a selection
+  // of pages, because all PDF pages will be converted, but only the user's
+  // selected pages should be sent to the printer. See https://crbug.com/823876.
+  void ResetPageMapping();
+#endif
 
   // content::NotificationObserver implementation.
   void Observe(int type,
@@ -116,6 +126,10 @@ class PrintJob : public PrintJobWorkerOwner,
   ~PrintJob() override;
 
  private:
+#if defined(OS_WIN)
+  FRIEND_TEST_ALL_PREFIXES(PrintJobTest, PageRangeMapping);
+#endif
+
   // Updates |document_| to a new instance.
   void UpdatePrintedDocument(PrintedDocument* new_document);
 
@@ -140,6 +154,10 @@ class PrintJob : public PrintJobWorkerOwner,
   void OnPdfPageConverted(int page_number,
                           float scale_factor,
                           std::unique_ptr<MetafilePlayer> metafile);
+
+  // Helper method to do the work for ResetPageMapping(). Split for unit tests.
+  static std::vector<int> GetFullPageMapping(const std::vector<int>& pages,
+                                             int total_page_count);
 #endif  // defined(OS_WIN)
 
   content::NotificationRegistrar registrar_;

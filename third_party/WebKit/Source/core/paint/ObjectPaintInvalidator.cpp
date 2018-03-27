@@ -308,13 +308,10 @@ void ObjectPaintInvalidator::SetBackingNeedsPaintInvalidationInRect(
       squashing_layer->SetNeedsDisplayInRect(EnclosingIntRect(rect), reason,
                                              object_);
     }
-  } else if (object_.CompositedScrollsWithRespectTo(
-                 paint_invalidation_container)) {
-    layer.GetCompositedLayerMapping()->SetScrollingContentsNeedDisplayInRect(
-        rect, reason, object_);
   } else if (paint_invalidation_container.UsesCompositedScrolling()) {
-    DCHECK(object_ == paint_invalidation_container);
-    if (reason ==
+    // If object_ is not paint_invalidation_container, then it scrolls.
+    if (&object_ != paint_invalidation_container ||
+        reason ==
             PaintInvalidationReason::kBackgroundOnScrollingContentsLayer ||
         reason == PaintInvalidationReason::kCaret) {
       layer.GetCompositedLayerMapping()->SetScrollingContentsNeedDisplayInRect(
@@ -360,14 +357,9 @@ void ObjectPaintInvalidator::InvalidatePaintUsingContainer(
   if (!paint_invalidation_container.IsPaintInvalidationContainer()) {
     InvalidatePaintRectangleOnWindow(paint_invalidation_container,
                                      EnclosingIntRect(dirty_rect));
-  }
-
-  auto* view = paint_invalidation_container.View();
-  if (view && view->UsesCompositing()) {
-    if (paint_invalidation_container.IsPaintInvalidationContainer()) {
-      SetBackingNeedsPaintInvalidationInRect(paint_invalidation_container,
-                                             dirty_rect, invalidation_reason);
-    }
+  } else {
+    SetBackingNeedsPaintInvalidationInRect(paint_invalidation_container,
+                                           dirty_rect, invalidation_reason);
   }
 }
 

@@ -82,6 +82,7 @@
 #include "chrome/browser/supervised_user/child_accounts/child_account_service.h"
 #include "chrome/browser/supervised_user/child_accounts/child_account_service_factory.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/common/chrome_switches.h"
@@ -119,16 +120,13 @@
 #include "components/user_manager/user_names.h"
 #include "components/user_manager/user_type.h"
 #include "components/version_info/version_info.h"
-#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/service_manager_connection.h"
 #include "extensions/common/features/feature_session_type.h"
 #include "net/cert/sth_distributor.h"
 #include "rlz/features/features.h"
-#include "services/service_manager/public/cpp/connector.h"
 #include "third_party/cros_system_api/switches/chrome_switches.h"
 #include "ui/base/ime/chromeos/input_method_descriptor.h"
 #include "ui/base/ime/chromeos/input_method_manager.h"
@@ -141,7 +139,7 @@
 #endif
 
 #if BUILDFLAG(ENABLE_CROS_ASSISTANT)
-#include "chromeos/services/assistant/public/mojom/constants.mojom.h"
+#include "chrome/browser/chromeos/assistant/assistant_client.h"
 #endif
 
 namespace chromeos {
@@ -355,6 +353,16 @@ bool IsRunningTest() {
          base::CommandLine::ForCurrentProcess()->HasSwitch(
              ::switches::kTestType);
 }
+
+#if BUILDFLAG(ENABLE_RLZ)
+UserSessionManager::RlzInitParams CollectRlzParams() {
+  UserSessionManager::RlzInitParams params;
+  params.disabled = base::PathExists(GetRlzDisabledFlagPath());
+  params.time_since_oobe_completion =
+      chromeos::StartupUtils::GetTimeSinceOobeFlagFileCreation();
+  return params;
+}
+#endif
 
 }  // namespace
 
@@ -652,7 +660,7 @@ void UserSessionManager::InitRlz(Profile* profile) {
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::BACKGROUND,
        base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-      base::Bind(&base::PathExists, GetRlzDisabledFlagPath()),
+      base::Bind(&CollectRlzParams),
       base::Bind(&UserSessionManager::InitRlzImpl, AsWeakPtr(), profile));
 #endif
 }
@@ -1358,15 +1366,19 @@ void UserSessionManager::FinalizePrepareProfile(Profile* profile) {
     if (lock_screen_apps::StateController::IsEnabled())
       lock_screen_apps::StateController::Get()->SetPrimaryProfile(profile);
 
-    // The |AppInstallEventLogManagerWrapper| manages its own lifetime and
-    // self-destructs on logout.
-    policy::AppInstallEventLogManagerWrapper::CreateForProfile(profile);
+    if (user->GetType() == user_manager::USER_TYPE_REGULAR) {
+      // App install logs are uploaded via the user's communication channel with
+      // the management server. This channel exists for regular users only.
+      // The |AppInstallEventLogManagerWrapper| manages its own lifetime and
+      // self-destructs on logout.
+      policy::AppInstallEventLogManagerWrapper::CreateForProfile(profile);
+    }
     arc::ArcServiceLauncher::Get()->OnPrimaryUserProfilePrepared(profile);
 
 #if BUILDFLAG(ENABLE_CROS_ASSISTANT)
     if (chromeos::switches::IsAssistantEnabled()) {
-      content::BrowserContext::GetConnectorFor(profile)->StartService(
-          chromeos::assistant::mojom::kServiceName);
+      assistant::AssistantClient::Get()->Start(
+          content::BrowserContext::GetConnectorFor(profile));
     }
 #endif
 
@@ -1577,27 +1589,32 @@ void UserSessionManager::RestoreAuthSessionImpl(
                                 user_context_.GetAccessToken());
 }
 
-void UserSessionManager::InitRlzImpl(Profile* profile, bool disabled) {
+void UserSessionManager::InitRlzImpl(Profile* profile,
+                                     const RlzInitParams& params) {
 #if BUILDFLAG(ENABLE_RLZ)
   PrefService* local_state = g_browser_process->local_state();
-  if (disabled) {
+  if (params.disabled) {
     // Empty brand code means an organic install (no RLZ pings are sent).
     google_brand::chromeos::ClearBrandForCurrentSession();
   }
-  if (disabled != local_state->GetBoolean(prefs::kRLZDisabled)) {
+  if (params.disabled != local_state->GetBoolean(prefs::kRLZDisabled)) {
     // When switching to RLZ enabled/disabled state, clear all recorded events.
     rlz::RLZTracker::ClearRlzState();
-    local_state->SetBoolean(prefs::kRLZDisabled, disabled);
+    local_state->SetBoolean(prefs::kRLZDisabled, params.disabled);
   }
   // Init the RLZ library.
   int ping_delay = profile->GetPrefs()->GetInteger(prefs::kRlzPingDelaySeconds);
   // Negative ping delay means to send ping immediately after a first search is
   // recorded.
+  bool send_ping_immediately = ping_delay < 0;
+  base::TimeDelta delay =
+      base::TimeDelta::FromSeconds(abs(ping_delay)) -
+          params.time_since_oobe_completion;
   rlz::RLZTracker::SetRlzDelegate(
       base::WrapUnique(new ChromeRLZTrackerDelegate));
   rlz::RLZTracker::InitRlzDelayed(
-      user_manager::UserManager::Get()->IsCurrentUserNew(), ping_delay < 0,
-      base::TimeDelta::FromSeconds(abs(ping_delay)),
+      user_manager::UserManager::Get()->IsCurrentUserNew(),
+      send_ping_immediately, delay,
       ChromeRLZTrackerDelegate::IsGoogleDefaultSearch(profile),
       ChromeRLZTrackerDelegate::IsGoogleHomepage(profile),
       ChromeRLZTrackerDelegate::IsGoogleInStartpages(profile));
@@ -1887,17 +1904,6 @@ void UserSessionManager::DoBrowserLaunchInternal(Profile* profile,
     browser_creator.LaunchBrowser(
         *base::CommandLine::ForCurrentProcess(), profile, base::FilePath(),
         chrome::startup::IS_PROCESS_STARTUP, first_run);
-
-    // ApplistService is usually initialized as part of browser launching
-    // process. However, kSilentLaunch flag is used for a new user on the device
-    // to skip browser launching (so that first-run app is not blocked by a
-    // browser window). As a result, AppListService init is skipped. This would
-    // cause AppListPresenterService not created and result in no app launcher.
-    // TODO(xiyuan): Remove this with http://crbug.com/681045
-    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-            ::switches::kSilentLaunch)) {
-      AppListService::InitAll(profile, profile->GetPath());
-    }
   } else {
     LOG(WARNING) << "Browser hasn't been launched, should_launch_browser_"
                  << " is false. This is normal in some tests.";
@@ -1949,6 +1955,12 @@ void UserSessionManager::DoBrowserLaunchInternal(Profile* profile,
   // Show the one-time notification and update the relevant pref about the
   // completion of the file system migration necessary for ARC, when needed.
   arc::ShowArcMigrationSuccessNotificationIfNeeded(profile);
+
+  if (should_launch_browser_ &&
+      profile->GetPrefs()->GetBoolean(prefs::kShowSyncSettingsOnSessionStart)) {
+    profile->GetPrefs()->ClearPref(prefs::kShowSyncSettingsOnSessionStart);
+    chrome::ShowSettingsSubPageForProfile(profile, "syncSetup");
+  }
 }
 
 void UserSessionManager::RespectLocalePreferenceWrapper(

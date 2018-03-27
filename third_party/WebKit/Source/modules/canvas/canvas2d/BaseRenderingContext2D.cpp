@@ -618,6 +618,9 @@ void BaseRenderingContext2D::DrawPathInternal(
 
   SkPath sk_path = path.GetSkPath();
   FloatRect bounds = path.BoundingRect();
+  if (isnan(bounds.X()) || isnan(bounds.Y()) || isnan(bounds.Width()) ||
+      isnan(bounds.Height()))
+    return;
   sk_path.setFillType(fill_type);
 
   if (paint_type == CanvasRenderingContext2DState::kStrokePaintType)
@@ -1148,7 +1151,7 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
   Optional<CustomCountHistogram> timer;
   if (!IsPaint2D()) {
     start_time = WTF::CurrentTimeTicksInSeconds();
-    if (CanCreateCanvas2DBuffer() && IsAccelerated()) {
+    if (CanCreateCanvas2dResourceProvider() && IsAccelerated()) {
       if (image_source->IsVideoElement()) {
         DEFINE_THREAD_SAFE_STATIC_LOCAL(
             CustomCountHistogram, scoped_us_counter_video_gpu,
@@ -1219,9 +1222,8 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
   FloatSize default_object_size(Width(), Height());
   SourceImageStatus source_image_status = kInvalidSourceImageStatus;
   if (!image_source->IsVideoElement()) {
-    AccelerationHint hint = (HasCanvas2DBuffer() && IsAccelerated())
-                                ? kPreferAcceleration
-                                : kPreferNoAcceleration;
+    AccelerationHint hint =
+        IsAccelerated() ? kPreferAcceleration : kPreferNoAcceleration;
     image = image_source->GetSourceImageForCanvas(&source_image_status, hint,
                                                   default_object_size);
     if (source_image_status == kUndecodableSourceImageStatus) {
@@ -1268,7 +1270,7 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
   // Heuristic for disabling acceleration based on anticipated texture upload
   // overhead.
   // See comments in CanvasHeuristicParameters.h for explanation.
-  if (CanCreateCanvas2DBuffer() && IsAccelerated() &&
+  if (CanCreateCanvas2dResourceProvider() && IsAccelerated() &&
       !image_source->IsAccelerated()) {
     float src_area = src_rect.Width() * src_rect.Height();
     if (src_area >
@@ -1564,10 +1566,18 @@ ImageData* BaseRenderingContext2D::getImageData(
     return nullptr;
 
   if (sw < 0) {
+    if (!WTF::CheckAdd(sx, sw).IsValid<int>()) {
+      exception_state.ThrowRangeError("Out of memory at ImageData creation");
+      return nullptr;
+    }
     sx += sw;
     sw = -sw;
   }
   if (sh < 0) {
+    if (!WTF::CheckAdd(sy, sh).IsValid<int>()) {
+      exception_state.ThrowRangeError("Out of memory at ImageData creation");
+      return nullptr;
+    }
     sy += sh;
     sh = -sh;
   }
@@ -1580,7 +1590,7 @@ ImageData* BaseRenderingContext2D::getImageData(
 
   Optional<ScopedUsHistogramTimer> timer;
   if (!IsPaint2D()) {
-    if (CanCreateCanvas2DBuffer() && IsAccelerated()) {
+    if (CanCreateCanvas2dResourceProvider() && IsAccelerated()) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, scoped_us_counter_gpu,
           ("Blink.Canvas.GetImageData.GPU", 0, 10000000, 50));
@@ -1594,10 +1604,10 @@ ImageData* BaseRenderingContext2D::getImageData(
   }
 
   IntRect image_data_rect(sx, sy, sw, sh);
-  bool hasImageBuffer = CanCreateCanvas2DBuffer();
+  bool hasResourceProvider = CanCreateCanvas2dResourceProvider();
   ImageDataColorSettings color_settings =
       GetColorSettingsAsImageDataColorSettings();
-  if (!hasImageBuffer || isContextLost()) {
+  if (!hasResourceProvider || isContextLost()) {
     ImageData* result =
         ImageData::Create(image_data_rect.Size(), &color_settings);
     if (!result)
@@ -1671,8 +1681,8 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
     return;
   }
 
-  bool hasImageBuffer = CanCreateCanvas2DBuffer();
-  if (!hasImageBuffer)
+  bool hasResourceProvider = CanCreateCanvas2dResourceProvider();
+  if (!hasResourceProvider)
     return;
 
   if (dirty_width < 0) {
@@ -1695,7 +1705,7 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
 
   Optional<ScopedUsHistogramTimer> timer;
   if (!IsPaint2D()) {
-    if (hasImageBuffer && IsAccelerated()) {
+    if (hasResourceProvider && IsAccelerated()) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, scoped_us_counter_gpu,
           ("Blink.Canvas.PutImageData.GPU", 0, 10000000, 50));
@@ -1717,8 +1727,8 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
   // Color / format convert ImageData to context 2D settings if needed. Color /
   // format conversion is not needed only if context 2D and ImageData are both
   // in sRGB color space and use 8-8-8-8 pixel storage format. We use RGBA pixel
-  // order for both ImageData and ImageBuffer, therefore no additional swizzling
-  // is needed.
+  // order for both ImageData and CanvasResourceProvider, therefore no
+  // additional swizzling is needed.
   CanvasColorParams data_color_params = data->GetCanvasColorParams();
   CanvasColorParams context_color_params =
       CanvasColorParams(ColorParams().ColorSpace(), PixelFormat(), kNonOpaque);

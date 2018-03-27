@@ -30,6 +30,7 @@
 
 namespace blink {
 
+class FrameScheduler;
 class InterfaceRegistry;
 class WebAssociatedURLLoader;
 class WebAutofillClient;
@@ -41,7 +42,6 @@ class WebDoubleSize;
 class WebDOMEvent;
 class WebFrameClient;
 class WebFrameWidget;
-class WebFrameScheduler;
 class WebInputMethodController;
 class WebPerformance;
 class WebRange;
@@ -157,10 +157,28 @@ class WebLocalFrame : public WebFrame {
   // Sets the name of this frame.
   virtual void SetName(const WebString&) = 0;
 
+  // Notifies this frame about a user activation from the browser side.
+  virtual void NotifyUserActivation() = 0;
+
   // Hierarchy ----------------------------------------------------------
+
+  // Returns true if the current frame is a local root.
+  virtual bool IsLocalRoot() const = 0;
+
+  // Returns true if the current frame is a provisional frame.
+  // TODO(https://crbug.com/578349): provisional frames are a hack that should
+  // be removed.
+  virtual bool IsProvisional() const = 0;
 
   // Get the highest-level LocalFrame in this frame's in-process subtree.
   virtual WebLocalFrame* LocalRoot() = 0;
+
+  // Returns the WebFrameWidget associated with this frame if there is one or
+  // nullptr otherwise.
+  // TODO(dcheng): The behavior of this will be changing to always return a
+  // WebFrameWidget. Use IsLocalRoot() if it's important to tell if a frame is a
+  // local root.
+  virtual WebFrameWidget* FrameWidget() const = 0;
 
   // Returns the frame identified by the given name.  This method supports
   // pseudo-names like _self, _top, and _blank and otherwise performs the same
@@ -478,6 +496,12 @@ class WebLocalFrame : public WebFrame {
   // Logs to the console associated with this frame.
   virtual void AddMessageToConsole(const WebConsoleMessage&) = 0;
 
+  // Expose modal dialog methods to avoid having to go through JavaScript.
+  virtual void Alert(const WebString& message) = 0;
+  virtual bool Confirm(const WebString& message) = 0;
+  virtual WebString Prompt(const WebString& message,
+                           const WebString& default_value) = 0;
+
   // Editing -------------------------------------------------------------
 
   virtual void SetMarkedText(const WebString& text,
@@ -708,10 +732,6 @@ class WebLocalFrame : public WebFrame {
   // Returns the node that the context menu opened over.
   virtual WebNode ContextMenuNode() const = 0;
 
-  // Returns the WebFrameWidget associated with this frame if there is one or
-  // nullptr otherwise.
-  virtual WebFrameWidget* FrameWidget() const = 0;
-
   // Copy to the clipboard the image located at a particular point in visual
   // viewport coordinates.
   virtual void CopyImageAt(const WebPoint&) = 0;
@@ -737,14 +757,9 @@ class WebLocalFrame : public WebFrame {
   // This will be removed following the deprecation.
   virtual void UsageCountChromeLoadTimes(const WebString& metric) = 0;
 
-  // Media engagement -------------------------------------------------------
-
-  // Sets the high media engagement bit for this frame's document.
-  virtual void SetHasHighMediaEngagement(bool has_high_media_engagement) = 0;
-
   // Scheduling ---------------------------------------------------------------
 
-  virtual WebFrameScheduler* Scheduler() const = 0;
+  virtual FrameScheduler* Scheduler() const = 0;
 
   // Task queues --------------------------------------------------------------
 

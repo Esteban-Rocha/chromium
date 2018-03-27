@@ -30,10 +30,10 @@ void ManifestManagerHost::RenderFrameDeleted(
     OnConnectionError();
 }
 
-void ManifestManagerHost::GetManifest(const GetManifestCallback& callback) {
+void ManifestManagerHost::GetManifest(GetManifestCallback callback) {
   auto& manifest_manager = GetManifestManager();
-  int request_id =
-      callbacks_.Add(std::make_unique<GetManifestCallback>(callback));
+  int request_id = callbacks_.Add(
+      std::make_unique<GetManifestCallback>(std::move(callback)));
   manifest_manager.RequestManifest(
       base::BindOnce(&ManifestManagerHost::OnRequestManifestResponse,
                      base::Unretained(this), request_id));
@@ -67,7 +67,7 @@ void ManifestManagerHost::OnConnectionError() {
   }
   callbacks_.Clear();
   for (auto& callback : callbacks)
-    callback.Run(GURL(), Manifest());
+    std::move(callback).Run(GURL(), Manifest());
 }
 
 void ManifestManagerHost::OnRequestManifestResponse(int request_id,
@@ -75,7 +75,7 @@ void ManifestManagerHost::OnRequestManifestResponse(int request_id,
                                                     const Manifest& manifest) {
   auto callback = std::move(*callbacks_.Lookup(request_id));
   callbacks_.Remove(request_id);
-  callback.Run(url, manifest);
+  std::move(callback).Run(url, manifest);
 }
 
 void ManifestManagerHost::ManifestUrlChanged(

@@ -10,7 +10,7 @@
 #include "components/viz/service/display/direct_renderer.h"
 #include "components/viz/service/display/sync_query_collection.h"
 #include "components/viz/service/viz_service_export.h"
-#include "gpu/vulkan/features.h"
+#include "gpu/vulkan/buildflags.h"
 #include "ui/latency/latency_info.h"
 
 class SkNWayCanvas;
@@ -26,6 +26,7 @@ class PictureDrawQuad;
 class SolidColorDrawQuad;
 class TextureDrawQuad;
 class TileDrawQuad;
+struct DrawRenderPassDrawQuadParams;
 
 class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
  public:
@@ -83,13 +84,13 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
   void DrawTextureQuad(const TextureDrawQuad* quad);
   void DrawTileQuad(const TileDrawQuad* quad);
   void DrawUnsupportedQuad(const DrawQuad* quad);
+  bool CalculateRPDQParams(sk_sp<SkImage> src_image,
+                           const RenderPassDrawQuad* quad,
+                           DrawRenderPassDrawQuadParams* params);
+
   bool ShouldApplyBackgroundFilters(
       const RenderPassDrawQuad* quad,
       const cc::FilterOperations* background_filters) const;
-  sk_sp<SkImage> ApplyImageFilter(SkImageFilter* filter,
-                                  const RenderPassDrawQuad* quad,
-                                  const SkBitmap& to_filter,
-                                  SkIRect* auto_bounds) const;
   gfx::Rect GetBackdropBoundingBoxForRenderPassQuad(
       const RenderPassDrawQuad* quad,
       const gfx::Transform& contents_device_transform,

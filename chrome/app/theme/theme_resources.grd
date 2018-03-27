@@ -54,7 +54,6 @@
         <structure type="chrome_scaled_image" name="IDR_BACK_P" file="common/browser_back_pressed.png" />
       </if>
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_EXTENSION_SCRIPT" file="common/blocked_extension_script.png" />
-      <structure type="chrome_scaled_image" name="IDR_BLOCKED_POPUPS" file="common/blocked_popups.png" />
       <if expr="chromeos">
         <structure type="chrome_scaled_image" name="IDR_BLUETOOTH_KEYBOARD" file="cros/bluetooth_pairing_keyboard.png" />
         <structure type="chrome_scaled_image" name="IDR_BLUETOOTH_MOUSE" file="cros/bluetooth_pairing_mouse.png" />
@@ -87,15 +86,17 @@
       </if>
       <structure type="chrome_scaled_image" name="IDR_COOKIES" file="common/cookies.png" />
       <structure type="chrome_scaled_image" name="IDR_COOKIE_STORAGE_ICON" file="common/cookie_storage.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_BOTTOM_LEFT" file="common/developer_mode_highlight_bottom_left.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_BOTTOM" file="common/developer_mode_highlight_bottom.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_BOTTOM_RIGHT" file="common/developer_mode_highlight_bottom_right.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_CENTER" file="common/developer_mode_highlight_center.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_LEFT" file="common/developer_mode_highlight_left.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_RIGHT" file="common/developer_mode_highlight_right.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_TOP_LEFT" file="common/developer_mode_highlight_top_left.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_TOP" file="common/developer_mode_highlight_top.png" />
-      <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_TOP_RIGHT" file="common/developer_mode_highlight_top_right.png" />
+      <if expr="is_macosx">
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_BOTTOM_LEFT" file="common/developer_mode_highlight_bottom_left.png" />
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_BOTTOM" file="common/developer_mode_highlight_bottom.png" />
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_BOTTOM_RIGHT" file="common/developer_mode_highlight_bottom_right.png" />
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_CENTER" file="common/developer_mode_highlight_center.png" />
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_LEFT" file="common/developer_mode_highlight_left.png" />
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_RIGHT" file="common/developer_mode_highlight_right.png" />
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_TOP_LEFT" file="common/developer_mode_highlight_top_left.png" />
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_TOP" file="common/developer_mode_highlight_top.png" />
+        <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_TOP_RIGHT" file="common/developer_mode_highlight_top_right.png" />
+      </if>
       <if expr="chromeos">
         <structure type="chrome_scaled_image" name="IDR_DEVICE_DISABLED" file="cros/device_disabled.png" />
       </if>

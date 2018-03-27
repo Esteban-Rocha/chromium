@@ -11,6 +11,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/win/windows_version.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/display/win/screen_win.h"
 
 namespace ui {
 namespace win {
@@ -101,8 +102,7 @@ bool DirectManipulationHelper::Initialize() {
       DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_INERTIA |
       DIRECTMANIPULATION_CONFIGURATION_RAILS_X |
       DIRECTMANIPULATION_CONFIGURATION_RAILS_Y |
-      DIRECTMANIPULATION_CONFIGURATION_SCALING |
-      DIRECTMANIPULATION_CONFIGURATION_SCALING_INERTIA;
+      DIRECTMANIPULATION_CONFIGURATION_SCALING;
 
   hr = viewport_->ActivateConfiguration(configuration);
   if (!SUCCEEDED(hr))
@@ -151,6 +151,10 @@ void DirectManipulationHelper::Deactivate() {
 bool DirectManipulationHelper::OnPointerHitTest(
     WPARAM w_param,
     WindowEventTarget* event_target) {
+  // Update the device scale factor.
+  event_handler_->SetDeviceScaleFactor(
+      display::win::ScreenWin::GetScaleFactorForHWND(window_));
+
   // Only DM_POINTERHITTEST can be the first message of input sequence of
   // touchpad input.
   // TODO(chaopeng) Check if Windows API changes:
@@ -194,6 +198,10 @@ bool DirectManipulationHelper::PollForNextEvent() {
   return need_poll_events_;
 }
 
+void DirectManipulationHelper::SetDeviceScaleFactorForTesting(float factor) {
+  event_handler_->SetDeviceScaleFactor(factor);
+}
+
 // DirectManipulationHandler
 DirectManipulationHandler::DirectManipulationHandler() {
   NOTREACHED();
@@ -204,6 +212,34 @@ DirectManipulationHandler::DirectManipulationHandler(
     : helper_(helper) {}
 
 DirectManipulationHandler::~DirectManipulationHandler() {}
+
+void DirectManipulationHandler::TransitionToState(Gesture new_gesture_state) {
+  if (gesture_state_ == new_gesture_state)
+    return;
+
+  Gesture previous_gesture_state = gesture_state_;
+  gesture_state_ = new_gesture_state;
+
+  if (new_gesture_state == Gesture::kPinch) {
+    // kScroll, kNone -> kPinch, PinchBegin.
+    // Pinch gesture may begin with some scroll events.
+    event_target_->ApplyPinchZoomBegin();
+    return;
+  }
+
+  if (new_gesture_state == Gesture::kNone) {
+    // kScroll -> kNone do nothing.
+    if (previous_gesture_state == Gesture::kScroll)
+      return;
+    // kPinch -> kNone, PinchEnd.
+    event_target_->ApplyPinchZoomEnd();
+    return;
+  }
+
+  // kNone -> kScroll do nothing. Not allow kPinch -> kScroll.
+  DCHECK_EQ(previous_gesture_state, Gesture::kNone);
+  DCHECK_EQ(new_gesture_state, Gesture::kScroll);
+}
 
 HRESULT DirectManipulationHandler::OnViewportStatusChanged(
     IDirectManipulationViewport* viewport,
@@ -226,6 +262,8 @@ HRESULT DirectManipulationHandler::OnViewportStatusChanged(
     last_scale_ = 1.0f;
     last_x_offset_ = 0.0f;
     last_y_offset_ = 0.0f;
+
+    TransitionToState(Gesture::kNone);
   }
 
   return hr;
@@ -236,6 +274,8 @@ HRESULT DirectManipulationHandler::OnViewportUpdated(
   // Nothing to do here.
   return S_OK;
 }
+
+namespace {
 
 bool FloatEquals(float f1, float f2) {
   // The idea behind this is to use this fraction of the larger of the
@@ -252,6 +292,8 @@ bool DifferentLessThanOne(int f1, int f2) {
   return abs(f1 - f2) < 1;
 }
 
+}  // namespace
+
 HRESULT DirectManipulationHandler::OnContentUpdated(
     IDirectManipulationViewport* viewport,
     IDirectManipulationContent* content) {
@@ -261,8 +303,8 @@ HRESULT DirectManipulationHandler::OnContentUpdated(
     return hr;
 
   float scale = xform[0];
-  int x_offset = xform[4];
-  int y_offset = xform[5];
+  int x_offset = xform[4] / device_scale_factor_;
+  int y_offset = xform[5] / device_scale_factor_;
 
   // Ignore if Windows pass scale=0 to us.
   if (scale == 0.0f) {
@@ -284,8 +326,22 @@ HRESULT DirectManipulationHandler::OnContentUpdated(
 
   DCHECK_NE(last_scale_, 0.0f);
 
+  // DirectManipulation will send xy transform move to down-right which is noise
+  // when pinch zoom. We should consider the gesture either Scroll or Pinch at
+  // one sequence. But Pinch gesture may begin with some scroll transform since
+  // DirectManipulation recognition maybe wrong at start if the user pinch with
+  // slow motion. So we allow kScroll -> kPinch.
+
   // Consider this is a Scroll when scale factor equals 1.0.
   if (FloatEquals(scale, 1.0f)) {
+    if (gesture_state_ == Gesture::kNone)
+      TransitionToState(Gesture::kScroll);
+  } else {
+    // Pinch gesture may begin with some scroll events.
+    TransitionToState(Gesture::kPinch);
+  }
+
+  if (gesture_state_ == Gesture::kScroll) {
     event_target_->ApplyPanGestureScroll(x_offset - last_x_offset_,
                                          y_offset - last_y_offset_);
   } else {
@@ -303,6 +359,11 @@ void DirectManipulationHandler::SetWindowEventTarget(
     WindowEventTarget* event_target) {
   DCHECK(event_target);
   event_target_ = event_target;
+}
+
+void DirectManipulationHandler::SetDeviceScaleFactor(
+    float device_scale_factor) {
+  device_scale_factor_ = device_scale_factor;
 }
 
 }  // namespace win

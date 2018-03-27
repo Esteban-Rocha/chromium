@@ -68,6 +68,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/crx_file/id_util.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -324,22 +325,9 @@ ExtensionService::ExtensionService(Profile* profile,
 
   // Set up the ExtensionUpdater.
   if (autoupdate_enabled) {
-    int update_frequency = extensions::kDefaultUpdateFrequencySeconds;
-    bool is_extensions_update_frequency_switch_used =
-        command_line->HasSwitch(switches::kExtensionsUpdateFrequency);
-    if (is_extensions_update_frequency_switch_used) {
-      base::StringToInt(command_line->GetSwitchValueASCII(
-          switches::kExtensionsUpdateFrequency),
-          &update_frequency);
-    }
-    UMA_HISTOGRAM_BOOLEAN("Extensions.UpdateFrequencyCommandLineFlagIsUsed",
-                          is_extensions_update_frequency_switch_used);
     updater_.reset(new extensions::ExtensionUpdater(
-        this,
-        extension_prefs,
-        profile->GetPrefs(),
-        profile,
-        update_frequency,
+        this, extension_prefs, profile->GetPrefs(), profile,
+        extensions::kDefaultUpdateFrequencySeconds,
         extensions::ExtensionsBrowserClient::Get()->GetExtensionCache(),
         base::Bind(ChromeExtensionDownloaderFactory::CreateForProfile,
                    profile)));

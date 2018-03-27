@@ -8,14 +8,15 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ptr_util.h"
+#include "base/numerics/ranges.h"
 #include "chrome/browser/extensions/extension_message_bubble_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_action_view_controller.h"
-#include "chrome/browser/ui/toolbar/toolbar_actions_bar.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
@@ -30,13 +31,13 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/nine_image_painter_factory.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/views/bubble/bubble_dialog_delegate.h"
 #include "ui/views/controls/resize_area.h"
-#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -81,9 +82,6 @@ BrowserActionsContainer::BrowserActionsContainer(
       AddChildView(resize_area_);
     }
     resize_animation_.reset(new gfx::SlideAnimation(this));
-    const int kWarningImages[] = IMAGE_GRID(IDR_DEVELOPER_MODE_HIGHLIGHT);
-    warning_highlight_painter_ =
-        views::Painter::CreateImageGridPainter(kWarningImages);
   }
 }
 
@@ -309,10 +307,10 @@ gfx::Size BrowserActionsContainer::CalculatePreferredSize() const {
                             ? toolbar_actions_bar_->GetFullSize().width()
                             : resize_starting_width_ - resize_amount_;
   // In either case, clamp it within the max/min bounds.
-  preferred_width = std::min(
-      std::max(toolbar_actions_bar_->GetMinimumWidth(), preferred_width),
-      toolbar_actions_bar_->GetMaximumWidth());
-  return gfx::Size(preferred_width, ToolbarActionsBar::IconHeight());
+  preferred_width = base::ClampToRange(preferred_width,
+                                       toolbar_actions_bar_->GetMinimumWidth(),
+                                       toolbar_actions_bar_->GetMaximumWidth());
+  return gfx::Size(preferred_width, ToolbarActionsBar::GetViewSize().height());
 }
 
 int BrowserActionsContainer::GetHeightForWidth(int width) const {
@@ -323,11 +321,11 @@ int BrowserActionsContainer::GetHeightForWidth(int width) const {
 
 gfx::Size BrowserActionsContainer::GetMinimumSize() const {
   return gfx::Size(toolbar_actions_bar_->GetMinimumWidth(),
-                   ToolbarActionsBar::IconHeight());
+                   ToolbarActionsBar::GetViewSize().height());
 }
 
 void BrowserActionsContainer::Layout() {
-  if (toolbar_actions_bar_->suppress_layout())
+  if (toolbar_actions_bar()->suppress_layout())
     return;
 
   if (toolbar_action_views_.empty()) {
@@ -341,8 +339,8 @@ void BrowserActionsContainer::Layout() {
 
   // The range of visible icons, from start_index (inclusive) to end_index
   // (exclusive).
-  size_t start_index = toolbar_actions_bar_->GetStartIndexInBounds();
-  size_t end_index = toolbar_actions_bar_->GetEndIndexInBounds();
+  size_t start_index = toolbar_actions_bar()->GetStartIndexInBounds();
+  size_t end_index = toolbar_actions_bar()->GetEndIndexInBounds();
 
   // Now draw the icons for the actions in the available space. Once all the
   // variables are in place, the layout works equally well for the main and
@@ -352,8 +350,14 @@ void BrowserActionsContainer::Layout() {
     if (i < start_index || i >= end_index) {
       view->SetVisible(false);
     } else {
-      view->SetBoundsRect(toolbar_actions_bar_->GetFrameForIndex(i));
+      view->SetBoundsRect(toolbar_actions_bar()->GetFrameForIndex(i));
       view->SetVisible(true);
+      if (!ShownInsideMenu()) {
+        view->AnimateInkDrop(toolbar_actions_bar()->is_highlighting()
+                                 ? views::InkDropState::ACTIVATED
+                                 : views::InkDropState::HIDDEN,
+                             nullptr);
+      }
     }
   }
 }
@@ -380,53 +384,32 @@ int BrowserActionsContainer::OnDragUpdated(
   // If there are no visible actions (such as when dragging an icon to an empty
   // overflow/main container), then 0, 0 for row, column is correct.
   if (VisibleBrowserActions() != 0) {
-    // Figure out where to display the indicator. This is a complex calculation:
+    // Figure out where to display the indicator.
 
-    // First, we subtract out the padding to the left of the icon area. If
-    // we're right-to-left, we also mirror the event.x() so that our
-    // calculations are consistent with left-to-right.
-    int offset_into_icon_area =
-        GetMirroredXInView(event.x()) -
-            GetLayoutConstant(TOOLBAR_STANDARD_SPACING);
+    // First, since we want to switch from displaying the indicator before an
+    // icon to after it when the event passes the midpoint of the icon, add
+    // (icon width / 2) and divide by the icon width. This will convert the
+    // event coordinate into the index of the icon we want to display the
+    // indicator before. We also mirror the event.x() so that our calculations
+    // are consistent with left-to-right.
+    const auto size = ToolbarActionsBar::GetViewSize();
+    const int offset_into_icon_area =
+        GetMirroredXInView(event.x()) + (size.width() / 2);
+    const int before_icon_unclamped = offset_into_icon_area / size.width();
 
     // Next, figure out what row we're on. This only matters for overflow mode,
     // but the calculation is the same for both.
-    row_index = event.y() / ToolbarActionsBar::IconHeight();
+    row_index = event.y() / size.height();
 
     // Sanity check - we should never be on a different row in the main
     // container.
     DCHECK(ShownInsideMenu() || row_index == 0);
 
-    // Next, we determine which icon to place the indicator in front of. We want
-    // to place the indicator in front of icon n when the cursor is between the
-    // midpoints of icons (n - 1) and n.  To do this we take the offset into the
-    // icon area and transform it as follows:
-    //
-    // Real icon area:
-    //   0   a     *  b        c
-    //   |   |        |        |
-    //   |[IC|ON]  [IC|ON]  [IC|ON]
-    // We want to be before icon 0 for 0 < x <= a, icon 1 for a < x <= b, etc.
-    // Here the "*" represents the offset into the icon area, and since it's
-    // between a and b, we want to return "1".
-    //
-    // Transformed "icon area":
-    //   0        a     *  b        c
-    //   |        |        |        |
-    //   |[ICON]  |[ICON]  |[ICON]  |
-    // If we shift both our offset and our divider points later by half an icon
-    // plus one spacing unit, then it becomes very easy to calculate how many
-    // divider points we've passed, because they're the multiples of "one icon
-    // plus padding".
-    int before_icon_unclamped =
-        (offset_into_icon_area + (ToolbarActionsBar::IconWidth(false) / 2) +
-        platform_settings().item_spacing) / ToolbarActionsBar::IconWidth(true);
-
     // We need to figure out how many icons are visible on the relevant row.
     // In the main container, this will just be the visible actions.
     int visible_icons_on_row = VisibleBrowserActionsAfterAnimation();
     if (ShownInsideMenu()) {
-      int icons_per_row = platform_settings().icons_per_overflow_menu_row;
+      const int icons_per_row = platform_settings().icons_per_overflow_menu_row;
       // If this is the final row of the overflow, then this is the remainder of
       // visible icons. Otherwise, it's a full row (kIconsPerRow).
       visible_icons_on_row =
@@ -440,13 +423,14 @@ int BrowserActionsContainer::OnDragUpdated(
     // not (num icons - 1), because we represent the indicator being past the
     // last icon as being "before the (last + 1) icon".
     before_icon_in_row =
-        std::min(std::max(before_icon_unclamped, 0), visible_icons_on_row);
+        base::ClampToRange(before_icon_unclamped, 0, visible_icons_on_row);
   }
 
   if (!drop_position_.get() ||
       !(drop_position_->row == row_index &&
         drop_position_->icon_in_row == before_icon_in_row)) {
-    drop_position_.reset(new DropPosition(row_index, before_icon_in_row));
+    drop_position_ =
+        std::make_unique<DropPosition>(row_index, before_icon_in_row);
     SchedulePaint();
   }
 
@@ -509,10 +493,10 @@ void BrowserActionsContainer::WriteDragDataForView(View* sender,
                    });
   DCHECK(it != toolbar_action_views_.cend());
   ToolbarActionViewController* view_controller = (*it)->view_controller();
-  gfx::Size size(ToolbarActionsBar::IconWidth(false),
-                 ToolbarActionsBar::IconHeight());
   data->provider().SetDragImage(
-      view_controller->GetIcon(GetCurrentWebContents(), size).AsImageSkia(),
+      view_controller
+          ->GetIcon(GetCurrentWebContents(), ToolbarActionsBar::GetViewSize())
+          .AsImageSkia(),
       press_pt.OffsetFromOrigin());
   // Fill in the remaining info.
   BrowserActionDragData drag_data(view_controller->GetId(),
@@ -590,42 +574,35 @@ content::WebContents* BrowserActionsContainer::GetCurrentWebContents() {
 }
 
 void BrowserActionsContainer::OnPaint(gfx::Canvas* canvas) {
-  // If the views haven't been initialized yet, wait for the next call to
-  // paint (one will be triggered by entering highlight mode).
-  if (toolbar_actions_bar_->is_highlighting() &&
-      !toolbar_action_views_.empty() && !ShownInsideMenu()) {
-    views::Painter::PaintPainterAt(canvas, warning_highlight_painter_.get(),
-                                   GetLocalBounds());
-  }
-
   // TODO(sky/glen): Instead of using a drop indicator, animate the icons while
   // dragging (like we do for tab dragging).
-  if (drop_position_.get()) {
+  if (drop_position_) {
     // The two-pixel width drop indicator.
-    static const int kDropIndicatorWidth = 2;
+    constexpr int kDropIndicatorWidth = 2;
 
     // Convert back to a pixel offset into the container.  First find the X
     // coordinate of the drop icon.
-    const int drop_icon_x = GetLayoutConstant(TOOLBAR_STANDARD_SPACING) +
-        (drop_position_->icon_in_row * ToolbarActionsBar::IconWidth(true));
-    // Next, find the space before the drop icon.
-    const int space_before_drop_icon = platform_settings().item_spacing;
-    // Now place the drop indicator halfway between this and the end of the
-    // previous icon.  If there is an odd amount of available space between the
-    // two icons (or the icon and the address bar) after subtracting the drop
-    // indicator width, this calculation puts the extra pixel on the left side
-    // of the indicator, since when the indicator is between the address bar and
-    // the first icon, it looks better closer to the icon.
-    const int drop_indicator_x = drop_icon_x -
-        ((space_before_drop_icon + kDropIndicatorWidth) / 2);
-    const int row_height = ToolbarActionsBar::IconHeight();
+    const auto size = ToolbarActionsBar::GetViewSize();
+    const int drop_icon_x =
+        drop_position_->icon_in_row * size.width() - (kDropIndicatorWidth / 2);
+
+    // Next, clamp so the indicator doesn't touch the adjoining toolbar items.
+    const int drop_indicator_x =
+        base::ClampToRange(drop_icon_x, 1, width() - kDropIndicatorWidth - 1);
+
+    const int row_height = size.height();
     const int drop_indicator_y = row_height * drop_position_->row;
     gfx::Rect indicator_bounds = GetMirroredRect(gfx::Rect(
         drop_indicator_x, drop_indicator_y, kDropIndicatorWidth, row_height));
 
     // Color of the drop indicator.
-    static const SkColor kDropIndicatorColor = SK_ColorBLACK;
-    canvas->FillRect(indicator_bounds, kDropIndicatorColor);
+    // TODO(afakhry): This operation is done in several places, try to find a
+    // centeral location for it. Part of themes work for
+    // https://crbug.com/820495.
+    const SkColor drop_indicator_color = color_utils::BlendTowardOppositeLuma(
+        GetThemeProvider()->GetColor(ThemeProperties::COLOR_TOOLBAR),
+        SK_AlphaOPAQUE);
+    canvas->FillRect(indicator_bounds, drop_indicator_color);
   }
 }
 

@@ -37,10 +37,6 @@ class WindowManagerClient;
 class WindowTreeClient;
 }  // namespace aura
 
-namespace app_list {
-class AppList;
-}  // namespace app_list
-
 namespace display {
 class DisplayChangeObserver;
 class DisplayConfigurator;
@@ -81,9 +77,9 @@ namespace ash {
 class AcceleratorController;
 class AccessibilityController;
 class AccessibilityDelegate;
+class AccessibilityFocusRingController;
 class AshDisplayController;
 class AppListControllerImpl;
-class AppListDelegateImpl;
 class NativeCursorManagerAsh;
 class AshTouchTransformController;
 class AutoclickController;
@@ -312,8 +308,10 @@ class ASH_EXPORT Shell : public SessionObserver,
   AccessibilityDelegate* accessibility_delegate() {
     return accessibility_delegate_.get();
   }
+  AccessibilityFocusRingController* accessibility_focus_ring_controller() {
+    return accessibility_focus_ring_controller_.get();
+  }
   ::wm::ActivationClient* activation_client();
-  app_list::AppList* app_list() { return app_list_.get(); }
   AppListControllerImpl* app_list_controller() {
     return app_list_controller_.get();
   }
@@ -563,6 +561,9 @@ class ASH_EXPORT Shell : public SessionObserver,
   // window gets snapped and activated).
   void NotifySplitViewModeStarting();
 
+  // Notifies observers that split view mode has been started.
+  void NotifySplitViewModeStarted();
+
   // Notifies observers that split view mode has ended.
   void NotifySplitViewModeEnded();
 
@@ -662,6 +663,8 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<AcceleratorController> accelerator_controller_;
   std::unique_ptr<AccessibilityController> accessibility_controller_;
   std::unique_ptr<AccessibilityDelegate> accessibility_delegate_;
+  std::unique_ptr<AccessibilityFocusRingController>
+      accessibility_focus_ring_controller_;
   std::unique_ptr<AppListControllerImpl> app_list_controller_;
   std::unique_ptr<AshDisplayController> ash_display_controller_;
   std::unique_ptr<BacklightsForcedOffSetter> backlights_forced_off_setter_;
@@ -707,7 +710,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<::wm::ShadowController> shadow_controller_;
   std::unique_ptr<::wm::VisibilityController> visibility_controller_;
   std::unique_ptr<::wm::WindowModalityController> window_modality_controller_;
-  std::unique_ptr<app_list::AppList> app_list_;
   std::unique_ptr<PrefService> local_state_;
   std::unique_ptr<views::corewm::TooltipController> tooltip_controller_;
   std::unique_ptr<PowerButtonController> power_button_controller_;
@@ -813,8 +815,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   aura::Window* scoped_root_window_for_new_windows_ = nullptr;
 
   std::unique_ptr<ImmersiveHandlerFactoryAsh> immersive_handler_factory_;
-
-  std::unique_ptr<AppListDelegateImpl> app_list_delegate_impl_;
 
   std::unique_ptr<MessageCenterController> message_center_controller_;
 

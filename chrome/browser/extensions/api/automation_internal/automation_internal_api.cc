@@ -23,7 +23,6 @@
 #include "chrome/common/extensions/api/automation_api_constants.h"
 #include "chrome/common/extensions/api/automation_internal.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
-#include "chrome/common/extensions/manifest_handlers/automation.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
@@ -36,6 +35,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "extensions/common/extension_messages.h"
+#include "extensions/common/manifest_handlers/automation.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_enum_util.h"
@@ -167,8 +167,10 @@ class AutomationWebContentsObserver
   void AccessibilityEventReceived(
       const std::vector<content::AXEventNotificationDetails>& details)
       override {
+    std::vector<ExtensionMsg_AccessibilityEventParams> events;
     for (const auto& event : details) {
-      ExtensionMsg_AccessibilityEventParams params;
+      events.emplace_back();
+      ExtensionMsg_AccessibilityEventParams& params = events.back();
       params.tree_id = event.ax_tree_id;
       params.id = event.id;
       params.event_type = event.event_type;
@@ -178,10 +180,9 @@ class AutomationWebContentsObserver
 #if defined(USE_AURA)
       params.mouse_location = aura::Env::GetInstance()->last_mouse_location();
 #endif
-
-      AutomationEventRouter* router = AutomationEventRouter::GetInstance();
-      router->DispatchAccessibilityEvent(params);
     }
+    AutomationEventRouter* router = AutomationEventRouter::GetInstance();
+    router->DispatchAccessibilityEvents(events);
   }
 
   void AccessibilityLocationChangesReceived(

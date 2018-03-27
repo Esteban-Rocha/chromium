@@ -43,10 +43,9 @@
 #include "media/base/test_data_util.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_frame.h"
-#include "media/filters/ffmpeg_glue.h"
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "media/filters/ivf_parser.h"
-#include "media/gpu/features.h"
+#include "media/gpu/buildflags.h"
 #include "media/gpu/gpu_video_encode_accelerator_factory.h"
 #include "media/gpu/video_accelerator_unittest_helpers.h"
 #include "media/video/fake_video_encode_accelerator.h"
@@ -728,7 +727,6 @@ VideoFrameQualityValidator::VideoFrameQualityValidator(
 void VideoFrameQualityValidator::Initialize(const gfx::Size& coded_size,
                                             const gfx::Rect& visible_size) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  FFmpegGlue::InitializeFFmpeg();
 
   gfx::Size natural_size(visible_size.size());
   // The default output format of ffmpeg video decoder is YV12.
@@ -751,7 +749,8 @@ void VideoFrameQualityValidator::Initialize(const gfx::Size& coded_size,
       base::Bind(&VideoFrameQualityValidator::InitializeCB,
                  base::Unretained(this)),
       base::Bind(&VideoFrameQualityValidator::VerifyOutputFrame,
-                 base::Unretained(this)));
+                 base::Unretained(this)),
+      VideoDecoder::WaitingForDecryptionKeyCB());
 }
 
 void VideoFrameQualityValidator::InitializeCB(bool success) {

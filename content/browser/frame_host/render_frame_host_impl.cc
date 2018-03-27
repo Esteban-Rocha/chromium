@@ -131,7 +131,7 @@
 #include "media/audio/audio_manager.h"
 #include "media/base/media_switches.h"
 #include "media/base/user_input_monitor.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/mojo/interfaces/remoting.mojom.h"
 #include "media/mojo/services/media_interface_provider.h"
 #include "media/mojo/services/media_metrics_provider.h"
@@ -164,11 +164,7 @@
 #if defined(OS_ANDROID)
 #include "content/browser/android/java_interfaces_impl.h"
 #include "content/browser/frame_host/render_frame_host_android.h"
-#include "content/browser/media/android/media_player_renderer.h"
 #include "content/public/browser/android/java_interfaces.h"
-#include "media/base/audio_renderer_sink.h"
-#include "media/base/video_renderer_sink.h"
-#include "media/mojo/services/mojo_renderer_service.h"  // nogncheck
 #endif
 
 #if defined(OS_MACOSX)
@@ -195,10 +191,6 @@ int g_next_javascript_callback_id = 1;
 // Whether to allow injecting javascript into any kind of frame (for Android
 // WebView).
 bool g_allow_injecting_javascript = false;
-
-// Whether to allow data URL navigations for Android WebView.
-// TODO(meacer): Remove after PlzNavigate ships.
-bool g_allow_data_url_navigation = false;
 #endif
 
 // The (process id, routing id) pair that identifies one RenderFrame.
@@ -392,37 +384,6 @@ RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
 // static
 void RenderFrameHost::AllowInjectingJavaScriptForAndroidWebView() {
   g_allow_injecting_javascript = true;
-}
-
-// static
-void RenderFrameHost::AllowDataUrlNavigationForAndroidWebView() {
-  g_allow_data_url_navigation = true;
-}
-
-// static
-bool RenderFrameHost::IsDataUrlNavigationAllowedForAndroidWebView() {
-  return g_allow_data_url_navigation;
-}
-
-void CreateMediaPlayerRenderer(int process_id,
-                               int routing_id,
-                               RenderFrameHostDelegate* delegate,
-                               media::mojom::RendererRequest request) {
-  std::unique_ptr<MediaPlayerRenderer> renderer =
-      std::make_unique<MediaPlayerRenderer>(process_id, routing_id,
-                                            delegate->GetAsWebContents());
-
-  // base::Unretained is safe here because the lifetime of the MediaPlayerRender
-  // is tied to the lifetime of the MojoRendererService.
-  media::MojoRendererService::InitiateSurfaceRequestCB surface_request_cb =
-      base::Bind(&MediaPlayerRenderer::InitiateScopedSurfaceRequest,
-                 base::Unretained(renderer.get()));
-
-  media::MojoRendererService::Create(
-      nullptr,  // CDMs are not supported.
-      nullptr,  // Manages its own audio_sink.
-      nullptr,  // Does not use video_sink. See StreamTextureWrapper instead.
-      std::move(renderer), surface_request_cb, std::move(request));
 }
 #endif  // defined(OS_ANDROID)
 
@@ -1570,9 +1531,6 @@ void RenderFrameHostImpl::DidCommitProvisionalLoad(
                "frame_tree_node", frame_tree_node_->frame_tree_node_id(), "url",
                validated_params->url.possibly_invalid_spec());
 
-  if (navigation_request_)
-    was_discarded_ = navigation_request_->request_params().was_discarded;
-
   // Notify the resource scheduler of the navigation committing.
   NotifyResourceSchedulerOfNavigation(process->GetID(), *validated_params);
 
@@ -1945,11 +1903,11 @@ void RenderFrameHostImpl::OnSwappedOut() {
   ClearAllWebUI();
 
   // If this is a main frame RFH that's about to be deleted, update its RVH's
-  // swapped-out state here. https://crbug.com/505887
-  if (frame_tree_node_->IsMainFrame()) {
-    render_view_host_->set_is_active(false);
+  // swapped-out state here. https://crbug.com/505887.  This should only be
+  // done if the RVH hasn't been already reused and marked as active by another
+  // navigation.  See https://crbug.com/823567.
+  if (frame_tree_node_->IsMainFrame() && !render_view_host_->is_active())
     render_view_host_->set_is_swapped_out(true);
-  }
 
   bool deleted =
       frame_tree_node_->render_manager()->DeleteFromPendingList(this);
@@ -2044,7 +2002,6 @@ void RenderFrameHostImpl::OnVisualStateResponse(uint64_t id) {
 void RenderFrameHostImpl::OnRunJavaScriptDialog(
     const base::string16& message,
     const base::string16& default_prompt,
-    const GURL& frame_url,
     JavaScriptDialogType dialog_type,
     IPC::Message* reply_msg) {
   if (dialog_type == JavaScriptDialogType::JAVASCRIPT_DIALOG_TYPE_ALERT)
@@ -2066,26 +2023,15 @@ void RenderFrameHostImpl::OnRunJavaScriptDialog(
   // process input events.
   GetProcess()->SetIgnoreInputEvents(true);
 
-  // TODO(nasko): It is strange to accept the frame URL as a parameter from
-  // the renderer. Investigate and remove parameter, but for now let's
-  // double check.
-  DCHECK_EQ(frame_url, last_committed_url_);
-
   delegate_->RunJavaScriptDialog(this, message, default_prompt, dialog_type,
                                  reply_msg);
 }
 
 void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
-    const GURL& frame_url,
     bool is_reload,
     IPC::Message* reply_msg) {
   TRACE_EVENT1("navigation", "RenderFrameHostImpl::OnRunBeforeUnloadConfirm",
                "frame_tree_node", frame_tree_node_->frame_tree_node_id());
-
-  // TODO(nasko): It is strange to accept the frame URL as a parameter from
-  // the renderer. Investigate and remove parameter, but for now let's
-  // double check.
-  DCHECK_EQ(frame_url, last_committed_url_);
 
   // While a JS beforeunload dialog is showing, tabs in the same process
   // shouldn't process input events.
@@ -2781,8 +2727,8 @@ void RenderFrameHostImpl::OnFocusedNodeChanged(
                       bounds_in_frame_widget.size()));
 }
 
-void RenderFrameHostImpl::SetHasReceivedUserGesture() {
-  Send(new FrameMsg_SetHasReceivedUserGesture(routing_id_));
+void RenderFrameHostImpl::NotifyUserActivation() {
+  Send(new FrameMsg_NotifyUserActivation(routing_id_));
 }
 
 void RenderFrameHostImpl::OnSetHasReceivedUserGesture() {
@@ -2956,7 +2902,7 @@ void RenderFrameHostImpl::CreateNewWindow(
         },
         GlobalFrameRoutingId(render_process_id, main_frame_route_id));
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                            block_requests_for_route);
+                            std::move(block_requests_for_route));
   }
 
   DCHECK(IsRenderFrameLive());
@@ -3007,12 +2953,6 @@ void RenderFrameHostImpl::CreateNewWindow(
 void RenderFrameHostImpl::IssueKeepAliveHandle(
     mojom::KeepAliveHandleRequest request) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!base::FeatureList::IsEnabled(
-          features::kKeepAliveRendererForKeepaliveRequests)) {
-    bad_message::ReceivedBadMessage(
-        GetProcess(), bad_message::RFH_KEEP_ALIVE_HANDLE_REQUESTED_INCORRECTLY);
-    return;
-  }
   if (GetProcess()->IsKeepAliveRefCountDisabled())
     return;
 
@@ -3069,14 +3009,15 @@ void RenderFrameHostImpl::BeginNavigation(
       frame_tree_node(), validated_params, std::move(begin_params));
 }
 
-void RenderFrameHostImpl::SubresourceResponseStarted(const GURL& url,
-                                                     const GURL& referrer,
-                                                     const std::string& method,
-                                                     ResourceType resource_type,
-                                                     const std::string& ip,
-                                                     uint32_t cert_status) {
-  delegate_->SubresourceResponseStarted(url, referrer, method, resource_type,
-                                        ip, cert_status);
+void RenderFrameHostImpl::SubresourceResponseStarted(
+    const GURL& url,
+    net::CertStatus cert_status) {
+  delegate_->SubresourceResponseStarted(url, cert_status);
+}
+
+void RenderFrameHostImpl::SubresourceLoadComplete(
+    mojom::SubresourceLoadInfoPtr subresource_load_info) {
+  delegate_->SubresourceLoadComplete(std::move(subresource_load_info));
 }
 
 namespace {
@@ -3152,13 +3093,6 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
   registry_->AddInterface(
       base::Bind(&MediaSessionServiceImpl::Create, base::Unretained(this)));
 
-#if defined(OS_ANDROID)
-  // Creates a MojoRendererService, passing it a MediaPlayerRender.
-  registry_->AddInterface<media::mojom::Renderer>(
-      base::Bind(&content::CreateMediaPlayerRenderer, GetProcess()->GetID(),
-                 GetRoutingID(), delegate_));
-#endif  // defined(OS_ANDROID)
-
   registry_->AddInterface(base::Bind(
       base::IgnoreResult(&RenderFrameHostImpl::CreateWebBluetoothService),
       base::Unretained(this)));
@@ -3173,11 +3107,8 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
       base::Bind(&RenderFrameHostImpl::BindMediaInterfaceFactoryRequest,
                  base::Unretained(this)));
 
-  // This is to support usage of WebSockets in cases in which there is an
-  // associated RenderFrame. This is important for showing the correct security
-  // state of the page and also honoring user override of bad certificates.
-  registry_->AddInterface(base::Bind(&WebSocketManager::CreateWebSocketForFrame,
-                                     process_->GetID(), routing_id_));
+  registry_->AddInterface(base::BindRepeating(
+      &RenderFrameHostImpl::CreateWebSocket, base::Unretained(this)));
 
   registry_->AddInterface(base::Bind(&SharedWorkerConnectorImpl::Create,
                                      process_->GetID(), routing_id_));
@@ -3230,7 +3161,7 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
                                      GetProcess()->GetID(), GetRoutingID()));
 #endif  // BUILDFLAG(ENABLE_MEDIA_REMOTING)
 
-  registry_->AddInterface(base::Bind(
+  registry_->AddInterface(base::BindRepeating(
       &KeyboardLockServiceImpl::CreateMojoService, base::Unretained(this)));
 
   registry_->AddInterface(base::Bind(&ImageCaptureImpl::Create));
@@ -3621,6 +3552,9 @@ void RenderFrameHostImpl::CommitNavigation(
       auto factory_request = mojo::MakeRequest(&factory_proxy_info);
       GetContentClient()->browser()->WillCreateURLLoaderFactory(
           this, false /* is_navigation */, &factory_request);
+      // Keep DevTools proxy lasy, i.e. closest to the network.
+      RenderFrameDevToolsAgentHost::WillCreateURLLoaderFactory(
+          this, false, &factory_request);
       factory.second->Clone(std::move(factory_request));
       subresource_loader_factories->factories_info().emplace(
           factory.first, std::move(factory_proxy_info));
@@ -3943,15 +3877,16 @@ bool RenderFrameHostImpl::IsSameSiteInstance(
 }
 
 void RenderFrameHostImpl::UpdateAccessibilityMode() {
-  int accessibility_mode_raw = delegate_->GetAccessibilityMode().mode();
-  Send(new FrameMsg_SetAccessibilityMode(routing_id_, accessibility_mode_raw));
+  Send(new FrameMsg_SetAccessibilityMode(routing_id_,
+                                         delegate_->GetAccessibilityMode()));
 }
 
-void RenderFrameHostImpl::RequestAXTreeSnapshot(
-    AXTreeSnapshotCallback callback) {
+void RenderFrameHostImpl::RequestAXTreeSnapshot(AXTreeSnapshotCallback callback,
+                                                ui::AXMode ax_mode) {
   static int next_id = 1;
   int callback_id = next_id++;
-  Send(new AccessibilityMsg_SnapshotTree(routing_id_, callback_id));
+  Send(new AccessibilityMsg_SnapshotTree(routing_id_, callback_id,
+                                         ax_mode.mode()));
   ax_tree_snapshot_callbacks_.insert(
       std::make_pair(callback_id, std::move(callback)));
 }
@@ -4151,10 +4086,14 @@ void RenderFrameHostImpl::UpdatePermissionsForNavigation(
     GrantFileAccessFromResourceRequestBody(*common_params.post_data);
 }
 
-void RenderFrameHostImpl::OnNetworkServiceConnectionError() {
+void RenderFrameHostImpl::UpdateSubresourceLoaderFactories() {
   DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
-  DCHECK(network_service_connection_error_handler_holder_.is_bound() &&
-         network_service_connection_error_handler_holder_.encountered_error());
+  // We only send loader factory bundle upon navigation, so
+  // bail out if the frame hasn't commited any yet.
+  if (!has_committed_any_navigation_)
+    return;
+  DCHECK(network_service_connection_error_handler_holder_.is_bound());
+
   network::mojom::URLLoaderFactoryPtrInfo default_factory_info;
   CreateNetworkServiceDefaultFactoryAndObserve(
       mojo::MakeRequest(&default_factory_info));
@@ -4172,6 +4111,9 @@ void RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryAndObserve(
   auto* context = GetSiteInstance()->GetBrowserContext();
   GetContentClient()->browser()->WillCreateURLLoaderFactory(
       this, false /* is_navigation */, &default_factory_request);
+  // Keep DevTools proxy lasy, i.e. closest to the network.
+  RenderFrameDevToolsAgentHost::WillCreateURLLoaderFactory(
+      this, false, &default_factory_request);
   StoragePartitionImpl* storage_partition = static_cast<StoragePartitionImpl*>(
       BrowserContext::GetStoragePartition(context, GetSiteInstance()));
   if (g_create_network_factory_callback_for_test.Get().is_null()) {
@@ -4194,7 +4136,7 @@ void RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryAndObserve(
         GetProcess()->GetID());
     network_service_connection_error_handler_holder_
         .set_connection_error_handler(base::BindOnce(
-            &RenderFrameHostImpl::OnNetworkServiceConnectionError,
+            &RenderFrameHostImpl::UpdateSubresourceLoaderFactories,
             weak_ptr_factory_.GetWeakPtr()));
   }
 }
@@ -4333,8 +4275,8 @@ WebBluetoothServiceImpl* RenderFrameHostImpl::CreateWebBluetoothService(
   auto web_bluetooth_service =
       std::make_unique<WebBluetoothServiceImpl>(this, std::move(request));
   web_bluetooth_service->SetClientConnectionErrorHandler(
-      base::Bind(&RenderFrameHostImpl::DeleteWebBluetoothService,
-                 base::Unretained(this), web_bluetooth_service.get()));
+      base::BindOnce(&RenderFrameHostImpl::DeleteWebBluetoothService,
+                     base::Unretained(this), web_bluetooth_service.get()));
   web_bluetooth_services_.push_back(std::move(web_bluetooth_service));
   return web_bluetooth_services_.back().get();
 }
@@ -4420,6 +4362,25 @@ void RenderFrameHostImpl::BindMediaInterfaceFactoryRequest(
                  base::Unretained(this))));
 }
 
+void RenderFrameHostImpl::CreateWebSocket(
+    network::mojom::WebSocketRequest request) {
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    auto* context = GetSiteInstance()->GetBrowserContext();
+    auto* storage_partition = static_cast<StoragePartitionImpl*>(
+        BrowserContext::GetStoragePartition(context, GetSiteInstance()));
+    storage_partition->GetNetworkContext()->CreateWebSocket(
+        std::move(request), process_->GetID(), routing_id_,
+        last_committed_origin_);
+  } else {
+    // This is to support usage of WebSockets in cases in which there is an
+    // associated RenderFrame. This is important for showing the correct
+    // security state of the page and also honoring user override of bad
+    // certificates.
+    WebSocketManager::CreateWebSocketForFrame(process_->GetID(), routing_id_,
+                                              std::move(request));
+  }
+}
+
 void RenderFrameHostImpl::OnMediaInterfaceFactoryConnectionError() {
   DCHECK(media_interface_proxy_);
   media_interface_proxy_.reset();
@@ -4467,7 +4428,7 @@ void RenderFrameHostImpl::GetInterface(
   if (!registry_ ||
       !registry_->TryBindInterface(interface_name, &interface_pipe)) {
     delegate_->OnInterfaceRequest(this, interface_name, &interface_pipe);
-    if (interface_pipe->is_valid() &&
+    if (interface_pipe.is_valid() &&
         !TryBindFrameInterface(interface_name, &interface_pipe, this)) {
       GetContentClient()->browser()->BindInterfaceRequestFromFrame(
           this, interface_name, std::move(interface_pipe));
@@ -4831,6 +4792,9 @@ bool RenderFrameHostImpl::DidCommitNavigationInternal(
     }
     pending_commit_ = false;
   }
+
+  if (navigation_request_)
+    was_discarded_ = navigation_request_->request_params().was_discarded;
 
   // Find the appropriate NavigationHandle for this navigation.
   std::unique_ptr<NavigationHandleImpl> navigation_handle;

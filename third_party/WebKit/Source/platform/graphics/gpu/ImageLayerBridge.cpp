@@ -56,6 +56,12 @@ void ImageLayerBridge::SetImage(scoped_refptr<StaticBitmapImage> image) {
   has_presented_since_last_set_image_ = false;
 }
 
+void ImageLayerBridge::SetUV(const FloatPoint left_top,
+                             const FloatPoint right_bottom) {
+  layer_->SetUV(WebFloatPoint(left_top.X(), left_top.Y()),
+                WebFloatPoint(right_bottom.X(), right_bottom.Y()));
+}
+
 void ImageLayerBridge::Dispose() {
   if (layer_) {
     GraphicsLayer::UnregisterContentsLayer(layer_->Layer());
@@ -128,6 +134,7 @@ bool ImageLayerBridge::PrepareTransferableResource(
 
     SkImageInfo dst_info =
         SkImageInfo::MakeN32Premul(image_for_compositor->width(), 1);
+    dst_info = dst_info.makeColorSpace(sk_image->refColorSpace());
     size_t row_bytes = image_for_compositor->width() * 4;
 
     // Copy from SkImage into |bitmap|, while flipping the Y axis.

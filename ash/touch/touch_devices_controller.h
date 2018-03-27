@@ -9,6 +9,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/session/session_observer.h"
+#include "base/callback.h"
 
 class AccountId;
 class PrefChangeRegistrar;
@@ -34,10 +35,6 @@ class ASH_EXPORT TouchDevicesController : public SessionObserver {
 
   static void RegisterProfilePrefs(PrefRegistrySimple* registry, bool for_test);
 
-  // Gets/Sets tap dragging enabled.
-  void SetTapDraggingEnabled(bool enabled);
-  bool GetTapDraggingEnabled() const;
-
   // Toggles the status of touchpad between enabled and disabled.
   void ToggleTouchpad();
 
@@ -51,9 +48,9 @@ class ASH_EXPORT TouchDevicesController : public SessionObserver {
   // based on the requests of multiple sources.
   void SetTouchscreenEnabled(bool enabled, TouchscreenEnabledSource source);
 
- private:
-  class ScopedUmaRecorder;
+  bool tap_dragging_enabled_for_test() { return tap_dragging_enabled_; }
 
+ private:
   // Overridden from SessionObserver:
   void OnUserSessionAdded(const AccountId& account_id) override;
   void OnSigninScreenPrefServiceInitialized(PrefService* prefs) override;
@@ -83,8 +80,10 @@ class ASH_EXPORT TouchDevicesController : public SessionObserver {
   // Observes user profile prefs for touch devices.
   std::unique_ptr<PrefChangeRegistrar> pref_change_registrar_;
 
-  // Used to record pref started UMA.
-  std::unique_ptr<ScopedUmaRecorder> scoped_uma_recorder_;
+  // Used to record pref started UMA, bound on user session added and run on
+  // active user pref service changed. The goal is to record the initial state
+  // of the feature.
+  base::OnceCallback<void(PrefService* prefs)> uma_record_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchDevicesController);
 };

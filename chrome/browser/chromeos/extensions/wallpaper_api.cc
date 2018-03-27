@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "ash/public/cpp/wallpaper_types.h"
 #include "ash/wallpaper/wallpaper_controller.h"
 #include "base/files/file_util.h"
 #include "base/lazy_instance.h"
@@ -20,18 +21,20 @@
 #include "chrome/browser/chromeos/extensions/wallpaper_private_api.h"
 #include "chrome/browser/chromeos/file_manager/app_id.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/wallpaper_controller_client.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
-#include "components/wallpaper/wallpaper_info.h"
+#include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
 #include "net/base/load_flags.h"
-#include "net/http/http_status_code.h"
-#include "net/url_request/url_fetcher.h"
-#include "net/url_request/url_fetcher_delegate.h"
+#include "net/http/http_response_headers.h"
+#include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "url/gurl.h"
 
 using base::Value;
@@ -43,52 +46,81 @@ namespace set_wallpaper = extensions::api::wallpaper::SetWallpaper;
 
 namespace {
 
-class WallpaperFetcher : public net::URLFetcherDelegate {
+class WallpaperFetcher {
  public:
   WallpaperFetcher() {}
 
-  ~WallpaperFetcher() override {}
-
   void FetchWallpaper(const GURL& url, FetchCallback callback) {
     CancelPreviousFetch();
+    original_url_ = url;
     callback_ = callback;
-    url_fetcher_ = net::URLFetcher::Create(url, net::URLFetcher::GET, this);
-    url_fetcher_->SetRequestContext(
-        g_browser_process->system_request_context());
-    url_fetcher_->SetLoadFlags(net::LOAD_DISABLE_CACHE);
-    url_fetcher_->Start();
+
+    net::NetworkTrafficAnnotationTag traffic_annotation =
+        net::DefineNetworkTrafficAnnotation("wallpaper_fetcher", R"(
+          semantics {
+            sender: "Wallpaper Fetcher"
+            description:
+              "Chrome OS downloads wallpaper upon user request."
+            trigger:
+              "When an app or extension requests to download "
+              "a wallpaper from a remote URL."
+            data:
+              "User-selected image."
+            destination: WEBSITE
+          }
+          policy {
+            cookies_allowed: YES
+            cookies_store: "user"
+            setting:
+              "This feature cannot be disabled by settings, but it is only "
+              "triggered by user request."
+            policy_exception_justification: "Not implemented."
+          })");
+    auto resource_request = std::make_unique<network::ResourceRequest>();
+    resource_request->url = original_url_;
+    resource_request->load_flags = net::LOAD_DISABLE_CACHE;
+    simple_loader_ = network::SimpleURLLoader::Create(
+        std::move(resource_request), traffic_annotation);
+    network::mojom::URLLoaderFactory* loader_factory =
+        g_browser_process->system_network_context_manager()
+            ->GetURLLoaderFactory();
+    simple_loader_->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+        loader_factory,
+        base::BindOnce(&WallpaperFetcher::OnSimpleLoaderComplete,
+                       base::Unretained(this)));
   }
 
  private:
-  // URLFetcherDelegate overrides:
-  void OnURLFetchComplete(const net::URLFetcher* source) override {
-    DCHECK(url_fetcher_.get() == source);
-
-    bool success = source->GetStatus().is_success() &&
-                   source->GetResponseCode() == net::HTTP_OK;
+  void OnSimpleLoaderComplete(std::unique_ptr<std::string> response_body) {
     std::string response;
-    if (success) {
-      source->GetResponseAsString(&response);
-    } else {
+    bool success = false;
+    if (response_body) {
+      response = std::move(*response_body);
+      success = true;
+    } else if (simple_loader_->ResponseInfo() &&
+               simple_loader_->ResponseInfo()->headers) {
+      int response_code =
+          simple_loader_->ResponseInfo()->headers->response_code();
       response = base::StringPrintf(
           "Downloading wallpaper %s failed. The response code is %d.",
-          source->GetOriginalURL().ExtractFileName().c_str(),
-          source->GetResponseCode());
+          original_url_.ExtractFileName().c_str(), response_code);
     }
-    url_fetcher_.reset();
+
+    simple_loader_.reset();
     callback_.Run(success, response);
     callback_.Reset();
   }
 
   void CancelPreviousFetch() {
-    if (url_fetcher_.get()) {
+    if (simple_loader_.get()) {
       callback_.Run(false, wallpaper_api_util::kCancelWallpaperMessage);
       callback_.Reset();
-      url_fetcher_.reset();
+      simple_loader_.reset();
     }
   }
 
-  std::unique_ptr<net::URLFetcher> url_fetcher_;
+  GURL original_url_;
+  std::unique_ptr<network::SimpleURLLoader> simple_loader_;
   FetchCallback callback_;
 };
 
@@ -150,16 +182,16 @@ void WallpaperSetWallpaperFunction::OnWallpaperDecoded(
   base::FilePath thumbnail_path =
       ash::WallpaperController::GetCustomWallpaperPath(
           ash::WallpaperController::kThumbnailWallpaperSubDir,
-          wallpaper_files_id_.id(), params_->details.filename);
+          wallpaper_files_id_, params_->details.filename);
 
-  wallpaper::WallpaperLayout layout = wallpaper_api_util::GetLayoutEnum(
+  ash::WallpaperLayout layout = wallpaper_api_util::GetLayoutEnum(
       extensions::api::wallpaper::ToString(params_->details.layout));
   wallpaper_api_util::RecordCustomWallpaperLayout(layout);
 
   WallpaperControllerClient::Get()->SetCustomWallpaper(
       account_id_, wallpaper_files_id_, params_->details.filename, layout,
       image, false /*preview_mode=*/);
-  unsafe_wallpaper_decoder_ = NULL;
+  unsafe_wallpaper_decoder_ = nullptr;
 
   if (!params_->details.thumbnail)
     SendResponse(true);
@@ -185,14 +217,14 @@ void WallpaperSetWallpaperFunction::GenerateThumbnail(
 
   scoped_refptr<base::RefCountedBytes> original_data;
   scoped_refptr<base::RefCountedBytes> thumbnail_data;
+  ash::WallpaperController::ResizeImage(*image, ash::WALLPAPER_LAYOUT_STRETCH,
+                                        image->width(), image->height(),
+                                        &original_data, nullptr);
   ash::WallpaperController::ResizeImage(
-      *image, wallpaper::WALLPAPER_LAYOUT_STRETCH, image->width(),
-      image->height(), &original_data, NULL);
-  ash::WallpaperController::ResizeImage(
-      *image, wallpaper::WALLPAPER_LAYOUT_STRETCH,
+      *image, ash::WALLPAPER_LAYOUT_STRETCH,
       ash::WallpaperController::kWallpaperThumbnailWidth,
       ash::WallpaperController::kWallpaperThumbnailHeight, &thumbnail_data,
-      NULL);
+      nullptr);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&WallpaperSetWallpaperFunction::ThumbnailGenerated, this,

@@ -11,13 +11,7 @@
 -InitiallyRestored/AcceleratorCommandsFullscreenBrowserTest.*
 -InitiallyRestored/AcceleratorCommandsPlatformAppFullscreenBrowserTest.*
 
-# ChromeVoxPanel directly calls into ash to set panel height.
-# http://crbug.com/628655
--AccessibilityManagerTest.*
--PolicyTest.ScreenMagnifierTypeFull
--PolicyTest.ScreenMagnifierTypeNone
--PolicyTest.UnifiedDesktopEnabledByDefault
--UserTypeInstantiation/AccessibilityManagerUserTypeTest.*
+# Volume adjustment fails.
 -WizardControllerTest.*ChromeVox
 
 # Login constructs ash::FocusRingController and KeyboardDrivenOobeKeyHandler,
@@ -129,6 +123,9 @@
 -PolicyDisplayRotationDefault/DisplayRotationBootTest.*
 -PolicyDisplayRotationDefault/DisplayRotationDefaultTest.*
 
+# ash::Shell::display_manager() to get display state.
+-PolicyTest.UnifiedDesktopEnabledByDefault
+
 # Failures JS-side.
 -GalleryBrowserTest.*
 -GalleryBrowserTestInGuestMode.*
@@ -168,6 +165,8 @@
 # CalledOnValidSequence() from SchedulerWorkerDelegate::OnMainExit
 -LoginScreenDefaultPolicyInSessionBrowsertest.*
 -LoginScreenDefaultPolicyLoginScreenBrowsertest.*
+-PolicyTest.ScreenMagnifierTypeFull
+-PolicyTest.ScreenMagnifierTypeNone
 
 # Crashes in pre-login phase, probably MagnificationManager not created.
 -MagnificationManagerTest.*
@@ -233,13 +232,13 @@
 -TaskManagerUtilityProcessBrowserTest.*
 
 # ash::Shell access in test.
--TrayAccessibilityLoginScreenTest.*
 -TrayAccessibilityTestInstance/TrayAccessibilityTest.*
 
 # chromeos::UserAddingScreenImpl::Cancel() uses ash::Shell to enable system tray.
 -UserAddingScreenTest.*
 
 # Virtual keyboard not supported.
+-AccessibilityManagerLoginTest.ResumeSavedPref
 -DefaultKeyboardExtensionBrowserTest.*
 -KeyboardEndToEndTest.*
 -KioskVirtualKeyboardTest.*
@@ -276,3 +275,17 @@
 
 # Flaky segfaults: https://crbug.com/818147
 -ExtensionApiTest.BookmarkManager
+
+# Depends on chrome/browser/media/webrtc; CHECKs in ash::Shell::Get()
+# https://crbug.com/723880
+-MediaRouterIntegrationBrowserTest.*
+-MediaRouterIntegrationOneUABrowserTest.*
+-MediaRouterIntegrationOneUANoReceiverBrowserTest.*
+
+# Segfaults after massive recursion setting ash::kWindowStateTypeKey:
+# crbug.com/824458
+-PresentationReceiverWindowViewBrowserTest.ChromeOSHardwareFullscreenButton
+
+# RenderFrameMetadata observation not supported: https://crbug.com/820974
+-WebViewGuestScrollLatchingTest.ScrollLatchingPreservedInGuests
+-WebViewScrollGuestContent/WebViewScrollGuestContentTest.OverscrollControllerSeesConsumedScrollsInGuest/0

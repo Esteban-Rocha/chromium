@@ -385,6 +385,15 @@
     "label": "//components:components_unittests",
     "type": "windowed_test_launcher",
   },
+  "components_perftests": {
+    "label": "//components:components_perftests",
+    "type": "script",
+    "script": "//testing/scripts/run_gtest_perf_test.py",
+    "args": [
+      "--xvfb",
+      "components_perftests",
+    ],
+  },
   "components_variations_junit_tests": {
     "label": "//components/variations/android:components_variations_junit_tests",
     "type": "junit_test",
@@ -527,7 +536,7 @@
     "type": "windowed_test_launcher",
   },
   "filesystem_service_unittests": {
-    "label": "//components/filesystem:filesystem_service_unittests",
+    "label": "//components/services/filesystem:filesystem_service_unittests",
     "type": "console_test_launcher",
   },
   "gcm_unit_tests": {
@@ -577,10 +586,6 @@
   "google_apis_unittests": {
     "label": "//google_apis:google_apis_unittests",
     "type": "console_test_launcher",
-  },
-  "gpu_ipc_service_unittests": {
-    "label": "//gpu/ipc/service:gpu_ipc_service_unittests",
-    "type": "windowed_test_launcher",
   },
   "gpu_unittests": {
     "label": "//gpu:gpu_unittests",
@@ -739,7 +744,7 @@
     "type": "console_test_launcher",
   },
   "leveldb_service_unittests": {
-    "label": "//components/leveldb:leveldb_service_unittests",
+    "label": "//components/services/leveldb:leveldb_service_unittests",
     "type": "console_test_launcher",
   },
   "libjingle_xmpp_unittests": {
@@ -770,6 +775,17 @@
     "label": "//media/blink:media_blink_unittests",
     "type": "windowed_test_launcher",
   },
+  "media_router_e2e_tests": {
+    "label": "//chrome/test/media_router:media_router_e2e_tests",
+    "type": "script",
+    "script": "//chrome/test/media_router/internal/media_router_tests.py",
+    "args": [
+      "--extension",
+      "mr_extension/",
+      "--test_binary",
+      "./browser_tests",
+    ],
+  },
   "media_router_perf_tests": {
     "label": "//chrome/test/media_router:media_router_perf_tests",
     "type": "script",
@@ -781,17 +797,6 @@
       "--use-live-sites",
       "--output-format=chartjson",
       "--output-dir=${ISOLATED_OUTDIR}",
-    ],
-  },
-  "media_router_tests": {
-    "label": "//chrome/test/media_router:media_router_tests",
-    "type": "script",
-    "script": "//chrome/test/media_router/internal/media_router_tests.py",
-    "args": [
-      "--extension",
-      "mr_extension/",
-      "--test_binary",
-      "./browser_tests",
     ],
   },
   "microdump_stackwalk" : {
@@ -933,6 +938,10 @@
   },
   "remoting/host:host": {
     "label": "//remoting/host:host",
+    "type": "additional_compile_target",
+  },
+  "remoting/webapp:webapp": {
+    "label": "//remoting/webapp:webapp",
     "type": "additional_compile_target",
   },
   "remoting_unittests": {
@@ -1343,7 +1352,7 @@
     "type": "console_test_launcher",
   },
   "zucchini_unittests": {
-    "label": "//chrome/installer/zucchini:zucchini_unittests",
+    "label": "//components/zucchini:zucchini_unittests",
     "type": "console_test_launcher",
   },
 }

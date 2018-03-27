@@ -13,13 +13,16 @@
 #include "device/fido/attestation_object.h"
 #include "device/fido/attested_credential_data.h"
 #include "device/fido/authenticator_data.h"
+#include "device/fido/authenticator_make_credential_response.h"
 #include "device/fido/ec_public_key.h"
-#include "device/fido/fake_u2f_discovery.h"
+#include "device/fido/fake_fido_discovery.h"
 #include "device/fido/fido_attestation_statement.h"
-#include "device/fido/mock_u2f_device.h"
-#include "device/fido/register_response_data.h"
+#include "device/fido/fido_constants.h"
+#include "device/fido/fido_response_test_data.h"
+#include "device/fido/mock_fido_device.h"
+#include "device/fido/test_callback_receiver.h"
 #include "device/fido/u2f_parsing_utils.h"
-#include "device/fido/u2f_response_test_data.h"
+#include "device/fido/virtual_fido_device.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -285,34 +288,9 @@ std::vector<uint8_t> GetTestAttestationObjectBytes() {
   return test_authenticator_object;
 }
 
-class TestRegisterCallback {
- public:
-  TestRegisterCallback()
-      : callback_(base::BindOnce(&TestRegisterCallback::ReceivedCallback,
-                                 base::Unretained(this))) {}
-  ~TestRegisterCallback() = default;
-
-  void ReceivedCallback(U2fReturnCode status_code,
-                        base::Optional<RegisterResponseData> response_data) {
-    response_ = std::make_pair(status_code, std::move(response_data));
-    run_loop_.Quit();
-  }
-
-  const std::pair<U2fReturnCode, base::Optional<RegisterResponseData>>&
-  WaitForCallback() {
-    run_loop_.Run();
-    return response_;
-  }
-
-  U2fRegister::RegisterResponseCallback callback() {
-    return std::move(callback_);
-  }
-
- private:
-  std::pair<U2fReturnCode, base::Optional<RegisterResponseData>> response_;
-  U2fRegister::RegisterResponseCallback callback_;
-  base::RunLoop run_loop_;
-};
+using TestRegisterCallback = ::device::test::StatusAndValueCallbackReceiver<
+    FidoReturnCode,
+    base::Optional<AuthenticatorMakeCredentialResponse>>;
 
 }  // namespace
 
@@ -337,18 +315,25 @@ class U2fRegisterTest : public ::testing::Test {
         base::flat_set<U2fTransportProtocol>(
             {U2fTransportProtocol::kUsbHumanInterfaceDevice}),
         registered_keys, std::vector<uint8_t>(32), std::vector<uint8_t>(32),
-        kNoIndividualAttestation, register_callback_.callback());
+        kNoIndividualAttestation, register_callback_receiver_.callback());
   }
 
-  test::FakeU2fDiscovery* discovery() const { return discovery_; }
-  TestRegisterCallback& register_callback() { return register_callback_; }
+  test::FakeFidoDiscovery* discovery() const { return discovery_; }
+  TestRegisterCallback& register_callback_receiver() {
+    return register_callback_receiver_;
+  }
 
  protected:
   base::test::ScopedTaskEnvironment scoped_task_environment_;
-
-  test::ScopedFakeU2fDiscoveryFactory scoped_fake_discovery_factory_;
-  test::FakeU2fDiscovery* discovery_;
-  TestRegisterCallback register_callback_;
+  std::vector<uint8_t> application_parameter_{std::begin(kAppIdDigest),
+                                              std::end(kAppIdDigest)};
+  std::vector<uint8_t> challenge_parameter_{std::begin(kChallengeDigest),
+                                            std::end(kChallengeDigest)};
+  std::vector<std::vector<uint8_t>> key_handles_;
+  base::flat_set<U2fTransportProtocol> protocols_;
+  test::ScopedFakeFidoDiscoveryFactory scoped_fake_discovery_factory_;
+  test::FakeFidoDiscovery* discovery_;
+  TestRegisterCallback register_callback_receiver_;
 };
 
 TEST_F(U2fRegisterTest, TestCreateU2fRegisterCommand) {
@@ -376,28 +361,67 @@ TEST_F(U2fRegisterTest, TestCreateU2fRegisterCommand) {
       0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01,
   };
 
-  U2fRegister register_request(
-      nullptr /* connector */, {} /* transports */,
-      std::vector<std::vector<uint8_t>>() /* registered_keys */,
-      std::vector<uint8_t>(std::begin(kChallengeDigest),
-                           std::end(kChallengeDigest)),
-      std::vector<uint8_t>(std::begin(kAppIdDigest), std::end(kAppIdDigest)),
-      kNoIndividualAttestation, register_callback().callback());
+  U2fRegister register_request(nullptr /* connector */, protocols_,
+                               key_handles_, challenge_parameter_,
+                               application_parameter_, kNoIndividualAttestation,
+                               register_callback_receiver().callback());
 
   const auto register_command_without_individual_attestation =
       register_request.GetU2fRegisterApduCommand(kNoIndividualAttestation);
 
   ASSERT_TRUE(register_command_without_individual_attestation);
   EXPECT_THAT(
-      register_command_without_individual_attestation->GetEncodedCommand(),
+      *register_command_without_individual_attestation,
       ::testing::ElementsAreArray(kRegisterApduCommandWithoutAttestation));
 
   const auto register_command_with_individual_attestation =
       register_request.GetU2fRegisterApduCommand(kIndividualAttestation);
-
   ASSERT_TRUE(register_command_with_individual_attestation);
-  EXPECT_THAT(register_command_with_individual_attestation->GetEncodedCommand(),
+  EXPECT_THAT(*register_command_with_individual_attestation,
               ::testing::ElementsAreArray(kRegisterApduCommandWithAttestation));
+}
+
+TEST_F(U2fRegisterTest, TestCreateRegisterWithIncorrectParameters) {
+  std::vector<uint8_t> application_parameter(kU2fParameterLength, 0x01);
+  std::vector<uint8_t> challenge_parameter(kU2fParameterLength, 0xff);
+
+  U2fRegister register_request(nullptr, protocols_, key_handles_,
+                               challenge_parameter, application_parameter,
+                               kNoIndividualAttestation,
+                               register_callback_receiver().callback());
+  const auto register_without_individual_attestation =
+      register_request.GetU2fRegisterApduCommand(kNoIndividualAttestation);
+
+  ASSERT_TRUE(register_without_individual_attestation);
+  ASSERT_LE(3u, register_without_individual_attestation->size());
+  // Individual attestation bit should be cleared.
+  EXPECT_EQ(0, (*register_without_individual_attestation)[2] & 0x80);
+
+  const auto register_request_with_individual_attestation =
+      register_request.GetU2fRegisterApduCommand(kIndividualAttestation);
+  ASSERT_TRUE(register_request_with_individual_attestation);
+  ASSERT_LE(3u, register_request_with_individual_attestation->size());
+  // Individual attestation bit should be set.
+  EXPECT_EQ(0x80, (*register_request_with_individual_attestation)[2] & 0x80);
+
+  // Expect null result with incorrectly sized application_parameter.
+  application_parameter.push_back(0xff);
+  auto incorrect_register_cmd =
+      U2fRegister(nullptr, protocols_, key_handles_, challenge_parameter,
+                  application_parameter, kNoIndividualAttestation,
+                  register_callback_receiver().callback())
+          .GetU2fRegisterApduCommand(kNoIndividualAttestation);
+  EXPECT_FALSE(incorrect_register_cmd);
+  application_parameter.pop_back();
+
+  // Expect null result with incorrectly sized challenge.
+  challenge_parameter.push_back(0xff);
+  incorrect_register_cmd =
+      U2fRegister(nullptr, protocols_, key_handles_, challenge_parameter,
+                  application_parameter, kNoIndividualAttestation,
+                  register_callback_receiver().callback())
+          .GetU2fRegisterApduCommand(kNoIndividualAttestation);
+  EXPECT_FALSE(incorrect_register_cmd);
 }
 
 TEST_F(U2fRegisterTest, TestRegisterSuccess) {
@@ -405,17 +429,36 @@ TEST_F(U2fRegisterTest, TestRegisterSuccess) {
   request->Start();
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
-  auto device = std::make_unique<MockU2fDevice>();
-  EXPECT_CALL(*device, GetId()).WillRepeatedly(::testing::Return("device"));
+  auto device = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device, GetId()).WillRepeatedly(testing::Return("device"));
   EXPECT_CALL(*device, DeviceTransactPtr(_, _))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorRegister));
+      .WillOnce(testing::Invoke(MockFidoDevice::NoErrorRegister));
   EXPECT_CALL(*device, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device));
 
-  const auto& response = register_callback().WaitForCallback();
-  EXPECT_EQ(U2fReturnCode::SUCCESS, std::get<0>(response));
-  EXPECT_EQ(GetTestCredentialRawIdBytes(), std::get<1>(response)->raw_id());
+  register_callback_receiver().WaitForCallback();
+  EXPECT_EQ(FidoReturnCode::kSuccess, register_callback_receiver().status());
+  ASSERT_TRUE(register_callback_receiver().value());
+  EXPECT_EQ(GetTestCredentialRawIdBytes(),
+            register_callback_receiver().value()->raw_credential_id());
+}
+
+TEST_F(U2fRegisterTest, TestRegisterSuccessWithFake) {
+  auto request = CreateRegisterRequest();
+  request->Start();
+  discovery()->WaitForCallToStartAndSimulateSuccess();
+
+  auto device = std::make_unique<VirtualFidoDevice>();
+  discovery()->AddDevice(std::move(device));
+
+  register_callback_receiver().WaitForCallback();
+  EXPECT_EQ(FidoReturnCode::kSuccess, register_callback_receiver().status());
+
+  // We don't verify the response from the fake, but do a quick sanity check.
+  ASSERT_TRUE(register_callback_receiver().value());
+  EXPECT_EQ(32ul,
+            register_callback_receiver().value()->raw_credential_id().size());
 }
 
 TEST_F(U2fRegisterTest, TestDelayedSuccess) {
@@ -423,50 +466,53 @@ TEST_F(U2fRegisterTest, TestDelayedSuccess) {
   request->Start();
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
-  auto device = std::make_unique<MockU2fDevice>();
-  EXPECT_CALL(*device, GetId()).WillRepeatedly(::testing::Return("device"));
+  auto device = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device, GetId()).WillRepeatedly(testing::Return("device"));
   // Go through the state machine twice before success.
   EXPECT_CALL(*device, DeviceTransactPtr(_, _))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NotSatisfied))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorRegister));
+      .WillOnce(::testing::Invoke(MockFidoDevice::NotSatisfied))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorRegister));
   EXPECT_CALL(*device, TryWinkRef(_))
       .Times(2)
-      .WillRepeatedly(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillRepeatedly(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device));
 
-  const auto& response = register_callback().WaitForCallback();
-  EXPECT_EQ(U2fReturnCode::SUCCESS, std::get<0>(response));
-  EXPECT_EQ(GetTestCredentialRawIdBytes(), std::get<1>(response)->raw_id());
+  register_callback_receiver().WaitForCallback();
+  EXPECT_EQ(FidoReturnCode::kSuccess, register_callback_receiver().status());
+  ASSERT_TRUE(register_callback_receiver().value());
+  EXPECT_EQ(GetTestCredentialRawIdBytes(),
+            register_callback_receiver().value()->raw_credential_id());
 }
 
 TEST_F(U2fRegisterTest, TestMultipleDevices) {
   auto request = CreateRegisterRequest();
   request->Start();
 
-  auto device0 = std::make_unique<MockU2fDevice>();
+  auto device0 = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*device0, GetId()).WillRepeatedly(::testing::Return("device0"));
   EXPECT_CALL(*device0, DeviceTransactPtr(_, _))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NotSatisfied));
+      .WillOnce(::testing::Invoke(MockFidoDevice::NotSatisfied));
   // One wink per device.
   EXPECT_CALL(*device0, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device0));
 
   // Second device will have a successful touch.
-  auto device1 = std::make_unique<MockU2fDevice>();
+  auto device1 = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*device1, GetId()).WillRepeatedly(::testing::Return("device1"));
   EXPECT_CALL(*device1, DeviceTransactPtr(_, _))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorRegister));
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorRegister));
   // One wink per device.
   EXPECT_CALL(*device1, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device1));
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
-  const auto& response = register_callback().WaitForCallback();
-  EXPECT_EQ(U2fReturnCode::SUCCESS, std::get<0>(response));
+  register_callback_receiver().WaitForCallback();
+  EXPECT_EQ(FidoReturnCode::kSuccess, register_callback_receiver().status());
+  ASSERT_TRUE(register_callback_receiver().value());
   EXPECT_EQ(GetTestCredentialRawIdBytes(),
-            std::get<1>(response).value().raw_id());
+            register_callback_receiver().value()->raw_credential_id());
 }
 
 // Tests a scenario where a single device is connected and registration call
@@ -480,30 +526,32 @@ TEST_F(U2fRegisterTest, TestSingleDeviceRegistrationWithExclusionList) {
   request->Start();
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
-  auto device = std::make_unique<MockU2fDevice>();
+  auto device = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*device, GetId()).WillRepeatedly(::testing::Return("device"));
   // DeviceTransact() will be called four times including three check
   // only sign-in calls and one registration call. For the first three calls,
-  // device will invoke MockU2fDevice::WrongData as the authenticator did not
+  // device will invoke MockFidoDevice::WrongData as the authenticator did not
   // create the three key handles provided in the exclude list. At the fourth
-  // call, MockU2fDevice::NoErrorRegister will be invoked after registration.
+  // call, MockFidoDevice::NoErrorRegister will be invoked after registration.
   EXPECT_CALL(*device.get(), DeviceTransactPtr(_, _))
       .Times(4)
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorRegister));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorRegister));
   // TryWink() will be called twice. First during the check only sign-in. After
   // check only sign operation is complete, request state is changed to IDLE,
   // and TryWink() is called again before Register() is called.
   EXPECT_CALL(*device, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device));
 
-  const auto& response = register_callback().WaitForCallback();
-  EXPECT_EQ(U2fReturnCode::SUCCESS, std::get<0>(response));
-  EXPECT_EQ(GetTestCredentialRawIdBytes(), std::get<1>(response)->raw_id());
+  register_callback_receiver().WaitForCallback();
+  ASSERT_TRUE(register_callback_receiver().value());
+  EXPECT_EQ(FidoReturnCode::kSuccess, register_callback_receiver().status());
+  EXPECT_EQ(GetTestCredentialRawIdBytes(),
+            register_callback_receiver().value()->raw_credential_id());
 }
 
 // Tests a scenario where two devices are connected and registration call is
@@ -516,45 +564,47 @@ TEST_F(U2fRegisterTest, TestMultipleDeviceRegistrationWithExclusionList) {
        std::vector<uint8_t>(32, 0x0D)});
   request->Start();
 
-  auto device0 = std::make_unique<MockU2fDevice>();
+  auto device0 = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*device0, GetId()).WillRepeatedly(::testing::Return("device0"));
   // DeviceTransact() will be called four times: three times to check for
   // duplicate key handles and once for registration. Since user
   // will register using "device1", the fourth call will invoke
-  // MockU2fDevice::NotSatisfied.
+  // MockFidoDevice::NotSatisfied.
   EXPECT_CALL(*device0, DeviceTransactPtr(_, _))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NotSatisfied));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NotSatisfied));
   // TryWink() will be called twice on both devices -- during check only
   // sign-in operation and during registration attempt.
   EXPECT_CALL(*device0, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device0));
 
-  auto device1 = std::make_unique<MockU2fDevice>();
-  EXPECT_CALL(*device1, GetId()).WillRepeatedly(::testing::Return("device1"));
+  auto device1 = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device1, GetId()).WillRepeatedly(testing::Return("device1"));
   // We assume that user registers with second device. Therefore, the fourth
-  // DeviceTransact() will invoke MockU2fDevice::NoErrorRegister after
+  // DeviceTransact() will invoke MockFidoDevice::NoErrorRegister after
   // successful registration.
   EXPECT_CALL(*device1, DeviceTransactPtr(_, _))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorRegister));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorRegister));
   // TryWink() will be called twice on both devices -- during check only
   // sign-in operation and during registration attempt.
   EXPECT_CALL(*device1, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device1));
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
-  const auto& response = register_callback().WaitForCallback();
-  EXPECT_EQ(U2fReturnCode::SUCCESS, std::get<0>(response));
-  EXPECT_EQ(GetTestCredentialRawIdBytes(), std::get<1>(response)->raw_id());
+  register_callback_receiver().WaitForCallback();
+  EXPECT_EQ(FidoReturnCode::kSuccess, register_callback_receiver().status());
+  ASSERT_TRUE(register_callback_receiver().value());
+  EXPECT_EQ(GetTestCredentialRawIdBytes(),
+            register_callback_receiver().value()->raw_credential_id());
 }
 
 // Tests a scenario where single device is connected and registration is called
@@ -570,30 +620,31 @@ TEST_F(U2fRegisterTest, TestSingleDeviceRegistrationWithDuplicateHandle) {
   request->Start();
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
-  auto device = std::make_unique<MockU2fDevice>();
+  auto device = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*device, GetId()).WillRepeatedly(::testing::Return("device"));
   // For four keys in exclude list, the first three keys will invoke
-  // MockU2fDevice::WrongData and the final duplicate key handle will invoke
-  // MockU2fDevice::NoErrorSign. Once duplicate key handle is found, bogus
+  // MockFidoDevice::WrongData and the final duplicate key handle will invoke
+  // MockFidoDevice::NoErrorSign. Once duplicate key handle is found, bogus
   // registration is called to confirm user presence. This invokes
-  // MockU2fDevice::NoErrorRegister.
+  // MockFidoDevice::NoErrorRegister.
   EXPECT_CALL(*device, DeviceTransactPtr(_, _))
       .Times(5)
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorSign))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorRegister));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorSign))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorRegister));
   // Since duplicate key handle is found, registration process is terminated
   // before actual Register() is called on the device. Therefore, TryWink() is
   // invoked once.
   EXPECT_CALL(*device, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device));
 
-  const auto& response = register_callback().WaitForCallback();
-  EXPECT_EQ(U2fReturnCode::CONDITIONS_NOT_SATISFIED, std::get<0>(response));
-  EXPECT_EQ(base::nullopt, std::get<1>(response));
+  register_callback_receiver().WaitForCallback();
+  EXPECT_EQ(FidoReturnCode::kConditionsNotSatisfied,
+            register_callback_receiver().status());
+  EXPECT_FALSE(register_callback_receiver().value());
 }
 
 // Tests a scenario where one (device1) of the two devices connected has created
@@ -606,45 +657,46 @@ TEST_F(U2fRegisterTest, TestMultipleDeviceRegistrationWithDuplicateHandle) {
        std::vector<uint8_t>(32, 0x0D), std::vector<uint8_t>(32, 0x0A)});
   request->Start();
 
-  auto device0 = std::make_unique<MockU2fDevice>();
-  EXPECT_CALL(*device0, GetId()).WillRepeatedly(::testing::Return("device0"));
+  auto device0 = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device0, GetId()).WillRepeatedly(testing::Return("device0"));
   // Since the first device did not create any of the key handles provided in
   // exclude list, we expect that check only sign() should be called
   // four times, and all the calls to DeviceTransact() invoke
-  // MockU2fDevice::WrongData.
+  // MockFidoDevice::WrongData.
   EXPECT_CALL(*device0, DeviceTransactPtr(_, _))
       .Times(4)
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData));
   EXPECT_CALL(*device0, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device0));
 
-  auto device1 = std::make_unique<MockU2fDevice>();
+  auto device1 = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*device1, GetId()).WillRepeatedly(::testing::Return("device1"));
   // Since the last key handle in exclude list is a duplicate key, we expect
   // that the first three calls to check only sign() invoke
-  // MockU2fDevice::WrongData and that fourth sign() call invoke
-  // MockU2fDevice::NoErrorSign. After duplicate key is found, process is
+  // MockFidoDevice::WrongData and that fourth sign() call invoke
+  // MockFidoDevice::NoErrorSign. After duplicate key is found, process is
   // terminated after user presence is verified using bogus registration, which
-  // invokes MockU2fDevice::NoErrorRegister.
+  // invokes MockFidoDevice::NoErrorRegister.
   EXPECT_CALL(*device1, DeviceTransactPtr(_, _))
       .Times(5)
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WrongData))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorSign))
-      .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorRegister));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WrongData))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorSign))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorRegister));
   EXPECT_CALL(*device1, TryWinkRef(_))
-      .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery()->AddDevice(std::move(device1));
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
-  const auto& response = register_callback().WaitForCallback();
-  EXPECT_EQ(U2fReturnCode::CONDITIONS_NOT_SATISFIED, std::get<0>(response));
-  EXPECT_EQ(base::nullopt, std::get<1>(response));
+  register_callback_receiver().WaitForCallback();
+  EXPECT_EQ(FidoReturnCode::kConditionsNotSatisfied,
+            register_callback_receiver().status());
+  EXPECT_FALSE(register_callback_receiver().value());
 }
 
 // These test the parsing of the U2F raw bytes of the registration response.
@@ -737,18 +789,18 @@ TEST_F(U2fRegisterTest, TestU2fAttestationObject) {
 
 // Test that a U2F register response is properly parsed.
 TEST_F(U2fRegisterTest, TestRegisterResponseData) {
-  base::Optional<RegisterResponseData> response =
-      RegisterResponseData::CreateFromU2fRegisterResponse(
+  base::Optional<AuthenticatorMakeCredentialResponse> response =
+      AuthenticatorMakeCredentialResponse::CreateFromU2fRegisterResponse(
           std::vector<uint8_t>(kTestRelyingPartyIdSHA256,
                                kTestRelyingPartyIdSHA256 + 32),
           GetTestRegisterResponse());
-  EXPECT_EQ(GetTestCredentialRawIdBytes(), response->raw_id());
+  EXPECT_EQ(GetTestCredentialRawIdBytes(), response->raw_credential_id());
   EXPECT_EQ(GetTestAttestationObjectBytes(),
             response->GetCBOREncodedAttestationObject());
 }
 
 MATCHER_P(IndicatesIndividualAttestation, expected, "") {
-  return arg.size() >= 2 && ((arg[2] & 0x80) == 0x80) == expected;
+  return arg.size() > 2 && ((arg[2] & 0x80) == 0x80) == expected;
 }
 
 TEST_F(U2fRegisterTest, TestIndividualAttestation) {
@@ -763,26 +815,25 @@ TEST_F(U2fRegisterTest, TestIndividualAttestation) {
         nullptr /* connector */,
         base::flat_set<U2fTransportProtocol>(
             {U2fTransportProtocol::kUsbHumanInterfaceDevice}) /* transports */,
-        std::vector<std::vector<uint8_t>>() /* registration_keys */,
-        std::vector<uint8_t>(32) /* challenge_digest */,
-        std::vector<uint8_t>(32) /* application_parameter */,
+        key_handles_, challenge_parameter_, application_parameter_,
         individual_attestation, cb.callback());
     request->Start();
     discovery()->WaitForCallToStartAndSimulateSuccess();
 
-    auto device = std::make_unique<MockU2fDevice>();
+    auto device = std::make_unique<MockFidoDevice>();
     EXPECT_CALL(*device, GetId()).WillRepeatedly(::testing::Return("device"));
     EXPECT_CALL(*device,
                 DeviceTransactPtr(
                     IndicatesIndividualAttestation(individual_attestation), _))
-        .WillOnce(::testing::Invoke(MockU2fDevice::NoErrorRegister));
+        .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorRegister));
     EXPECT_CALL(*device, TryWinkRef(_))
-        .WillOnce(::testing::Invoke(MockU2fDevice::WinkDoNothing));
+        .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
     discovery()->AddDevice(std::move(device));
 
-    const auto& response = cb.WaitForCallback();
-    EXPECT_EQ(U2fReturnCode::SUCCESS, std::get<0>(response));
-    EXPECT_EQ(GetTestCredentialRawIdBytes(), std::get<1>(response)->raw_id());
+    cb.WaitForCallback();
+    EXPECT_EQ(FidoReturnCode::kSuccess, cb.status());
+    ASSERT_TRUE(cb.value());
+    EXPECT_EQ(GetTestCredentialRawIdBytes(), cb.value()->raw_credential_id());
   }
 }
 

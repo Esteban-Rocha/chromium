@@ -107,17 +107,6 @@ const base::Feature kUIExperimentHideSteadyStateUrlSchemeAndSubdomains{
     "OmniboxUIExperimentHideSteadyStateUrlSchemeAndSubdomains",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Feature used for hiding the suggestion URL scheme as a UI experiment.
-const base::Feature kUIExperimentHideSuggestionUrlScheme{
-    "OmniboxUIExperimentHideSuggestionUrlScheme",
-    base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Feature used for hiding the suggestion URL subdomain as a UI experiment.
-// This only hides some trivially informative subdomains such as "www" or "m".
-const base::Feature kUIExperimentHideSuggestionUrlTrivialSubdomains{
-    "OmniboxUIExperimentHideSuggestionUrlTrivialSubdomains",
-    base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Feature used for the omnibox narrow suggestions dropdown UI experiment.
 const base::Feature kUIExperimentNarrowDropdown{
     "OmniboxUIExperimentNarrowDropdown", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -666,9 +655,9 @@ OmniboxFieldTrial::GetEmphasizeTitlesConditionForInput(
     return EMPHASIZE_WHEN_NONEMPTY;
   }
 
-  // Touch devices also always swap title and URL.
+  // Touch-optimized UI and MD Refresh also always swap title and URL.
   if (ui::MaterialDesignController::is_mode_initialized() &&
-      ui::MaterialDesignController::IsTouchOptimizedUiEnabled()) {
+      ui::MaterialDesignController::IsNewerMaterialUi()) {
     return EMPHASIZE_WHEN_NONEMPTY;
   }
 

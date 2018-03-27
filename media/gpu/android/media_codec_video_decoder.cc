@@ -15,6 +15,7 @@
 #include "media/base/android/media_codec_bridge_impl.h"
 #include "media/base/android/media_codec_util.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_codecs.h"
@@ -132,16 +133,16 @@ MediaCodecVideoDecoder::~MediaCodecVideoDecoder() {
   ReleaseCodec();
   codec_allocator_->StopThread(this);
 
-  if (!media_drm_bridge_cdm_context_)
+  if (!media_crypto_context_)
     return;
 
   DCHECK(cdm_registration_id_);
 
   // Cancel previously registered callback (if any).
-  media_drm_bridge_cdm_context_->SetMediaCryptoReadyCB(
-      MediaDrmBridgeCdmContext::MediaCryptoReadyCB());
+  media_crypto_context_->SetMediaCryptoReadyCB(
+      MediaCryptoContext::MediaCryptoReadyCB());
 
-  media_drm_bridge_cdm_context_->UnregisterPlayer(cdm_registration_id_);
+  media_crypto_context_->UnregisterPlayer(cdm_registration_id_);
 }
 
 void MediaCodecVideoDecoder::Destroy() {
@@ -155,11 +156,13 @@ void MediaCodecVideoDecoder::Destroy() {
   StartDrainingCodec(DrainType::kForDestroy);
 }
 
-void MediaCodecVideoDecoder::Initialize(const VideoDecoderConfig& config,
-                                        bool low_delay,
-                                        CdmContext* cdm_context,
-                                        const InitCB& init_cb,
-                                        const OutputCB& output_cb) {
+void MediaCodecVideoDecoder::Initialize(
+    const VideoDecoderConfig& config,
+    bool low_delay,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& /* waiting_for_decryption_key_cb */) {
   const bool first_init = !decoder_config_.IsValidConfig();
   DVLOG(2) << (first_init ? "Initializing" : "Reinitializing")
            << " MCVD with config: " << config.AsHumanReadableString();
@@ -204,9 +207,13 @@ void MediaCodecVideoDecoder::SetCdm(CdmContext* cdm_context,
     return;
   }
 
-  // On Android platform the CdmContext must be a MediaDrmBridgeCdmContext.
-  media_drm_bridge_cdm_context_ =
-      static_cast<media::MediaDrmBridgeCdmContext*>(cdm_context);
+  media_crypto_context_ = cdm_context->GetMediaCryptoContext();
+  if (!media_crypto_context_) {
+    LOG(ERROR) << "MediaCryptoContext not supported";
+    EnterTerminalState(State::kError);
+    init_cb.Run(false);
+    return;
+  }
 
   // Register CDM callbacks. The callbacks registered will be posted back to
   // this thread via BindToCurrentLoop.
@@ -216,12 +223,12 @@ void MediaCodecVideoDecoder::SetCdm(CdmContext* cdm_context,
   // destructed as well. So the |cdm_unset_cb| will never have a chance to be
   // called.
   // TODO(xhwang): Remove |cdm_unset_cb| after it's not used on all platforms.
-  cdm_registration_id_ = media_drm_bridge_cdm_context_->RegisterPlayer(
+  cdm_registration_id_ = media_crypto_context_->RegisterPlayer(
       media::BindToCurrentLoop(base::Bind(&MediaCodecVideoDecoder::OnKeyAdded,
                                           weak_factory_.GetWeakPtr())),
       base::DoNothing());
 
-  media_drm_bridge_cdm_context_->SetMediaCryptoReadyCB(media::BindToCurrentLoop(
+  media_crypto_context_->SetMediaCryptoReadyCB(media::BindToCurrentLoop(
       base::Bind(&MediaCodecVideoDecoder::OnMediaCryptoReady,
                  weak_factory_.GetWeakPtr(), init_cb)));
 }

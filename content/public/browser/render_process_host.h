@@ -20,8 +20,12 @@
 #include "content/public/common/bind_interface_helpers.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "ui/gfx/native_widget_types.h"
+
+#if defined(OS_ANDROID)
+#include "content/public/browser/android/child_process_importance.h"
+#endif
 
 class GURL;
 
@@ -67,6 +71,27 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
                                          public base::SupportsUserData {
  public:
   using iterator = base::IDMap<RenderProcessHost*>::iterator;
+
+  // Priority (or on Android, the importance) that a client contributes to this
+  // RenderProcessHost. Eg a RenderProcessHost with a visible client has higher
+  // priority / importance than a RenderProcessHost with hidden clients only.
+  struct Priority {
+    bool is_hidden;
+#if defined(OS_ANDROID)
+    ChildProcessImportance importance;
+#endif
+  };
+
+  // Interface for a client that contributes Priority to this
+  // RenderProcessHost. Clients can call UpdateClientPriority when their
+  // Priority changes.
+  class PriorityClient {
+   public:
+    virtual Priority GetPriority() = 0;
+
+   protected:
+    virtual ~PriorityClient() {}
+  };
 
   // Details for RENDERER_PROCESS_CLOSED notifications.
   struct RendererClosedDetails {
@@ -126,11 +151,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // will be reported as well.
   virtual void ShutdownForBadMessage(CrashReportMode crash_report_mode) = 0;
 
-  // Track the count of visible widgets. Called by listeners to register and
-  // unregister visibility.
-  virtual void WidgetRestored() = 0;
-  virtual void WidgetHidden() = 0;
-  virtual int VisibleWidgetCount() const = 0;
+  // Track the count of visible clients.
+  virtual void UpdateClientPriority(PriorityClient* client) = 0;
+  virtual int VisibleClientCount() const = 0;
 
   virtual RendererAudioOutputStreamFactoryContext*
   GetRendererAudioOutputStreamFactoryContext() = 0;
@@ -233,12 +256,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void RemoveWidget(RenderWidgetHost* widget) = 0;
 
 #if defined(OS_ANDROID)
-  // Called by an already added widget when its importance changes.
-  virtual void UpdateWidgetImportance(ChildProcessImportance old_value,
-                                      ChildProcessImportance new_value) = 0;
-
   // Return the highest importance of all widgets in this process.
-  virtual ChildProcessImportance ComputeEffectiveImportance() = 0;
+  virtual ChildProcessImportance GetEffectiveImportance() = 0;
 #endif
 
   // Sets a flag indicating that the process can be abnormally terminated.
@@ -288,6 +307,10 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
       bool incoming,
       bool outgoing,
       const WebRtcRtpPacketCallback& packet_callback) = 0;
+
+  // Start/stop event log output from WebRTC on this RPH for the peer connection
+  // identified locally within the RPH using the ID |lid|.
+  virtual void SetWebRtcEventLogOutput(int lid, bool enabled) = 0;
 #endif
 
   // Tells the ResourceDispatcherHost to resume a deferred navigation without

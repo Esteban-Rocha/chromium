@@ -57,13 +57,13 @@ void Surface::Reset(base::WeakPtr<SurfaceClient> client) {
   active_frame_data_.reset();
 }
 
-bool Surface::InheritActivationDeadlineFrom(Surface* surface) {
+void Surface::InheritActivationDeadlineFrom(Surface* surface) {
   TRACE_EVENT1("viz", "Surface::InheritActivationDeadlineFrom", "FrameSinkId",
                surface_id().frame_sink_id().ToString());
   if (!deadline_ || !surface->deadline_)
-    return false;
+    return;
 
-  return deadline_->InheritFrom(*surface->deadline_);
+  deadline_->InheritFrom(*surface->deadline_);
 }
 
 void Surface::SetPreviousFrameSurface(Surface* surface) {
@@ -321,13 +321,16 @@ void Surface::ActivateFrame(FrameData frame_data,
 
   UnrefFrameResourcesAndRunCallbacks(std::move(previous_frame_data));
 
+  // This should happen before calling SurfaceManager::FirstSurfaceActivation(),
+  // as that notifies observers which may have side effects for
+  // |surface_client_|. See https://crbug.com/821855.
+  if (surface_client_)
+    surface_client_->OnSurfaceActivated(this);
+
   if (!seen_first_frame_activation_) {
     seen_first_frame_activation_ = true;
     surface_manager_->FirstSurfaceActivation(surface_info_);
   }
-
-  if (surface_client_)
-    surface_client_->OnSurfaceActivated(this);
 
   surface_manager_->SurfaceActivated(this, duration);
 }
@@ -423,7 +426,8 @@ void Surface::TakeCopyOutputRequests(Surface::CopyRequestsMap* copy_requests) {
   if (!active_frame_data_)
     return;
 
-  TakeCopyOutputRequestsFromClient();
+  // TakeCopyOutputRequestsFromClient() has to be called before this method.
+  DCHECK(!surface_client_ || !surface_client_->HasCopyOutputRequests());
 
   for (const auto& render_pass : active_frame_data_->frame.render_pass_list) {
     for (auto& request : render_pass->copy_requests) {
@@ -431,6 +435,15 @@ void Surface::TakeCopyOutputRequests(Surface::CopyRequestsMap* copy_requests) {
           std::make_pair(render_pass->id, std::move(request)));
     }
     render_pass->copy_requests.clear();
+  }
+}
+
+void Surface::TakeCopyOutputRequestsFromClient() {
+  if (!surface_client_)
+    return;
+  for (std::unique_ptr<CopyOutputRequest>& request :
+       surface_client_->TakeCopyOutputRequests()) {
+    RequestCopyOfOutput(std::move(request));
   }
 }
 
@@ -475,13 +488,16 @@ void Surface::RunDrawCallback() {
     std::move(active_frame_data_->draw_callback).Run();
 }
 
-void Surface::NotifyAggregatedDamage(const gfx::Rect& damage_rect) {
+void Surface::NotifyAggregatedDamage(const gfx::Rect& damage_rect,
+                                     base::TimeTicks expected_display_time) {
   if (!active_frame_data_ ||
       active_frame_data_->aggregated_damage_callback.is_null())
     return;
 
   active_frame_data_->aggregated_damage_callback.Run(
-      surface_id().local_surface_id(), damage_rect, active_frame_data_->frame);
+      surface_id().local_surface_id(),
+      active_frame_data_->frame.size_in_pixels(), damage_rect,
+      expected_display_time);
 }
 
 void Surface::OnDeadline(base::TimeDelta duration) {
@@ -543,17 +559,7 @@ void Surface::TakeLatencyInfoFromFrame(
 }
 
 void Surface::OnWillBeDrawn() {
-  TakeCopyOutputRequestsFromClient();
   surface_manager_->SurfaceWillBeDrawn(this);
-}
-
-void Surface::TakeCopyOutputRequestsFromClient() {
-  if (!surface_client_)
-    return;
-  for (std::unique_ptr<CopyOutputRequest>& request :
-       surface_client_->TakeCopyOutputRequests()) {
-    RequestCopyOfOutput(std::move(request));
-  }
 }
 
 }  // namespace viz

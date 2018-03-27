@@ -43,6 +43,7 @@ int LayoutProvider::GetControlHeightForFont(int context,
 }
 
 gfx::Insets LayoutProvider::GetInsetsMetric(int metric) const {
+  DCHECK_GE(metric, VIEWS_INSETS_START);
   DCHECK_LT(metric, VIEWS_INSETS_MAX);
   switch (metric) {
     case InsetsMetric::INSETS_DIALOG:
@@ -58,6 +59,8 @@ gfx::Insets LayoutProvider::GetInsetsMetric(int metric) const {
       return gfx::Insets(dialog_insets.top(), dialog_insets.left(), 0,
                          dialog_insets.right());
     }
+    case InsetsMetric::INSETS_TOOLTIP_BUBBLE:
+      return gfx::Insets(8);
     case InsetsMetric::INSETS_CHECKBOX_RADIO_BUTTON:
       return gfx::Insets(5, 6);
     case InsetsMetric::INSETS_VECTOR_IMAGE_BUTTON:
@@ -70,7 +73,8 @@ gfx::Insets LayoutProvider::GetInsetsMetric(int metric) const {
 }
 
 int LayoutProvider::GetDistanceMetric(int metric) const {
-  DCHECK_GE(metric, VIEWS_INSETS_MAX);
+  DCHECK_GE(metric, VIEWS_DISTANCE_START);
+  DCHECK_LT(metric, VIEWS_DISTANCE_MAX);
   switch (metric) {
     case DistanceMetric::DISTANCE_BUTTON_HORIZONTAL_PADDING:
       return 16;

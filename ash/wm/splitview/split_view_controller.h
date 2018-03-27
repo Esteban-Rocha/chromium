@@ -6,16 +6,17 @@
 #define ASH_WM_SPLITSVIEW_SPLIT_VIEW_CONTROLLER_H_
 
 #include "ash/ash_export.h"
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/public/interfaces/split_view.mojom.h"
 #include "ash/shell_observer.h"
 #include "ash/wm/tablet_mode/tablet_mode_observer.h"
 #include "ash/wm/window_state_observer.h"
+#include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr_set.h"
-#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationLockType.h"
 #include "ui/aura/window_observer.h"
 #include "ui/display/display.h"
 #include "ui/display/display_observer.h"
@@ -80,7 +81,7 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   // Returns true if split view mode is active.
   bool IsSplitViewModeActive() const;
 
-  blink::WebScreenOrientationLockType GetCurrentScreenOrientation() const;
+  OrientationLockType GetCurrentScreenOrientation() const;
 
   // Returns true if |screen_orientation_| is a landscape orientation.
   bool IsCurrentScreenOrientationLandscape() const;
@@ -90,8 +91,12 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   // primary orientation.
   bool IsCurrentScreenOrientationPrimary() const;
 
-  // Snaps window to left/right.
-  void SnapWindow(aura::Window* window, SnapPosition snap_position);
+  // Snaps window to left/right. |window_item_bounds| is the bounds of the
+  // overview window item in overview. It's empty if the snapped window doesn't
+  // come from overview grid.
+  void SnapWindow(aura::Window* window,
+                  SnapPosition snap_position,
+                  const gfx::Rect& window_item_bounds = gfx::Rect());
 
   // Swaps the left and right windows. This will do nothing if one of the
   // windows is not snapped.
@@ -104,13 +109,21 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   aura::Window* GetDefaultSnappedWindow();
 
   // Gets the window bounds according to the snap state |snap_state| and the
-  // separator position |separator_position_|.
+  // divider position |divider_position_|. The returned snapped window bounds
+  // are adjusted to its minimum size if the desired bounds are smaller than
+  // its minumum bounds. Note: the snapped window bounds can't be pushed
+  // outside of the workspace area.
   gfx::Rect GetSnappedWindowBoundsInParent(aura::Window* window,
                                            SnapPosition snap_position);
   gfx::Rect GetSnappedWindowBoundsInScreen(aura::Window* window,
                                            SnapPosition snap_position);
   gfx::Rect GetDisplayWorkAreaBoundsInParent(aura::Window* window) const;
   gfx::Rect GetDisplayWorkAreaBoundsInScreen(aura::Window* window) const;
+
+  // Gets the desired snapped window bounds accoridng to the snap state
+  // |snap_state| and the divider pistion |divider_position_|.
+  gfx::Rect GetSnappedWindowBoundsInScreenUnadjusted(aura::Window* window,
+                                                     SnapPosition snap_postion);
 
   void StartResize(const gfx::Point& location_in_screen);
   void Resize(const gfx::Point& location_in_screen);
@@ -168,6 +181,9 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   // Starts/Stops observing |window|.
   void StartObserving(aura::Window* window);
   void StopObserving(aura::Window* window);
+
+  // Update split view state and notify its observer about the change.
+  void UpdateSplitViewStateAndNotifyObservers();
 
   // Notifies observers that the split view state has been changed.
   void NotifySplitViewStateChanged(State previous_state, State state);
@@ -324,8 +340,7 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   SnapPosition default_snap_position_ = NONE;
 
   // The previous orientation of the screen.
-  blink::WebScreenOrientationLockType previous_screen_orientation_ =
-      blink::kWebScreenOrientationLockDefault;
+  OrientationLockType previous_screen_orientation_ = OrientationLockType::kAny;
 
   // If the divider is currently being dragging.
   bool is_resizing_ = false;
@@ -339,6 +354,10 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   // the one who stacked above the other, see GetWindowForSmoothResize() for
   // details.
   aura::Window* smooth_resize_window_ = nullptr;
+
+  // The map from a to-be-snapped window to its overview item's bounds if the
+  // window comes from the overview.
+  base::flat_map<aura::Window*, gfx::Rect> overview_window_item_bounds_map_;
 
   base::ObserverList<Observer> observers_;
   mojo::InterfacePtrSet<mojom::SplitViewObserver> mojo_observers_;

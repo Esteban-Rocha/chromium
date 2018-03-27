@@ -8,6 +8,7 @@
 #include "ash/public/interfaces/wallpaper.mojom.h"
 #include "base/macros.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/interface_ptr_set.h"
 
 // Simulates WallpaperController in ash.
 // TODO(crbug.com/776464): Maybe create an enum to represent each function to
@@ -17,6 +18,10 @@ class TestWallpaperController : ash::mojom::WallpaperController {
   TestWallpaperController();
 
   ~TestWallpaperController() override;
+
+  // Simulates showing the wallpaper on screen by updating |current_wallpaper|
+  // and notifying the observers.
+  void ShowWallpaperImage(const gfx::ImageSkia& image);
 
   void ClearCounts();
   bool was_client_set() const { return was_client_set_; }
@@ -40,14 +45,14 @@ class TestWallpaperController : ash::mojom::WallpaperController {
   void SetCustomWallpaper(ash::mojom::WallpaperUserInfoPtr user_info,
                           const std::string& wallpaper_files_id,
                           const std::string& file_name,
-                          wallpaper::WallpaperLayout layout,
-                          const SkBitmap& image,
+                          ash::WallpaperLayout layout,
+                          const gfx::ImageSkia& image,
                           bool preview_mode) override;
   void SetOnlineWallpaper(ash::mojom::WallpaperUserInfoPtr user_info,
-                          const SkBitmap& image,
+                          const gfx::ImageSkia& image,
                           const std::string& url,
-                          wallpaper::WallpaperLayout layout,
-                          bool show_wallpaper) override;
+                          ash::WallpaperLayout layout,
+                          bool preview_mode) override;
   void SetDefaultWallpaper(ash::mojom::WallpaperUserInfoPtr user_info,
                            const std::string& wallpaper_files_id,
                            bool show_wallpaper) override;
@@ -58,10 +63,18 @@ class TestWallpaperController : ash::mojom::WallpaperController {
                           const std::string& wallpaper_files_id,
                           const std::string& data) override;
   void SetDeviceWallpaperPolicyEnforced(bool enforced) override;
+  void SetThirdPartyWallpaper(
+      ash::mojom::WallpaperUserInfoPtr user_info,
+      const std::string& wallpaper_files_id,
+      const std::string& file_name,
+      ash::WallpaperLayout layout,
+      const gfx::ImageSkia& image,
+      ash::mojom::WallpaperController::SetThirdPartyWallpaperCallback callback)
+      override;
   void ConfirmPreviewWallpaper() override;
   void CancelPreviewWallpaper() override;
   void UpdateCustomWallpaperLayout(ash::mojom::WallpaperUserInfoPtr user_info,
-                                   wallpaper::WallpaperLayout layout) override;
+                                   ash::WallpaperLayout layout) override;
   void ShowUserWallpaper(ash::mojom::WallpaperUserInfoPtr user_info) override;
   void ShowSigninWallpaper() override;
   void RemoveUserWallpaper(ash::mojom::WallpaperUserInfoPtr user_info,
@@ -72,7 +85,12 @@ class TestWallpaperController : ash::mojom::WallpaperController {
   void OpenWallpaperPickerIfAllowed() override;
   void AddObserver(
       ash::mojom::WallpaperObserverAssociatedPtrInfo observer) override;
-  void GetWallpaperColors(GetWallpaperColorsCallback callback) override;
+  void GetWallpaperImage(
+      ash::mojom::WallpaperController::GetWallpaperImageCallback callback)
+      override;
+  void GetWallpaperColors(
+      ash::mojom::WallpaperController::GetWallpaperColorsCallback callback)
+      override;
   void IsActiveUserWallpaperControlledByPolicy(
       ash::mojom::WallpaperController::
           IsActiveUserWallpaperControlledByPolicyCallback callback) override;
@@ -87,6 +105,11 @@ class TestWallpaperController : ash::mojom::WallpaperController {
   int remove_user_wallpaper_count_ = 0;
   int set_default_wallpaper_count_ = 0;
   int set_custom_wallpaper_count_ = 0;
+
+  mojo::AssociatedInterfacePtrSet<ash::mojom::WallpaperObserver>
+      test_observers_;
+
+  gfx::ImageSkia current_wallpaper;
 
   DISALLOW_COPY_AND_ASSIGN(TestWallpaperController);
 };

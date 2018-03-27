@@ -17,6 +17,10 @@ namespace content {
 class NavigationHandle;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+};
+
 constexpr char kBlockTabUnderFormatMessage[] =
     "Chrome stopped this site from navigating to %s, see "
     "https://www.chromestatus.com/feature/5675755719622656 for more details.";
@@ -28,7 +32,9 @@ constexpr char kBlockTabUnderFormatMessage[] =
 // 1. It is a navigation that is "suspicious"
 //    a. It has no user gesture.
 //    b. It is renderer-initiated.
-//    c. It is cross origin to the last committed URL in the tab.
+//    c. It is cross site to the last committed URL in the tab.
+//    d. The target site has a Site Engagement score below some threshold (by
+//       default, a score of 0).
 // 2. The tab has opened a popup and hasn't received a user gesture since then.
 //    This information is tracked by the PopupOpenerTabHelper.
 class TabUnderNavigationThrottle : public content::NavigationThrottle {
@@ -59,6 +65,8 @@ class TabUnderNavigationThrottle : public content::NavigationThrottle {
     kCount
   };
 
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
   static std::unique_ptr<content::NavigationThrottle> MaybeCreate(
       content::NavigationHandle* handle);
 
@@ -70,8 +78,7 @@ class TabUnderNavigationThrottle : public content::NavigationThrottle {
   // This method is described at the top of this file.
   //
   // Note: This method should be robust to navigations at any stage.
-  static bool IsSuspiciousClientRedirect(
-      content::NavigationHandle* navigation_handle);
+  bool IsSuspiciousClientRedirect() const;
 
   content::NavigationThrottle::ThrottleCheckResult MaybeBlockNavigation();
   void ShowUI();
@@ -83,6 +90,12 @@ class TabUnderNavigationThrottle : public content::NavigationThrottle {
   content::NavigationThrottle::ThrottleCheckResult WillRedirectRequest()
       override;
   const char* GetNameForLogging() override;
+
+  // Threshold for a site's engagement score to be considered non-suspicious.
+  // Any tab-under target URL with engagement > |engagement_threshold_| will not
+  // be considered a suspicious redirect. If this member is -1, this threshold
+  // will not apply and all sites will be candidates for blocking.
+  const int engagement_threshold_ = 0;
 
   // Store whether we're off the record as a member to avoid looking it up all
   // the time.

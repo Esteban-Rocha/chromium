@@ -7,7 +7,7 @@
 #include "base/command_line.h"
 #include "build/build_config.h"
 #include "chrome/common/chrome_switches.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "ppapi/features/features.h"
 
 namespace features {
@@ -36,10 +36,6 @@ const base::Feature kShow10_9ObsoleteInfobar{"Show109ObsoleteInfobar",
 // Enables the fullscreen toolbar to reveal itself if it's hidden.
 const base::Feature kFullscreenToolbarReveal{"FullscreenToolbarReveal",
                                              base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Use toolkit-views for profile chooser menu.
-const base::Feature kViewsProfileChooser{"ViewsProfileChooser",
-                                         base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Use the Toolkit-Views Task Manager window.
 const base::Feature kViewsTaskManager{"ViewsTaskManager",
@@ -182,8 +178,14 @@ const base::Feature kDesktopIOSPromotion{"DesktopIOSPromotion",
 #endif
 
 // Enables or disables windowing related features for desktop PWAs.
-const base::Feature kDesktopPWAWindowing{"DesktopPWAWindowing",
-                                         base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kDesktopPWAWindowing {
+  "DesktopPWAWindowing",
+#if defined(OS_CHROMEOS)
+      base::FEATURE_ENABLED_BY_DEFAULT
+#else
+      base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 // Enables or disables Desktop PWAs capturing links.
 const base::Feature kDesktopPWAsLinkCapturing{
@@ -223,8 +225,14 @@ const base::Feature kExpectCTReporting{"ExpectCTReporting",
 
 // An experimental way of showing app banners, which has modal banners and gives
 // developers more control over when to show them.
-const base::Feature kExperimentalAppBanners{"ExperimentalAppBanners",
-                                            base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kExperimentalAppBanners {
+  "ExperimentalAppBanners",
+#if defined(OS_CHROMEOS)
+      base::FEATURE_ENABLED_BY_DEFAULT
+#else
+      base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 #if defined(OS_CHROMEOS)
 extern const base::Feature kExperimentalCrostiniUI{
@@ -235,18 +243,6 @@ extern const base::Feature kExperimentalCrostiniUI{
 // system-reserved keyboard shortcuts.
 const base::Feature kExperimentalKeyboardLockUI{
     "ExperimentalKeyboardLockUI", base::FEATURE_DISABLED_BY_DEFAULT};
-
-#if BUILDFLAG(ENABLE_VR) || defined(OS_ANDROID)
-// Controls whether browsing in VR headsets is enabled.
-const base::Feature kVrBrowsing {
-  "VrBrowsing",
-#if defined(OS_ANDROID)
-      base::FEATURE_ENABLED_BY_DEFAULT
-#else
-      base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-};
-#endif  // BUILDFLAG(ENABLE_VR) || defined(OS_ANDROID)
 
 #if BUILDFLAG(ENABLE_VR)
 // Enables the virtual keyboard for Chrome VR.
@@ -307,6 +303,12 @@ const base::Feature kImportantSitesInCbd{"ImportantSitesInCBD",
 // a broken Chrome updater in more scenarios than before.
 const base::Feature kImprovedRecoveryComponent{
     "ImprovedRecoveryComponent", base::FEATURE_DISABLED_BY_DEFAULT};
+
+#if defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)
+// A feature that controls whether Chrome warns about incompatible applications.
+const base::Feature kIncompatibleApplicationsWarning{
+    "IncompatibleApplicationsWarning", base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
 
 #if !defined(OS_ANDROID)
 // Enables Casting a Presentation API-enabled website to a secondary display.
@@ -439,10 +441,6 @@ const base::Feature kOneGoogleBarOnLocalNtp{"OneGoogleBarOnLocalNtp",
 const base::Feature kUseNewAcceptLanguageHeader{
     "UseNewAcceptLanguageHeader", base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Enables Permissions Blacklisting via Safe Browsing.
-const base::Feature kPermissionsBlacklist{
-    "PermissionsBlacklist", base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Delegate permissions to cross-origin iframes when the feature has been
 // allowed by feature policy.
 const base::Feature kPermissionDelegation{"PermissionDelegation",
@@ -521,6 +519,13 @@ const base::Feature kSiteNotificationChannels{"SiteNotificationChannels",
                                               base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_ANDROID)
 
+// Alternative to switches::kSitePerProcess, for turning on full site isolation.
+// Launch bug: https://crbug.com/739418.  This is a //chrome-layer feature to
+// avoid turning on site-per-process by default for *all* //content embedders
+// (e.g. this approach lets ChromeCast avoid site-per-process mode).
+const base::Feature kSitePerProcess{"site-per-process",
+                                    base::FEATURE_DISABLED_BY_DEFAULT};
+
 // A new user experience for transitioning into fullscreen and mouse pointer
 // lock states.
 const base::Feature kSimplifiedFullscreenUI{"ViewsSimplifiedFullscreenUI",
@@ -539,7 +544,7 @@ const base::Feature kSoundContentSetting{"SoundContentSetting",
 // Enables or disables the creation of (legacy) supervised users. Does not
 // affect existing supervised users.
 const base::Feature kSupervisedUserCreation{"SupervisedUserCreation",
-                                            base::FEATURE_ENABLED_BY_DEFAULT};
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables or disabled committed interstitials for Supervised User
 // interstitials.

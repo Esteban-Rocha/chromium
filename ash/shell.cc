@@ -16,9 +16,8 @@
 #include "ash/accelerators/spoken_feedback_toggler.h"
 #include "ash/accessibility/accessibility_controller.h"
 #include "ash/accessibility/accessibility_delegate.h"
+#include "ash/accessibility/accessibility_focus_ring_controller.h"
 #include "ash/app_list/app_list_controller_impl.h"
-#include "ash/app_list/app_list_delegate_impl.h"
-#include "ash/app_list/presenter/app_list.h"
 #include "ash/ash_constants.h"
 #include "ash/autoclick/autoclick_controller.h"
 #include "ash/cast_config_controller.h"
@@ -26,17 +25,17 @@
 #include "ash/detachable_base/detachable_base_notification_controller.h"
 #include "ash/display/ash_display_controller.h"
 #include "ash/display/cursor_window_controller.h"
-#include "ash/display/display_color_manager_chromeos.h"
+#include "ash/display/display_color_manager.h"
 #include "ash/display/display_configuration_controller.h"
-#include "ash/display/display_error_observer_chromeos.h"
+#include "ash/display/display_error_observer.h"
 #include "ash/display/display_shutdown_observer.h"
 #include "ash/display/event_transformation_handler.h"
 #include "ash/display/mouse_cursor_event_filter.h"
 #include "ash/display/persistent_window_controller.h"
-#include "ash/display/projecting_observer_chromeos.h"
+#include "ash/display/projecting_observer.h"
 #include "ash/display/resolution_notification_controller.h"
 #include "ash/display/screen_ash.h"
-#include "ash/display/screen_orientation_controller_chromeos.h"
+#include "ash/display/screen_orientation_controller.h"
 #include "ash/display/screen_position_controller.h"
 #include "ash/display/window_tree_host_manager.h"
 #include "ash/drag_drop/drag_drop_controller.h"
@@ -537,7 +536,8 @@ void Shell::DoInitialWorkspaceAnimation() {
 }
 
 bool Shell::IsSplitViewModeActive() const {
-  return split_view_controller_->IsSplitViewModeActive();
+  return split_view_controller_.get() &&
+         split_view_controller_->IsSplitViewModeActive();
 }
 
 void Shell::AddShellObserver(ShellObserver* observer) {
@@ -571,6 +571,11 @@ void Shell::NotifyOverviewModeEnded() {
 void Shell::NotifySplitViewModeStarting() {
   for (auto& observer : shell_observers_)
     observer.OnSplitViewModeStarting();
+}
+
+void Shell::NotifySplitViewModeStarted() {
+  for (auto& observer : shell_observers_)
+    observer.OnSplitViewModeStarted();
 }
 
 void Shell::NotifySplitViewModeEnded() {
@@ -651,7 +656,6 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate,
       vpn_list_(std::make_unique<VpnList>()),
       window_cycle_controller_(std::make_unique<WindowCycleController>()),
       window_selector_controller_(std::make_unique<WindowSelectorController>()),
-      app_list_(std::make_unique<app_list::AppList>()),
       tray_bluetooth_helper_(std::make_unique<TrayBluetoothHelper>()),
       display_configurator_(new display::DisplayConfigurator()),
       native_cursor_manager_(nullptr),
@@ -714,6 +718,9 @@ Shell::~Shell() {
   // to but no longer cares about.
   virtual_keyboard_controller_.reset();
 
+  // Depends on |tablet_mode_controller_|.
+  shelf_controller_->Shutdown();
+
   // Destroy tablet mode controller early on since it has some observers which
   // need to be removed.
   tablet_mode_controller_.reset();
@@ -724,8 +731,6 @@ Shell::~Shell() {
 
   toast_manager_.reset();
 
-  for (aura::Window* root : GetAllRootWindows())
-    Shelf::ForWindow(root)->ShutdownShelfWidget();
   tray_bluetooth_helper_.reset();
 
   // Accesses root window containers.
@@ -759,6 +764,7 @@ Shell::~Shell() {
   // |window_selector_controller_|.
   split_view_controller_.reset();
 
+  // Close all widgets (including the shelf) and destroy all window containers.
   CloseAllRootWindowChildWindows();
 
   // MruWindowTracker must be destroyed after all windows have been deleted to
@@ -800,16 +806,13 @@ Shell::~Shell() {
   ScreenAsh::CreateScreenForShutdown();
   display_configuration_controller_.reset();
 
-  // AppListDelegateImpl depends upon AppList.
-  app_list_delegate_impl_.reset();
-
   app_list_controller_.reset();
 
   // These members access Shell in their destructors.
   wallpaper_controller_.reset();
   accessibility_controller_.reset();
   accessibility_delegate_.reset();
-  message_center_controller_.reset();
+  accessibility_focus_ring_controller_.reset();
 
   // Balances the Install() in Initialize().
   views::FocusManagerFactory::Install(nullptr);
@@ -868,6 +871,9 @@ Shell::~Shell() {
   // before it.
   detachable_base_handler_.reset();
 
+  // Destroys the MessageCenter singleton, so must happen late.
+  message_center_controller_.reset();
+
   local_state_.reset();
   shell_delegate_.reset();
 
@@ -881,6 +887,10 @@ Shell::~Shell() {
 void Shell::Init(ui::ContextFactory* context_factory,
                  ui::ContextFactoryPrivate* context_factory_private) {
   const Config config = shell_port_->GetAshConfig();
+
+  // This creates the MessageCenter object which is used by some other objects
+  // initialized here, so it needs to come early.
+  message_center_controller_ = std::make_unique<MessageCenterController>();
 
   // These controllers call Shell::Get() in their constructors, so they cannot
   // be in the member initialization list.
@@ -909,6 +919,8 @@ void Shell::Init(ui::ContextFactory* context_factory,
 
   // Some delegates access ShellPort during their construction. Create them here
   // instead of the ShellPort constructor.
+  accessibility_focus_ring_controller_ =
+      std::make_unique<AccessibilityFocusRingController>();
   accessibility_delegate_.reset(shell_delegate_->CreateAccessibilityDelegate());
   accessibility_controller_ = std::make_unique<AccessibilityController>(
       shell_delegate_->GetShellConnector());
@@ -919,8 +931,6 @@ void Shell::Init(ui::ContextFactory* context_factory,
   views::FocusManagerFactory::Install(new AshFocusManagerFactory);
 
   wallpaper_controller_ = std::make_unique<WallpaperController>();
-
-  app_list_delegate_impl_ = std::make_unique<AppListDelegateImpl>();
 
   // TODO(sky): move creation to ShellPort.
   if (config != Config::MASH)
@@ -1080,7 +1090,7 @@ void Shell::Init(ui::ContextFactory* context_factory,
   voice_interaction_controller_ =
       std::make_unique<VoiceInteractionController>();
 
-  magnification_controller_.reset(MagnificationController::CreateInstance());
+  magnification_controller_ = std::make_unique<MagnificationController>();
   mru_window_tracker_ = std::make_unique<MruWindowTracker>();
 
   autoclick_controller_.reset(AutoclickController::CreateInstance());
@@ -1142,6 +1152,8 @@ void Shell::Init(ui::ContextFactory* context_factory,
     cursor_manager_->SetCursor(ui::CursorType::kPointer);
   }
 
+  UpdateCursorCompositingEnabled();
+
   peripheral_battery_notifier_ = std::make_unique<PeripheralBatteryNotifier>();
   power_event_observer_.reset(new PowerEventObserver());
   user_activity_notifier_.reset(
@@ -1160,8 +1172,6 @@ void Shell::Init(ui::ContextFactory* context_factory,
   // order to create mirror window. Run it after the main message loop
   // is started.
   display_manager_->CreateMirrorWindowAsyncIfAny();
-
-  message_center_controller_ = std::make_unique<MessageCenterController>();
 
   // Mash implements the show taps feature with a separate mojo app.
   // GetShellConnector() is null in unit tests.

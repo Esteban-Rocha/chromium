@@ -5,7 +5,7 @@
 #include "ash/display/persistent_window_controller.h"
 
 #include "ash/display/persistent_window_info.h"
-#include "ash/public/cpp/ash_switches.h"
+#include "ash/public/cpp/ash_features.h"
 #include "ash/session/session_controller.h"
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
@@ -30,10 +30,8 @@ MruWindowTracker::WindowList GetWindowList() {
 // Returns true when window cycle list can be processed to perform save/restore
 // operations on observing display changes.
 bool ShouldProcessWindowList() {
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kAshEnablePersistentWindowBounds)) {
+  if (!features::IsPersistentWindowBoundsEnabled())
     return false;
-  }
 
   // Window cycle list exists in active user session only.
   if (!Shell::Get()->session_controller()->IsActiveUserSessionStarted())
@@ -45,7 +43,54 @@ bool ShouldProcessWindowList() {
   return true;
 }
 
-void MaybeRestorePersistentWindowBounds() {
+}  // namespace
+
+constexpr char PersistentWindowController::kNumOfWindowsRestoredHistogramName[];
+
+PersistentWindowController::PersistentWindowController() {
+  display::Screen::GetScreen()->AddObserver(this);
+  Shell::Get()->session_controller()->AddObserver(this);
+  Shell::Get()->window_tree_host_manager()->AddObserver(this);
+}
+
+PersistentWindowController::~PersistentWindowController() {
+  Shell::Get()->window_tree_host_manager()->RemoveObserver(this);
+  Shell::Get()->session_controller()->RemoveObserver(this);
+  display::Screen::GetScreen()->RemoveObserver(this);
+}
+
+void PersistentWindowController::OnWillProcessDisplayChanges() {
+  if (!ShouldProcessWindowList())
+    return;
+
+  for (auto* window : GetWindowList()) {
+    wm::WindowState* window_state = wm::GetWindowState(window);
+    // This implies that we keep the first persistent info until they're valid
+    // to restore, or until they're cleared by user-invoked bounds change.
+    if (window_state->persistent_window_info())
+      continue;
+    window_state->SetPersistentWindowInfo(PersistentWindowInfo(window));
+  }
+}
+
+void PersistentWindowController::OnDisplayAdded(
+    const display::Display& new_display) {
+  restore_callback_ = base::BindOnce(
+      &PersistentWindowController::MaybeRestorePersistentWindowBounds,
+      base::Unretained(this));
+}
+
+void PersistentWindowController::OnSessionStateChanged(
+    session_manager::SessionState state) {
+  MaybeRestorePersistentWindowBounds();
+}
+
+void PersistentWindowController::OnDisplayConfigurationChanged() {
+  if (restore_callback_)
+    std::move(restore_callback_).Run();
+}
+
+void PersistentWindowController::MaybeRestorePersistentWindowBounds() {
   if (!ShouldProcessWindowList())
     return;
 
@@ -93,43 +138,5 @@ void MaybeRestorePersistentWindowBounds() {
   }
 }
 
-}  // namespace
-
-constexpr char PersistentWindowController::kNumOfWindowsRestoredHistogramName[];
-
-PersistentWindowController::PersistentWindowController() {
-  display::Screen::GetScreen()->AddObserver(this);
-  Shell::Get()->session_controller()->AddObserver(this);
-  Shell::Get()->window_tree_host_manager()->AddObserver(this);
-}
-
-PersistentWindowController::~PersistentWindowController() {
-  Shell::Get()->window_tree_host_manager()->RemoveObserver(this);
-  Shell::Get()->session_controller()->RemoveObserver(this);
-  display::Screen::GetScreen()->RemoveObserver(this);
-}
-
-void PersistentWindowController::OnWillProcessDisplayChanges() {
-  if (!ShouldProcessWindowList())
-    return;
-
-  for (auto* window : GetWindowList()) {
-    wm::WindowState* window_state = wm::GetWindowState(window);
-    // This implies that we keep the first persistent info until they're valid
-    // to restore, or until they're cleared by user-invoked bounds change.
-    if (window_state->persistent_window_info())
-      continue;
-    window_state->SetPersistentWindowInfo(PersistentWindowInfo(window));
-  }
-}
-
-void PersistentWindowController::OnSessionStateChanged(
-    session_manager::SessionState state) {
-  MaybeRestorePersistentWindowBounds();
-}
-
-void PersistentWindowController::OnDisplayConfigurationChanged() {
-  MaybeRestorePersistentWindowBounds();
-}
 
 }  // namespace ash

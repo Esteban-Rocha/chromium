@@ -145,9 +145,6 @@ class MESSAGE_CENTER_PUBLIC_EXPORT RichNotificationData {
   // depending on visual assistance systems.
   bool should_make_spoken_feedback_for_popup_updates = true;
 
-  // Whether it should be possible for the user to click on the notification.
-  bool clickable = false;
-
 #if defined(OS_CHROMEOS)
   // Flag if the notification is pinned. If true, the notification is pinned
   // and the user can't remove it.
@@ -391,9 +388,6 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
     optional_fields_.never_timeout = never_timeout;
   }
 
-  bool clickable() const { return optional_fields_.clickable; }
-  void set_clickable(bool clickable) { optional_fields_.clickable = clickable; }
-
   bool pinned() const {
 #if defined(OS_CHROMEOS)
     return optional_fields_.pinned;
@@ -512,8 +506,8 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
   // TODO(estade): these book-keeping fields should be moved into
   // NotificationList.
   unsigned serial_number_;
-  bool shown_as_popup_;  // True if this has been shown as a popup.
-  bool is_read_;         // True if this has been seen in the message center.
+  bool shown_as_popup_ = false;  // True if this has been shown as a popup.
+  bool is_read_ = false;  // True if this has been seen in the message center.
 
   // A proxy object that allows access back to the JavaScript object that
   // represents the notification, for firing events.
@@ -525,7 +519,8 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
 // of icons it expects to see, this allows for icon lookup without
 // serialization/deserialization.
 MESSAGE_CENTER_PUBLIC_EXPORT
-void RegisterVectorIcon(const gfx::VectorIcon& vector_icon);
+void RegisterVectorIcons(
+    const std::vector<const gfx::VectorIcon*>& vector_icon);
 
 MESSAGE_CENTER_PUBLIC_EXPORT
 const gfx::VectorIcon* GetRegisteredVectorIcon(const std::string& id);

@@ -5,7 +5,6 @@
 #include "core/css/parser/CSSParserFastPaths.h"
 
 #include "build/build_config.h"
-#include "core/StylePropertyShorthand.h"
 #include "core/css/CSSColorValue.h"
 #include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSIdentifierValue.h"
@@ -16,8 +15,9 @@
 #include "core/css/StyleColor.h"
 #include "core/css/parser/CSSParserIdioms.h"
 #include "core/css/parser/CSSPropertyParser.h"
-#include "core/css/properties/CSSProperty.h"
+#include "core/css/properties/css_property.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/style_property_shorthand.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/wtf/text/StringToNumber.h"
 
@@ -751,7 +751,8 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
       return value_id == CSSValueVisible || value_id == CSSValueHidden ||
              value_id == CSSValueCollapse;
     case CSSPropertyWebkitAppRegion:
-      return value_id >= CSSValueDrag && value_id <= CSSValueNoDrag;
+      return (value_id >= CSSValueDrag && value_id <= CSSValueNoDrag) ||
+             value_id == CSSValueNone;
     case CSSPropertyWebkitAppearance:
       return (value_id >= CSSValueCheckbox && value_id <= CSSValueTextarea) ||
              value_id == CSSValueNone;
@@ -774,8 +775,6 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
       return value_id == CSSValueClone || value_id == CSSValueSlice;
     case CSSPropertyWebkitBoxDirection:
       return value_id == CSSValueNormal || value_id == CSSValueReverse;
-    case CSSPropertyWebkitBoxLines:
-      return value_id == CSSValueSingle || value_id == CSSValueMultiple;
     case CSSPropertyWebkitBoxOrient:
       return value_id == CSSValueHorizontal || value_id == CSSValueVertical ||
              value_id == CSSValueInlineAxis || value_id == CSSValueBlockAxis;
@@ -975,7 +974,6 @@ bool CSSParserFastPaths::IsKeywordPropertyID(CSSPropertyID property_id) {
     case CSSPropertyWebkitBoxAlign:
     case CSSPropertyWebkitBoxDecorationBreak:
     case CSSPropertyWebkitBoxDirection:
-    case CSSPropertyWebkitBoxLines:
     case CSSPropertyWebkitBoxOrient:
     case CSSPropertyWebkitBoxPack:
     case CSSPropertyColumnFill:

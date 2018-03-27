@@ -135,7 +135,7 @@ struct WindowServer::CurrentDragLoopState {
 WindowServer::WindowServer(WindowServerDelegate* delegate, bool should_host_viz)
     : delegate_(delegate),
       next_client_id_(kWindowServerClientId + 1),
-      display_manager_(std::make_unique<DisplayManager>(this)),
+      display_manager_(std::make_unique<DisplayManager>(this, should_host_viz)),
       current_operation_(nullptr),
       in_destructor_(false),
       next_wm_change_id_(0),
@@ -281,6 +281,12 @@ void WindowServer::DestroyTree(WindowTree* tree) {
     tree_map_.erase(iter);
   }
 
+  base::EraseIf(scheduled_embeds_,
+                [&tree](const std::pair<base::UnguessableToken,
+                                        const WindowTreeAndWindowId&>& pair) {
+                  return (tree == pair.second.tree);
+                });
+
   // Notify remaining connections so that they can cleanup.
   for (auto& pair : tree_map_)
     pair.second->OnWillDestroyTree(tree);
@@ -311,6 +317,25 @@ WindowTree* WindowServer::GetTreeWithClientName(
       return entry.second.get();
   }
   return nullptr;
+}
+
+base::UnguessableToken WindowServer::RegisterEmbedToken(
+    WindowTree* tree,
+    ClientSpecificId window_id) {
+  const base::UnguessableToken token = base::UnguessableToken::Create();
+  DCHECK(!scheduled_embeds_.count(token));
+  scheduled_embeds_[token] = {tree, window_id};
+  return token;
+}
+
+WindowTreeAndWindowId WindowServer::UnregisterEmbedToken(
+    const base::UnguessableToken& token) {
+  auto iter = scheduled_embeds_.find(token);
+  if (iter == scheduled_embeds_.end())
+    return {};
+  WindowTreeAndWindowId result = iter->second;
+  scheduled_embeds_.erase(iter);
+  return result;
 }
 
 void WindowServer::OnTreeMessagedClient(ClientSpecificId id) {
@@ -677,8 +702,7 @@ void WindowServer::OnFirstSurfaceActivation(
     // special case because ServerWindows created by the WindowServer are not
     // part of a WindowTree. Send the SurfaceId directly to FrameGenerator and
     // claim the temporary reference for the display root.
-    display->platform_display()->GetFrameGenerator()->OnFirstSurfaceActivation(
-        surface_info);
+    display_manager_->OnWindowManagerSurfaceActivation(display, surface_info);
     host_frame_sink_manager_->AssignTemporaryReference(
         surface_info.id(), display->root_window()->frame_sink_id());
     return;
@@ -744,9 +768,9 @@ void WindowServer::UpdateNativeCursorFromMouseLocation(
   if (!display_root)
     return;
 
-  EventDispatcher* event_dispatcher =
-      display_root->window_manager_state()->event_dispatcher();
-  event_dispatcher->UpdateCursorProviderByLastKnownLocation();
+  EventProcessor* event_processor =
+      display_root->window_manager_state()->event_processor();
+  event_processor->UpdateCursorProviderByLastKnownLocation();
 }
 
 void WindowServer::UpdateNativeCursorIfOver(ServerWindow* window) {
@@ -755,12 +779,12 @@ void WindowServer::UpdateNativeCursorIfOver(ServerWindow* window) {
   if (!display_root)
     return;
 
-  EventDispatcher* event_dispatcher =
-      display_root->window_manager_state()->event_dispatcher();
-  if (window != event_dispatcher->GetWindowForMouseCursor())
+  EventProcessor* event_processor =
+      display_root->window_manager_state()->event_processor();
+  if (window != event_processor->GetWindowForMouseCursor())
     return;
 
-  event_dispatcher->UpdateNonClientAreaForCurrentWindow();
+  event_processor->UpdateNonClientAreaForCurrentWindow();
 }
 
 void WindowServer::HandleTemporaryReferenceForNewSurface(
@@ -818,6 +842,11 @@ void WindowServer::CreateFrameSinkManager() {
   host_frame_sink_manager_->BindAndSetManager(
       std::move(frame_sink_manager_client_request), nullptr /* task_runner */,
       std::move(frame_sink_manager));
+}
+
+AsyncEventDispatcher* WindowServer::GetAsyncEventDispatcherById(
+    ClientSpecificId id) {
+  return GetTreeWithId(id);
 }
 
 ServerWindow* WindowServer::GetRootWindowForDrawn(const ServerWindow* window) {

@@ -9,7 +9,7 @@
 
 #include "build/build_config.h"
 #include "content/common/content_export.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 
 namespace switches {
 
@@ -44,7 +44,6 @@ CONTENT_EXPORT extern const char kDisableBackgroundTimerThrottling[];
 CONTENT_EXPORT extern const char kDisableBlinkFeatures[];
 CONTENT_EXPORT extern const char kDisableCompositorUkmForTests[];
 CONTENT_EXPORT extern const char kDisableDatabases[];
-CONTENT_EXPORT extern const char kDisableDistanceFieldText[];
 CONTENT_EXPORT extern const char kDisableDisplayList2dCanvas[];
 extern const char kDisableDomainBlockingFor3DAPIs[];
 CONTENT_EXPORT extern const char kDisableWebGL[];
@@ -83,6 +82,7 @@ CONTENT_EXPORT extern const char kDisablePepper3DImageChromium[];
 CONTENT_EXPORT extern const char kDisablePermissionsAPI[];
 CONTENT_EXPORT extern const char kDisablePinch[];
 CONTENT_EXPORT extern const char kDisablePresentationAPI[];
+CONTENT_EXPORT extern const char kDisablePushStateThrottle[];
 CONTENT_EXPORT extern const char kDisableRGBA4444Textures[];
 CONTENT_EXPORT extern const char kDisableReadingFromCanvas[];
 extern const char kDisableRemoteFonts[];
@@ -113,8 +113,6 @@ CONTENT_EXPORT extern const char kEnablePreferCompositingToLCDText[];
 CONTENT_EXPORT extern const char kEnableBlinkFeatures[];
 CONTENT_EXPORT extern const char kEnableBackgroundFetchPersistence[];
 CONTENT_EXPORT extern const char kEnableDisplayList2dCanvas[];
-CONTENT_EXPORT extern const char kEnableDistanceFieldText[];
-CONTENT_EXPORT extern const char kEnableExperimentalCanvasFeatures[];
 CONTENT_EXPORT extern const char kEnableExperimentalWebPlatformFeatures[];
 CONTENT_EXPORT extern const char kEnableGpuMemoryBufferCompositorResources[];
 CONTENT_EXPORT extern const char kEnableGpuMemoryBufferVideoFrames[];
@@ -173,6 +171,7 @@ CONTENT_EXPORT extern const char kLogGpuControlListDecisions[];
 CONTENT_EXPORT extern const char kLoggingLevel[];
 CONTENT_EXPORT extern const char kLogFile[];
 CONTENT_EXPORT extern const char kMainFrameResizesAreOrientationChanges[];
+extern const char kMaxAppCacheDiskCacheSizeMb[];
 extern const char kMaxUntiledLayerHeight[];
 extern const char kMaxUntiledLayerWidth[];
 CONTENT_EXPORT extern const char kMessageLoopTypeUi[];
@@ -214,9 +213,11 @@ CONTENT_EXPORT extern const char kSavePreviousDocumentResources[];
 extern const char kShowPaintRects[];
 CONTENT_EXPORT extern const char kSingleProcess[];
 CONTENT_EXPORT extern const char kSitePerProcess[];
-extern const char kSkipReencodingOnSKPCapture[];
+CONTENT_EXPORT extern const char kDisableSiteIsolationTrials[];
 CONTENT_EXPORT extern const char kStartFullscreen[];
 CONTENT_EXPORT extern const char kStatsCollectionController[];
+extern const char kSkiaFontCacheLimitMb[];
+extern const char kSkiaResourceCacheLimitMb[];
 CONTENT_EXPORT extern const char kTestType[];
 CONTENT_EXPORT extern const char kTouchEventFeatureDetection[];
 CONTENT_EXPORT extern const char kTouchEventFeatureDetectionAuto[];
@@ -229,7 +230,6 @@ CONTENT_EXPORT extern const char kUseMobileUserAgent[];
 CONTENT_EXPORT extern const char kUseMockCertVerifierForTesting[];
 extern const char kUtilityCmdPrefix[];
 CONTENT_EXPORT extern const char kUtilityProcess[];
-extern const char kUtilityProcessAllowedDir[];
 CONTENT_EXPORT extern const char kUtilityStartupDialog[];
 CONTENT_EXPORT extern const char kV8CacheOptions[];
 CONTENT_EXPORT extern const char kValidateInputEventStream[];

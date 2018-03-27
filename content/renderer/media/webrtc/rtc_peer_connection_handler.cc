@@ -32,6 +32,7 @@
 #include "content/renderer/media/webrtc/rtc_certificate.h"
 #include "content/renderer/media/webrtc/rtc_data_channel_handler.h"
 #include "content/renderer/media/webrtc/rtc_dtmf_sender_handler.h"
+#include "content/renderer/media/webrtc/rtc_error.h"
 #include "content/renderer/media/webrtc/rtc_event_log_output_sink.h"
 #include "content/renderer/media/webrtc/rtc_event_log_output_sink_proxy.h"
 #include "content/renderer/media/webrtc/rtc_stats.h"
@@ -167,46 +168,6 @@ CreateWebKitSessionDescription(
   }
 
   return CreateWebKitSessionDescription(sdp, native_desc->type());
-}
-
-void ConvertToWebKitRTCError(const webrtc::RTCError& webrtc_error,
-                             blink::WebRTCError* blink_error) {
-  switch (webrtc_error.type()) {
-    case webrtc::RTCErrorType::NONE:
-      blink_error->SetType(blink::WebRTCErrorType::kNone);
-      break;
-    case webrtc::RTCErrorType::UNSUPPORTED_PARAMETER:
-      blink_error->SetType(blink::WebRTCErrorType::kUnsupportedParameter);
-      break;
-    case webrtc::RTCErrorType::INVALID_PARAMETER:
-      blink_error->SetType(blink::WebRTCErrorType::kInvalidParameter);
-      break;
-    case webrtc::RTCErrorType::INVALID_RANGE:
-      blink_error->SetType(blink::WebRTCErrorType::kInvalidRange);
-      break;
-    case webrtc::RTCErrorType::SYNTAX_ERROR:
-      blink_error->SetType(blink::WebRTCErrorType::kSyntaxError);
-      break;
-    case webrtc::RTCErrorType::INVALID_STATE:
-      blink_error->SetType(blink::WebRTCErrorType::kInvalidState);
-      break;
-    case webrtc::RTCErrorType::INVALID_MODIFICATION:
-      blink_error->SetType(blink::WebRTCErrorType::kInvalidModification);
-      break;
-    case webrtc::RTCErrorType::NETWORK_ERROR:
-      blink_error->SetType(blink::WebRTCErrorType::kNetworkError);
-      break;
-    case webrtc::RTCErrorType::INTERNAL_ERROR:
-      blink_error->SetType(blink::WebRTCErrorType::kInternalError);
-      break;
-    default:
-      // If adding a new error type, need 3 CLs: One to add the enum to webrtc,
-      // one to update this mapping code, and one to start using the enum in
-      // webrtc.
-      NOTREACHED() << "webrtc::RTCErrorType " << webrtc_error.type()
-                   << " not covered by switch statement.";
-      break;
-  }
 }
 
 void RunClosureWithTrace(const base::Closure& closure,
@@ -402,11 +363,11 @@ class SessionDescriptionRequestTracker {
     }
   }
 
-  void TrackOnFailure(const std::string& error) {
+  void TrackOnFailure(const webrtc::RTCError& error) {
     DCHECK(thread_checker_.CalledOnValidThread());
     if (handler_ && tracker_) {
-      tracker_->TrackSessionDescriptionCallback(
-          handler_.get(), action_, "OnFailure", error);
+      tracker_->TrackSessionDescriptionCallback(handler_.get(), action_,
+                                                "OnFailure", error.message());
     }
   }
 
@@ -446,16 +407,17 @@ class CreateSessionDescriptionRequest
     webkit_request_.Reset();
     delete desc;
   }
-  void OnFailure(const std::string& error) override {
+  void OnFailure(webrtc::RTCError error) override {
     if (!main_thread_->BelongsToCurrentThread()) {
       main_thread_->PostTask(
           FROM_HERE, base::BindOnce(&CreateSessionDescriptionRequest::OnFailure,
-                                    this, error));
+                                    this, std::move(error)));
       return;
     }
 
     tracker_.TrackOnFailure(error);
-    webkit_request_.RequestFailed(blink::WebString::FromUTF8(error));
+    // TODO(hta): Convert CreateSessionDescriptionRequest.OnFailure
+    webkit_request_.RequestFailed(ConvertToWebKitRTCError(error).message());
     webkit_request_.Reset();
   }
 
@@ -501,15 +463,15 @@ class SetLocalDescriptionRequest
     webkit_request_.RequestSucceeded();
     webkit_request_.Reset();
   }
-  void OnFailure(const std::string& error) override {
+  void OnFailure(webrtc::RTCError error) override {
     if (!main_thread_->BelongsToCurrentThread()) {
       main_thread_->PostTask(
-          FROM_HERE,
-          base::BindOnce(&SetLocalDescriptionRequest::OnFailure, this, error));
+          FROM_HERE, base::BindOnce(&SetLocalDescriptionRequest::OnFailure,
+                                    this, std::move(error)));
       return;
     }
     tracker_.TrackOnFailure(error);
-    webkit_request_.RequestFailed(blink::WebString::FromUTF8(error));
+    webkit_request_.RequestFailed(ConvertToWebKitRTCError(error));
     webkit_request_.Reset();
   }
 
@@ -1062,9 +1024,7 @@ class RTCPeerConnectionHandler::WebRtcSetRemoteDescriptionObserverImpl
             PeerConnectionTracker::ACTION_SET_REMOTE_DESCRIPTION, "OnFailure",
             error.message());
       }
-      // TODO(hbos): Use |error.type()| to reject the promise with the
-      // appropriate DOMException.
-      web_request_.RequestFailed(blink::WebString::FromUTF8(error.message()));
+      web_request_.RequestFailed(ConvertToWebKitRTCError(error));
       web_request_.Reset();
       return;
     }
@@ -1568,7 +1528,9 @@ void RTCPeerConnectionHandler::SetLocalDescription(
     reason_str.append(" ");
     reason_str.append(error.description);
     LOG(ERROR) << reason_str;
-    request.RequestFailed(blink::WebString::FromUTF8(reason_str));
+    request.RequestFailed(
+        blink::WebRTCError(blink::WebRTCErrorType::kOperationError,
+                           blink::WebString::FromUTF8(reason_str)));
     if (peer_connection_tracker_) {
       peer_connection_tracker_->TrackSessionDescriptionCallback(
           this, PeerConnectionTracker::ACTION_SET_LOCAL_DESCRIPTION,
@@ -1626,7 +1588,9 @@ void RTCPeerConnectionHandler::SetRemoteDescription(
     reason_str.append(" ");
     reason_str.append(error.description);
     LOG(ERROR) << reason_str;
-    request.RequestFailed(blink::WebString::FromUTF8(reason_str));
+    request.RequestFailed(
+        blink::WebRTCError(blink::WebRTCErrorType::kOperationError,
+                           blink::WebString::FromUTF8(reason_str)));
     if (peer_connection_tracker_) {
       peer_connection_tracker_->TrackSessionDescriptionCallback(
           this, PeerConnectionTracker::ACTION_SET_REMOTE_DESCRIPTION,
@@ -1684,8 +1648,9 @@ blink::WebRTCSessionDescription RTCPeerConnectionHandler::LocalDescription() {
       base::Bind(&webrtc::PeerConnectionInterface::local_description,
                  native_peer_connection_);
   RunSynchronousClosureOnSignalingThread(
-      base::Bind(&GetSdpAndTypeFromSessionDescription, description_cb,
-          base::Unretained(&sdp), base::Unretained(&type)),
+      base::Bind(&GetSdpAndTypeFromSessionDescription,
+                 std::move(description_cb), base::Unretained(&sdp),
+                 base::Unretained(&type)),
       "localDescription");
 
   return CreateWebKitSessionDescription(sdp, type);
@@ -1703,8 +1668,9 @@ blink::WebRTCSessionDescription RTCPeerConnectionHandler::RemoteDescription() {
       base::Bind(&webrtc::PeerConnectionInterface::remote_description,
                  native_peer_connection_);
   RunSynchronousClosureOnSignalingThread(
-      base::Bind(&GetSdpAndTypeFromSessionDescription, description_cb,
-          base::Unretained(&sdp), base::Unretained(&type)),
+      base::Bind(&GetSdpAndTypeFromSessionDescription,
+                 std::move(description_cb), base::Unretained(&sdp),
+                 base::Unretained(&type)),
       "remoteDescription");
 
   return CreateWebKitSessionDescription(sdp, type);
@@ -1720,14 +1686,12 @@ blink::WebRTCErrorType RTCPeerConnectionHandler::SetConfiguration(
     peer_connection_tracker_->TrackSetConfiguration(this, configuration_);
 
   webrtc::RTCError webrtc_error;
-  blink::WebRTCError blink_error;
   bool ret =
       native_peer_connection_->SetConfiguration(configuration_, &webrtc_error);
   // The boolean return value is made redundant by the error output param; just
   // DCHECK that they're consistent.
   DCHECK_EQ(ret, webrtc_error.type() == webrtc::RTCErrorType::NONE);
-  ConvertToWebKitRTCError(webrtc_error, &blink_error);
-  return blink_error.GetType();
+  return ConvertToWebKitRTCError(webrtc_error).GetType();
 }
 
 bool RTCPeerConnectionHandler::AddICECandidate(
@@ -1782,8 +1746,9 @@ void RTCPeerConnectionHandler::OnaddICECandidateResult(
   if (!result) {
     // We don't have the actual error code from the libjingle, so for now
     // using a generic error string.
-    return webkit_request.RequestFailed(
-        blink::WebString::FromUTF8("Error processing ICE candidate"));
+    return webkit_request.RequestFailed(blink::WebRTCError(
+        blink::WebRTCErrorType::kOperationError,
+        blink::WebString::FromUTF8("Error processing ICE candidate")));
   }
 
   return webkit_request.RequestSucceeded();

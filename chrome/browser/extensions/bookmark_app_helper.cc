@@ -592,6 +592,7 @@ void BookmarkAppHelper::Create(const CreateBookmarkAppCallback& callback) {
                              weak_factory_.GetWeakPtr()));
     }
   } else {
+    installable_ = INSTALLABLE_NO;
     OnIconsDownloaded(true, std::map<GURL, std::vector<SkBitmap>>());
   }
 }
@@ -716,13 +717,13 @@ void BookmarkAppHelper::OnIconsDownloaded(
     web_app_info_.open_as_window = true;
     chrome::ShowPWAInstallDialog(
         contents_, web_app_info_,
-        base::Bind(&BookmarkAppHelper::OnBubbleCompleted,
-                   weak_factory_.GetWeakPtr()));
+        base::BindOnce(&BookmarkAppHelper::OnBubbleCompleted,
+                       weak_factory_.GetWeakPtr()));
   } else {
     chrome::ShowBookmarkAppDialog(
         contents_, web_app_info_,
-        base::Bind(&BookmarkAppHelper::OnBubbleCompleted,
-                   weak_factory_.GetWeakPtr()));
+        base::BindOnce(&BookmarkAppHelper::OnBubbleCompleted,
+                       weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -781,7 +782,7 @@ void BookmarkAppHelper::FinishInstallation(const Extension* extension) {
     return;
   }
 
-  if (banners::AppBannerManager::IsExperimentalAppBannersEnabled() &&
+  if (banners::AppBannerManagerDesktop::IsEnabled() &&
       web_app_info_.open_as_window) {
     banners::AppBannerManagerDesktop::FromWebContents(contents_)->OnInstall(
         false /* is_native app */, blink::kWebDisplayModeStandalone);

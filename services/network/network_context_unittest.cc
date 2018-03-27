@@ -42,7 +42,9 @@
 #include "net/log/net_log_with_source.h"
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_info.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_job_factory.h"
@@ -65,7 +67,7 @@ mojom::NetworkContextParamsPtr CreateContextParams() {
   mojom::NetworkContextParamsPtr params = mojom::NetworkContextParams::New();
   // Use a fixed proxy config, to avoid dependencies on local network
   // configuration.
-  params->initial_proxy_config = net::ProxyConfig::CreateDirect();
+  params->initial_proxy_config = net::ProxyConfigWithAnnotation::CreateDirect();
   return params;
 }
 
@@ -158,6 +160,44 @@ TEST_F(NetworkContextTest, DisableQuic) {
                    ->GetSession()
                    ->params()
                    .enable_quic);
+}
+
+TEST_F(NetworkContextTest, UserAgentAndLanguage) {
+  const char kUserAgent[] = "Chromium Unit Test";
+  const char kAcceptLanguage[] = "en-US,en;q=0.9,uk;q=0.8";
+  mojom::NetworkContextParamsPtr params = CreateContextParams();
+  params->user_agent = kUserAgent;
+  // Not setting accept_language, to test the default.
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(params));
+  EXPECT_EQ(kUserAgent, network_context->GetURLRequestContext()
+                            ->http_user_agent_settings()
+                            ->GetUserAgent());
+  EXPECT_EQ("en-us,en", network_context->GetURLRequestContext()
+                            ->http_user_agent_settings()
+                            ->GetAcceptLanguage());
+
+  // Change accept-language.
+  network_context->SetAcceptLanguage(kAcceptLanguage);
+  EXPECT_EQ(kUserAgent, network_context->GetURLRequestContext()
+                            ->http_user_agent_settings()
+                            ->GetUserAgent());
+  EXPECT_EQ(kAcceptLanguage, network_context->GetURLRequestContext()
+                                 ->http_user_agent_settings()
+                                 ->GetAcceptLanguage());
+
+  // Create with custom accept-language configured.
+  params = CreateContextParams();
+  params->user_agent = kUserAgent;
+  params->accept_language = kAcceptLanguage;
+  std::unique_ptr<NetworkContext> network_context2 =
+      CreateContextWithParams(std::move(params));
+  EXPECT_EQ(kUserAgent, network_context2->GetURLRequestContext()
+                            ->http_user_agent_settings()
+                            ->GetUserAgent());
+  EXPECT_EQ(kAcceptLanguage, network_context2->GetURLRequestContext()
+                                 ->http_user_agent_settings()
+                                 ->GetAcceptLanguage());
 }
 
 TEST_F(NetworkContextTest, EnableBrotli) {
@@ -695,7 +735,8 @@ TEST_F(NetworkContextTest, ProxyConfig) {
   // initial config works.
   for (const auto& initial_proxy_config : proxy_configs) {
     mojom::NetworkContextParamsPtr context_params = CreateContextParams();
-    context_params->initial_proxy_config = initial_proxy_config;
+    context_params->initial_proxy_config = net::ProxyConfigWithAnnotation(
+        initial_proxy_config, TRAFFIC_ANNOTATION_FOR_TESTS);
     mojom::ProxyConfigClientPtr config_client;
     context_params->proxy_config_client_request =
         mojo::MakeRequest(&config_client);
@@ -708,17 +749,19 @@ TEST_F(NetworkContextTest, ProxyConfig) {
     // its config until it's first used.
     proxy_resolution_service->ForceReloadProxyConfig();
     EXPECT_TRUE(proxy_resolution_service->config());
-    EXPECT_TRUE(
-        proxy_resolution_service->config()->Equals(initial_proxy_config));
+    EXPECT_TRUE(proxy_resolution_service->config()->value().Equals(
+        initial_proxy_config));
 
     // Always go through the other configs in the same order. This has the
     // advantage of testing the case where there's no change, for
     // proxy_config[0].
     for (const auto& proxy_config : proxy_configs) {
-      config_client->OnProxyConfigUpdated(proxy_config);
+      config_client->OnProxyConfigUpdated(net::ProxyConfigWithAnnotation(
+          proxy_config, TRAFFIC_ANNOTATION_FOR_TESTS));
       scoped_task_environment_.RunUntilIdle();
       EXPECT_TRUE(proxy_resolution_service->config());
-      EXPECT_TRUE(proxy_resolution_service->config()->Equals(proxy_config));
+      EXPECT_TRUE(
+          proxy_resolution_service->config()->value().Equals(proxy_config));
     }
   }
 }
@@ -729,7 +772,8 @@ TEST_F(NetworkContextTest, StaticProxyConfig) {
   proxy_config.proxy_rules().ParseFromString("http=foopy:80;ftp=foopy2");
 
   mojom::NetworkContextParamsPtr context_params = CreateContextParams();
-  context_params->initial_proxy_config = proxy_config;
+  context_params->initial_proxy_config = net::ProxyConfigWithAnnotation(
+      proxy_config, TRAFFIC_ANNOTATION_FOR_TESTS);
   std::unique_ptr<NetworkContext> network_context =
       CreateContextWithParams(std::move(context_params));
 
@@ -739,7 +783,7 @@ TEST_F(NetworkContextTest, StaticProxyConfig) {
   // its config until it's first used.
   proxy_resolution_service->ForceReloadProxyConfig();
   EXPECT_TRUE(proxy_resolution_service->config());
-  EXPECT_TRUE(proxy_resolution_service->config()->Equals(proxy_config));
+  EXPECT_TRUE(proxy_resolution_service->config()->value().Equals(proxy_config));
 }
 
 TEST_F(NetworkContextTest, NoInitialProxyConfig) {
@@ -771,7 +815,8 @@ TEST_F(NetworkContextTest, NoInitialProxyConfig) {
 
   net::ProxyConfig proxy_config;
   proxy_config.proxy_rules().ParseFromString("http=foopy:80");
-  config_client->OnProxyConfigUpdated(proxy_config);
+  config_client->OnProxyConfigUpdated(net::ProxyConfigWithAnnotation(
+      proxy_config, TRAFFIC_ANNOTATION_FOR_TESTS));
   ASSERT_EQ(net::OK, test_callback.WaitForResult());
 
   EXPECT_TRUE(proxy_info.is_http());

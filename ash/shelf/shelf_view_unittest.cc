@@ -16,8 +16,10 @@
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/root_window_controller.h"
+#include "ash/screen_util.h"
 #include "ash/session/session_controller.h"
 #include "ash/shelf/app_list_button.h"
+#include "ash/shelf/back_button.h"
 #include "ash/shelf/overflow_bubble.h"
 #include "ash/shelf/overflow_bubble_view.h"
 #include "ash/shelf/overflow_bubble_view_test_api.h"
@@ -682,47 +684,27 @@ class ShelfViewTextDirectionTest : public ShelfViewTest,
   DISALLOW_COPY_AND_ASSIGN(ShelfViewTextDirectionTest);
 };
 
-// Checks that the ideal item icon bounds match the view's bounds in the screen
-// in both LTR and RTL.
-TEST_P(ShelfViewTextDirectionTest, IdealBoundsOfItemIcon) {
-  ShelfID id = AddApp();
-  ShelfButton* button = GetButtonByID(id);
-  gfx::Rect item_bounds = button->GetBoundsInScreen();
-  gfx::Point icon_offset = button->GetIconBounds().origin();
-  item_bounds.Offset(icon_offset.OffsetFromOrigin());
-  gfx::Rect ideal_bounds = shelf_view_->GetIdealBoundsOfItemIcon(id);
-  gfx::Point screen_origin;
-  views::View::ConvertPointToScreen(shelf_view_, &screen_origin);
-  ideal_bounds.Offset(screen_origin.x(), screen_origin.y());
-  EXPECT_EQ(item_bounds.x(), ideal_bounds.x());
-  EXPECT_EQ(item_bounds.y(), ideal_bounds.y());
-}
+// Check the ideal bounds of several items in LTR and RTL UI.
+TEST_P(ShelfViewTextDirectionTest, GetIdealBoundsOfItemIcon) {
+  ShelfID id_1 = AddAppShortcut();
+  AddButtonsUntilOverflow();
+  ShelfID id_2 = AddAppShortcut();
+  ShelfID id_3 = AddAppShortcut();
 
-// Check that items in the overflow area are returning the overflow button as
-// ideal bounds.
-TEST_F(ShelfViewTest, OverflowButtonBounds) {
-  ShelfID first_id = AddApp();
-  ShelfID overflow_id = AddApp();
-  int items_added = 0;
-  while (!test_api_->IsOverflowButtonVisible()) {
-    // Added button is visible after animation while in this loop.
-    EXPECT_TRUE(GetButtonByID(overflow_id)->visible());
-    overflow_id = AddApp();
-    ++items_added;
-    ASSERT_LT(items_added, 10000);
-  }
-  ShelfID last_id = AddApp();
+  const gfx::Rect bounds_1 = shelf_view_->GetIdealBoundsOfItemIcon(id_1);
+  const gfx::Rect bounds_2 = shelf_view_->GetIdealBoundsOfItemIcon(id_2);
+  const gfx::Rect bounds_3 = shelf_view_->GetIdealBoundsOfItemIcon(id_3);
 
-  gfx::Rect first_bounds = shelf_view_->GetIdealBoundsOfItemIcon(first_id);
-  gfx::Rect overflow_bounds =
-      shelf_view_->GetIdealBoundsOfItemIcon(overflow_id);
-  gfx::Rect last_bounds = shelf_view_->GetIdealBoundsOfItemIcon(last_id);
+  EXPECT_EQ(shelf_view_->GetIdealBoundsOfItemIcon(ShelfID(kAppListId)),
+            shelf_view_->GetAppListButton()->GetMirroredBounds());
+  EXPECT_EQ(shelf_view_->GetIdealBoundsOfItemIcon(ShelfID(kBackButtonId)),
+            shelf_view_->GetBackButton()->GetMirroredBounds());
 
-  // Check that all items have the same size and that the overflow items are
-  // identical whereas the first one does not match either of them.
-  EXPECT_EQ(first_bounds.size().ToString(), last_bounds.size().ToString());
-  EXPECT_NE(first_bounds.ToString(), last_bounds.ToString());
-  EXPECT_EQ(overflow_bounds.ToString(), last_bounds.ToString());
+  // Just items in the overflow area return the overflow button's ideal bounds.
+  EXPECT_NE(bounds_1, test_api_->overflow_button()->GetMirroredBounds());
+  EXPECT_TRUE(GetButtonByID(id_1)->GetMirroredBounds().Contains(bounds_1));
+  EXPECT_EQ(bounds_2, test_api_->overflow_button()->GetMirroredBounds());
+  EXPECT_EQ(bounds_3, test_api_->overflow_button()->GetMirroredBounds());
 }
 
 // Checks that shelf view contents are considered in the correct drag group.
@@ -2025,7 +2007,8 @@ TEST_F(ShelfViewTest, ShelfViewShowsContextMenu) {
   EXPECT_TRUE(test_api_->CloseMenu());
 }
 
-// Tests that the app list button shows a context menu on right click.
+// Tests that the app list button shows a context menu on right click when
+// touchable app context menus are not enabled.
 TEST_F(ShelfViewTest, AppListButtonShowsContextMenu) {
   ui::test::EventGenerator& generator = GetEventGenerator();
   AppListButton* app_list_button = shelf_view_->GetAppListButton();
@@ -2096,6 +2079,94 @@ class ShelfViewTouchableContextMenuTest : public ShelfViewTest {
 
   DISALLOW_COPY_AND_ASSIGN(ShelfViewTouchableContextMenuTest);
 };
+
+// Tests that anchor points are aligned with the shelf button bounds for touch.
+TEST_F(ShelfViewTouchableContextMenuTest,
+       ShelfViewContextMenuAnchorPointTouch) {
+  const ShelfButton* shelf_button = GetButtonByID(AddApp());
+  EXPECT_EQ(ash::ShelfAlignment::SHELF_ALIGNMENT_BOTTOM,
+            GetPrimaryShelf()->alignment());
+
+  // Test for bottom shelf.
+  EXPECT_EQ(shelf_button->GetBoundsInScreen().y(),
+            test_api_
+                ->GetMenuAnchorRect(shelf_button, gfx::Point(),
+                                    ui::MenuSourceType::MENU_SOURCE_TOUCH,
+                                    true /*context_menu*/)
+                .y());
+
+  // Test for left shelf.
+  GetPrimaryShelf()->SetAlignment(ash::ShelfAlignment::SHELF_ALIGNMENT_LEFT);
+
+  EXPECT_EQ(shelf_button->GetBoundsInScreen().x(),
+            test_api_
+                ->GetMenuAnchorRect(shelf_button, gfx::Point(),
+                                    ui::MenuSourceType::MENU_SOURCE_TOUCH,
+                                    true /*context_menu*/)
+                .x());
+
+  // Test for right shelf.
+  GetPrimaryShelf()->SetAlignment(ash::ShelfAlignment::SHELF_ALIGNMENT_RIGHT);
+
+  EXPECT_EQ(shelf_button->GetBoundsInScreen().x(),
+            test_api_
+                ->GetMenuAnchorRect(shelf_button, gfx::Point(),
+                                    ui::MenuSourceType::MENU_SOURCE_TOUCH,
+                                    true /*context_menu*/)
+                .x());
+}
+
+// Tests that anchor points are the click point for mouse context menus.
+TEST_F(ShelfViewTouchableContextMenuTest, ShelfViewContextMenuAnchorPoint) {
+  const ShelfButton* shelf_button = GetButtonByID(AddApp());
+  EXPECT_EQ(ash::ShelfAlignment::SHELF_ALIGNMENT_BOTTOM,
+            GetPrimaryShelf()->alignment());
+
+  // Test for bottom shelf.
+  const gfx::Point click_point_bottom =
+      shelf_button->GetBoundsInScreen().CenterPoint();
+
+  EXPECT_EQ(click_point_bottom,
+            test_api_
+                ->GetMenuAnchorRect(shelf_button, click_point_bottom,
+                                    ui::MenuSourceType::MENU_SOURCE_MOUSE,
+                                    true /*context_menu*/)
+                .origin());
+
+  // Test for left shelf.
+  GetPrimaryShelf()->SetAlignment(ash::ShelfAlignment::SHELF_ALIGNMENT_LEFT);
+  const gfx::Point click_point_left =
+      shelf_button->GetBoundsInScreen().CenterPoint();
+
+  EXPECT_EQ(click_point_left,
+            test_api_
+                ->GetMenuAnchorRect(shelf_button, click_point_left,
+                                    ui::MenuSourceType::MENU_SOURCE_MOUSE,
+                                    true /*context_menu*/)
+                .origin());
+
+  // Test for right shelf.
+  GetPrimaryShelf()->SetAlignment(ash::ShelfAlignment::SHELF_ALIGNMENT_RIGHT);
+  const gfx::Point click_point_right =
+      shelf_button->GetBoundsInScreen().CenterPoint();
+
+  EXPECT_EQ(click_point_right,
+            test_api_
+                ->GetMenuAnchorRect(shelf_button, click_point_right,
+                                    ui::MenuSourceType::MENU_SOURCE_MOUSE,
+                                    true /*context_menu*/)
+                .origin());
+}
+
+// Tests that the app list button does not show a context menu on right click
+// when touchable app context menus are enabled.
+TEST_F(ShelfViewTouchableContextMenuTest, AppListButtonDoesNotShowContextMenu) {
+  ui::test::EventGenerator& generator = GetEventGenerator();
+  const AppListButton* app_list_button = shelf_view_->GetAppListButton();
+  generator.MoveMouseTo(app_list_button->GetBoundsInScreen().CenterPoint());
+  generator.PressRightButton();
+  EXPECT_FALSE(test_api_->CloseMenu());
+}
 
 // Tests that an item has a notification indicator when it recieves a
 // notification.
@@ -2247,7 +2318,17 @@ class InkDropSpy : public views::InkDrop {
     requested_states_.push_back(ink_drop_state);
     ink_drop_->AnimateToState(ink_drop_state);
   }
+
+  void SetHoverHighlightFadeDurationMs(int duration_ms) override {
+    ink_drop_->SetHoverHighlightFadeDurationMs(duration_ms);
+  }
+
+  void UseDefaultHoverHighlightFadeDuration() override {
+    ink_drop_->UseDefaultHoverHighlightFadeDuration();
+  }
+
   void SnapToActivated() override { ink_drop_->SnapToActivated(); }
+  void SnapToHidden() override { ink_drop_->SnapToHidden(); }
   void SetHovered(bool is_hovered) override {
     ink_drop_->SetHovered(is_hovered);
   }

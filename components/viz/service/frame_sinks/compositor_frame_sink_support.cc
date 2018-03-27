@@ -70,11 +70,12 @@ CompositorFrameSinkSupport::~CompositorFrameSinkSupport() {
   DCHECK(capture_clients_.empty());
 }
 
-void CompositorFrameSinkSupport::SetUpHitTest() {
+void CompositorFrameSinkSupport::SetUpHitTest(
+    LatestLocalSurfaceIdLookupDelegate* local_surface_id_lookup_delegate) {
   DCHECK(is_root_);
   hit_test_aggregator_ = std::make_unique<HitTestAggregator>(
       frame_sink_manager_->hit_test_manager(), frame_sink_manager_,
-      frame_sink_id_);
+      local_surface_id_lookup_delegate, frame_sink_id_);
 }
 
 void CompositorFrameSinkSupport::SetAggregatedDamageCallbackForTesting(
@@ -425,8 +426,6 @@ void CompositorFrameSinkSupport::OnBeginFrame(const BeginFrameArgs& args) {
   last_begin_frame_args_ = args;
   if (client_)
     client_->OnBeginFrame(args);
-  for (CapturableFrameSink::Client* capture_client : capture_clients_)
-    capture_client->OnBeginFrame(args);
 }
 
 const BeginFrameArgs& CompositorFrameSinkSupport::LastUsedBeginFrameArgs()
@@ -524,17 +523,20 @@ const char* CompositorFrameSinkSupport::GetSubmitResultAsString(
 
 void CompositorFrameSinkSupport::OnAggregatedDamage(
     const LocalSurfaceId& local_surface_id,
+    const gfx::Size& frame_size_in_pixels,
     const gfx::Rect& damage_rect,
-    const CompositorFrame& frame) const {
+    base::TimeTicks expected_display_time) const {
   DCHECK(!damage_rect.IsEmpty());
 
-  if (aggregated_damage_callback_)
-    aggregated_damage_callback_.Run(local_surface_id, damage_rect);
+  if (aggregated_damage_callback_) {
+    aggregated_damage_callback_.Run(local_surface_id, frame_size_in_pixels,
+                                    damage_rect, expected_display_time);
+  }
 
-  const BeginFrameAck& ack = frame.metadata.begin_frame_ack;
-  const gfx::Size& frame_size = frame.size_in_pixels();
-  for (CapturableFrameSink::Client* client : capture_clients_)
-    client->OnFrameDamaged(ack, frame_size, damage_rect);
+  for (CapturableFrameSink::Client* client : capture_clients_) {
+    client->OnFrameDamaged(frame_size_in_pixels, damage_rect,
+                           expected_display_time);
+  }
 }
 
 }  // namespace viz

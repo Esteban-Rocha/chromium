@@ -8,6 +8,7 @@
 #include <Accelerate/Accelerate.h>
 
 #include "build/build_config.h"
+#include "platform/audio/AudioArray.h"
 
 namespace blink {
 namespace VectorMath {
@@ -18,6 +19,24 @@ namespace Mac {
 // <vecLib/vDSP_translate.h> which defines macros of the same name as
 // our namespaced function names, so we must handle this case differently. Other
 // architectures (64bit, ARM, etc.) do not include this header file.
+
+static ALWAYS_INLINE void Conv(const float* source_p,
+                               int source_stride,
+                               const float* filter_p,
+                               int filter_stride,
+                               float* dest_p,
+                               int dest_stride,
+                               size_t frames_to_process,
+                               size_t filter_size,
+                               const AudioFloatArray* /*prepared_filter*/) {
+#if defined(ARCH_CPU_X86)
+  ::conv(source_p, source_stride, filter_p, filter_stride, dest_p, dest_stride,
+         frames_to_process, filter_size);
+#else
+  vDSP_conv(source_p, source_stride, filter_p, filter_stride, dest_p,
+            dest_stride, frames_to_process, filter_size);
+#endif
+}
 
 static ALWAYS_INLINE void Vadd(const float* source1p,
                                int source_stride1,
@@ -42,10 +61,8 @@ static ALWAYS_INLINE void Vclip(const float* source_p,
                                 float* dest_p,
                                 int dest_stride,
                                 size_t frames_to_process) {
-  vDSP_vclip(const_cast<float*>(source_p), source_stride,
-             const_cast<float*>(low_threshold_p),
-             const_cast<float*>(high_threshold_p), dest_p, dest_stride,
-             frames_to_process);
+  vDSP_vclip(source_p, source_stride, low_threshold_p, high_threshold_p, dest_p,
+             dest_stride, frames_to_process);
 }
 
 static ALWAYS_INLINE void Vmaxmgv(const float* source_p,
@@ -100,8 +117,7 @@ static ALWAYS_INLINE void Vsvesq(const float* source_p,
                                  int source_stride,
                                  float* sum_p,
                                  size_t frames_to_process) {
-  vDSP_svesq(const_cast<float*>(source_p), source_stride, sum_p,
-             frames_to_process);
+  vDSP_svesq(source_p, source_stride, sum_p, frames_to_process);
 }
 
 static ALWAYS_INLINE void Zvmul(const float* real1p,

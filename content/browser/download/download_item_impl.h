@@ -22,15 +22,20 @@
 #include "components/download/public/common/download_interrupt_reasons.h"
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_request_handle_interface.h"
+#include "components/download/public/common/download_url_parameters.h"
 #include "components/download/public/common/resume_mode.h"
 #include "content/common/content_export.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "url/gurl.h"
+
+namespace download {
+class DownloadFile;
+class DownloadJob;
+}  // namespace download
 
 namespace content {
 class BrowserContext;
-class DownloadFile;
 class DownloadItemImplDelegate;
-class DownloadJob;
 class WebContents;
 
 // See download_item.h for usage.
@@ -249,6 +254,7 @@ class CONTENT_EXPORT DownloadItemImpl
   const std::string& GetHash() const override;
   bool GetFileExternallyRemoved() const override;
   void DeleteFile(const base::Callback<void(bool)>& callback) override;
+  download::DownloadFile* GetDownloadFile() override;
   bool IsDangerous() const override;
   download::DownloadDangerType GetDangerType() const override;
   bool TimeRemaining(base::TimeDelta* remaining) const override;
@@ -293,9 +299,10 @@ class CONTENT_EXPORT DownloadItemImpl
   // the download::DownloadItem if Start() is being called in response for a
   // download resumption request.
   virtual void Start(
-      std::unique_ptr<DownloadFile> download_file,
+      std::unique_ptr<download::DownloadFile> download_file,
       std::unique_ptr<download::DownloadRequestHandleInterface> req_handle,
-      const download::DownloadCreateInfo& new_create_info);
+      const download::DownloadCreateInfo& new_create_info,
+      scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory);
 
   // Needed because of intertwining with DownloadManagerImpl -------------------
 
@@ -338,8 +345,6 @@ class CONTENT_EXPORT DownloadItemImpl
       std::unique_ptr<crypto::SecureHash> hash_state) override;
 
  private:
-  friend class DownloadJob;
-
   // Fine grained states of a download.
   //
   // New downloads can be created in the following states:
@@ -726,7 +731,7 @@ class CONTENT_EXPORT DownloadItemImpl
   // pointer may only be used or destroyed on the download sequence.
   // This pointer will be non-null only while the download::DownloadItem is in
   // the IN_PROGRESS state.
-  std::unique_ptr<DownloadFile> download_file_;
+  std::unique_ptr<download::DownloadFile> download_file_;
 
   // Information about |download_file_|.
   DestinationInfo destination_info_;
@@ -752,7 +757,7 @@ class CONTENT_EXPORT DownloadItemImpl
   // The data slices that have been received so far.
   std::vector<download::DownloadItem::ReceivedSlice> received_slices_;
 
-  std::unique_ptr<DownloadJob> job_;
+  std::unique_ptr<download::DownloadJob> job_;
 
   // Value of |received_bytes_| at the time the download was interrupted with
   // CONTENT_LENGTH_MISMATCH.
@@ -764,6 +769,10 @@ class CONTENT_EXPORT DownloadItemImpl
   // Whether the download should fetch the response body for non successful HTTP
   // response.
   bool fetch_error_body_ = false;
+
+  // Request header key/value pairs that will be added to the download HTTP
+  // request.
+  download::DownloadUrlParameters::RequestHeadersType request_headers_;
 
   // Source of the download, used in metrics.
   download::DownloadSource download_source_ = download::DownloadSource::UNKNOWN;

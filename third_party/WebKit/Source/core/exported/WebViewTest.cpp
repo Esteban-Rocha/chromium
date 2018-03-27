@@ -83,11 +83,10 @@
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/paint/PaintRecordBuilder.h"
 #include "platform/scroll/ScrollTypes.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "platform/testing/wtf/ScopedMockClock.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCoalescedInputEvent.h"
 #include "public/platform/WebCursorInfo.h"
@@ -112,6 +111,7 @@
 #include "public/web/WebFrame.h"
 #include "public/web/WebFrameClient.h"
 #include "public/web/WebFrameContentDumper.h"
+#include "public/web/WebFrameWidget.h"
 #include "public/web/WebHitTestResult.h"
 #include "public/web/WebInputMethodController.h"
 #include "public/web/WebPrintParams.h"
@@ -196,11 +196,11 @@ class TapHandlingWebViewClient : public FrameTestHelpers::TestWebViewClient {
   void DidHandleGestureEvent(const WebGestureEvent& event,
                              bool event_cancelled) override {
     if (event.GetType() == WebInputEvent::kGestureTap) {
-      tap_x_ = event.x;
-      tap_y_ = event.y;
+      tap_x_ = event.PositionInWidget().x;
+      tap_y_ = event.PositionInWidget().y;
     } else if (event.GetType() == WebInputEvent::kGestureLongPress) {
-      longpress_x_ = event.x;
-      longpress_y_ = event.y;
+      longpress_x_ = event.PositionInWidget().x;
+      longpress_y_ = event.PositionInWidget().y;
     }
   }
 
@@ -1527,9 +1527,8 @@ TEST_P(WebViewTest, SetCompositionFromExistingText) {
       base_url_ + "input_field_populated.html");
   web_view->SetInitialFocus(false);
   WebVector<WebImeTextSpan> ime_text_spans(static_cast<size_t>(1));
-  ime_text_spans[0] =
-      WebImeTextSpan(WebImeTextSpan::Type::kComposition, 0, 4, 0,
-                     ui::mojom::ImeTextSpanThickness::kThin, 0);
+  ime_text_spans[0] = WebImeTextSpan(WebImeTextSpan::Type::kComposition, 0, 4,
+                                     ui::mojom::ImeTextSpanThickness::kThin, 0);
   WebLocalFrameImpl* frame = web_view->MainFrameImpl();
   WebInputMethodController* active_input_method_controller =
       frame->GetInputMethodController();
@@ -1555,9 +1554,8 @@ TEST_P(WebViewTest, SetCompositionFromExistingTextInTextArea) {
       base_url_ + "text_area_populated.html");
   web_view->SetInitialFocus(false);
   WebVector<WebImeTextSpan> ime_text_spans(static_cast<size_t>(1));
-  ime_text_spans[0] =
-      WebImeTextSpan(WebImeTextSpan::Type::kComposition, 0, 4, 0,
-                     ui::mojom::ImeTextSpanThickness::kThin, 0);
+  ime_text_spans[0] = WebImeTextSpan(WebImeTextSpan::Type::kComposition, 0, 4,
+                                     ui::mojom::ImeTextSpanThickness::kThin, 0);
   WebLocalFrameImpl* frame = web_view->MainFrameImpl();
   WebInputMethodController* active_input_method_controller =
       frame->FrameWidget()->GetActiveWebInputMethodController();
@@ -1600,9 +1598,8 @@ TEST_P(WebViewTest, SetCompositionFromExistingTextInRichText) {
       base_url_ + "content_editable_rich_text.html");
   web_view->SetInitialFocus(false);
   WebVector<WebImeTextSpan> ime_text_spans(static_cast<size_t>(1));
-  ime_text_spans[0] =
-      WebImeTextSpan(WebImeTextSpan::Type::kComposition, 0, 4, 0,
-                     ui::mojom::ImeTextSpanThickness::kThin, 0);
+  ime_text_spans[0] = WebImeTextSpan(WebImeTextSpan::Type::kComposition, 0, 4,
+                                     ui::mojom::ImeTextSpanThickness::kThin, 0);
   WebLocalFrameImpl* frame = web_view->MainFrameImpl();
   frame->SetEditableSelectionOffsets(1, 1);
   WebDocument document = web_view->MainFrameImpl()->GetDocument();
@@ -2490,7 +2487,7 @@ static void DragAndDropURL(WebViewImpl* web_view, const std::string& url) {
 
   const WebFloatPoint client_point(0, 0);
   const WebFloatPoint screen_point(0, 0);
-  WebFrameWidgetBase* widget = web_view->MainFrameImpl()->FrameWidget();
+  WebFrameWidget* widget = web_view->MainFrameImpl()->FrameWidget();
   widget->DragTargetDragEnter(drag_data, client_point, screen_point,
                               kWebDragOperationCopy, 0);
   widget->DragTargetDrop(drag_data, client_point, screen_point, 0);
@@ -2537,20 +2534,18 @@ bool WebViewTest::TapElement(WebInputEvent::Type type, Element* element) {
 
   // TODO(bokan): Technically incorrect, event positions should be in viewport
   // space. crbug.com/371902.
-  IntPoint center =
+  FloatPoint center(
       web_view_helper_.GetWebView()
           ->MainFrameImpl()
           ->GetFrameView()
           ->ContentsToScreen(
               element->GetLayoutObject()->AbsoluteBoundingBoxRect())
-          .Center();
+          .Center());
 
   WebGestureEvent event(type, WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = center.X();
-  event.y = center.Y();
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(center);
 
   web_view_helper_.GetWebView()->HandleInputEvent(
       WebCoalescedInputEvent(event));
@@ -2582,18 +2577,16 @@ TEST_P(WebViewTest, ClientTapHandling) {
   WebView* web_view =
       web_view_helper_.InitializeAndLoad("about:blank", nullptr, &client);
   WebGestureEvent event(WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 3;
-  event.y = 8;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(3, 8));
   web_view->HandleInputEvent(WebCoalescedInputEvent(event));
   RunPendingTasks();
   EXPECT_EQ(3, client.TapX());
   EXPECT_EQ(8, client.TapY());
   client.Reset();
   event.SetType(WebInputEvent::kGestureLongPress);
-  event.x = 25;
-  event.y = 7;
+  event.SetPositionInWidget(WebFloatPoint(25, 7));
   web_view->HandleInputEvent(WebCoalescedInputEvent(event));
   RunPendingTasks();
   EXPECT_EQ(25, client.LongpressX());
@@ -2616,10 +2609,9 @@ TEST_P(WebViewTest, ClientTapHandlingNullWebViewClient) {
   blink::WebFrameWidget::Create(&web_widget_client, local_frame);
 
   WebGestureEvent event(WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 3;
-  event.y = 8;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(3, 8));
   EXPECT_EQ(WebInputEventResult::kNotHandled,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
   web_view->Close();
@@ -2637,10 +2629,9 @@ TEST_P(WebViewTest, LongPressEmptyDiv) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 250;
-  event.y = 150;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(250, 150));
 
   EXPECT_EQ(WebInputEventResult::kNotHandled,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
@@ -2658,10 +2649,9 @@ TEST_P(WebViewTest, LongPressEmptyDivAlwaysShow) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 250;
-  event.y = 150;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(250, 150));
 
   EXPECT_EQ(WebInputEventResult::kHandledSystem,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
@@ -2679,10 +2669,9 @@ TEST_P(WebViewTest, LongPressObject) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 10;
-  event.y = 10;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(10, 10));
 
   EXPECT_NE(WebInputEventResult::kHandledSystem,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
@@ -2704,10 +2693,9 @@ TEST_P(WebViewTest, LongPressObjectFallback) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 10;
-  event.y = 10;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(10, 10));
 
   EXPECT_EQ(WebInputEventResult::kHandledSystem,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
@@ -2729,10 +2717,9 @@ TEST_P(WebViewTest, LongPressImage) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 10;
-  event.y = 10;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(10, 10));
 
   EXPECT_EQ(WebInputEventResult::kHandledSystem,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
@@ -2750,10 +2737,9 @@ TEST_P(WebViewTest, LongPressVideo) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 10;
-  event.y = 10;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(10, 10));
 
   EXPECT_EQ(WebInputEventResult::kHandledSystem,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
@@ -2771,10 +2757,9 @@ TEST_P(WebViewTest, LongPressLink) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 500;
-  event.y = 300;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(500, 300));
 
   EXPECT_EQ(WebInputEventResult::kHandledSystem,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
@@ -2859,10 +2844,9 @@ TEST_P(WebViewTest, LongPressEmptyEditableSelection) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 10;
-  event.y = 10;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(10, 10));
 
   EXPECT_EQ(WebInputEventResult::kHandledSystem,
             web_view->HandleInputEvent(WebCoalescedInputEvent(event)));
@@ -2879,10 +2863,9 @@ TEST_P(WebViewTest, LongPressEmptyNonEditableSelection) {
 
   WebGestureEvent event(WebInputEvent::kGestureLongPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 300;
-  event.y = 300;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(300, 300));
   WebLocalFrameImpl* frame = web_view->MainFrameImpl();
 
   EXPECT_EQ(WebInputEventResult::kHandledSystem,
@@ -2965,10 +2948,9 @@ TEST_P(WebViewTest, TouchDoesntSelectEmptyTextarea) {
 
   // Double-tap on carriage returns.
   WebGestureEvent event(WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 100;
-  event.y = 25;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(100, 25));
   event.data.tap.tap_count = 2;
 
   web_view->HandleInputEvent(WebCoalescedInputEvent(event));
@@ -3258,10 +3240,9 @@ TEST_P(WebViewTest, ShowPressOnTransformedLink) {
 
   WebGestureEvent event(WebInputEvent::kGestureShowPress,
                         WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 20;
-  event.y = 20;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(20, 20));
 
   // Just make sure we don't hit any asserts.
   web_view_impl->HandleInputEvent(WebCoalescedInputEvent(event));
@@ -4382,19 +4363,27 @@ class MockUnhandledTapNotifierImpl : public mojom::blink::UnhandledTapNotifier {
       mojom::blink::UnhandledTapInfoPtr unhandled_tap_info) override {
     was_unhandled_tap_ = true;
     tapped_position_ = unhandled_tap_info->tapped_position_in_viewport;
+    element_text_run_length_ = unhandled_tap_info->element_text_run_length;
+    font_size_ = unhandled_tap_info->font_size_in_pixels;
   }
   bool WasUnhandledTap() const { return was_unhandled_tap_; }
   int GetTappedXPos() const { return tapped_position_.X(); }
   int GetTappedYPos() const { return tapped_position_.Y(); }
+  int GetFontSize() const { return font_size_; }
+  int GetElementTextRunLength() const { return element_text_run_length_; }
   void Reset() {
     was_unhandled_tap_ = false;
     tapped_position_ = IntPoint();
+    element_text_run_length_ = 0;
+    font_size_ = 0;
     binding_.Close();
   }
 
  private:
   bool was_unhandled_tap_ = false;
   IntPoint tapped_position_;
+  int element_text_run_length_ = 0;
+  int font_size_ = 0;
 
   mojo::Binding<mojom::blink::UnhandledTapNotifier> binding_;
 };
@@ -4468,6 +4457,8 @@ TEST_P(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeeded) {
   EXPECT_TRUE(mock_notifier_.WasUnhandledTap());
   EXPECT_EQ(64, mock_notifier_.GetTappedXPos());
   EXPECT_EQ(278, mock_notifier_.GetTappedYPos());
+  EXPECT_EQ(16, mock_notifier_.GetFontSize());
+  EXPECT_EQ(7, mock_notifier_.GetElementTextRunLength());
 
   // Test basic tap handling and notification.
   Tap("target");
@@ -4483,6 +4474,8 @@ TEST_P(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeeded) {
   EXPECT_TRUE(mock_notifier_.WasUnhandledTap());
   EXPECT_EQ(188, mock_notifier_.GetTappedXPos());
   EXPECT_EQ(124, mock_notifier_.GetTappedYPos());
+  EXPECT_EQ(16, mock_notifier_.GetFontSize());
+  EXPECT_EQ(28, mock_notifier_.GetElementTextRunLength());
 }
 
 TEST_P(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithMutateDom) {
@@ -4514,7 +4507,7 @@ TEST_P(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithPreventDefault) {
 }
 
 TEST_P(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithNonTriggeringNodes) {
-  Tap("checkbox");
+  Tap("image");
   EXPECT_FALSE(mock_notifier_.WasUnhandledTap());
 
   Tap("editable");
@@ -4522,6 +4515,16 @@ TEST_P(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithNonTriggeringNodes) {
 
   Tap("focusable");
   EXPECT_FALSE(mock_notifier_.WasUnhandledTap());
+}
+
+TEST_P(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithTextSizes) {
+  Tap("large");
+  EXPECT_TRUE(mock_notifier_.WasUnhandledTap());
+  EXPECT_EQ(20, mock_notifier_.GetFontSize());
+
+  Tap("small");
+  EXPECT_TRUE(mock_notifier_.WasUnhandledTap());
+  EXPECT_EQ(10, mock_notifier_.GetFontSize());
 }
 
 #endif  // BUILDFLAG(ENABLE_UNHANDLED_TAP)

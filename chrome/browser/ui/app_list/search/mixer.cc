@@ -15,8 +15,7 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "chrome/browser/ui/app_list/app_list_model_updater.h"
-#include "ui/app_list/app_list_features.h"
-#include "ui/app_list/search_provider.h"
+#include "chrome/browser/ui/app_list/search/search_provider.h"
 
 namespace app_list {
 
@@ -42,11 +41,7 @@ bool Mixer::SortData::operator<(const SortData& other) const {
 class Mixer::Group {
  public:
   Group(size_t max_results, double multiplier, double boost)
-      : max_results_(max_results),
-        multiplier_(multiplier),
-        boost_(boost),
-        is_fullscreen_app_list_enabled_(
-            features::IsFullscreenAppListEnabled()) {}
+      : max_results_(max_results), multiplier_(multiplier), boost_(boost) {}
   ~Group() {}
 
   void AddProvider(SearchProvider* provider) {
@@ -65,38 +60,6 @@ class Mixer::Group {
         const double relevance =
             std::min(std::max(result->relevance(), 0.0), 1.0);
         double boost = boost_;
-
-        if (!is_fullscreen_app_list_enabled_) {
-          // Recommendations should not be affected by query-to-launch
-          // correlation from KnownResults as it causes recommendations to
-          // become dominated by previously clicked results. This happens
-          // because the recommendation query is the empty string and the
-          // clicked results get forever boosted.
-          if (result->display_type() != SearchResult::DISPLAY_RECOMMENDATION) {
-            KnownResults::const_iterator known_it =
-                known_results.find(result->id());
-            if (known_it != known_results.end()) {
-              switch (known_it->second) {
-                case PERFECT_PRIMARY:
-                  boost = 4.0;
-                  break;
-                case PREFIX_PRIMARY:
-                  boost = 3.75;
-                  break;
-                case PERFECT_SECONDARY:
-                  boost = 3.25;
-                  break;
-                case PREFIX_SECONDARY:
-                  boost = 3.0;
-                  break;
-                case UNKNOWN_RESULT:
-                  NOTREACHED() << "Unknown result in KnownResults?";
-                  break;
-              }
-            }
-          }
-        }
-
         results_.emplace_back(result.get(), relevance * multiplier_ + boost);
       }
     }
@@ -113,8 +76,6 @@ class Mixer::Group {
   const size_t max_results_;
   const double multiplier_;
   const double boost_;
-
-  const bool is_fullscreen_app_list_enabled_;
 
   Providers providers_;  // Not owned.
   SortedResults results_;

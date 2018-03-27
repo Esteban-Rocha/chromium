@@ -38,6 +38,8 @@
 #include "ui/aura/env_input_state_controller.h"
 #include "ui/aura/mus/capture_synchronizer.h"
 #include "ui/aura/mus/drag_drop_controller_mus.h"
+#include "ui/aura/mus/embed_root.h"
+#include "ui/aura/mus/embed_root_delegate.h"
 #include "ui/aura/mus/focus_synchronizer.h"
 #include "ui/aura/mus/in_flight_change.h"
 #include "ui/aura/mus/input_method_mus.h"
@@ -68,6 +70,10 @@
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/size.h"
 
+#if defined(USE_OZONE)
+#include "ui/aura/mus/platform_event_source_mus_ozone.h"
+#endif
+
 namespace aura {
 namespace {
 
@@ -89,10 +95,20 @@ class EventAckHandler : public base::RunLoop::NestingObserver {
   ~EventAckHandler() override {
     base::RunLoop::RemoveNestingObserverOnCurrentThread(this);
     if (ack_callback_) {
+      NotifyPlatformEventSource();
       ack_callback_->Run(handled_ ? ui::mojom::EventResult::HANDLED
                                   : ui::mojom::EventResult::UNHANDLED);
     }
   }
+
+#if defined(USE_OZONE)
+  void SetPlatformEventSourceAndEvent(
+      PlatformEventSourceMus* platform_event_source,
+      ui::Event* event) {
+    event_ = event;
+    platform_event_source_ = platform_event_source;
+  }
+#endif
 
   void set_handled(bool handled) { handled_ = handled; }
 
@@ -101,14 +117,26 @@ class EventAckHandler : public base::RunLoop::NestingObserver {
     // Acknowledge the event immediately if a nested run loop starts.
     // Otherwise we appear unresponsive for the life of the nested run loop.
     if (ack_callback_) {
+      NotifyPlatformEventSource();
       ack_callback_->Run(ui::mojom::EventResult::HANDLED);
       ack_callback_.reset();
     }
   }
 
  private:
+  void NotifyPlatformEventSource() {
+#if defined(USE_OZONE)
+    if (platform_event_source_)
+      platform_event_source_->OnDidProcessEvent(event_);
+#endif
+  }
+
   std::unique_ptr<EventResultCallback> ack_callback_;
   bool handled_ = false;
+#if defined(USE_OZONE)
+  ui::Event* event_ = nullptr;
+  PlatformEventSourceMus* platform_event_source_ = nullptr;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(EventAckHandler);
 };
@@ -174,6 +202,34 @@ ui::Id GetServerIdForWindow(Window* window) {
   return window ? WindowMus::Get(window)->server_id() : kInvalidServerId;
 }
 
+// The server operates in pixels. Adjust translations for device scale factors.
+gfx::Transform ConvertTransformFromServer(WindowMus* window,
+                                          const gfx::Transform& transform) {
+  const float scale = window->GetDeviceScaleFactor();
+  if (scale == 1.0f)
+    return transform;
+
+  gfx::Transform dip_transform = transform;
+  dip_transform.matrix().set(0, 3, dip_transform.matrix().get(0, 3) / scale);
+  dip_transform.matrix().set(1, 3, dip_transform.matrix().get(1, 3) / scale);
+  dip_transform.matrix().set(2, 3, dip_transform.matrix().get(2, 3) / scale);
+  return dip_transform;
+}
+
+// See the comment for ConvertTransformFromServer().
+gfx::Transform ConvertTransformToServer(WindowMus* window,
+                                        const gfx::Transform& transform) {
+  const float scale = window->GetDeviceScaleFactor();
+  if (scale == 1.0f)
+    return transform;
+
+  gfx::Transform pixel_transform = transform;
+  pixel_transform.matrix().set(0, 3, transform.matrix().get(0, 3) * scale);
+  pixel_transform.matrix().set(1, 3, transform.matrix().get(1, 3) * scale);
+  pixel_transform.matrix().set(2, 3, transform.matrix().get(2, 3) * scale);
+  return pixel_transform;
+}
+
 }  // namespace
 
 // static
@@ -195,6 +251,7 @@ std::unique_ptr<WindowTreeClient> WindowTreeClient::CreateForWindowManager(
   factory->CreateWindowTree(MakeRequest(&window_tree), std::move(client),
                             automatically_create_display_roots);
   wtc->SetWindowTree(std::move(window_tree));
+  wtc->CreatePlatformEventSourceIfNecessary();
   return wtc;
 }
 
@@ -291,6 +348,10 @@ WindowTreeClient::~WindowTreeClient() {
   for (auto& pair : windows)
     WindowPortForShutdown::Install(pair.second->GetWindow());
 
+  // EmbedRoots keep a reference to this; so they must all be destroyed before
+  // the destructor completes.
+  DCHECK(embed_roots_.empty());
+
   env->WindowTreeClientDestroyed(this);
   CHECK(windows_.empty());
 }
@@ -360,8 +421,28 @@ void WindowTreeClient::Embed(Window* window,
 void WindowTreeClient::ScheduleEmbed(
     ui::mojom::WindowTreeClientPtr client,
     base::OnceCallback<void(const base::UnguessableToken&)> callback) {
-  tree_->ScheduleEmbed(std::move(client),
-                       base::AdaptCallbackForRepeating(std::move(callback)));
+  tree_->ScheduleEmbed(std::move(client), std::move(callback));
+}
+
+void WindowTreeClient::EmbedUsingToken(
+    Window* window,
+    const base::UnguessableToken& token,
+    uint32_t flags,
+    ui::mojom::WindowTree::EmbedCallback callback) {
+  DCHECK(tree_);
+  // Window::Init() must be called before Embed() (otherwise the server hasn't
+  // been told about the window).
+  DCHECK(window->layer());
+  if (!window->children().empty()) {
+    // The window server removes all children before embedding. In other words,
+    // it's generally an error to Embed() with existing children. So, fail
+    // early.
+    std::move(callback).Run(false);
+    return;
+  }
+
+  tree_->EmbedUsingToken(WindowMus::Get(window)->server_id(), token, flags,
+                         std::move(callback));
 }
 
 void WindowTreeClient::AttachCompositorFrameSink(
@@ -371,6 +452,14 @@ void WindowTreeClient::AttachCompositorFrameSink(
   DCHECK(tree_);
   tree_->AttachCompositorFrameSink(window_id, std::move(compositor_frame_sink),
                                    std::move(client));
+}
+
+std::unique_ptr<EmbedRoot> WindowTreeClient::CreateEmbedRoot(
+    EmbedRootDelegate* delegate) {
+  std::unique_ptr<EmbedRoot> embed_root =
+      base::WrapUnique(new EmbedRoot(this, delegate, next_window_id_++));
+  embed_roots_.insert(embed_root.get());
+  return embed_root;
 }
 
 WindowTreeClient::WindowTreeClient(
@@ -431,6 +520,13 @@ WindowTreeClient::WindowTreeClient(
           discardable_shared_memory_manager_.get());
     }
   }
+}
+
+void WindowTreeClient::CreatePlatformEventSourceIfNecessary() {
+#if defined(USE_OZONE)
+  if (!ui::PlatformEventSource::GetInstance())
+    platform_event_source_ = std::make_unique<PlatformEventSourceMus>();
+#endif
 }
 
 void WindowTreeClient::RegisterWindowMus(WindowMus* window) {
@@ -756,6 +852,18 @@ void WindowTreeClient::OnEmbedImpl(
   delegate_->OnEmbed(std::move(window_tree_host));
 }
 
+EmbedRoot* WindowTreeClient::GetEmbedRootWithRootWindow(aura::Window* window) {
+  for (EmbedRoot* embed_root : embed_roots_) {
+    if (embed_root->window() == window)
+      return embed_root;
+  }
+  return nullptr;
+}
+
+void WindowTreeClient::OnEmbedRootDestroyed(EmbedRoot* embed_root) {
+  embed_roots_.erase(embed_root);
+}
+
 WindowTreeHostMus* WindowTreeClient::WmNewDisplayAddedImpl(
     const display::Display& display,
     ui::mojom::WindowDataPtr root_data,
@@ -813,7 +921,7 @@ void WindowTreeClient::SetWindowBoundsFromServer(
 void WindowTreeClient::SetWindowTransformFromServer(
     WindowMus* window,
     const gfx::Transform& transform) {
-  window->SetTransformFromServer(transform);
+  window->SetTransformFromServer(ConvertTransformFromServer(window, transform));
 }
 
 void WindowTreeClient::SetWindowVisibleFromServer(WindowMus* window,
@@ -986,7 +1094,7 @@ void WindowTreeClient::OnWindowMusBoundsChanged(WindowMus* window,
     return;
   }
 
-  float device_scale_factor = window->GetDeviceScaleFactor();
+  const float device_scale_factor = window->GetDeviceScaleFactor();
   ScheduleInFlightBoundsChange(
       window, gfx::ConvertRectToPixel(device_scale_factor, old_bounds),
       gfx::ConvertRectToPixel(device_scale_factor, new_bounds));
@@ -998,7 +1106,8 @@ void WindowTreeClient::OnWindowMusTransformChanged(
     const gfx::Transform& new_transform) {
   const uint32_t change_id = ScheduleInFlightChange(
       std::make_unique<InFlightTransformChange>(this, window, old_transform));
-  tree_->SetWindowTransform(change_id, window->server_id(), new_transform);
+  tree_->SetWindowTransform(change_id, window->server_id(),
+                            ConvertTransformToServer(window, new_transform));
 }
 
 void WindowTreeClient::OnWindowMusAddChild(WindowMus* parent,
@@ -1211,6 +1320,20 @@ void WindowTreeClient::OnEmbed(
               focused_window_id, drawn, local_surface_id);
 }
 
+void WindowTreeClient::OnEmbedFromToken(
+    const base::UnguessableToken& token,
+    ui::mojom::WindowDataPtr root,
+    int64_t display_id,
+    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+  for (EmbedRoot* embed_root : embed_roots_) {
+    if (embed_root->token() == token) {
+      embed_root->OnEmbed(CreateWindowTreeHost(WindowMusType::EMBED, *root,
+                                               display_id, local_surface_id));
+      break;
+    }
+  }
+}
+
 void WindowTreeClient::OnEmbeddedAppDisconnected(ui::Id window_id) {
   WindowMus* window = GetWindowByServerId(window_id);
   if (window)
@@ -1221,6 +1344,13 @@ void WindowTreeClient::OnUnembed(ui::Id window_id) {
   WindowMus* window = GetWindowByServerId(window_id);
   if (!window)
     return;
+
+  EmbedRoot* embed_root = GetEmbedRootWithRootWindow(window->GetWindow());
+  if (embed_root) {
+    embed_root->OnUnembed();
+    if (!GetWindowByServerId(window_id))
+      return;  // EmbedRoot was deleted, resulting in deleting window.
+  }
 
   delegate_->OnUnembed(window->GetWindow());
   delete window;
@@ -1440,11 +1570,15 @@ void WindowTreeClient::OnWindowDeleted(ui::Id window_id) {
   if (roots_.count(window)) {
     // Roots are associated with WindowTreeHosts. The WindowTreeHost owns the
     // root, so we have to delete the WindowTreeHost to indirectly delete the
-    // Window. Additionally clients may want to do extra processing before the
-    // delete, so call to the delegate to handle it. Let the window know it is
-    // going to be deleted so we don't callback to the server.
+    // Window. Clients may want to do extra processing before the delete,
+    // notify the appropriate delegate to handle the deletion. Let the window
+    // know it is going to be deleted so we don't callback to the server.
     window->PrepareForDestroy();
-    delegate_->OnEmbedRootDestroyed(GetWindowTreeHostMus(window));
+    EmbedRoot* embed_root = GetEmbedRootWithRootWindow(window->GetWindow());
+    if (embed_root)
+      embed_root->OnUnembed();
+    else
+      delegate_->OnEmbedRootDestroyed(GetWindowTreeHostMus(window));
   } else {
     window->DestroyFromServer();
   }
@@ -1552,7 +1686,6 @@ void WindowTreeClient::OnWindowInputEvent(
     }
   }
 
-  EventAckHandler ack_handler(CreateEventResultCallback(event_id));
   // TODO(moshayedi): crbug.com/617222. No need to convert to ui::MouseEvent or
   // ui::TouchEvent once we have proper support for pointer events.
   std::unique_ptr<ui::Event> mapped_event = MapEvent(*event.get());
@@ -1568,7 +1701,7 @@ void WindowTreeClient::OnWindowInputEvent(
   if (mapped_event->type() == ui::ET_MOUSE_MOVED ||
       mapped_event->type() == ui::ET_MOUSE_DRAGGED) {
     mapped_event_with_native = std::make_unique<ui::MouseEvent>(
-        static_cast<const base::NativeEvent&>(mapped_event.get()));
+        static_cast<const ui::PlatformEvent&>(mapped_event.get()));
     // MouseEvent(NativeEvent) sets the root_location to location.
     mapped_event_with_native->set_root_location_f(
         event_location_in_screen_pixel_layout);
@@ -1578,6 +1711,13 @@ void WindowTreeClient::OnWindowInputEvent(
         event_location_in_screen_pixel_layout);
     event_to_dispatch = mapped_event_with_native.get();
   }
+#endif
+  // |ack_handler| may use |event_to_dispatch| from its destructor, so it needs
+  // to be destroyed after |event_to_dispatch| is destroyed.
+  EventAckHandler ack_handler(CreateEventResultCallback(event_id));
+#if defined(USE_OZONE)
+  ack_handler.SetPlatformEventSourceAndEvent(platform_event_source_.get(),
+                                             event_to_dispatch);
 #endif
 
   WindowMus* display_root_window = GetWindowByServerId(display_root_window_id);
@@ -1598,6 +1738,11 @@ void WindowTreeClient::OnWindowInputEvent(
     // focused window, which may have changed by the time we process the event.
     ui::Event::DispatcherApi(event_to_dispatch).set_target(window->GetWindow());
   }
+#if defined(USE_OZONE)
+  if (platform_event_source_)
+    platform_event_source_->OnWillProcessEvent(event_to_dispatch);
+#endif
+
   GetWindowTreeHostMus(window)->SendEventToSink(event_to_dispatch);
 
   ack_handler.set_handled(event_to_dispatch->handled());
@@ -2196,8 +2341,8 @@ void WindowTreeClient::InjectEvent(const ui::Event& event, int64_t display_id) {
   // Check event_injector_ so we don't crash if access to the interface was
   // refused.
   if (event_injector_) {
-    event_injector_->DispatchEvent(display_id, ui::Event::Clone(event),
-                                   base::DoNothing());
+    event_injector_->InjectEvent(display_id, ui::Event::Clone(event),
+                                 base::DoNothing());
   }
 }
 

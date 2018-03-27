@@ -73,10 +73,10 @@ class CORE_EXPORT WebDocumentLoaderImpl final : public DocumentLoader,
   WebNavigationType GetNavigationType() const override;
   ExtraData* GetExtraData() const override;
   void SetExtraData(ExtraData*) override;
-  void SetNavigationStartTime(double) override;
-  void UpdateNavigation(double redirect_start_time,
-                        double redirect_end_time,
-                        double fetch_start_time,
+  void SetNavigationStartTime(base::TimeTicks) override;
+  void UpdateNavigation(base::TimeTicks redirect_start_time,
+                        base::TimeTicks redirect_end_time,
+                        base::TimeTicks fetch_start_time,
                         bool has_redirect) override;
   void SetSubresourceFilter(WebDocumentSubresourceFilter*) override;
   void SetServiceWorkerNetworkProvider(
@@ -85,7 +85,6 @@ class CORE_EXPORT WebDocumentLoaderImpl final : public DocumentLoader,
   void SetSourceLocation(const WebSourceLocation&) override;
   void ResetSourceLocation() override;
   void SetUserActivated() override;
-  void SetIsAdSubframe(bool is_ad_subframe) override;
   bool GetIsAdSubframe() const override;
 
   static WebNavigationType ToWebNavigationType(NavigationType);

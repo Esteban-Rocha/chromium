@@ -77,11 +77,11 @@ int TestWebContents::DownloadImage(const GURL& url,
                                    bool is_favicon,
                                    uint32_t max_bitmap_size,
                                    bool bypass_cache,
-                                   const ImageDownloadCallback& callback) {
+                                   ImageDownloadCallback callback) {
   static int g_next_image_download_id = 0;
   ++g_next_image_download_id;
   pending_image_downloads_[url].emplace_back(g_next_image_download_id,
-                                             callback);
+                                             std::move(callback));
   return g_next_image_download_id;
 }
 
@@ -161,8 +161,12 @@ void TestWebContents::TestDidNavigateWithSequenceNumber(
   rfh->SendNavigateWithParams(&params, was_within_same_document);
 }
 
-const std::string& TestWebContents::GetSaveFrameHeaders() {
+const std::string& TestWebContents::GetSaveFrameHeaders() const {
   return save_frame_headers_;
+}
+
+const base::string16& TestWebContents::GetSuggestedFileName() const {
+  return suggested_filename_;
 }
 
 bool TestWebContents::HasPendingDownloadImage(const GURL& url) {
@@ -177,9 +181,11 @@ bool TestWebContents::TestDidDownloadImage(
   if (!HasPendingDownloadImage(url))
     return false;
   int id = pending_image_downloads_[url].front().first;
-  ImageDownloadCallback callback = pending_image_downloads_[url].front().second;
+  ImageDownloadCallback callback =
+      std::move(pending_image_downloads_[url].front().second);
   pending_image_downloads_[url].pop_front();
-  callback.Run(id, http_status_code, url, bitmaps, original_bitmap_sizes);
+  std::move(callback).Run(id, http_status_code, url, bitmaps,
+                          original_bitmap_sizes);
   return true;
 }
 
@@ -375,10 +381,13 @@ void TestWebContents::ShowCreatedFullscreenWidget(int process_id,
                                                   int route_id) {
 }
 
-void TestWebContents::SaveFrameWithHeaders(const GURL& url,
-                                           const Referrer& referrer,
-                                           const std::string& headers) {
+void TestWebContents::SaveFrameWithHeaders(
+    const GURL& url,
+    const Referrer& referrer,
+    const std::string& headers,
+    const base::string16& suggested_filename) {
   save_frame_headers_ = headers;
+  suggested_filename_ = suggested_filename;
 }
 
 void TestWebContents::SetMainFrameMimeType(const std::string& mime_type) {

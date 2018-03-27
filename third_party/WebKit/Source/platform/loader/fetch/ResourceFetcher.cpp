@@ -27,8 +27,13 @@
 
 #include "platform/loader/fetch/ResourceFetcher.h"
 
+#include <algorithm>
+#include <limits>
+#include <utility>
+
 #include "base/time/time.h"
 #include "platform/Histogram.h"
+#include "platform/InstanceCounters.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
@@ -290,9 +295,13 @@ ResourceFetcher::ResourceFetcher(FetchContext* new_context)
       auto_load_images_(true),
       images_enabled_(true),
       allow_stale_resources_(false),
-      image_fetched_(false) {}
+      image_fetched_(false) {
+  InstanceCounters::IncrementCounter(InstanceCounters::kResourceFetcherCounter);
+}
 
-ResourceFetcher::~ResourceFetcher() = default;
+ResourceFetcher::~ResourceFetcher() {
+  InstanceCounters::DecrementCounter(InstanceCounters::kResourceFetcherCounter);
+}
 
 Resource* ResourceFetcher::CachedResource(const KURL& resource_url) const {
   KURL url = MemoryCache::RemoveFragmentIdentifierIfNeeded(resource_url);
@@ -1302,7 +1311,7 @@ int ResourceFetcher::ActiveRequestCount() const {
 void ResourceFetcher::EnableIsPreloadedForTest() {
   if (preloaded_urls_for_test_)
     return;
-  preloaded_urls_for_test_ = WTF::WrapUnique(new HashSet<String>);
+  preloaded_urls_for_test_ = std::make_unique<HashSet<String>>();
 
   for (const auto& pair : preloads_) {
     Resource* resource = pair.value;
@@ -1336,9 +1345,8 @@ void ResourceFetcher::WarnUnusedPreloads() {
       Context().AddWarningConsoleMessage(
           "The resource " + resource->Url().GetString() +
               " was preloaded using link preload but not used within a few " +
-              "seconds from the window's load event. Please make sure it " +
-              "Please make sure it has an appropriate `as` value and it is " +
-              "preloaded intentionally.",
+              "seconds from the window's load event. Please make sure it has " +
+              "an appropriate `as` value and it is preloaded intentionally.",
           FetchContext::kJSSource);
     }
   }
@@ -1515,8 +1523,6 @@ bool ResourceFetcher::StartLoad(Resource* resource) {
                                       resource->GetType(),
                                       resource->Options().initiator_info);
 
-    const SecurityOrigin* source_origin = Context().GetSecurityOrigin();
-
     // TODO(shaochuan): Saving modified ResourceRequest back to |resource|,
     // remove once dispatchWillSendRequest() takes const ResourceRequest.
     // crbug.com/632580
@@ -1543,7 +1549,6 @@ bool ResourceFetcher::StartLoad(Resource* resource) {
       non_blocking_loaders_.insert(loader);
 
     StorePerformanceTimingInitiatorInformation(resource);
-    resource->SetFetcherSecurityOrigin(source_origin);
 
     // NotifyStartLoad() shouldn't cause AddClient/RemoveClient().
     Resource::ProhibitAddRemoveClientInScope
@@ -1637,6 +1642,12 @@ void ResourceFetcher::EmulateLoadStartedForInspector(
                        params.GetOriginRestriction(),
                        resource->LastResourceRequest().GetRedirectStatus());
   RequestLoadStarted(resource->Identifier(), resource, params, kUse);
+}
+
+void ResourceFetcher::PrepareForLeakDetection() {
+  // Stop loaders including keepalive ones that may persist after page
+  // navigation and thus affect instance counters of leak detection.
+  StopFetchingIncludingKeepaliveLoaders();
 }
 
 void ResourceFetcher::StopFetchingInternal(StopFetchingTarget target) {

@@ -127,11 +127,6 @@ PermissionDescriptorPtr ParsePermission(ScriptState* script_state,
     return CreatePermissionDescriptor(PermissionName::ACCESSIBILITY_EVENTS);
   }
   if (name == "clipboard-read" || name == "clipboard-write") {
-    if (!RuntimeEnabledFeatures::AsyncClipboardEnabled()) {
-      exception_state.ThrowTypeError("Async Clipboard flag is not enabled.");
-      return nullptr;
-    }
-
     PermissionName permission_name = PermissionName::CLIPBOARD_READ;
     if (name == "clipboard-write")
       permission_name = PermissionName::CLIPBOARD_WRITE;
@@ -194,7 +189,7 @@ ScriptPromise Permissions::request(ScriptState* script_state,
 
   PermissionDescriptorPtr descriptor_copy = descriptor->Clone();
   Document* doc = ToDocumentOrNull(context);
-  Frame* frame = doc ? doc->GetFrame() : nullptr;
+  LocalFrame* frame = doc ? doc->GetFrame() : nullptr;
   GetService(ExecutionContext::From(script_state))
       .RequestPermission(
           std::move(descriptor),
@@ -272,7 +267,7 @@ ScriptPromise Permissions::requestAll(
     internal_permissions_copy.push_back(descriptor->Clone());
 
   Document* doc = ToDocumentOrNull(context);
-  Frame* frame = doc ? doc->GetFrame() : nullptr;
+  LocalFrame* frame = doc ? doc->GetFrame() : nullptr;
   GetService(ExecutionContext::From(script_state))
       .RequestPermissions(
           std::move(internal_permissions),

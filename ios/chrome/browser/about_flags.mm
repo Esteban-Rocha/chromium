@@ -43,11 +43,10 @@
 #include "ios/chrome/browser/ios_chrome_flag_descriptions.h"
 #include "ios/chrome/browser/mailto/features.h"
 #include "ios/chrome/browser/ssl/captive_portal_features.h"
-#include "ios/chrome/browser/ui/activity_services/canonical_url_feature.h"
 #include "ios/chrome/browser/ui/external_search/features.h"
 #import "ios/chrome/browser/ui/history/history_base_feature.h"
 #include "ios/chrome/browser/ui/main/main_feature_flags.h"
-#import "ios/chrome/browser/ui/ntp/recent_tabs/recent_tabs_feature.h"
+#import "ios/chrome/browser/ui/popup_menu/popup_menu_flags.h"
 #import "ios/chrome/browser/ui/toolbar/public/toolbar_controller_base_feature.h"
 #include "ios/chrome/browser/ui/ui_feature_flags.h"
 #include "ios/chrome/browser/ui/user_feedback_features.h"
@@ -125,6 +124,13 @@ const FeatureEntry::Choice kAutofillIOSDelayBetweenFieldsChoices[] = {
     {"1000", autofill::switches::kAutofillIOSDelayBetweenFields, "1000"},
 };
 
+const FeatureEntry::Choice kToolbarButtonPositionsChoices[] = {
+    {flags_ui::kGenericExperimentChoiceDefault, "", ""},
+    {"Bottom navigation, no top", kToolbarButtonPositionsSwitch, "0"},
+    {"Bottom navigation, share on top", kToolbarButtonPositionsSwitch, "1"},
+    {"Top navigation", kToolbarButtonPositionsSwitch, "2"},
+};
+
 // To add a new entry, add to the end of kFeatureEntries. There are four
 // distinct types of entries:
 // . ENABLE_DISABLE_VALUE: entry is either enabled, disabled, or uses the
@@ -182,17 +188,6 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kOmniboxUIElideSuggestionUrlAfterHostDescription,
      flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(omnibox::kUIExperimentElideSuggestionUrlAfterHost)},
-    {"omnibox-ui-hide-suggestion-url-scheme",
-     flag_descriptions::kOmniboxUIHideSuggestionUrlSchemeName,
-     flag_descriptions::kOmniboxUIHideSuggestionUrlSchemeDescription,
-     flags_ui::kOsIos,
-     FEATURE_VALUE_TYPE(omnibox::kUIExperimentHideSuggestionUrlScheme)},
-    {"omnibox-ui-hide-suggestion-url-trivial-subdomains",
-     flag_descriptions::kOmniboxUIHideSuggestionUrlTrivialSubdomainsName,
-     flag_descriptions::kOmniboxUIHideSuggestionUrlTrivialSubdomainsDescription,
-     flags_ui::kOsIos,
-     FEATURE_VALUE_TYPE(
-         omnibox::kUIExperimentHideSuggestionUrlTrivialSubdomains)},
 #if defined(__IPHONE_11_0) && (__IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0)
     {"drag_and_drop", flag_descriptions::kDragAndDropName,
      flag_descriptions::kDragAndDropDescription, flags_ui::kOsIos,
@@ -212,15 +207,9 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
     {"slim-navigation-manager", flag_descriptions::kSlimNavigationManagerName,
      flag_descriptions::kSlimNavigationManagerDescription, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(web::features::kSlimNavigationManager)},
-    {"new-pass-kit-download", flag_descriptions::kNewPassKitDownloadName,
-     flag_descriptions::kNewPassKitDownloadDescription, flags_ui::kOsIos,
-     FEATURE_VALUE_TYPE(web::features::kNewPassKitDownload)},
     {"new-file-download", flag_descriptions::kNewFileDownloadName,
      flag_descriptions::kNewFileDownloadDescription, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(web::features::kNewFileDownload)},
-    {"ios-share-canonical-url", flag_descriptions::kShareCanonicalURLName,
-     flag_descriptions::kShareCanonicalURLDescription, flags_ui::kOsIos,
-     FEATURE_VALUE_TYPE(activity_services::kShareCanonicalURL)},
     {"memex-tab-switcher", flag_descriptions::kMemexTabSwitcherName,
      flag_descriptions::kMemexTabSwitcherDescription, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(kMemexTabSwitcher)},
@@ -243,9 +232,9 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
     {"ui-refresh-phase-1", flag_descriptions::kUIRefreshPhase1Name,
      flag_descriptions::kUIRefreshPhase1Description, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(kUIRefreshPhase1)},
-    {"recent-tabs-ui-reboot", flag_descriptions::kRecentTabsUIRebootName,
-     flag_descriptions::kRecentTabsUIRebootDescription, flags_ui::kOsIos,
-     FEATURE_VALUE_TYPE(kRecentTabsUIReboot)},
+    {"collections-ui-reboot", flag_descriptions::kCollectionsUIRebootName,
+     flag_descriptions::kCollectionsUIRebootDescription, flags_ui::kOsIos,
+     FEATURE_VALUE_TYPE(kCollectionsUIReboot)},
     {"context-menu-element-post-message",
      flag_descriptions::kContextMenuElementPostMessageName,
      flag_descriptions::kContextMenuElementPostMessageDescription,
@@ -255,9 +244,6 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kMailtoHandlingWithGoogleUIName,
      flag_descriptions::kMailtoHandlingWithGoogleUIDescription,
      flags_ui::kOsIos, FEATURE_VALUE_TYPE(kMailtoHandledWithGoogleUI)},
-    {"tab-switcher-tab-grid", flag_descriptions::kTabSwitcherTabGridName,
-     flag_descriptions::kTabSwitcherTabGridDescription, flags_ui::kOsIos,
-     FEATURE_VALUE_TYPE(kTabSwitcherTabGrid)},
     {"feedback-kit-v2", flag_descriptions::kFeedbackKitV2Name,
      flag_descriptions::kFeedbackKitV2Description, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(kFeedbackKitV2)},
@@ -265,6 +251,12 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kNewClearBrowsingDataUIName,
      flag_descriptions::kNewClearBrowsingDataUIDescription, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(kNewClearBrowsingDataUI)},
+    {"new-tools_menu", flag_descriptions::kNewToolsMenuName,
+     flag_descriptions::kNewToolsMenuDescription, flags_ui::kOsIos,
+     FEATURE_VALUE_TYPE(kNewToolsMenu)},
+    {"toolbar-button-positions", flag_descriptions::kToolbarButtonPositionsName,
+     flag_descriptions::kToolbarButtonPositionsDescription, flags_ui::kOsIos,
+     MULTI_VALUE_TYPE(kToolbarButtonPositionsChoices)},
 };
 
 // Add all switches from experimental flags to |command_line|.

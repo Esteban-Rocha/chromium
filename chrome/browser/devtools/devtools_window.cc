@@ -22,6 +22,7 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/task_manager/web_contents_tags.h"
 #include "chrome/browser/ui/browser.h"
@@ -988,6 +989,14 @@ DevToolsWindow* DevToolsWindow::Create(
       base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
     return nullptr;
 
+#if defined(OS_CHROMEOS)
+  // Do not create DevTools if it's disabled for primary profile.
+  const Profile* primary_profile = ProfileManager::GetPrimaryUserProfile();
+  if (primary_profile &&
+      primary_profile->GetPrefs()->GetBoolean(prefs::kDevToolsDisabled))
+    return nullptr;
+#endif
+
   if (inspected_web_contents) {
     // Check for a place to dock.
     Browser* browser = nullptr;
@@ -1025,8 +1034,15 @@ GURL DevToolsWindow::GetDevToolsURL(Profile* profile,
                                     const std::string& panel,
                                     bool has_other_clients) {
   std::string url;
+
+// Modules are always bundled in CrOS.
+#if defined(OS_CHROMEOS)
+  std::string remote_base = "?";
+#else
   std::string remote_base =
       "?remoteBase=" + DevToolsUI::GetRemoteBaseURL().spec();
+#endif
+
   // remoteFrontend is here for backwards compatibility only.
   std::string remote_frontend =
       frontend_url + ((frontend_url.find("?") == std::string::npos)

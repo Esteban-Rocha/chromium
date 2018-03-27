@@ -27,7 +27,6 @@ class AppsContainerView;
 class AppsGridView;
 class AppListFolderItem;
 class AppListItemView;
-class AppListMainView;
 class AppListModel;
 class FolderHeaderView;
 class PageSwitcher;
@@ -39,7 +38,7 @@ class APP_LIST_EXPORT AppListFolderView : public views::View,
  public:
   AppListFolderView(AppsContainerView* container_view,
                     AppListModel* model,
-                    AppListMainView* app_list_main_view);
+                    ContentsView* contents_view);
   ~AppListFolderView() override;
 
   // An interface for the folder opening and closing animations.
@@ -93,6 +92,11 @@ class APP_LIST_EXPORT AppListFolderView : public views::View,
 
   AppListItemView* GetActivatedFolderItemView();
 
+  // Records the smoothness of folder show/hide animations mixed with the
+  // BackgroundAnimation, FolderItemTitleAnimation, TopIconAnimation, and
+  // ContentsContainerAnimation.
+  void RecordAnimationSmoothness();
+
  private:
   void CalculateIdealBounds();
 
@@ -130,9 +134,13 @@ class APP_LIST_EXPORT AppListFolderView : public views::View,
   bool IsOEMFolder() const override;
   void SetRootLevelDragViewVisible(bool visible) override;
 
+  // Returns the compositor associated to the widget containing this view.
+  // Returns nullptr if there isn't one associated with this widget.
+  ui::Compositor* GetCompositor();
+
   // Views below are not owned by views hierarchy.
   AppsContainerView* container_view_;
-  AppListMainView* app_list_main_view_;
+  ContentsView* contents_view_;
 
   // The view is used to draw a background with corner radius.
   views::View* background_view_;  // Owned by views hierarchy.
@@ -163,6 +171,9 @@ class APP_LIST_EXPORT AppListFolderView : public views::View,
   std::unique_ptr<gfx::SlideAnimation> folder_item_title_animation_;
   std::unique_ptr<Animation> top_icon_animation_;
   std::unique_ptr<Animation> contents_container_animation_;
+
+  // The compositor frame number when animation starts.
+  int animation_start_frame_number_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListFolderView);
 };

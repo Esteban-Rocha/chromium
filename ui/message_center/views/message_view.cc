@@ -6,6 +6,7 @@
 
 #include "base/feature_list.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
@@ -94,7 +95,11 @@ MessageView::~MessageView() {}
 
 void MessageView::UpdateWithNotification(const Notification& notification) {
   pinned_ = notification.pinned();
-  accessible_name_ = CreateAccessibleName(notification);
+  base::string16 new_accessible_name = CreateAccessibleName(notification);
+  if (new_accessible_name != accessible_name_) {
+    accessible_name_ = new_accessible_name;
+    NotifyAccessibilityEvent(ax::mojom::Event::kTextChanged, true);
+  }
   slide_out_controller_.set_enabled(!GetPinned());
 }
 
@@ -164,12 +169,11 @@ void MessageView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   node_data->SetName(accessible_name_);
 }
 
-bool MessageView::OnMousePressed(const ui::MouseEvent& event) {
+void MessageView::OnMouseReleased(const ui::MouseEvent& event) {
   if (!event.IsOnlyLeftMouseButton())
-    return false;
+    return;
 
   MessageCenter::Get()->ClickOnNotification(notification_id_);
-  return true;
 }
 
 bool MessageView::OnKeyPressed(const ui::KeyEvent& event) {
@@ -276,8 +280,17 @@ ui::Layer* MessageView::GetSlideOutLayer() {
 void MessageView::OnSlideChanged() {}
 
 void MessageView::OnSlideOut() {
-  MessageCenter::Get()->RemoveNotification(notification_id_,
-                                           true /* by_user */);
+  // As a workaround for a MessagePopupCollection bug https://crbug.com/805208,
+  // pass false to by_user although it is triggered by user.
+  // TODO(tetsui): Rewrite MessagePopupCollection and remove this hack.
+  if (pinned_) {
+    // Also a workaround to not break notification pinning.
+    MessageCenter::Get()->MarkSinglePopupAsShown(
+        notification_id_, true /* mark_notification_as_read */);
+  } else {
+    MessageCenter::Get()->RemoveNotification(notification_id_,
+                                             true /* by_user */);
+  }
 }
 
 bool MessageView::GetPinned() const {
@@ -291,7 +304,7 @@ void MessageView::OnCloseButtonPressed() {
                                            true /* by_user */);
 }
 
-void MessageView::OnSettingsButtonPressed(const ui::LocatedEvent& event) {
+void MessageView::OnSettingsButtonPressed(const ui::Event& event) {
   MessageCenter::Get()->ClickOnSettingsButton(notification_id_);
 }
 

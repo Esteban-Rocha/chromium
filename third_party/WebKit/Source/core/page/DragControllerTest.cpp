@@ -6,19 +6,20 @@
 
 #include "core/clipboard/DataObject.h"
 #include "core/clipboard/DataTransfer.h"
+#include "core/clipboard/DataTransferAccessPolicy.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/VisualViewport.h"
-#include "core/layout/LayoutTestHelper.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/DragData.h"
 #include "core/page/DragSession.h"
 #include "core/page/DragState.h"
+#include "core/testing/CoreUnitTestHelper.h"
 #include "core/testing/sim/SimRequest.h"
 #include "core/testing/sim/SimTest.h"
 #include "platform/DragImage.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
@@ -52,8 +53,9 @@ class DragControllerTest
 
         chrome_client_(new DragMockChromeClient) {}
   LocalFrame& GetFrame() const { return *GetDocument().GetFrame(); }
-  ChromeClient& GetChromeClient() const override { return *chrome_client_; }
-  DragMockChromeClient& ChromeClient() const { return *chrome_client_; }
+  DragMockChromeClient& GetChromeClient() const override {
+    return *chrome_client_;
+  }
 
   void UpdateAllLifecyclePhases() {
     GetDocument().View()->UpdateAllLifecyclePhases();
@@ -396,18 +398,21 @@ TEST_P(DragControllerTest, DragImageOffsetWithPageScaleFactor) {
   drag_state.drag_type_ = kDragSourceActionSelection;
   drag_state.drag_src_ = GetDocument().getElementById("drag");
   drag_state.drag_data_transfer_ = DataTransfer::Create(
-      DataTransfer::kDragAndDrop, kDataTransferWritable, DataObject::Create());
+      DataTransfer::kDragAndDrop, DataTransferAccessPolicy::kWritable,
+      DataObject::Create());
   GetFrame().GetPage()->GetDragController().StartDrag(
       &GetFrame(), drag_state, mouse_event, IntPoint(5, 10));
 
   IntSize expected_image_size = IntSize(50, 40);
   expected_image_size.Scale(page_scale_factor);
-  EXPECT_EQ(expected_image_size, IntSize(ChromeClient().last_drag_image_size));
+  EXPECT_EQ(expected_image_size,
+            IntSize(GetChromeClient().last_drag_image_size));
   // The drag image has a margin of 2px which should offset the selection
   // image by 2px from the dragged location of (5, 10).
   IntPoint expected_offset = IntPoint(5, 10 - 2);
   expected_offset.Scale(page_scale_factor, page_scale_factor);
-  EXPECT_EQ(expected_offset, IntPoint(ChromeClient().last_drag_image_offset));
+  EXPECT_EQ(expected_offset,
+            IntPoint(GetChromeClient().last_drag_image_offset));
 }
 
 TEST_P(DragControllerTest, DragLinkWithPageScaleFactor) {
@@ -439,11 +444,12 @@ TEST_P(DragControllerTest, DragLinkWithPageScaleFactor) {
   drag_state.drag_type_ = kDragSourceActionLink;
   drag_state.drag_src_ = GetDocument().getElementById("drag");
   drag_state.drag_data_transfer_ = DataTransfer::Create(
-      DataTransfer::kDragAndDrop, kDataTransferWritable, DataObject::Create());
+      DataTransfer::kDragAndDrop, DataTransferAccessPolicy::kWritable,
+      DataObject::Create());
   GetFrame().GetPage()->GetDragController().StartDrag(
       &GetFrame(), drag_state, mouse_event, IntPoint(5, 10));
 
-  IntSize link_image_size = IntSize(ChromeClient().last_drag_image_size);
+  IntSize link_image_size = IntSize(GetChromeClient().last_drag_image_size);
   // The drag link image should be a textual representation of the drag url in a
   // system font (see: DragImageForLink in DragController.cpp) and should not be
   // an empty image.
@@ -456,8 +462,10 @@ TEST_P(DragControllerTest, DragLinkWithPageScaleFactor) {
   // The offset is mapped using integers which can introduce rounding errors
   // (see TODO in DragController::DoSystemDrag) so we accept values near our
   // expectation until more precise offset mapping is available.
-  EXPECT_NEAR(expected_offset.X(), ChromeClient().last_drag_image_offset.x, 1);
-  EXPECT_NEAR(expected_offset.Y(), ChromeClient().last_drag_image_offset.y, 1);
+  EXPECT_NEAR(expected_offset.X(), GetChromeClient().last_drag_image_offset.x,
+              1);
+  EXPECT_NEAR(expected_offset.Y(), GetChromeClient().last_drag_image_offset.y,
+              1);
 }
 
 }  // namespace blink

@@ -26,7 +26,6 @@ using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertJavaStringToUTF16;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaParamRef;
-using base::android::ScopedJavaLocalRef;
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(banners::AppBannerManagerAndroid);
 
@@ -64,9 +63,17 @@ AppBannerManagerAndroid::~AppBannerManagerAndroid() {
   java_banner_manager_.Reset();
 }
 
-const base::android::ScopedJavaGlobalRef<jobject>&
+const base::android::ScopedJavaLocalRef<jobject>
 AppBannerManagerAndroid::GetJavaBannerManager() const {
-  return java_banner_manager_;
+  return base::android::ScopedJavaLocalRef<jobject>(java_banner_manager_);
+}
+
+base::android::ScopedJavaLocalRef<jobject>
+AppBannerManagerAndroid::GetAddToHomescreenDialogForTesting(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& jobj) {
+  return ui_delegate_ ? ui_delegate_->GetAddToHomescreenDialogForTesting()
+                      : nullptr;
 }
 
 bool AppBannerManagerAndroid::IsRunningForTesting(
@@ -338,10 +345,12 @@ InstallableStatusCode AppBannerManagerAndroid::QueryNativeApp(
 
   // Send the info to the Java side to get info about the app.
   JNIEnv* env = base::android::AttachCurrentThread();
-  ScopedJavaLocalRef<jstring> jurl(
+  base::android::ScopedJavaLocalRef<jstring> jurl(
       ConvertUTF8ToJavaString(env, validated_url_.spec()));
-  ScopedJavaLocalRef<jstring> jpackage(ConvertUTF8ToJavaString(env, id));
-  ScopedJavaLocalRef<jstring> jreferrer(ConvertUTF8ToJavaString(env, referrer));
+  base::android::ScopedJavaLocalRef<jstring> jpackage(
+      ConvertUTF8ToJavaString(env, id));
+  base::android::ScopedJavaLocalRef<jstring> jreferrer(
+      ConvertUTF8ToJavaString(env, referrer));
 
   // This async call will run OnAppDetailsRetrieved() when completed.
   UpdateState(State::FETCHING_NATIVE_DATA);
@@ -351,13 +360,26 @@ InstallableStatusCode AppBannerManagerAndroid::QueryNativeApp(
   return NO_ERROR_DETECTED;
 }
 
+const base::string16 AppBannerManagerAndroid::GetAppNameForAmbientBadge()
+    const {
+  if (native_app_data_.is_null()) {
+    // Prefer the short name if it's available. It's guaranteed that at least
+    // one of these is non-empty.
+    return manifest_.short_name.string().empty()
+               ? manifest_.name.string()
+               : manifest_.short_name.string();
+  }
+
+  return native_app_title_;
+}
+
 void AppBannerManagerAndroid::ShowAmbientBadge(bool is_installed) {
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(web_contents());
   if (GetVisibleAmbientBadgeInfoBar(infobar_service) == nullptr) {
     InstallableAmbientBadgeInfoBarDelegate::Create(
-        web_contents(), GetWeakPtr(), primary_icon_, manifest_.start_url,
-        is_installed);
+        web_contents(), GetWeakPtr(), GetAppNameForAmbientBadge(),
+        primary_icon_, manifest_.start_url, is_installed);
   }
 }
 
@@ -379,15 +401,15 @@ jint JNI_AppBannerManager_GetHomescreenLanguageOption(
 }
 
 // static
-ScopedJavaLocalRef<jobject>
+base::android::ScopedJavaLocalRef<jobject>
 JNI_AppBannerManager_GetJavaBannerManagerForWebContents(
     JNIEnv* env,
     const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jobject>& java_web_contents) {
   AppBannerManagerAndroid* manager = AppBannerManagerAndroid::FromWebContents(
       content::WebContents::FromJavaWebContents(java_web_contents));
-  return manager ? ScopedJavaLocalRef<jobject>(manager->GetJavaBannerManager())
-                 : ScopedJavaLocalRef<jobject>();
+  return manager ? manager->GetJavaBannerManager()
+                 : base::android::ScopedJavaLocalRef<jobject>();
 }
 
 // static

@@ -21,8 +21,8 @@
 #include "chrome/browser/chrome_service.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/resource_type.h"
-#include "extensions/features/features.h"
-#include "media/media_features.h"
+#include "extensions/buildflags/buildflags.h"
+#include "media/media_buildflags.h"
 #include "ppapi/features/features.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
@@ -111,10 +111,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                                        const GURL& effective_site_url) override;
   bool ShouldLockToOrigin(content::BrowserContext* browser_context,
                           const GURL& effective_site_url) override;
-  bool ShouldBypassDocumentBlocking(
-      const url::Origin& initiator,
-      const GURL& url,
-      content::ResourceType resource_type) override;
+  const char* GetInitatorSchemeBypassingDocumentBlocking() override;
   void GetAdditionalWebUISchemes(
       std::vector<std::string>* additional_schemes) override;
   void GetAdditionalViewSourceSchemes(
@@ -150,6 +147,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const GURL& new_url) override;
   bool ShouldAssignSiteForURL(const GURL& url) override;
   std::vector<url::Origin> GetOriginsRequiringDedicatedProcess() override;
+  bool ShouldEnableStrictSiteIsolation() override;
   bool IsFileAccessAllowed(const base::FilePath& path,
                            const base::FilePath& absolute_path,
                            const base::FilePath& profile_path) override;
@@ -426,6 +424,14 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       bool first_auth_attempt,
       const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
           auth_required_callback) override;
+  bool HandleExternalProtocol(
+      const GURL& url,
+      content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+      int child_id,
+      content::NavigationUIData* navigation_data,
+      bool is_main_frame,
+      ui::PageTransition page_transition,
+      bool has_user_gesture) override;
 
  protected:
   static bool HandleWebUI(GURL* url, content::BrowserContext* browser_context);

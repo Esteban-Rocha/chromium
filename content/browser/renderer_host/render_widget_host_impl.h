@@ -16,14 +16,17 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/containers/flat_set.h"
 #include "base/containers/queue.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/shared_memory_handle.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/optional.h"
 #include "base/process/kill.h"
 #include "base/strings/string16.h"
+#include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
 #include "build/build_config.h"
@@ -39,6 +42,7 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_controller.h"
 #include "content/browser/renderer_host/input/touch_emulator_client.h"
 #include "content/browser/renderer_host/render_frame_metadata_provider_impl.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/drag_event_source_info.h"
@@ -95,7 +99,6 @@ namespace content {
 class BrowserAccessibilityManager;
 class InputRouter;
 class MockRenderWidgetHost;
-class RenderFrameMetadataProvider;
 class RenderWidgetHostOwnerDelegate;
 class SyntheticGestureController;
 class TimeoutMonitor;
@@ -113,6 +116,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       public FrameTokenMessageQueue::Client,
       public InputRouterImplClient,
       public InputDispositionHandler,
+      public RenderProcessHostImpl::PriorityClient,
       public TouchEmulatorClient,
       public SyntheticGestureController::Delegate,
       public viz::mojom::CompositorFrameSink,
@@ -162,6 +166,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   }
 
   RenderWidgetHostOwnerDelegate* owner_delegate() { return owner_delegate_; }
+
+  void set_clock_for_testing(base::TickClock* clock) { clock_ = clock; }
 
   // Returns the viz::FrameSinkId that this object uses to put things on screen.
   // This value is constant throughout the lifetime of this object. Note that
@@ -229,6 +235,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void DragSourceSystemDragEnded() override;
   void FilterDropData(DropData* drop_data) override;
   void SetCursor(const CursorInfo& cursor_info) override;
+
+  // RenderProcessHostImpl::PriorityClient implementation.
+  RenderProcessHost::Priority GetPriority() override;
 
   // Notification that the screen info has changed.
   void NotifyScreenInfoChanged();
@@ -479,6 +488,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     allow_privileged_mouse_lock_ = allow;
   }
 
+  // Called when the response to a pending keyboard lock request has arrived.
+  // |allowed| should be true if the current tab is in tab initiated fullscreen
+  // mode.
+  void GotResponseToKeyboardLockRequest(bool allowed);
+
   // Resets state variables related to tracking pending size and painting.
   //
   // We need to reset these flags when we want to repaint the contents of
@@ -602,7 +616,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     return last_auto_resize_request_number_;
   }
 
-  RenderFrameMetadataProvider* render_frame_metadata_provider() {
+  RenderFrameMetadataProviderImpl* render_frame_metadata_provider() {
     return &render_frame_metadata_provider_;
   }
 
@@ -655,13 +669,32 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   void ProgressFling(base::TimeTicks current_time);
   void StopFling();
+  bool FlingCancellationIsDeferred() const;
 
   void DidReceiveFirstFrameAfterNavigation();
+
+  // The RenderWidgetHostImpl will keep showing the old page (for a while) after
+  // navigation until the first frame of the new page arrives. This reduces
+  // flicker. However, if for some reason it is known that the frames won't be
+  // arriving, this call can be used for force a timeout, to avoid showing the
+  // content of the old page under UI from the new page.
+  void ForceFirstFrameAfterNavigationTimeout();
 
   uint32_t current_content_source_id() { return current_content_source_id_; }
 
   void SetScreenOrientationForTesting(uint16_t angle,
                                       ScreenOrientationValues type);
+
+  // Requests Keyboard lock.  Note: the lock may not take effect until later.
+  // If |keys_to_lock| has no value then all keys will be locked, otherwise only
+  // the keys specified will be intercepted and routed to the web page.
+  void RequestKeyboardLock(base::Optional<base::flat_set<int>> keys_to_lock);
+
+  // Cancels a previous keyboard lock request.
+  void CancelKeyboardLock();
+
+  // Indicates whether keyboard lock is active.
+  bool IsKeyboardLocked() const;
 
  protected:
   // ---------------------------------------------------------------------------
@@ -790,6 +823,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnHasTouchEventHandlers(bool has_handlers) override;
   void DidOverscroll(const ui::DidOverscrollParams& params) override;
   void DidStopFlinging() override;
+  void DidStartScrollingViewport() override;
   void OnSetWhiteListedTouchAction(
       cc::TouchAction white_listed_touch_action) override {}
   void SetNeedsBeginFrameForFlingProgress() override;
@@ -834,6 +868,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const RenderWidgetSurfaceProperties& first,
       const RenderWidgetSurfaceProperties& second) const;
 
+  // Start intercepting system keyboard events.
+  bool LockKeyboard();
+
+  // Stop intercepting system keyboard events.
+  void UnlockKeyboard();
+
 #if defined(OS_MACOSX)
   device::mojom::WakeLock* GetWakeLock();
 #endif
@@ -860,16 +900,18 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // The ID of the corresponding object in the Renderer Instance.
   const int routing_id_;
 
+  // The clock used; overridable for tests.
+  base::TickClock* clock_;
+
   // Indicates whether a page is loading or not.
   bool is_loading_;
 
-  // Indicates whether a page is hidden or not. It has to stay in sync with the
-  // most recent call to process_->WidgetRestored() / WidgetHidden().
+  // Indicates whether a page is hidden or not. Need to call
+  // process_->UpdateClientPriority when this value changes.
   bool is_hidden_;
 
 #if defined(OS_ANDROID)
-  // Tracks the current importance of widget, so the old value can be passed to
-  // RenderProcessHost on changes.
+  // Tracks the current importance of widget.
   ChildProcessImportance importance_ = ChildProcessImportance::NORMAL;
 #endif
 
@@ -962,6 +1004,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool pending_mouse_lock_request_;
   bool allow_privileged_mouse_lock_;
 
+  // Stores the keyboard keys to lock while waiting for a pending lock request.
+  base::Optional<base::flat_set<int>> keyboard_keys_to_lock_;
+  bool keyboard_lock_requested_ = false;
+  bool keyboard_lock_allowed_ = false;
+
   // Used when locking to indicate when a target application has voluntarily
   // unlocked and desires to relock the mouse. If the mouse is unlocked due
   // to ESC being pressed by the user, this will be false.
@@ -986,6 +1033,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   std::unique_ptr<InputRouter> input_router_;
 
   std::unique_ptr<TimeoutMonitor> hang_monitor_timeout_;
+  base::TimeTicks hang_monitor_start_time_;
 
   std::unique_ptr<TimeoutMonitor> new_content_rendering_timeout_;
 
@@ -1010,6 +1058,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // This is state that may arrive before the view has been set and that must be
   // consistent with the state in the renderer, so this host handles it.
   bool needs_begin_frames_ = false;
+
+  // This is used to make sure that when the fling controller sets
+  // needs_begin_frames_ it doesn't get overriden by the renderer.
+  bool browser_fling_needs_begin_frame_ = false;
 
   // This value indicates how long to wait before we consider a renderer hung.
   base::TimeDelta hung_renderer_delay_;
@@ -1090,6 +1142,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   std::set<viz::SharedBitmapId> owned_bitmaps_;
 
   bool next_resize_needs_resize_ack_ = false;
+
+  bool force_enable_zoom_ = false;
 
   RenderFrameMetadataProviderImpl render_frame_metadata_provider_;
 

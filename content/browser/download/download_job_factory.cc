@@ -7,14 +7,14 @@
 #include <memory>
 
 #include "base/memory/ptr_util.h"
+#include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_job_impl.h"
 #include "components/download/public/common/download_stats.h"
-#include "content/browser/download/download_item_impl.h"
-#include "content/browser/download/download_job.h"
-#include "content/browser/download/download_job_impl.h"
 #include "content/browser/download/parallel_download_job.h"
 #include "content/browser/download/parallel_download_utils.h"
 #include "content/browser/download/save_package_download_job.h"
 #include "content/public/common/content_features.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace content {
 
@@ -22,7 +22,7 @@ namespace {
 
 // Returns if the download can be parallelized.
 bool IsParallelizableDownload(const download::DownloadCreateInfo& create_info,
-                              DownloadItemImpl* download_item) {
+                              download::DownloadItem* download_item) {
   // To enable parallel download, following conditions need to be satisfied.
   // 1. Feature |kParallelDownloading| enabled.
   // 2. Strong validators response headers. i.e. ETag and Last-Modified.
@@ -95,11 +95,12 @@ bool IsParallelizableDownload(const download::DownloadCreateInfo& create_info,
 }  // namespace
 
 // static
-std::unique_ptr<DownloadJob> DownloadJobFactory::CreateJob(
-    DownloadItemImpl* download_item,
+std::unique_ptr<download::DownloadJob> DownloadJobFactory::CreateJob(
+    download::DownloadItem* download_item,
     std::unique_ptr<download::DownloadRequestHandleInterface> req_handle,
     const download::DownloadCreateInfo& create_info,
-    bool is_save_package_download) {
+    bool is_save_package_download,
+    scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory) {
   if (is_save_package_download) {
     return std::make_unique<SavePackageDownloadJob>(download_item,
                                                     std::move(req_handle));
@@ -109,12 +110,13 @@ std::unique_ptr<DownloadJob> DownloadJobFactory::CreateJob(
   // Build parallel download job.
   if (IsParallelDownloadEnabled() && is_parallelizable) {
     return std::make_unique<ParallelDownloadJob>(
-        download_item, std::move(req_handle), create_info);
+        download_item, std::move(req_handle), create_info,
+        std::move(shared_url_loader_factory));
   }
 
   // An ordinary download job.
-  return std::make_unique<DownloadJobImpl>(download_item, std::move(req_handle),
-                                           is_parallelizable);
+  return std::make_unique<download::DownloadJobImpl>(
+      download_item, std::move(req_handle), is_parallelizable);
 }
 
 }  // namespace

@@ -4,7 +4,10 @@
 
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 
-#include "ash/app_list/presenter/app_list_presenter_impl.h"
+#include <algorithm>
+#include <set>
+#include <utility>
+
 #include "ash/multi_profile_uma.h"
 #include "ash/public/cpp/ash_pref_names.h"
 #include "ash/public/cpp/remote_shelf_item_delegate.h"
@@ -27,11 +30,12 @@
 #include "chrome/browser/prefs/pref_service_syncable_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/app_list/app_list_service_impl.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
+#include "chrome/browser/ui/app_list/app_sync_ui_state.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_icon_loader.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
-#include "chrome/browser/ui/ash/app_list/app_list_service_ash.h"
-#include "chrome/browser/ui/ash/app_sync_ui_state.h"
+#include "chrome/browser/ui/app_list/crostini/crostini_util.h"
 #include "chrome/browser/ui/ash/ash_util.h"
 #include "chrome/browser/ui/ash/chrome_launcher_prefs.h"
 #include "chrome/browser/ui/ash/launcher/app_shortcut_launcher_item_controller.h"
@@ -42,6 +46,7 @@
 #include "chrome/browser/ui/ash/launcher/browser_shortcut_launcher_item_controller.h"
 #include "chrome/browser/ui/ash/launcher/browser_status_monitor.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_util.h"
+#include "chrome/browser/ui/ash/launcher/crostini_app_window_shelf_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_arc_app_updater.h"
 #include "chrome/browser/ui/ash/launcher/launcher_controller_helper.h"
 #include "chrome/browser/ui/ash/launcher/launcher_extension_app_updater.h"
@@ -254,6 +259,10 @@ ChromeLauncherController::ChromeLauncherController(Profile* profile,
   app_window_controllers_.push_back(std::move(extension_app_window_controller));
   app_window_controllers_.push_back(
       std::make_unique<ArcAppWindowLauncherController>(this));
+  if (IsExperimentalCrostiniUIAvailable()) {
+    app_window_controllers_.push_back(
+        std::make_unique<CrostiniAppWindowShelfController>(this));
+  }
 }
 
 ChromeLauncherController::~ChromeLauncherController() {
@@ -514,10 +523,8 @@ ash::ShelfAction ChromeLauncherController::ActivateWindowOrMinimizeIfActive(
     return ash::SHELF_ACTION_WINDOW_ACTIVATED;
   }
 
-  const app_list::AppListPresenterImpl* app_list_presenter =
-      AppListServiceAsh::GetInstance()->GetAppListPresenter();
   if (window->IsActive() && allow_minimize &&
-      (!app_list_presenter || !app_list_presenter->IsVisible())) {
+      !AppListServiceImpl::GetInstance()->GetTargetVisibility()) {
     window->Minimize();
     return ash::SHELF_ACTION_WINDOW_MINIMIZED;
   }

@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
@@ -20,6 +21,7 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/ui/public/interfaces/window_manager_window_tree_factory.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
+#include "services/ui/ws/async_event_dispatcher_lookup.h"
 #include "services/ui/ws/gpu_host_delegate.h"
 #include "services/ui/ws/ids.h"
 #include "services/ui/ws/operation.h"
@@ -48,12 +50,18 @@ class WindowTreeBinding;
 
 enum class DisplayCreationConfig;
 
+struct WindowTreeAndWindowId {
+  WindowTree* tree = nullptr;
+  ClientSpecificId window_id = 0u;
+};
+
 // WindowServer manages the set of clients of the window server (all the
 // WindowTrees) as well as providing the root of the hierarchy.
 class WindowServer : public ServerWindowDelegate,
                      public ServerWindowObserver,
                      public GpuHostDelegate,
-                     public UserDisplayManagerDelegate {
+                     public UserDisplayManagerDelegate,
+                     public AsyncEventDispatcherLookup {
  public:
   WindowServer(WindowServerDelegate* delegate, bool should_host_viz);
   ~WindowServer() override;
@@ -111,6 +119,17 @@ class WindowServer : public ServerWindowDelegate,
   WindowTree* GetTreeWithClientName(const std::string& client_name);
 
   size_t num_trees() const { return tree_map_.size(); }
+
+  // Creates and registers a token for use in a future embedding. |window_id|
+  // is the window_id portion of the ClientWindowId to use for the window in
+  // |tree|. |window_id| is validated during actual embed.
+  base::UnguessableToken RegisterEmbedToken(WindowTree* tree,
+                                            ClientSpecificId window_id);
+
+  // Unregisters the WindowTree associated with |token| and returns it. Returns
+  // null if RegisterEmbedToken() was not previously called for |token|.
+  WindowTreeAndWindowId UnregisterEmbedToken(
+      const base::UnguessableToken& token);
 
   OperationType current_operation_type() const {
     return current_operation_ ? current_operation_->type()
@@ -309,6 +328,10 @@ class WindowServer : public ServerWindowDelegate,
 
   void CreateFrameSinkManager();
 
+  // AsyncEventDispatcherLookup:
+  AsyncEventDispatcher* GetAsyncEventDispatcherById(
+      ClientSpecificId id) override;
+
   // Overridden from ServerWindowDelegate:
   ServerWindow* GetRootWindowForDrawn(const ServerWindow* window) override;
 
@@ -409,6 +432,12 @@ class WindowServer : public ServerWindowDelegate,
   ServerWindowTracker pending_system_modal_windows_;
 
   DisplayCreationConfig display_creation_config_;
+
+  // Tokens registered by ScheduleEmbedForExistingClient() that are removed when
+  // EmbedUsingToken() is called.
+  using ScheduledEmbeds =
+      base::flat_map<base::UnguessableToken, WindowTreeAndWindowId>;
+  ScheduledEmbeds scheduled_embeds_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowServer);
 };

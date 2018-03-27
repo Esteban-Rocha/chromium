@@ -43,7 +43,7 @@
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketHandle.h"
 #include "modules/websockets/WebSocketHandleClient.h"
-#include "platform/WebFrameScheduler.h"
+#include "platform/FrameScheduler.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/Deque.h"
@@ -51,11 +51,10 @@
 #include "platform/wtf/text/CString.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/WebCallbacks.h"
-#include "public/platform/modules/websockets/websocket.mojom-blink.h"
+#include "services/network/public/mojom/websocket.mojom-blink.h"
 
 namespace blink {
 
-class ThreadableLoadingContext;
 class WebSocketHandshakeRequest;
 class WebSocketHandshakeThrottle;
 
@@ -92,7 +91,9 @@ class MODULES_EXPORT DocumentWebSocketChannel final
 
   // Allows the caller to provide the Mojo pipe through which the socket is
   // connected, overriding the interface provider of the Document.
-  bool Connect(const KURL&, const String& protocol, mojom::blink::WebSocketPtr);
+  bool Connect(const KURL&,
+               const String& protocol,
+               network::mojom::blink::WebSocketPtr);
 
   // WebSocketChannel functions.
   bool Connect(const KURL&, const String& protocol) override;
@@ -152,7 +153,6 @@ class MODULES_EXPORT DocumentWebSocketChannel final
   void HandleDidClose(bool was_clean,
                       unsigned short code,
                       const String& reason);
-  ThreadableLoadingContext* LoadingContext();
 
   // This may return nullptr.
   // TODO(kinuko): Remove dependency to document.
@@ -192,15 +192,14 @@ class MODULES_EXPORT DocumentWebSocketChannel final
   void TearDownFailedConnection();
   bool ShouldDisallowConnection(const KURL&);
 
-  // m_handle is a handle of the connection.
-  // m_handle == 0 means this channel is closed.
+  // |handle_| is a handle of the connection.
+  // |handle_| == nullptr means this channel is closed.
   std::unique_ptr<WebSocketHandle> handle_;
 
-  // m_client can be deleted while this channel is alive, but this class
+  // |client_| can be deleted while this channel is alive, but this class
   // expects that disconnect() is called before the deletion.
   Member<WebSocketChannelClient> client_;
   KURL url_;
-  // m_identifier > 0 means calling scriptContextExecution() returns a Document.
   unsigned long identifier_;
   Member<BlobLoader> blob_loader_;
   HeapDeque<Member<Message>> messages_;
@@ -211,7 +210,7 @@ class MODULES_EXPORT DocumentWebSocketChannel final
   uint64_t sending_quota_;
   uint64_t received_data_size_for_flow_control_;
   size_t sent_size_of_top_message_;
-  std::unique_ptr<WebFrameScheduler::ActiveConnectionHandle>
+  std::unique_ptr<FrameScheduler::ActiveConnectionHandle>
       connection_handle_for_scheduler_;
 
   std::unique_ptr<SourceLocation> location_at_construction_;

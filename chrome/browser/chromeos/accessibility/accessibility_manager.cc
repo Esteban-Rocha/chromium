@@ -12,8 +12,8 @@
 #include <vector>
 
 #include "ash/accessibility/accessibility_controller.h"
-#include "ash/accessibility/accessibility_focus_ring_controller.h"
 #include "ash/public/cpp/ash_pref_names.h"
+#include "ash/public/interfaces/accessibility_focus_ring_controller.mojom.h"
 #include "ash/public/interfaces/constants.mojom.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
@@ -238,7 +238,6 @@ AccessibilityManager::AccessibilityManager()
           ash::prefs::kAccessibilityCursorHighlightEnabled),
       focus_highlight_pref_handler_(
           ash::prefs::kAccessibilityFocusHighlightEnabled),
-      tap_dragging_pref_handler_(ash::prefs::kTapDraggingEnabled),
       select_to_speak_pref_handler_(
           ash::prefs::kAccessibilitySelectToSpeakEnabled),
       switch_access_pref_handler_(
@@ -317,6 +316,12 @@ AccessibilityManager::AccessibilityManager()
   content::ServiceManagerConnection::GetForProcess()
       ->GetConnector()
       ->BindInterface(ash::mojom::kServiceName, &accessibility_controller_);
+
+  // Connect to ash's AccessibilityFocusRingController interface.
+  content::ServiceManagerConnection::GetForProcess()
+      ->GetConnector()
+      ->BindInterface(ash::mojom::kServiceName,
+                      &accessibility_focus_ring_controller_);
 }
 
 AccessibilityManager::~AccessibilityManager() {
@@ -328,7 +333,7 @@ AccessibilityManager::~AccessibilityManager() {
   session_manager::SessionManager::Get()->RemoveObserver(this);
 
   if (chromevox_panel_) {
-    chromevox_panel_->Close();
+    chromevox_panel_->CloseNow();
     chromevox_panel_ = nullptr;
   }
 }
@@ -356,8 +361,7 @@ bool AccessibilityManager::ShouldShowAccessibilityMenu() {
         prefs->GetBoolean(ash::prefs::kAccessibilityMonoAudioEnabled) ||
         prefs->GetBoolean(ash::prefs::kAccessibilityCaretHighlightEnabled) ||
         prefs->GetBoolean(ash::prefs::kAccessibilityCursorHighlightEnabled) ||
-        prefs->GetBoolean(ash::prefs::kAccessibilityFocusHighlightEnabled) ||
-        prefs->GetBoolean(ash::prefs::kTapDraggingEnabled))
+        prefs->GetBoolean(ash::prefs::kAccessibilityFocusHighlightEnabled))
       return true;
   }
   return false;
@@ -374,7 +378,7 @@ void AccessibilityManager::UpdateAlwaysShowMenuFromPref() {
   // Update system tray menu visibility.
   ash::Shell::Get()
       ->accessibility_controller()
-      ->NotifyAccessibilityStatusChanged(ash::A11Y_NOTIFICATION_NONE);
+      ->NotifyAccessibilityStatusChanged();
 }
 
 void AccessibilityManager::EnableLargeCursor(bool enabled) {
@@ -750,27 +754,6 @@ void AccessibilityManager::OnFocusHighlightChanged() {
   NotifyAccessibilityStatusChanged(details);
 }
 
-void AccessibilityManager::EnableTapDragging(bool enabled) {
-  if (!profile_)
-    return;
-
-  PrefService* pref_service = profile_->GetPrefs();
-  pref_service->SetBoolean(ash::prefs::kTapDraggingEnabled, enabled);
-  pref_service->CommitPendingWrite();
-}
-
-bool AccessibilityManager::IsTapDraggingEnabled() const {
-  return profile_ &&
-         profile_->GetPrefs()->GetBoolean(ash::prefs::kTapDraggingEnabled);
-}
-
-void AccessibilityManager::OnTapDraggingChanged() {
-  AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_TAP_DRAGGING,
-                                          IsTapDraggingEnabled(),
-                                          ash::A11Y_NOTIFICATION_NONE);
-  NotifyAccessibilityStatusChanged(details);
-}
-
 void AccessibilityManager::SetSelectToSpeakEnabled(bool enabled) {
   if (!profile_)
     return;
@@ -999,10 +982,6 @@ void AccessibilityManager::SetProfile(Profile* profile) {
         base::Bind(&AccessibilityManager::OnFocusHighlightChanged,
                    base::Unretained(this)));
     pref_change_registrar_->Add(
-        ash::prefs::kTapDraggingEnabled,
-        base::Bind(&AccessibilityManager::OnTapDraggingChanged,
-                   base::Unretained(this)));
-    pref_change_registrar_->Add(
         ash::prefs::kAccessibilitySelectToSpeakEnabled,
         base::Bind(&AccessibilityManager::OnSelectToSpeakChanged,
                    base::Unretained(this)));
@@ -1039,7 +1018,6 @@ void AccessibilityManager::SetProfile(Profile* profile) {
   caret_highlight_pref_handler_.HandleProfileChanged(profile_, profile);
   cursor_highlight_pref_handler_.HandleProfileChanged(profile_, profile);
   focus_highlight_pref_handler_.HandleProfileChanged(profile_, profile);
-  tap_dragging_pref_handler_.HandleProfileChanged(profile_, profile);
   select_to_speak_pref_handler_.HandleProfileChanged(profile_, profile);
   switch_access_pref_handler_.HandleProfileChanged(profile_, profile);
 
@@ -1079,7 +1057,7 @@ AccessibilityManager::RegisterCallback(const AccessibilityStatusCallback& cb) {
 }
 
 void AccessibilityManager::NotifyAccessibilityStatusChanged(
-    AccessibilityStatusEventDetails& details) {
+    const AccessibilityStatusEventDetails& details) {
   callback_list_.Notify(details);
 
   // TODO(crbug.com/594887): Fix for mash by moving pref into ash.
@@ -1092,7 +1070,7 @@ void AccessibilityManager::NotifyAccessibilityStatusChanged(
   if (details.notification_type == ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER) {
     ash::Shell::Get()
         ->accessibility_controller()
-        ->NotifyAccessibilityStatusChanged(details.notify);
+        ->NotifyAccessibilityStatusChanged();
   }
 }
 
@@ -1254,8 +1232,7 @@ void AccessibilityManager::PostLoadChromeVox() {
   event_router->DispatchEventWithLazyListener(
       extension_misc::kChromeVoxExtensionId, std::move(event));
 
-  // TODO(mash): Support ChromeVoxPanel. http://crbug.com/628655
-  if (!chromevox_panel_ && chromeos::GetAshConfig() != ash::Config::MASH) {
+  if (!chromevox_panel_) {
     chromevox_panel_ = new ChromeVoxPanel(
         profile_,
         session_manager::SessionManager::Get()->IsUserSessionBlocked());
@@ -1275,9 +1252,8 @@ void AccessibilityManager::PostUnloadChromeVox() {
   PlayEarcon(SOUND_SPOKEN_FEEDBACK_DISABLED, PlaySoundOption::ALWAYS);
 
   // Clear the accessibility focus ring.
-  ash::AccessibilityFocusRingController::GetInstance()->SetFocusRing(
-      std::vector<gfx::Rect>(),
-      ash::AccessibilityFocusRingController::PERSIST_FOCUS_RING);
+  SetFocusRing(std::vector<gfx::Rect>(),
+               ash::mojom::FocusRingBehavior::PERSIST_FOCUS_RING);
 
   if (chromevox_panel_) {
     chromevox_panel_->Close();
@@ -1296,12 +1272,8 @@ void AccessibilityManager::PostSwitchChromeVoxProfile() {
 }
 
 void AccessibilityManager::ReloadChromeVoxPanel() {
-  // TODO(mash): Support ChromeVoxPanel. http://crbug.com/628655
-  if (chromeos::GetAshConfig() == ash::Config::MASH)
-    return;
-
   if (chromevox_panel_) {
-    chromevox_panel_->Close();
+    chromevox_panel_->CloseNow();
     chromevox_panel_ = nullptr;
   }
   chromevox_panel_ = new ChromeVoxPanel(
@@ -1325,8 +1297,8 @@ void AccessibilityManager::PostUnloadSelectToSpeak() {
   // unloads.
 
   // Clear the accessibility focus ring and highlight.
-  ash::AccessibilityFocusRingController::GetInstance()->HideFocusRing();
-  ash::AccessibilityFocusRingController::GetInstance()->HideHighlights();
+  HideFocusRing();
+  HideHighlights();
 
   // Stop speech.
   TtsController::GetInstance()->Stop();
@@ -1358,6 +1330,39 @@ void AccessibilityManager::ToggleDictation() {
   dictation_->OnToggleDictation();
 }
 
+void AccessibilityManager::SetFocusRingColor(SkColor color) {
+  accessibility_focus_ring_controller_->SetFocusRingColor(color);
+}
+
+void AccessibilityManager::ResetFocusRingColor() {
+  accessibility_focus_ring_controller_->ResetFocusRingColor();
+}
+
+void AccessibilityManager::SetFocusRing(
+    const std::vector<gfx::Rect>& rects_in_screen,
+    ash::mojom::FocusRingBehavior focus_ring_behavior) {
+  accessibility_focus_ring_controller_->SetFocusRing(rects_in_screen,
+                                                     focus_ring_behavior);
+  if (focus_ring_observer_for_test_)
+    focus_ring_observer_for_test_.Run();
+}
+
+void AccessibilityManager::HideFocusRing() {
+  accessibility_focus_ring_controller_->HideFocusRing();
+  if (focus_ring_observer_for_test_)
+    focus_ring_observer_for_test_.Run();
+}
+
+void AccessibilityManager::SetHighlights(
+    const std::vector<gfx::Rect>& rects_in_screen,
+    SkColor color) {
+  accessibility_focus_ring_controller_->SetHighlights(rects_in_screen, color);
+}
+
+void AccessibilityManager::HideHighlights() {
+  accessibility_focus_ring_controller_->HideHighlights();
+}
+
 void AccessibilityManager::SetProfileForTest(Profile* profile) {
   SetProfile(profile);
 }
@@ -1370,6 +1375,11 @@ void AccessibilityManager::SetBrailleControllerForTest(
 
 void AccessibilityManager::FlushForTesting() {
   accessibility_controller_.FlushForTesting();
+}
+
+void AccessibilityManager::SetFocusRingObserverForTest(
+    base::RepeatingCallback<void()> observer) {
+  focus_ring_observer_for_test_ = observer;
 }
 
 }  // namespace chromeos

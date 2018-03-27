@@ -28,6 +28,9 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
+
+#include "base/memory/ptr_util.h"
 #include "core/animation/DocumentAnimations.h"
 #include "core/css/FontFaceSetDocument.h"
 #include "core/css/StyleChangeReason.h"
@@ -97,10 +100,10 @@
 #include "core/resize_observer/ResizeObserverController.h"
 #include "core/style/ComputedStyle.h"
 #include "core/svg/SVGSVGElement.h"
+#include "platform/FrameScheduler.h"
 #include "platform/Histogram.h"
 #include "platform/Language.h"
 #include "platform/PlatformChromeClient.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/geometry/DoubleRect.h"
@@ -122,7 +125,6 @@
 #include "platform/scroll/ScrollAnimatorBase.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/text/TextStream.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/Time.h"
 #include "public/platform/TaskType.h"
@@ -290,9 +292,9 @@ void LocalFrameView::Reset() {
   last_viewport_size_ = IntSize();
   last_zoom_factor_ = 1.0f;
   tracked_object_paint_invalidations_ =
-      WTF::WrapUnique(g_initial_track_all_paint_invalidations
-                          ? new Vector<ObjectPaintInvalidation>
-                          : nullptr);
+      base::WrapUnique(g_initial_track_all_paint_invalidations
+                           ? new Vector<ObjectPaintInvalidation>
+                           : nullptr);
   visually_non_empty_character_count_ = 0;
   visually_non_empty_pixel_count_ = 0;
   is_visually_non_empty_ = false;
@@ -504,6 +506,17 @@ Scrollbar* LocalFrameView::ScrollbarManager::CreateScrollbar(
   return Scrollbar::Create(scrollable_area_.Get(), orientation,
                            kRegularScrollbar,
                            &box->GetFrame()->GetPage()->GetChromeClient());
+}
+
+void LocalFrameView::SnapAfterScrollbarDragging(
+    ScrollbarOrientation orientation) {
+  SnapCoordinator* snap_coordinator =
+      frame_->GetDocument()->GetSnapCoordinator();
+  if (!snap_coordinator)
+    return;
+  snap_coordinator->PerformSnapping(*GetLayoutBox(),
+                                    orientation == kHorizontalScrollbar,
+                                    orientation == kVerticalScrollbar);
 }
 
 void LocalFrameView::ScrollbarManager::DestroyScrollbar(
@@ -858,16 +871,6 @@ void LocalFrameView::UpdateCountersAfterStyleChange() {
   auto* layout_view = GetLayoutView();
   DCHECK(layout_view);
   layout_view->UpdateCounters();
-}
-
-bool LocalFrameView::UsesCompositedScrolling() const {
-  auto* layout_view = GetLayoutView();
-  if (!layout_view)
-    return false;
-  if (frame_->GetSettings() &&
-      frame_->GetSettings()->GetPreferCompositingToLCDTextEnabled())
-    return layout_view->Compositor()->InCompositingMode();
-  return false;
 }
 
 bool LocalFrameView::ShouldScrollOnMainThread() const {
@@ -1578,7 +1581,7 @@ void LocalFrameView::RemoveBackgroundAttachmentFixedObject(
 void LocalFrameView::AddViewportConstrainedObject(LayoutObject& object) {
   if (!viewport_constrained_objects_) {
     viewport_constrained_objects_ =
-        WTF::WrapUnique(new ViewportConstrainedObjectSet);
+        std::make_unique<ViewportConstrainedObjectSet>();
   }
 
   if (!viewport_constrained_objects_->Contains(&object)) {
@@ -3247,6 +3250,9 @@ bool LocalFrameView::UpdateLifecyclePhasesInternal(
     });
 
     {
+      TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                           "SetLayerTreeId", TRACE_EVENT_SCOPE_THREAD, "data",
+                           InspectorSetLayerTreeId::Data(frame_.Get()));
       TRACE_EVENT1("devtools.timeline", "UpdateLayerTree", "data",
                    InspectorUpdateLayerTreeEvent::Data(frame_.Get()));
 
@@ -3806,6 +3812,13 @@ LayoutPoint LocalFrameView::RootFrameToAbsolute(
   return local_frame + LayoutSize(GetScrollOffset());
 }
 
+IntPoint LocalFrameView::RootFrameToAbsolute(
+    const IntPoint& point_in_root_frame) const {
+  IntPoint local_frame = ConvertFromRootFrame(point_in_root_frame);
+  // With RLS turned on, this will be a no-op.
+  return local_frame + FlooredIntSize(GetScrollOffset());
+}
+
 IntRect LocalFrameView::RootFrameToAbsolute(
     const IntRect& rect_in_root_frame) const {
   IntRect absolute_rect = ConvertFromRootFrame(rect_in_root_frame);
@@ -3961,9 +3974,9 @@ void LocalFrameView::SetTracksPaintInvalidations(
       continue;
     if (auto* layout_view = ToLocalFrame(frame)->ContentLayoutObject()) {
       layout_view->GetFrameView()->tracked_object_paint_invalidations_ =
-          WTF::WrapUnique(track_paint_invalidations
-                              ? new Vector<ObjectPaintInvalidation>
-                              : nullptr);
+          base::WrapUnique(track_paint_invalidations
+                               ? new Vector<ObjectPaintInvalidation>
+                               : nullptr);
       if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
         if (!paint_controller_)
           paint_controller_ = PaintController::Create();
@@ -4023,7 +4036,7 @@ LocalFrameView::TrackedObjectPaintInvalidationsAsJSON() const {
 
 void LocalFrameView::AddResizerArea(LayoutBox& resizer_box) {
   if (!resizer_areas_)
-    resizer_areas_ = WTF::WrapUnique(new ResizerAreaSet);
+    resizer_areas_ = std::make_unique<ResizerAreaSet>();
   resizer_areas_->insert(&resizer_box);
 }
 
@@ -4514,7 +4527,7 @@ void LocalFrameView::ComputeScrollbarExistence(
 void LocalFrameView::UpdateScrollbarEnabledState() {
   bool force_disabled =
       GetPageScrollbarTheme().ShouldDisableInvisibleScrollbars() &&
-      ScrollbarsHidden();
+      ScrollbarsHiddenIfOverlay();
 
   if (HorizontalScrollbar()) {
     HorizontalScrollbar()->SetEnabled(ContentsWidth() > VisibleWidth() &&
@@ -5015,7 +5028,7 @@ bool LocalFrameView::ShouldPlaceVerticalScrollbarOnLeft() const {
 }
 
 LayoutRect LocalFrameView::ScrollIntoView(
-    const LayoutRect& rect_in_content,
+    const LayoutRect& rect_in_absolute,
     const WebScrollIntoViewParams& params) {
   GetLayoutBox()->SetPendingOffsetToScroll(LayoutSize());
 
@@ -5023,7 +5036,7 @@ LayoutRect LocalFrameView::ScrollIntoView(
 
   ScrollOffset new_scroll_offset =
       ClampScrollOffset(ScrollAlignment::GetScrollOffsetToExpose(
-          scroll_snapport_rect, rect_in_content, params.GetScrollAlignmentX(),
+          scroll_snapport_rect, rect_in_absolute, params.GetScrollAlignmentX(),
           params.GetScrollAlignmentY(), GetScrollOffset()));
   ScrollOffset old_scroll_offset = GetScrollOffset();
 
@@ -5051,7 +5064,7 @@ LayoutRect LocalFrameView::ScrollIntoView(
   // relative to the document.
   // TODO(szager): PaintLayerScrollableArea::ScrollIntoView clips the return
   // value to the visible content rect, but this does not.
-  return rect_in_content;
+  return rect_in_absolute;
 }
 
 IntRect LocalFrameView::ScrollCornerRect() const {
@@ -5098,7 +5111,10 @@ ScrollBehavior LocalFrameView::ScrollBehaviorStyle() const {
 
 void LocalFrameView::Paint(GraphicsContext& context,
                            const GlobalPaintFlags global_paint_flags,
-                           const CullRect& cull_rect) const {
+                           const CullRect& cull_rect,
+                           const IntSize& paint_offset) const {
+  // |paint_offset| is not used because paint properties of the contents will
+  // ensure the correct location.
   PaintInternal(context, global_paint_flags, cull_rect);
 }
 
@@ -5474,11 +5490,10 @@ void LocalFrameView::UpdateRenderThrottlingStatus(
         &GetFrame().LocalFrameRoot());
   }
 
-  if (frame_->FrameScheduler()) {
-    frame_->FrameScheduler()->SetFrameVisible(!hidden_for_throttling_);
-    frame_->FrameScheduler()->SetCrossOrigin(frame_->IsCrossOriginSubframe());
-    frame_->FrameScheduler()->TraceUrlChange(
-        frame_->GetDocument()->Url().GetString());
+  if (FrameScheduler* frame_scheduler = frame_->GetFrameScheduler()) {
+    frame_scheduler->SetFrameVisible(!hidden_for_throttling_);
+    frame_scheduler->SetCrossOrigin(frame_->IsCrossOriginSubframe());
+    frame_scheduler->TraceUrlChange(frame_->GetDocument()->Url().GetString());
   }
 
 #if DCHECK_IS_ON()

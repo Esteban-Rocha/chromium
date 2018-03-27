@@ -49,6 +49,7 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorTraceEvents.h"
+#include "core/leak_detector/BlinkLeakDetector.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/IdlenessDetector.h"
@@ -68,7 +69,6 @@
 #include "core/timing/Performance.h"
 #include "core/timing/WindowPerformance.h"
 #include "platform/Histogram.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/bindings/V8DOMActivityLogger.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
@@ -83,8 +83,6 @@
 #include "platform/network/NetworkStateNotifier.h"
 #include "platform/network/NetworkUtils.h"
 #include "platform/network/http_names.h"
-#include "platform/scheduler/child/web_scheduler.h"
-#include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/wtf/Optional.h"
 #include "platform/wtf/Vector.h"
@@ -252,6 +250,7 @@ ResourceFetcher* FrameFetchContext::CreateFetcher(DocumentLoader* loader,
                                                   Document* document) {
   FrameFetchContext* context = new FrameFetchContext(loader, document);
   ResourceFetcher* fetcher = ResourceFetcher::Create(context);
+  BlinkLeakDetector::Instance().RegisterResourceFetcher(fetcher);
 
   if (loader && context->GetSettings()->GetSavePreviousDocumentResources() !=
                     SavePreviousDocumentResources::kNever) {
@@ -318,10 +317,10 @@ FrameFetchContext::GetLoadingTaskRunner() {
   return GetFrame()->GetTaskRunner(TaskType::kNetworking);
 }
 
-WebFrameScheduler* FrameFetchContext::GetFrameScheduler() const {
+FrameScheduler* FrameFetchContext::GetFrameScheduler() const {
   if (IsDetached())
     return nullptr;
-  return GetFrame()->FrameScheduler();
+  return GetFrame()->GetFrameScheduler();
 }
 
 KURL FrameFetchContext::GetSiteForCookies() const {
@@ -661,6 +660,8 @@ void FrameFetchContext::DispatchDidFail(const KURL& url,
   }
 
   if (NetworkUtils::IsLegacySymantecCertError(error.ErrorCode())) {
+    UseCounter::Count(GetFrame()->GetDocument(),
+                      WebFeature::kDistrustedLegacySymantecSubresource);
     GetLocalFrameClient()->ReportLegacySymantecCert(url, true /* did_fail */);
   }
 
@@ -871,7 +872,7 @@ void FrameFetchContext::AddClientHintsIfNecessary(
 
     // Check if |url| is allowed to run JavaScript. If not, client hints are not
     // attached to the requests that initiate on the render side.
-    if (!AllowScriptFromSource(request.Url())) {
+    if (!AllowScriptFromSourceWithoutNotifying(request.Url())) {
       return;
     }
 
@@ -979,11 +980,20 @@ MHTMLArchive* FrameFetchContext::Archive() const {
 }
 
 bool FrameFetchContext::AllowScriptFromSource(const KURL& url) const {
+  if (AllowScriptFromSourceWithoutNotifying(url))
+    return true;
+  ContentSettingsClient* settings_client = GetContentSettingsClient();
+  if (settings_client)
+    settings_client->DidNotAllowScript();
+  return false;
+}
+
+bool FrameFetchContext::AllowScriptFromSourceWithoutNotifying(
+    const KURL& url) const {
   ContentSettingsClient* settings_client = GetContentSettingsClient();
   Settings* settings = GetSettings();
   if (settings_client && !settings_client->AllowScriptFromSource(
                              !settings || settings->GetScriptEnabled(), url)) {
-    settings_client->DidNotAllowScript();
     return false;
   }
   return true;
@@ -1232,7 +1242,7 @@ void FrameFetchContext::ParseAndPersistClientHints(
   if (persist_duration.InSeconds() <= 0)
     return;
 
-  if (!AllowScriptFromSource(response.Url())) {
+  if (!AllowScriptFromSourceWithoutNotifying(response.Url())) {
     // Do not persist client hint preferences if the JavaScript is disabled.
     return;
   }

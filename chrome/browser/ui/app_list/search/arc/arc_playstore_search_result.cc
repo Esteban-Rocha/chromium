@@ -19,13 +19,11 @@
 #include "components/crx_file/id_util.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/vector_icons/vector_icons.h"
-#include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/paint_vector_icon.h"
 
 namespace {
 
-bool disable_safe_decoding_for_testing = false;
 // The id prefix to identify a Play Store search result.
 constexpr char kPlayAppPrefix[] = "play://";
 // Badge icon color, #000 at 54% opacity.
@@ -57,11 +55,6 @@ bool LaunchIntent(const std::string& intent_uri, int64_t display_id) {
 
 namespace app_list {
 
-// static
-void ArcPlayStoreSearchResult::DisableSafeDecodingForTesting() {
-  disable_safe_decoding_for_testing = true;
-}
-
 ArcPlayStoreSearchResult::ArcPlayStoreSearchResult(
     arc::mojom::AppDiscoveryResultPtr data,
     Profile* profile,
@@ -73,31 +66,18 @@ ArcPlayStoreSearchResult::ArcPlayStoreSearchResult(
   set_title(base::UTF8ToUTF16(label().value()));
   set_id(kPlayAppPrefix +
          crx_file::id_util::GenerateId(install_intent_uri().value()));
-  set_display_type(DISPLAY_TILE);
+  set_display_type(ash::SearchResultDisplayType::kTile);
   SetBadgeIcon(gfx::CreateVectorIcon(
       is_instant_app() ? kIcBadgeInstantIcon : kIcBadgePlayIcon,
       kAppBadgeIconSize, kBadgeColor));
   SetFormattedPrice(base::UTF8ToUTF16(formatted_price().value()));
   SetRating(review_score());
-  set_result_type(is_instant_app() ? RESULT_INSTANT_APP : RESULT_PLAYSTORE_APP);
+  set_result_type(is_instant_app() ? ash::SearchResultType::kInstantApp
+                                   : ash::SearchResultType::kPlayStoreApp);
 
   icon_decode_request_ = std::make_unique<IconDecodeRequest>(base::BindOnce(
       &ArcPlayStoreSearchResult::SetIcon, weak_ptr_factory_.GetWeakPtr()));
-  if (disable_safe_decoding_for_testing) {
-    SkBitmap bitmap;
-    if (!icon_png_data().empty() &&
-        gfx::PNGCodec::Decode(
-            reinterpret_cast<const unsigned char*>(icon_png_data().data()),
-            icon_png_data().size(), &bitmap)) {
-      icon_decode_request_->OnImageDecoded(bitmap);
-    } else {
-      icon_decode_request_->OnDecodeImageFailed();
-    }
-  } else {
-    ImageDecoder::StartWithOptions(icon_decode_request_.get(), icon_png_data(),
-                                   ImageDecoder::DEFAULT_CODEC, true,
-                                   gfx::Size());
-  }
+  icon_decode_request_->StartWithOptions(icon_png_data());
 }
 
 ArcPlayStoreSearchResult::~ArcPlayStoreSearchResult() = default;

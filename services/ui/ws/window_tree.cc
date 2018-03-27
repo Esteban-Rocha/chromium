@@ -21,9 +21,9 @@
 #include "services/ui/ws/default_access_policy.h"
 #include "services/ui/ws/display.h"
 #include "services/ui/ws/display_manager.h"
-#include "services/ui/ws/event_dispatcher.h"
 #include "services/ui/ws/event_location.h"
 #include "services/ui/ws/event_matcher.h"
+#include "services/ui/ws/event_processor.h"
 #include "services/ui/ws/focus_controller.h"
 #include "services/ui/ws/frame_generator.h"
 #include "services/ui/ws/modal_window_controller.h"
@@ -163,7 +163,7 @@ void WindowTree::Init(std::unique_ptr<WindowTreeBinding> binding,
   std::vector<const ServerWindow*> to_send;
   CHECK_EQ(1u, roots_.size());
   const ServerWindow* root = *roots_.begin();
-  GetUnknownWindowsFrom(root, &to_send);
+  GetUnknownWindowsFrom(root, &to_send, nullptr);
 
   Display* display = GetDisplay(root);
   int64_t display_id = display ? display->GetId() : display::kInvalidDisplayId;
@@ -437,7 +437,7 @@ bool WindowTree::ProcessSetBlockingContainers(
         MakeClientWindowId(transport_container->min_container_id));
     all_containers.push_back(blocking_containers);
   }
-  window_manager_state_->event_dispatcher()
+  window_manager_state_->event_processor()
       ->modal_window_controller()
       ->SetBlockingContainers(all_containers);
   return true;
@@ -474,6 +474,41 @@ bool WindowTree::ReleaseCapture(const ClientWindowId& client_window_id) {
   Operation op(this, window_server_, OperationType::RELEASE_CAPTURE);
   return display_root->window_manager_state()->SetCapture(nullptr,
                                                           kInvalidClientId);
+}
+
+void WindowTree::DispatchEvent(ServerWindow* target,
+                               const ui::Event& event,
+                               const EventLocation& event_location,
+                               DispatchEventCallback callback) {
+  if (event_ack_id_ || !event_queue_.empty()) {
+    // Either awaiting an ack, or there are events in the queue. Store the event
+    // for processing when the ack is received.
+    event_queue_.push(std::make_unique<TargetedEvent>(
+        target, event, event_location, std::move(callback)));
+    // TODO(sad): If the |event_queue_| grows too large, then this should notify
+    // Display, so that it can stop sending events.
+    return;
+  }
+
+  DispatchEventImpl(target, event, event_location, std::move(callback));
+}
+
+void WindowTree::DispatchAccelerator(uint32_t accelerator_id,
+                                     const ui::Event& event,
+                                     AcceleratorCallback callback) {
+  DVLOG(3) << "OnAccelerator client=" << id_;
+  DCHECK(window_manager_internal_);  // Only valid for the window manager.
+  if (callback) {
+    GenerateEventAckId();
+    accelerator_ack_callback_ = std::move(callback);
+  } else {
+    DCHECK_EQ(0u, event_ack_id_);
+    DCHECK(!accelerator_ack_callback_);
+  }
+  // TODO: https://crbug.com/617167. Don't clone event once we map mojom::Event
+  // directly to ui::Event.
+  window_manager_internal_->OnAccelerator(event_ack_id_, accelerator_id,
+                                          ui::Event::Clone(event));
 }
 
 bool WindowTree::NewWindow(
@@ -696,6 +731,7 @@ bool WindowTree::Embed(const ClientWindowId& window_id,
   if (!window_tree_client || !CanEmbed(window_id))
     return false;
   ServerWindow* window = GetWindowByClientId(window_id);
+  DCHECK(window);  // CanEmbed() returns false if no window.
   PrepareForEmbed(window);
   // mojom::kEmbedFlagEmbedderInterceptsEvents is inherited, otherwise an
   // embedder could effectively circumvent it by embedding itself.
@@ -708,29 +744,25 @@ bool WindowTree::Embed(const ClientWindowId& window_id,
   return true;
 }
 
-void WindowTree::DispatchInputEvent(ServerWindow* target,
-                                    const ui::Event& event,
-                                    const EventLocation& event_location,
-                                    DispatchEventCallback callback) {
-  if (event_ack_id_) {
-    // This is currently waiting for an event ack. Add it to the queue.
-    event_queue_.push(std::make_unique<TargetedEvent>(
-        target, event, event_location, std::move(callback)));
-    // TODO(sad): If the |event_queue_| grows too large, then this should notify
-    // Display, so that it can stop sending events.
-    return;
+bool WindowTree::EmbedExistingTree(
+    const ClientWindowId& window_id,
+    const WindowTreeAndWindowId& tree_and_window_id,
+    const base::UnguessableToken& token) {
+  const ClientWindowId window_id_in_embedded(tree_and_window_id.tree->id(),
+                                             tree_and_window_id.window_id);
+  if (!CanEmbed(window_id) ||
+      !tree_and_window_id.tree->IsValidIdForNewWindow(window_id_in_embedded)) {
+    return false;
   }
-
-  // If there are events in the queue, then store this new event in the queue,
-  // and dispatch the latest event from the queue instead that still has a live
-  // target.
-  if (!event_queue_.empty()) {
-    event_queue_.push(std::make_unique<TargetedEvent>(
-        target, event, event_location, std::move(callback)));
-    return;
-  }
-
-  DispatchInputEventImpl(target, event, event_location, std::move(callback));
+  ServerWindow* window = GetWindowByClientId(window_id);
+  DCHECK(window);  // CanEmbed() returns false if no window.
+  PrepareForEmbed(window);
+  tree_and_window_id.tree->AddRootForToken(token, window,
+                                           window_id_in_embedded);
+  window->UpdateFrameSinkId(window_id_in_embedded);
+  client()->OnFrameSinkIdAllocated(ClientWindowIdToTransportId(window_id),
+                                   window->frame_sink_id());
+  return true;
 }
 
 bool WindowTree::IsWaitingForNewTopLevelWindow(uint32_t wm_change_id) {
@@ -775,24 +807,6 @@ void WindowTree::AddActivationParent(const ClientWindowId& window_id) {
 
 void WindowTree::OnChangeCompleted(uint32_t change_id, bool success) {
   client()->OnChangeCompleted(change_id, success);
-}
-
-void WindowTree::OnAccelerator(uint32_t accelerator_id,
-                               const ui::Event& event,
-                               AcceleratorCallback callback) {
-  DVLOG(3) << "OnAccelerator client=" << id_;
-  DCHECK(window_manager_internal_);  // Only valid for the window manager.
-  if (callback) {
-    GenerateEventAckId();
-    accelerator_ack_callback_ = std::move(callback);
-  } else {
-    DCHECK_EQ(0u, event_ack_id_);
-    DCHECK(!accelerator_ack_callback_);
-  }
-  // TODO(moshayedi): crbug.com/617167. Don't clone even once we map
-  // mojom::Event directly to ui::Event.
-  window_manager_internal_->OnAccelerator(event_ack_id_, accelerator_id,
-                                          ui::Event::Clone(event));
 }
 
 void WindowTree::OnEventOccurredOutsideOfModalWindow(
@@ -928,7 +942,7 @@ void WindowTree::ProcessWindowHierarchyChanged(const ServerWindow* window,
   // about.
   std::vector<const ServerWindow*> to_send;
   if (!IsWindowKnown(window))
-    GetUnknownWindowsFrom(window, &to_send);
+    GetUnknownWindowsFrom(window, &to_send, nullptr);
   const bool knows_old = old_parent && IsWindowKnown(old_parent);
   if (!knows_old && !knows_new)
     return;
@@ -1170,9 +1184,10 @@ Id WindowTree::TransportIdForWindow(const ServerWindow* window) const {
 }
 
 bool WindowTree::IsValidIdForNewWindow(const ClientWindowId& id) const {
-  // Reserve 0 to indicate a null window.
+  // Reserve 0 (ClientWindowId() and sink_id) to indicate a null window.
   return client_id_to_window_map_.count(id) == 0u &&
-         access_policy_->IsValidIdForNewWindow(id) && id != ClientWindowId();
+         access_policy_->IsValidIdForNewWindow(id) && id != ClientWindowId() &&
+         id.sink_id() != 0;
 }
 
 bool WindowTree::CanReorderWindow(const ServerWindow* window,
@@ -1253,24 +1268,27 @@ bool WindowTree::DeleteWindowImpl(WindowTree* source, ServerWindow* window) {
 
 void WindowTree::GetUnknownWindowsFrom(
     const ServerWindow* window,
-    std::vector<const ServerWindow*>* windows) {
+    std::vector<const ServerWindow*>* windows,
+    const ClientWindowId* id_for_window) {
   if (!access_policy_->CanGetWindowTree(window))
     return;
 
   // This function is called in the context of a hierarchy change when the
   // parent wasn't known. We need to tell the client about the window so that
   // it can set the parent correctly.
-  windows->push_back(window);
+  if (windows)
+    windows->push_back(window);
   if (IsWindowKnown(window))
     return;
 
-  const ClientWindowId client_window_id = window->frame_sink_id();
+  const ClientWindowId client_window_id =
+      id_for_window ? *id_for_window : window->frame_sink_id();
   AddToMaps(window, client_window_id);
   if (!access_policy_->CanDescendIntoWindowForWindowTree(window))
     return;
   const ServerWindow::Windows& children = window->children();
   for (ServerWindow* child : children)
-    GetUnknownWindowsFrom(child, windows);
+    GetUnknownWindowsFrom(child, windows, nullptr);
 }
 
 void WindowTree::AddToMaps(const ServerWindow* window,
@@ -1278,6 +1296,20 @@ void WindowTree::AddToMaps(const ServerWindow* window,
   DCHECK_EQ(0u, client_id_to_window_map_.count(client_window_id));
   client_id_to_window_map_[client_window_id] = window;
   window_to_client_id_map_[window] = client_window_id;
+}
+
+void WindowTree::AddRootForToken(const base::UnguessableToken& token,
+                                 ServerWindow* window,
+                                 const ClientWindowId& client_window_id) {
+  roots_.insert(window);
+  Display* display = GetDisplay(window);
+  int64_t display_id = display ? display->GetId() : display::kInvalidDisplayId;
+  // Caller should have verified there is no window already registered for
+  // |client_window_id|.
+  DCHECK(!GetWindowByClientId(client_window_id));
+  GetUnknownWindowsFrom(window, nullptr, &client_window_id);
+  client()->OnEmbedFromToken(token, WindowToWindowData(window), display_id,
+                             window->current_local_surface_id());
 }
 
 bool WindowTree::RemoveFromMaps(const ServerWindow* window) {
@@ -1475,12 +1507,12 @@ uint32_t WindowTree::GenerateEventAckId() {
   return event_ack_id_;
 }
 
-void WindowTree::DispatchInputEventImpl(ServerWindow* target,
-                                        const ui::Event& event,
-                                        const EventLocation& event_location,
-                                        DispatchEventCallback callback) {
-  // DispatchInputEventImpl() is called so often that log level 4 is used.
-  DVLOG(4) << "DispatchInputEventImpl client=" << id_;
+void WindowTree::DispatchEventImpl(ServerWindow* target,
+                                   const ui::Event& event,
+                                   const EventLocation& event_location,
+                                   DispatchEventCallback callback) {
+  // DispatchEventImpl() is called so often that log level 4 is used.
+  DVLOG(4) << "DispatchEventImpl client=" << id_;
   GenerateEventAckId();
   event_ack_callback_ = std::move(callback);
   WindowManagerDisplayRoot* display_root = GetWindowManagerDisplayRoot(target);
@@ -1882,7 +1914,7 @@ void WindowTree::SetImeVisibility(Id transport_window_id,
 
 void WindowTree::OnWindowInputEventAck(uint32_t event_id,
                                        mojom::EventResult result) {
-  // DispatchInputEventImpl() is called so often that log level 4 is used.
+  // DispatchEventImpl() is called so often that log level 4 is used.
   DVLOG(4) << "OnWindowInputEventAck client=" << id_;
   if (event_ack_id_ == 0 || event_id != event_ack_id_ || !event_ack_callback_) {
     // TODO(sad): Something bad happened. Kill the client?
@@ -1916,8 +1948,7 @@ void WindowTree::OnWindowInputEventAck(uint32_t event_id,
       callback = targeted_event->TakeCallback();
     } while (!event_queue_.empty() && !GetDisplay(target));
     if (GetDisplay(target)) {
-      DispatchInputEventImpl(target, *event, event_location,
-                             std::move(callback));
+      DispatchEventImpl(target, *event, event_location, std::move(callback));
     } else {
       // If the window is no longer valid (or not in a display), then there is
       // no point in dispatching to the client, but we need to run the callback
@@ -2010,13 +2041,33 @@ void WindowTree::EmbedUsingToken(Id transport_window_id,
                                  EmbedUsingTokenCallback callback) {
   mojom::WindowTreeClientPtr client =
       GetAndRemoveScheduledEmbedWindowTreeClient(token);
-  if (!client) {
+  if (client) {
+    Embed(transport_window_id, std::move(client), flags, std::move(callback));
+    return;
+  }
+
+  WindowTreeAndWindowId tree_and_id =
+      window_server()->UnregisterEmbedToken(token);
+  if (!tree_and_id.tree) {
     DVLOG(1) << "EmbedUsingToken failed, no ScheduleEmbed(), token="
              << token.ToString();
     std::move(callback).Run(false);
     return;
   }
-  Embed(transport_window_id, std::move(client), flags, std::move(callback));
+  if (tree_and_id.tree == this) {
+    DVLOG(1) << "EmbedUsingToken failed, attempt to embed self, token="
+             << token.ToString();
+    std::move(callback).Run(false);
+    return;
+  }
+  std::move(callback).Run(EmbedExistingTree(
+      MakeClientWindowId(transport_window_id), tree_and_id, token));
+}
+
+void WindowTree::ScheduleEmbedForExistingClient(
+    uint32_t window_id,
+    ScheduleEmbedForExistingClientCallback callback) {
+  std::move(callback).Run(window_server()->RegisterEmbedToken(this, window_id));
 }
 
 void WindowTree::SetFocus(uint32_t change_id, Id transport_window_id) {
@@ -2427,7 +2478,7 @@ void WindowTree::AddAccelerators(
 
   bool success = true;
   for (auto iter = accelerators.begin(); iter != accelerators.end(); ++iter) {
-    if (!window_manager_state_->event_dispatcher()->AddAccelerator(
+    if (!window_manager_state_->event_processor()->AddAccelerator(
             iter->get()->id, std::move(iter->get()->event_matcher)))
       success = false;
   }
@@ -2435,7 +2486,7 @@ void WindowTree::AddAccelerators(
 }
 
 void WindowTree::RemoveAccelerator(uint32_t id) {
-  window_manager_state_->event_dispatcher()->RemoveAccelerator(id);
+  window_manager_state_->event_processor()->RemoveAccelerator(id);
 }
 
 void WindowTree::AddActivationParent(Id transport_window_id) {

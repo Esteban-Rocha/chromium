@@ -52,11 +52,13 @@ constexpr float kDefaultViewScaleFactor = 1.2f;
 constexpr float kMinViewScaleFactor = 0.5f;
 constexpr float kMaxViewScaleFactor = 5.0f;
 constexpr float kViewScaleAdjustmentFactor = 0.2f;
-constexpr float kPageLoadTimeMilliseconds = 500;
+constexpr float kPageLoadTimeMilliseconds = 1000;
 
 constexpr gfx::Point3F kDefaultLaserOrigin = {0.5f, -0.5f, 0.f};
 constexpr gfx::Vector3dF kLaserLocalOffset = {0.f, -0.0075f, -0.05f};
 constexpr float kControllerScaleFactor = 1.5f;
+constexpr float kTouchpadPositionDelta = 0.05f;
+constexpr gfx::PointF kInitialTouchPosition = {0.5f, 0.5f};
 
 void RotateToward(const gfx::Vector3dF& fwd, gfx::Transform* transform) {
   gfx::Quaternion quat(kForwardVector, fwd);
@@ -82,15 +84,13 @@ VrTestContext::VrTestContext() : view_scale_factor_(kDefaultViewScaleFactor) {
 
   base::i18n::InitializeICU();
 
-  // TODO(cjgrant): Remove this when the keyboard is enabled by default.
-  base::FeatureList::InitializeInstance("VrBrowserKeyboard", "");
-
   text_input_delegate_ = std::make_unique<TextInputDelegate>();
   keyboard_delegate_ = std::make_unique<TestKeyboardDelegate>();
 
   UiInitialState ui_initial_state;
   ui_ = std::make_unique<Ui>(this, nullptr, keyboard_delegate_.get(),
-                             text_input_delegate_.get(), ui_initial_state);
+                             text_input_delegate_.get(), nullptr,
+                             ui_initial_state);
   LoadAssets();
 
   text_input_delegate_->SetRequestFocusCallback(
@@ -102,16 +102,20 @@ VrTestContext::VrTestContext() : view_scale_factor_(kDefaultViewScaleFactor) {
                           base::Unretained(keyboard_delegate_.get())));
   keyboard_delegate_->SetUiInterface(ui_.get());
 
+  touchpad_touch_position_ = kInitialTouchPosition;
+
   model_ = ui_->model_for_test();
 
   CycleOrigin();
   ui_->SetHistoryButtonsEnabled(true, true);
   ui_->SetLoading(true);
   ui_->SetLoadProgress(0.4);
-  ui_->SetVideoCaptureEnabled(true);
-  ui_->SetScreenCaptureEnabled(true);
-  ui_->SetBluetoothConnected(true);
-  ui_->SetLocationAccessEnabled(true);
+  CapturingStateModel capturing_state;
+  capturing_state.video_capture_enabled = true;
+  capturing_state.screen_capture_enabled = true;
+  capturing_state.bluetooth_connected = true;
+  capturing_state.location_access_enabled = true;
+  ui_->SetCapturingState(capturing_state);
   ui_->input_manager()->set_hit_test_strategy(
       UiInputManager::PROJECT_TO_LASER_ORIGIN_FOR_TEST);
 }
@@ -169,6 +173,9 @@ void VrTestContext::HandleInput(ui::Event* event) {
         incognito_ = !incognito_;
         ui_->SetIncognito(incognito_);
         break;
+      case ui::DomCode::US_C:
+        CycleIndicators();
+        break;
       case ui::DomCode::US_D:
         ui_->Dump(false);
         break;
@@ -201,6 +208,13 @@ void VrTestContext::HandleInput(ui::Event* event) {
       case ui::DomCode::US_X:
         ui_->OnAppButtonClicked();
         break;
+      case ui::DomCode::US_T:
+        touching_touchpad_ = !touching_touchpad_;
+        break;
+      case ui::DomCode::US_Q:
+        model_->active_modal_prompt_type =
+            kModalPromptTypeGenericUnsupportedFeature;
+        break;
       default:
         break;
     }
@@ -210,9 +224,15 @@ void VrTestContext::HandleInput(ui::Event* event) {
   if (event->IsMouseWheelEvent()) {
     int direction =
         base::ClampToRange(event->AsMouseWheelEvent()->y_offset(), -1, 1);
-    view_scale_factor_ *= (1 + direction * kViewScaleAdjustmentFactor);
-    view_scale_factor_ = base::ClampToRange(
-        view_scale_factor_, kMinViewScaleFactor, kMaxViewScaleFactor);
+    if (event->IsControlDown()) {
+      touchpad_touch_position_.set_y(base::ClampToRange(
+          touchpad_touch_position_.y() + kTouchpadPositionDelta * direction,
+          0.0f, 1.0f));
+    } else {
+      view_scale_factor_ *= (1 + direction * kViewScaleAdjustmentFactor);
+      view_scale_factor_ = base::ClampToRange(
+          view_scale_factor_, kMinViewScaleFactor, kMaxViewScaleFactor);
+    }
     return;
   }
 
@@ -296,6 +316,8 @@ ControllerModel VrTestContext::UpdateController(const RenderInfo& render_info) {
   ControllerModel controller_model;
   controller_model.touchpad_button_state =
       touchpad_pressed_ ? UiInputManager::DOWN : UiInputManager::UP;
+  controller_model.touchpad_touch_position = touchpad_touch_position_;
+  controller_model.touching_touchpad = touching_touchpad_;
 
   controller_model.laser_origin = mouse_point_near;
   controller_model.laser_direction = mouse_point_far - mouse_point_near;
@@ -437,9 +459,12 @@ void VrTestContext::SetVoiceSearchActive(bool active) {
 }
 
 void VrTestContext::ExitPresent() {}
-void VrTestContext::ExitFullscreen() {}
+void VrTestContext::ExitFullscreen() {
+  fullscreen_ = false;
+  ui_->SetFullscreen(fullscreen_);
+}
 
-void VrTestContext::Navigate(GURL gurl) {
+void VrTestContext::Navigate(GURL gurl, NavigationMethod method) {
   ToolbarState state(gurl, security_state::SecurityLevel::HTTP_SHOW_WARNING,
                      &toolbar::kHttpIcon, base::string16(), true, false);
   ui_->SetToolbarState(state);
@@ -448,6 +473,31 @@ void VrTestContext::Navigate(GURL gurl) {
 
 void VrTestContext::NavigateBack() {
   page_load_start_ = base::TimeTicks::Now();
+  model_->can_navigate_back = false;
+  model_->can_navigate_forward = true;
+}
+
+void VrTestContext::NavigateForward() {
+  page_load_start_ = base::TimeTicks::Now();
+  model_->can_navigate_back = true;
+  model_->can_navigate_forward = false;
+}
+
+void VrTestContext::ReloadTab() {
+  page_load_start_ = base::TimeTicks::Now();
+}
+
+void VrTestContext::OpenNewTab(bool incognito) {
+  DCHECK(incognito);
+  incognito_ = true;
+  ui_->SetIncognito(true);
+  model_->incognito_tabs_open = true;
+}
+
+void VrTestContext::CloseAllIncognitoTabs() {
+  incognito_ = true;
+  ui_->SetIncognito(false);
+  model_->incognito_tabs_open = false;
 }
 
 void VrTestContext::ExitCct() {}
@@ -473,6 +523,11 @@ void VrTestContext::OnContentScreenBoundsChanged(const gfx::SizeF& bounds) {}
 
 void VrTestContext::StartAutocomplete(const AutocompleteRequest& request) {
   auto result = std::make_unique<OmniboxSuggestions>();
+
+  if (request.text.empty()) {
+    ui_->SetOmniboxSuggestions(std::move(result));
+    return;
+  }
 
   // Supply an in-line match if the input matches a canned URL.
   base::string16 full_string = base::UTF8ToUTF16("wikipedia.org");
@@ -521,6 +576,24 @@ void VrTestContext::StartAutocomplete(const AutocompleteRequest& request) {
 
 void VrTestContext::StopAutocomplete() {
   ui_->SetOmniboxSuggestions(std::make_unique<OmniboxSuggestions>());
+}
+
+typedef bool CapturingStateModel::*CapturingStateModelMemberPtr;
+
+void VrTestContext::CycleIndicators() {
+  static size_t state = 0;
+
+  const std::vector<CapturingStateModelMemberPtr> signals = {
+      &CapturingStateModel::location_access_enabled,
+      &CapturingStateModel::audio_capture_enabled,
+      &CapturingStateModel::video_capture_enabled,
+      &CapturingStateModel::bluetooth_connected,
+      &CapturingStateModel::screen_capture_enabled};
+
+  state = (state + 1) % (1 << signals.size());
+  for (size_t i = 0; i < signals.size(); ++i) {
+    model_->capturing_state.*signals[i] = state & (1 << i);
+  }
 }
 
 void VrTestContext::CycleOrigin() {

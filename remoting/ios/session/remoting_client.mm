@@ -184,10 +184,7 @@ static void ResolveFeedbackDataCallback(
 }
 
 - (void)disconnectFromHost {
-  if (_session) {
-    _session->Disconnect();
-    _runtime->network_task_runner()->DeleteSoon(FROM_HERE, _session.release());
-  }
+  _session.reset();
 
   _displayHandler = nil;
 
@@ -213,15 +210,11 @@ static void ResolveFeedbackDataCallback(
 - (void)hostSessionPinProvided:(NSNotification*)notification {
   NSString* pin = [[notification userInfo] objectForKey:kHostSessionPin];
   NSString* name = UIDevice.currentDevice.name;
-  BOOL createPairing = [[[notification userInfo]
+  BOOL shouldCreatePairing = [[[notification userInfo]
       objectForKey:kHostSessionCreatePairing] boolValue];
 
-  // TODO(nicholss): Look into refactoring ProvideSecret. It is mis-named and
-  // does not use pin.
-  if (_session) {
-    _session->ProvideSecret(base::SysNSStringToUTF8(pin),
-                            (createPairing == YES),
-                            base::SysNSStringToUTF8(name));
+  if (_session && shouldCreatePairing) {
+    _session->RequestPairing(base::SysNSStringToUTF8(name));
   }
 
   if (_secretFetchedCallback) {
@@ -364,6 +357,10 @@ static void ResolveFeedbackDataCallback(
 - (void)setHostResolution:(CGSize)dipsResolution scale:(int)scale {
   _session->SendClientResolution(dipsResolution.width, dipsResolution.height,
                                  scale);
+}
+
+- (void)setVideoChannelEnabled:(BOOL)enabled {
+  _session->EnableVideoChannel(enabled);
 }
 
 - (void)createFeedbackDataWithCallback:

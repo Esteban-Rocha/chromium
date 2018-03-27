@@ -34,7 +34,13 @@ FrameSinkId, see below for details on FrameSinkId). In other words, both the
 embedder and embedded client use the same ClientWindowId for the Window. See
 discussion on FrameSinkId for more details.
 
-ClientWindowId is globally unique, but a Window may have multiple 
+For a client to establish an embed root, it first calls
+ScheduleEmbedForExistingClient(), so it can provide a window_id that is unique
+within its own scope. That client then passes the returned token to what will
+become its embedder to call EmbedUsingToken(). In this case, the embedder and
+embedded client do not use the same ClientWindowId for the Window.
+
+ClientWindowId is globally unique, but a Window may have multiple
 ClientWindowIds associated with it.
 
 TODO(sky): See http://crbug.com/817850 for making it so there is only one
@@ -59,6 +65,9 @@ client requesting the top-level (top-levels are created and owned by the Window
 Manager). The Window Manager is told the updated FrameSinkId when it is asked
 to create the top-level (WmCreateTopLevelWindow()).
 
+The FrameSinkId of an embed root's Window is set to the ClientWindowId of the
+embed root's Window from the embedded client.
+
 ### LocalSurfaceId
 
 The LocalSurfaceId (which contains unguessable) is necessary if the client wants
@@ -76,3 +85,29 @@ still very much a work in progress.
 
 FrameSinkId is derived from the embedded client, where as LocalSurfaceId
 comes from the embedder.
+
+### Event Processing
+
+One of the key operations of the Window Service is event processing. This
+includes maintaining state associated with the current input devices (such
+as the location of the mouse cursor) as well dispatching to the appropriate
+client. Event processing includes the following classes, see each for more
+details:
+. EventDispatcherImpl: events received from the platform are sent here first.
+  If not already processing an event EventDispatcherImpl forwards the event to
+  EventProcessor. If EventDispatcherImpl is processing an event it queues the
+  event for later processing.
+. EventProcessor: maintains state related to event processing, passing the
+  appropriate events and targets to EventDispatcher for dispatch.
+. AsyncEventDispatcher: dispatches an event to the client, notifying a callback
+  when done. This interface is largely for testing with WindowTree providing
+  the implementation.
+. EventTargeter: used by EventProcessor to determine the ServerWindow to send an
+  event to. Targetting is potentially asynchronous.
+
+EventDispatcherImpl and EventProcessor both have delegates that can impact
+targetting, as well as being notified during the lifecycle of processing.
+
+EventInjector is not a core part of event processing. It allows remote clients
+to inject events for testing, remoting and similar use cases. Events injected
+via EventInjector end up going to EventProcessor.

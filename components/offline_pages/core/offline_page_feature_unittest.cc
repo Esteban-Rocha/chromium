@@ -113,4 +113,26 @@ TEST(OfflinePageFeatureTest, OfflinePagesLimitlessPrefetching) {
   }
 }
 
+TEST(OfflinePageFeatureTest, OfflinePagesInDownloadHomeOpenInCct) {
+  // Disabled by default.
+  EXPECT_FALSE(offline_pages::ShouldOfflinePagesInDownloadHomeOpenInCct());
+
+  // Check if helper method works correctly when the features is enabled.
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      kOfflinePagesInDownloadHomeOpenInCctFeature);
+  EXPECT_TRUE(offline_pages::ShouldOfflinePagesInDownloadHomeOpenInCct());
+}
+
+TEST(OfflinePageFeatureTest, OfflinePagesDescriptivePendingStatus) {
+  // Disabled by default.
+  EXPECT_FALSE(offline_pages::IsOfflinePagesDescriptivePendingStatusEnabled());
+
+  // Check if helper method works correctly when the features is enabled.
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      kOfflinePagesDescriptivePendingStatusFeature);
+  EXPECT_TRUE(offline_pages::IsOfflinePagesDescriptivePendingStatusEnabled());
+}
+
 }  // namespace offline_pages

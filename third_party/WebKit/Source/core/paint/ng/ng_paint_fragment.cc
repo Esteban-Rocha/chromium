@@ -13,7 +13,6 @@
 #include "core/layout/ng/ng_physical_container_fragment.h"
 #include "core/layout/ng/ng_physical_fragment.h"
 #include "core/paint/ng/ng_box_fragment_painter.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
@@ -141,6 +140,28 @@ NGPaintFragment::FragmentRange NGPaintFragment::InlineFragmentsFor(
   return FragmentRange(nullptr, false);
 }
 
+bool NGPaintFragment::FlippedLocalVisualRectFor(
+    const LayoutObject* layout_object,
+    LayoutRect* visual_rect) {
+  auto fragments = InlineFragmentsFor(layout_object);
+  if (!fragments.IsInLayoutNGInlineFormattingContext())
+    return false;
+
+  for (NGPaintFragment* fragment : fragments) {
+    NGPhysicalOffsetRect child_visual_rect =
+        fragment->PhysicalFragment().SelfVisualRect();
+    child_visual_rect.offset += fragment->InlineOffsetToContainerBox();
+    visual_rect->Unite(child_visual_rect.ToLayoutRect());
+  }
+  if (!layout_object->HasFlippedBlocksWritingMode())
+    return true;
+
+  NGPaintFragment* container = GetForInlineContainer(layout_object);
+  DCHECK(container);
+  ToLayoutBox(container->GetLayoutObject())->FlipForWritingMode(*visual_rect);
+  return true;
+}
+
 void NGPaintFragment::UpdateVisualRectForNonLayoutObjectChildren() {
   // Scan direct children only beause line boxes are always direct children of
   // the inline formatting context.
@@ -191,6 +212,17 @@ LayoutRect NGPaintFragment::PartialInvalidationRect() const {
   const NGPaintFragment* block_fragment =
       GetLayoutObject()->EnclosingNGBlockFlow()->PaintFragment();
   return block_fragment->VisualRect();
+}
+
+const NGPaintFragment* NGPaintFragment::ContainerLineBox() const {
+  DCHECK(PhysicalFragment().IsInline());
+  for (const NGPaintFragment* runner = this; runner;
+       runner = runner->Parent()) {
+    if (runner->PhysicalFragment().IsLineBox())
+      return runner;
+  }
+  NOTREACHED();
+  return nullptr;
 }
 
 }  // namespace blink

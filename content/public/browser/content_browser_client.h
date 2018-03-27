@@ -28,7 +28,7 @@
 #include "content/public/common/window_container_type.mojom.h"
 #include "device/usb/public/mojom/chooser_service.mojom.h"
 #include "device/usb/public/mojom/device_manager.mojom.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/mojo/interfaces/remoting.mojom.h"
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
@@ -257,12 +257,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldLockToOrigin(BrowserContext* browser_context,
                                   const GURL& effective_url);
 
-  // Returns true if the |initiator| origin should be allowed to receive a
-  // document at |url|, bypassing the usual blocking logic. Defaults to false.
-  // This is called on the IO thread.
-  virtual bool ShouldBypassDocumentBlocking(const url::Origin& initiator,
-                                            const GURL& url,
-                                            ResourceType resource_type);
+  // Returns the scheme of request initiator that should be ignored by
+  // cross-origin read blocking.  nullptr can be returned to indicate that no
+  // exceptions should be granted based on initiator's scheme.
+  virtual const char* GetInitatorSchemeBypassingDocumentBlocking();
 
   // Returns a list additional WebUI schemes, if any.  These additional schemes
   // act as aliases to the chrome: scheme.  The additional schemes may or may
@@ -358,9 +356,24 @@ class CONTENT_EXPORT ContentBrowserClient {
   // current SiteInstance, if it does not yet have a site.
   virtual bool ShouldAssignSiteForURL(const GURL& url);
 
-  // Allows the embedder to provide a list of origins that require a dedicated
-  // process.
+  // Allows the embedder to programmatically provide some origins that should be
+  // opted into --isolate-origins mode of Site Isolation.
   virtual std::vector<url::Origin> GetOriginsRequiringDedicatedProcess();
+
+  // Allows the embedder to programmatically opt into --site-per-process mode of
+  // Site Isolation.
+  //
+  // Note that for correctness, the same value should be consistently returned.
+  // See also https://crbug.com/825369
+  virtual bool ShouldEnableStrictSiteIsolation();
+
+  // Allows //content embedders to check if --site-per-process has been enabled
+  // (via cmdline flag or via a field trial).
+  //
+  // TODO(lukasza, weili): https://crbug.com/824867: Remove this method after
+  // shipping OOPIF printing (the only caller is in
+  // components/printing/browser/print_manager_utils.cc).
+  static bool IsStrictSiteIsolationEnabled();
 
   // Indicates whether a file path should be accessible via file URL given a
   // request from a browser context which lives within |profile_path|.
@@ -1112,6 +1125,22 @@ class CONTENT_EXPORT ContentBrowserClient {
       bool first_auth_attempt,
       const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
           auth_required_callback);
+
+  // Launches the url for the given tab. Returns true if an attempt to handle
+  // the url was made, e.g. by launching an app. Note that this does not
+  // guarantee that the app successfully handled it.
+  // If this is a navigation request, then |child_id| will be
+  // ChildProcessHost::kInvalidUniqueID and |navigation_ui_data| will valid.
+  // Otherwise child_id will be the process id and |navigation_ui_data| will be
+  // nullptr.
+  virtual bool HandleExternalProtocol(
+      const GURL& url,
+      ResourceRequestInfo::WebContentsGetter web_contents_getter,
+      int child_id,
+      NavigationUIData* navigation_data,
+      bool is_main_frame,
+      ui::PageTransition page_transition,
+      bool has_user_gesture);
 };
 
 }  // namespace content

@@ -49,7 +49,7 @@
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/VisualViewport.h"
-#include "core/frame/WebFrameWidgetImpl.h"
+#include "core/frame/WebFrameWidgetBase.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/fullscreen/Fullscreen.h"
 #include "core/html/forms/ColorChooser.h"
@@ -76,17 +76,14 @@
 #include "platform/Cursor.h"
 #include "platform/Histogram.h"
 #include "platform/LayoutTestSupport.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/animation/CompositorAnimationHost.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/TouchAction.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Optional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/text/CString.h"
 #include "platform/wtf/text/CharacterNames.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -175,7 +172,7 @@ void ChromeClientImpl::ChromeDestroyed() {
 void ChromeClientImpl::SetWindowRect(const IntRect& r, LocalFrame& frame) {
   DCHECK_EQ(&frame, web_view_->MainFrameImpl()->GetFrame());
   WebWidgetClient* client =
-      WebLocalFrameImpl::FromFrame(&frame)->FrameWidget()->Client();
+      WebLocalFrameImpl::FromFrame(&frame)->FrameWidgetImpl()->Client();
   client->SetWindowRect(r);
 }
 
@@ -247,7 +244,7 @@ void ChromeClientImpl::StartDragging(LocalFrame* frame,
                                      const WebPoint& drag_image_offset) {
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
   WebReferrerPolicy policy = web_frame->GetDocument().GetReferrerPolicy();
-  web_frame->LocalRoot()->FrameWidget()->StartDragging(
+  web_frame->LocalRootFrameWidget()->StartDragging(
       policy, drag_data, mask, drag_image, drag_image_offset);
 }
 
@@ -405,15 +402,17 @@ void ChromeClientImpl::InvalidateRect(const IntRect& update_rect) {
 void ChromeClientImpl::ScheduleAnimation(
     const PlatformFrameView* platform_frame_view) {
   DCHECK(platform_frame_view->IsLocalFrameView());
-  LocalFrame& frame =
-      ToLocalFrameView(platform_frame_view)->GetFrame().LocalFrameRoot();
+  LocalFrame& frame = ToLocalFrameView(platform_frame_view)->GetFrame();
+  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(&frame);
+  DCHECK(web_frame);
   // If the frame is still being created, it might not yet have a WebWidget.
-  // FIXME: Is this the right thing to do? Is there a way to avoid having
+  // TODO(dcheng): Is this the right thing to do? Is there a way to avoid having
   // a local frame root that doesn't have a WebWidget? During initialization
-  // there is no content to draw so this call serves no purpose.
-  if (WebLocalFrameImpl::FromFrame(&frame) &&
-      WebLocalFrameImpl::FromFrame(&frame)->FrameWidget())
-    WebLocalFrameImpl::FromFrame(&frame)->FrameWidget()->ScheduleAnimation();
+  // there is no content to draw so this call serves no purpose. Maybe the
+  // WebFrameWidget needs to be initialized before initializing the core frame?
+  if (!web_frame->LocalRootFrameWidget())
+    return;
+  web_frame->LocalRootFrameWidget()->ScheduleAnimation();
 }
 
 IntRect ChromeClientImpl::ViewportToScreen(
@@ -421,13 +420,12 @@ IntRect ChromeClientImpl::ViewportToScreen(
     const PlatformFrameView* platform_frame_view) const {
   WebRect screen_rect(rect_in_viewport);
 
-  DCHECK(platform_frame_view->IsLocalFrameView());
-  const LocalFrameView* view = ToLocalFrameView(platform_frame_view);
-  LocalFrame& frame = view->GetFrame().LocalFrameRoot();
+  LocalFrame& frame = ToLocalFrameView(platform_frame_view)->GetFrame();
 
   WebWidgetClient* client =
-      WebLocalFrameImpl::FromFrame(&frame)->FrameWidget()->Client();
+      WebLocalFrameImpl::FromFrame(&frame)->LocalRootFrameWidget()->Client();
 
+  // TODO(dcheng): Is this null check needed?
   if (client) {
     client->ConvertViewportToWindow(&screen_rect);
     WebRect view_rect = client->ViewRect();
@@ -517,17 +515,16 @@ void ChromeClientImpl::ShowMouseOverURL(const HitTestResult& result) {
 void ChromeClientImpl::SetToolTip(LocalFrame& frame,
                                   const String& tooltip_text,
                                   TextDirection dir) {
-  WebLocalFrameImpl* web_frame =
-      WebLocalFrameImpl::FromFrame(&frame)->LocalRoot();
+  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(&frame);
   if (!tooltip_text.IsEmpty()) {
-    web_frame->FrameWidget()->Client()->SetToolTipText(tooltip_text,
-                                                       ToWebTextDirection(dir));
+    web_frame->LocalRootFrameWidget()->Client()->SetToolTipText(
+        tooltip_text, ToWebTextDirection(dir));
     did_request_non_empty_tool_tip_ = true;
   } else if (did_request_non_empty_tool_tip_) {
     // WebWidgetClient::setToolTipText will send an IPC message.  We'd like to
     // reduce the number of setToolTipText calls.
-    web_frame->FrameWidget()->Client()->SetToolTipText(tooltip_text,
-                                                       ToWebTextDirection(dir));
+    web_frame->LocalRootFrameWidget()->Client()->SetToolTipText(
+        tooltip_text, ToWebTextDirection(dir));
     did_request_non_empty_tool_tip_ = false;
   }
 }
@@ -640,9 +637,9 @@ void ChromeClientImpl::SetCursor(const WebCursorInfo& cursor,
     return;
 #endif
 
-  LocalFrame& local_root = local_frame->LocalFrameRoot();
+  // TODO(dcheng): Why is this null check necessary?
   if (WebFrameWidgetBase* widget =
-          WebLocalFrameImpl::FromFrame(&local_root)->FrameWidget())
+          WebLocalFrameImpl::FromFrame(local_frame)->LocalRootFrameWidget())
     widget->Client()->DidChangeCursor(cursor);
 }
 
@@ -657,24 +654,21 @@ void ChromeClientImpl::SetCursorOverridden(bool overridden) {
 
 void ChromeClientImpl::AutoscrollStart(WebFloatPoint viewport_point,
                                        LocalFrame* local_frame) {
-  LocalFrame& local_root = local_frame->LocalFrameRoot();
   if (WebFrameWidgetBase* widget =
-          WebLocalFrameImpl::FromFrame(&local_root)->FrameWidget())
+          WebLocalFrameImpl::FromFrame(local_frame)->LocalRootFrameWidget())
     widget->Client()->AutoscrollStart(viewport_point);
 }
 
 void ChromeClientImpl::AutoscrollFling(WebFloatSize velocity,
                                        LocalFrame* local_frame) {
-  LocalFrame& local_root = local_frame->LocalFrameRoot();
   if (WebFrameWidgetBase* widget =
-          WebLocalFrameImpl::FromFrame(&local_root)->FrameWidget())
+          WebLocalFrameImpl::FromFrame(local_frame)->LocalRootFrameWidget())
     widget->Client()->AutoscrollFling(velocity);
 }
 
 void ChromeClientImpl::AutoscrollEnd(LocalFrame* local_frame) {
-  LocalFrame& local_root = local_frame->LocalFrameRoot();
   if (WebFrameWidgetBase* widget =
-          WebLocalFrameImpl::FromFrame(&local_root)->FrameWidget())
+          WebLocalFrameImpl::FromFrame(local_frame)->LocalRootFrameWidget())
     widget->Client()->AutoscrollEnd();
 }
 
@@ -685,49 +679,56 @@ String ChromeClientImpl::AcceptLanguages() {
 void ChromeClientImpl::AttachRootGraphicsLayer(GraphicsLayer* root_layer,
                                                LocalFrame* local_frame) {
   DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+  // TODO(dcheng): This seems wrong. Non-local roots shouldn't be calling this
+  // function.
   WebLocalFrameImpl* web_frame =
       WebLocalFrameImpl::FromFrame(local_frame)->LocalRoot();
+  DCHECK(WebLocalFrameImpl::FromFrame(local_frame) == web_frame);
 
   // This method can be called while the frame is being detached. In that
   // case, the rootLayer is null, and the widget is already destroyed.
-  DCHECK(web_frame->FrameWidget() || !root_layer);
-  if (web_frame->FrameWidget())
-    web_frame->FrameWidget()->SetRootGraphicsLayer(root_layer);
+  // TODO(dcheng): This should be called before the widget is gone...
+  DCHECK(web_frame->FrameWidgetImpl() || !root_layer);
+  if (web_frame->FrameWidgetImpl())
+    web_frame->FrameWidgetImpl()->SetRootGraphicsLayer(root_layer);
 }
 
 void ChromeClientImpl::AttachRootLayer(WebLayer* root_layer,
                                        LocalFrame* local_frame) {
+  // TODO(dcheng): This seems wrong. Non-local roots shouldn't be calling this
+  // function.
   WebLocalFrameImpl* web_frame =
       WebLocalFrameImpl::FromFrame(local_frame)->LocalRoot();
+  DCHECK(WebLocalFrameImpl::FromFrame(local_frame) == web_frame);
 
   // This method can be called while the frame is being detached. In that
   // case, the rootLayer is null, and the widget is already destroyed.
+  // TODO(dcheng): This should be called before the widget is gone...
   DCHECK(web_frame->FrameWidget() || !root_layer);
-  if (web_frame->FrameWidget())
-    web_frame->FrameWidget()->SetRootLayer(root_layer);
+  if (web_frame->FrameWidgetImpl())
+    web_frame->FrameWidgetImpl()->SetRootLayer(root_layer);
 }
 
 void ChromeClientImpl::AttachCompositorAnimationTimeline(
     CompositorAnimationTimeline* compositor_timeline,
     LocalFrame* local_frame) {
-  WebLocalFrameImpl* web_frame =
-      WebLocalFrameImpl::FromFrame(local_frame)->LocalRoot();
+  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(local_frame);
   if (CompositorAnimationHost* animation_host =
-          web_frame->FrameWidget()->AnimationHost())
+          web_frame->LocalRootFrameWidget()->AnimationHost())
     animation_host->AddTimeline(*compositor_timeline);
 }
 
 void ChromeClientImpl::DetachCompositorAnimationTimeline(
     CompositorAnimationTimeline* compositor_timeline,
     LocalFrame* local_frame) {
-  WebLocalFrameImpl* web_frame =
-      WebLocalFrameImpl::FromFrame(local_frame)->LocalRoot();
+  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(local_frame);
 
   // This method can be called when the frame is being detached, after the
   // widget is destroyed.
-  if (web_frame->FrameWidget()) {
+  // TODO(dcheng): This should be called before the widget is gone...
+  if (web_frame->LocalRootFrameWidget()) {
     if (CompositorAnimationHost* animation_host =
-            web_frame->FrameWidget()->AnimationHost())
+            web_frame->LocalRootFrameWidget()->AnimationHost())
       animation_host->RemoveTimeline(*compositor_timeline);
   }
 }
@@ -746,10 +747,10 @@ void ChromeClientImpl::FullscreenElementChanged(Element* old_element,
 }
 
 void ChromeClientImpl::ClearCompositedSelection(LocalFrame* frame) {
-  LocalFrame& local_root = frame->LocalFrameRoot();
   WebFrameWidgetBase* widget =
-      WebLocalFrameImpl::FromFrame(&local_root)->FrameWidget();
+      WebLocalFrameImpl::FromFrame(frame)->LocalRootFrameWidget();
   WebWidgetClient* client = widget->Client();
+  // TODO(dcheng): This shouldn't be called on detached frames?
   if (!client)
     return;
 
@@ -760,10 +761,10 @@ void ChromeClientImpl::ClearCompositedSelection(LocalFrame* frame) {
 void ChromeClientImpl::UpdateCompositedSelection(
     LocalFrame* frame,
     const CompositedSelection& selection) {
-  LocalFrame& local_root = frame->LocalFrameRoot();
   WebFrameWidgetBase* widget =
-      WebLocalFrameImpl::FromFrame(&local_root)->FrameWidget();
+      WebLocalFrameImpl::FromFrame(frame)->LocalRootFrameWidget();
   WebWidgetClient* client = widget->Client();
+  // TODO(dcheng): This shouldn't be called on detached frames?
   if (!client)
     return;
 
@@ -833,15 +834,16 @@ bool ChromeClientImpl::ShouldOpenModalDialogDuringPageDismissal(
 
 WebLayerTreeView* ChromeClientImpl::GetWebLayerTreeView(LocalFrame* frame) {
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
-  return web_frame->LocalRoot()->FrameWidget()->GetLayerTreeView();
+  if (WebFrameWidgetBase* frame_widget = web_frame->LocalRootFrameWidget())
+    return frame_widget->GetLayerTreeView();
+  return nullptr;
 }
 
 void ChromeClientImpl::RequestDecode(LocalFrame* frame,
                                      const PaintImage& image,
                                      base::OnceCallback<void(bool)> callback) {
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
-  web_frame->LocalRoot()->FrameWidget()->RequestDecode(image,
-                                                       std::move(callback));
+  web_frame->LocalRootFrameWidget()->RequestDecode(image, std::move(callback));
 }
 
 void ChromeClientImpl::SetEventListenerProperties(
@@ -856,18 +858,24 @@ void ChromeClientImpl::SetEventListenerProperties(
     return;
 
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
-  WebFrameWidgetBase* widget = web_frame->LocalRoot()->FrameWidget();
   // The widget may be nullptr if the frame is provisional.
   // TODO(dcheng): This needs to be cleaned up at some point.
   // https://crbug.com/578349
-  if (!widget) {
+  if (web_frame->IsProvisional()) {
     // If we hit a provisional frame, we expect it to be during initialization
     // in which case the |properties| should be 'nothing'.
     DCHECK(properties == WebEventListenerProperties::kNothing);
     return;
   }
+  WebFrameWidgetBase* widget = web_frame->LocalRootFrameWidget();
+  // TODO(https://crbug.com/820787): When creating a local root, the widget
+  // won't be set yet. While notifications in this case are technically
+  // redundant, it adds an awkward special case.
+  if (!widget) {
+    return;
+  }
 
-  // This relies on widget always pointing to a WebFrameWidgetImpl when
+  // This relies on widget always pointing to a WebFrameWidgetBase when
   // |frame| points to an OOPIF frame, i.e. |frame|'s mainFrame() is
   // remote.
   WebWidgetClient* client = widget->Client();
@@ -905,7 +913,7 @@ WebEventListenerProperties ChromeClientImpl::EventListenerProperties(
     return WebEventListenerProperties::kNothing;
 
   WebFrameWidgetBase* widget =
-      WebLocalFrameImpl::FromFrame(frame)->LocalRoot()->FrameWidget();
+      WebLocalFrameImpl::FromFrame(frame)->LocalRootFrameWidget();
 
   if (!widget || !widget->GetLayerTreeView())
     return WebEventListenerProperties::kNothing;
@@ -922,7 +930,7 @@ void ChromeClientImpl::SetHasScrollEventHandlers(LocalFrame* frame,
     return;
 
   WebFrameWidgetBase* widget =
-      WebLocalFrameImpl::FromFrame(frame)->LocalRoot()->FrameWidget();
+      WebLocalFrameImpl::FromFrame(frame)->LocalRootFrameWidget();
   // While a frame is shutting down, we may get called after the layerTreeView
   // is gone: in this case we always expect |hasEventHandlers| to be false.
   DCHECK(!widget || widget->GetLayerTreeView() || !has_event_handlers);
@@ -934,7 +942,7 @@ void ChromeClientImpl::SetNeedsLowLatencyInput(LocalFrame* frame,
                                                bool needs_low_latency) {
   DCHECK(frame);
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
-  WebFrameWidgetBase* widget = web_frame->LocalRoot()->FrameWidget();
+  WebFrameWidgetBase* widget = web_frame->LocalRootFrameWidget();
   if (!widget)
     return;
 
@@ -945,7 +953,7 @@ void ChromeClientImpl::SetNeedsLowLatencyInput(LocalFrame* frame,
 void ChromeClientImpl::RequestUnbufferedInputEvents(LocalFrame* frame) {
   DCHECK(frame);
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
-  WebFrameWidgetBase* widget = web_frame->LocalRoot()->FrameWidget();
+  WebFrameWidgetBase* widget = web_frame->LocalRootFrameWidget();
   if (!widget)
     return;
 
@@ -957,7 +965,7 @@ void ChromeClientImpl::SetTouchAction(LocalFrame* frame,
                                       TouchAction touch_action) {
   DCHECK(frame);
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
-  WebFrameWidgetBase* widget = web_frame->LocalRoot()->FrameWidget();
+  WebFrameWidgetBase* widget = web_frame->LocalRootFrameWidget();
   if (!widget)
     return;
 
@@ -966,17 +974,15 @@ void ChromeClientImpl::SetTouchAction(LocalFrame* frame,
 }
 
 bool ChromeClientImpl::RequestPointerLock(LocalFrame* frame) {
-  LocalFrame& local_root = frame->LocalFrameRoot();
-  return WebLocalFrameImpl::FromFrame(&local_root)
-      ->FrameWidget()
+  return WebLocalFrameImpl::FromFrame(frame)
+      ->LocalRootFrameWidget()
       ->Client()
       ->RequestPointerLock();
 }
 
 void ChromeClientImpl::RequestPointerUnlock(LocalFrame* frame) {
-  LocalFrame& local_root = frame->LocalFrameRoot();
-  return WebLocalFrameImpl::FromFrame(&local_root)
-      ->FrameWidget()
+  return WebLocalFrameImpl::FromFrame(frame)
+      ->LocalRootFrameWidget()
       ->Client()
       ->RequestPointerUnlock();
 }
@@ -987,8 +993,8 @@ void ChromeClientImpl::DidAssociateFormControlsAfterLoad(LocalFrame* frame) {
 }
 
 void ChromeClientImpl::ShowVirtualKeyboardOnElementFocus(LocalFrame& frame) {
-  WebLocalFrameImpl::FromFrame(frame.LocalFrameRoot())
-      ->FrameWidget()
+  WebLocalFrameImpl::FromFrame(frame)
+      ->LocalRootFrameWidget()
       ->Client()
       ->ShowVirtualKeyboardOnElementFocus();
 }
@@ -1098,13 +1104,6 @@ void ChromeClientImpl::NotifyPopupOpeningObservers() const {
 
 FloatSize ChromeClientImpl::ElasticOverscroll() const {
   return web_view_->ElasticOverscroll();
-}
-
-std::unique_ptr<WebFrameScheduler> ChromeClientImpl::CreateFrameScheduler(
-    BlameContext* blame_context,
-    WebFrameScheduler::FrameType frame_type) {
-  return web_view_->Scheduler()->CreateFrameScheduler(blame_context,
-                                                      frame_type);
 }
 
 WebAutofillClient* ChromeClientImpl::AutofillClientFromFrame(

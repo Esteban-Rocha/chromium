@@ -272,6 +272,18 @@ TEST_F(TrafficAnnotationAuditorTest, IsSafeListed) {
                                      AuditorException::ExceptionType::MISSING));
   EXPECT_TRUE(auditor().IsSafeListed("net/url_request/url_request_context.cc",
                                      AuditorException::ExceptionType::MISSING));
+
+  // Files having the word test in their full path can have annotation for
+  // tests.
+  EXPECT_FALSE(
+      auditor().IsSafeListed("net/url_request/url_fetcher.cc",
+                             AuditorException::ExceptionType::TEST_ANNOTATION));
+  EXPECT_TRUE(
+      auditor().IsSafeListed("chrome/browser/test_something.cc",
+                             AuditorException::ExceptionType::TEST_ANNOTATION));
+  EXPECT_TRUE(
+      auditor().IsSafeListed("test/send_something.cc",
+                             AuditorException::ExceptionType::TEST_ANNOTATION));
 }
 
 // Tests if annotation instances are corrrectly deserialized.
@@ -292,7 +304,7 @@ TEST_F(TrafficAnnotationAuditorTest, AnnotationDeserialization) {
        AnnotationInstance::Type::ANNOTATION_COMPLETING},
       {"good_partial_annotation.txt", AuditorResult::Type::RESULT_OK,
        AnnotationInstance::Type::ANNOTATION_PARTIAL},
-      {"good_test_annotation.txt", AuditorResult::Type::RESULT_IGNORE},
+      {"good_test_annotation.txt", AuditorResult::Type::ERROR_TEST_ANNOTATION},
       {"missing_annotation.txt", AuditorResult::Type::ERROR_MISSING_TAG_USED},
       {"no_annotation.txt", AuditorResult::Type::ERROR_NO_ANNOTATION},
       {"fatal_annotation1.txt", AuditorResult::Type::ERROR_FATAL},
@@ -309,7 +321,7 @@ TEST_F(TrafficAnnotationAuditorTest, AnnotationDeserialization) {
     AnnotationInstance annotation;
     AuditorResult::Type result_type =
         Deserialize(test_case.file_name, &annotation);
-    EXPECT_EQ(result_type, test_case.result_type);
+    EXPECT_EQ(result_type, test_case.result_type) << test_case.file_name;
 
     if (result_type == AuditorResult::Type::RESULT_OK)
       EXPECT_EQ(annotation.type, test_case.type);
@@ -392,8 +404,7 @@ TEST_F(TrafficAnnotationAuditorTest, GetReservedIDsCoverage) {
       PARTIAL_TRAFFIC_ANNOTATION_FOR_TESTS.unique_id_hash_code,
       NO_TRAFFIC_ANNOTATION_YET.unique_id_hash_code,
       NO_PARTIAL_TRAFFIC_ANNOTATION_YET.unique_id_hash_code,
-      MISSING_TRAFFIC_ANNOTATION.unique_id_hash_code,
-      NO_TRAFFIC_ANNOTATION_BUG_656607.unique_id_hash_code};
+      MISSING_TRAFFIC_ANNOTATION.unique_id_hash_code};
 
   std::map<int, std::string> reserved_words =
       TrafficAnnotationAuditor::GetReservedIDsMap();

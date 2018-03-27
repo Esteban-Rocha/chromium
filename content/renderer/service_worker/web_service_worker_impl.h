@@ -27,8 +27,6 @@ class WebServiceWorkerProxy;
 
 namespace content {
 
-class ThreadSafeSender;
-
 // Each instance corresponds to one ServiceWorker object in JS context, and
 // is held by ServiceWorker object in Blink's C++ layer via
 // WebServiceWorker::Handle.
@@ -46,11 +44,9 @@ class CONTENT_EXPORT WebServiceWorkerImpl
   // interface and needs to be bound on either the main or IO thread.
   static scoped_refptr<WebServiceWorkerImpl> CreateForServiceWorkerGlobalScope(
       blink::mojom::ServiceWorkerObjectInfoPtr info,
-      ThreadSafeSender* thread_safe_sender,
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner);
   static scoped_refptr<WebServiceWorkerImpl> CreateForServiceWorkerClient(
-      blink::mojom::ServiceWorkerObjectInfoPtr info,
-      ThreadSafeSender* thread_safe_sender);
+      blink::mojom::ServiceWorkerObjectInfoPtr info);
 
   void OnStateChanged(blink::mojom::ServiceWorkerState new_state);
 
@@ -59,10 +55,7 @@ class CONTENT_EXPORT WebServiceWorkerImpl
   blink::WebServiceWorkerProxy* Proxy() override;
   blink::WebURL Url() const override;
   blink::mojom::ServiceWorkerState GetState() const override;
-  void PostMessageToWorker(
-      blink::WebServiceWorkerProvider* provider,
-      blink::TransferableMessage message,
-      const blink::WebSecurityOrigin& source_origin) override;
+  void PostMessageToServiceWorker(blink::TransferableMessage message) override;
   void TerminateForTesting(
       std::unique_ptr<TerminateForTestingCallback> callback) override;
 
@@ -73,8 +66,7 @@ class CONTENT_EXPORT WebServiceWorkerImpl
 
  private:
   friend class base::RefCounted<WebServiceWorkerImpl>;
-  WebServiceWorkerImpl(blink::mojom::ServiceWorkerObjectInfoPtr info,
-                       ThreadSafeSender* thread_safe_sender);
+  explicit WebServiceWorkerImpl(blink::mojom::ServiceWorkerObjectInfoPtr info);
   ~WebServiceWorkerImpl() override;
 
   blink::mojom::ServiceWorkerObjectHost* GetObjectHost();
@@ -97,7 +89,6 @@ class CONTENT_EXPORT WebServiceWorkerImpl
 
   blink::mojom::ServiceWorkerObjectInfoPtr info_;
   blink::mojom::ServiceWorkerState state_;
-  scoped_refptr<ThreadSafeSender> thread_safe_sender_;
   blink::WebServiceWorkerProxy* proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(WebServiceWorkerImpl);

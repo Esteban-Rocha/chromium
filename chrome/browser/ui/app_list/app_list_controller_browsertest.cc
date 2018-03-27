@@ -73,8 +73,8 @@ IN_PROC_BROWSER_TEST_F(AppListControllerSearchResultsBrowserTest,
   const std::string title = extension->name();
 
   // Show the app list first, otherwise we won't have a search box to update.
-  service->ShowForProfile(browser()->profile());
-  base::RunLoop().RunUntilIdle();
+  service->Show();
+  service->FlushForTesting();
 
   // Currently the search box is empty, so we have no result.
   EXPECT_FALSE(model_updater->GetResultByTitle(title));
@@ -82,12 +82,16 @@ IN_PROC_BROWSER_TEST_F(AppListControllerSearchResultsBrowserTest,
   // Now a search finds the extension.
   model_updater->UpdateSearchBox(base::ASCIIToUTF16(title),
                                  true /* initiated_by_user */);
-  base::RunLoop().RunUntilIdle();
+
+  // Ensure everything is done, from Chrome to Ash and backwards.
+  service->FlushForTesting();
   EXPECT_TRUE(model_updater->GetResultByTitle(title));
 
   // Uninstall the extension.
   UninstallExtension(extension->id());
-  base::RunLoop().RunUntilIdle();
+
+  // Ensure everything is done, from Chrome to Ash and backwards.
+  service->FlushForTesting();
 
   // We cannot find the extension any more.
   EXPECT_FALSE(model_updater->GetResultByTitle(title));
@@ -121,6 +125,6 @@ IN_PROC_BROWSER_TEST_F(AppListControllerGuestModeBrowserTest, Incognito) {
   AppListService* service = AppListService::Get();
   EXPECT_TRUE(service->GetCurrentAppListProfile());
 
-  service->ShowForProfile(browser()->profile());
+  service->Show();
   EXPECT_EQ(browser()->profile(), service->GetCurrentAppListProfile());
 }

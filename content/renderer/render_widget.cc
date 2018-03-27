@@ -486,7 +486,8 @@ RenderWidget* RenderWidget::CreateForPopup(
       task_runner, std::move(widget_channel_request)));
   ShowCallback opener_callback =
       base::Bind(&RenderViewImpl::ShowCreatedPopupWidget, opener->GetWeakPtr());
-  widget->Init(opener_callback, RenderWidget::CreateWebWidget(widget.get()));
+  widget->Init(std::move(opener_callback),
+               RenderWidget::CreateWebWidget(widget.get()));
   DCHECK(!widget->HasOneRef());  // RenderWidget::Init() adds a reference.
   return widget.get();
 }
@@ -619,7 +620,7 @@ void RenderWidget::SetPopupOriginAdjustmentsForEmulation(
   popup_view_origin_for_emulation_ = emulator->applied_widget_rect().origin();
   popup_screen_origin_for_emulation_ =
       emulator->original_screen_rect().origin();
-  UpdateSurfaceAndScreenInfo(local_surface_id_, physical_backing_size_,
+  UpdateSurfaceAndScreenInfo(local_surface_id_, compositor_viewport_pixel_size_,
                              emulator->original_screen_info());
 }
 
@@ -650,15 +651,16 @@ void RenderWidget::SetLocalSurfaceIdForAutoResize(
       content_source_id != current_content_source_id_ ? viz::LocalSurfaceId()
                                                       : local_surface_id;
   // TODO(ccameron): If there is a meaningful distinction between |size_| and
-  // |physical_backing_size_| is it okay to ignore that distinction here, and
-  // assume that |physical_backing_size_| is just |size_| in pixels? Also note
-  // that the computation of |new_physical_backing_size| does not appear to
-  // take into account device emulation.
+  // |compositor_viewport_pixel_size_| is it okay to ignore that distinction
+  // here, and assume that |compositor_viewport_pixel_size_| is just |size_| in
+  // pixels? Also note that the computation of
+  // |new_compositor_viewport_pixel_size| does not appear to take into account
+  // device emulation.
   float new_device_scale_factor = screen_info.device_scale_factor;
-  gfx::Size new_physical_backing_size =
+  gfx::Size new_compositor_viewport_pixel_size =
       gfx::ScaleToCeiledSize(size_, new_device_scale_factor);
-  UpdateSurfaceAndScreenInfo(new_local_surface_id, new_physical_backing_size,
-                             screen_info);
+  UpdateSurfaceAndScreenInfo(new_local_surface_id,
+                             new_compositor_viewport_pixel_size, screen_info);
 }
 
 void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
@@ -765,8 +767,8 @@ void RenderWidget::SetWindowRectSynchronously(
   ResizeParams params;
   params.screen_info = screen_info_;
   params.new_size = new_window_rect.size();
-  params.physical_backing_size =
-      gfx::ScaleToCeiledSize(new_window_rect.size(), GetWebDeviceScaleFactor());
+  params.compositor_viewport_pixel_size = gfx::ScaleToCeiledSize(
+      new_window_rect.size(), GetWebScreenInfo().device_scale_factor);
   params.visible_viewport_size = new_window_rect.size();
   params.is_fullscreen_granted = is_fullscreen_granted_;
   params.display_mode = display_mode_;
@@ -839,7 +841,7 @@ void RenderWidget::OnSetLocalSurfaceIdForAutoResize(
     const content::ScreenInfo& screen_info,
     uint32_t content_source_id,
     const viz::LocalSurfaceId& local_surface_id) {
-  if (!auto_resize_mode_ || resize_or_repaint_ack_num_ != sequence_number) {
+  if (!auto_resize_mode_ || auto_resize_sequence_number_ != sequence_number) {
     DidResizeOrRepaintAck();
     return;
   }
@@ -855,7 +857,8 @@ void RenderWidget::OnEnableDeviceEmulation(
     ResizeParams resize_params;
     resize_params.screen_info = screen_info_;
     resize_params.new_size = size_;
-    resize_params.physical_backing_size = physical_backing_size_;
+    resize_params.compositor_viewport_pixel_size =
+        compositor_viewport_pixel_size_;
     resize_params.local_surface_id = local_surface_id_;
     resize_params.content_source_id = current_content_source_id_;
     resize_params.visible_viewport_size = visible_viewport_size_;
@@ -1318,7 +1321,7 @@ bool RenderWidget::WillHandleGestureEvent(const blink::WebGestureEvent& event) {
   possible_drag_event_info_.event_source =
       ui::DragDropTypes::DRAG_EVENT_SOURCE_TOUCH;
   possible_drag_event_info_.event_location =
-      gfx::Point(event.global_x, event.global_y);
+      gfx::ToFlooredPoint(event.PositionInScreen());
 
   return false;
 }
@@ -1352,8 +1355,10 @@ void RenderWidget::ResizeWebWidget() {
 }
 
 gfx::Size RenderWidget::GetSizeForWebWidget() const {
-  if (IsUseZoomForDSFEnabled())
-    return gfx::ScaleToCeiledSize(size_, GetOriginalDeviceScaleFactor());
+  if (IsUseZoomForDSFEnabled()) {
+    return gfx::ScaleToCeiledSize(size_,
+                                  GetOriginalScreenInfo().device_scale_factor);
+  }
 
   return size_;
 }
@@ -1395,7 +1400,8 @@ void RenderWidget::Resize(const ResizeParams& params) {
       params.content_source_id == current_content_source_id_) {
     new_local_surface_id = *params.local_surface_id;
   }
-  UpdateSurfaceAndScreenInfo(new_local_surface_id, params.physical_backing_size,
+  UpdateSurfaceAndScreenInfo(new_local_surface_id,
+                             params.compositor_viewport_pixel_size,
                              params.screen_info);
   if (compositor_) {
     // If surface synchronization is enabled, then this will use the provided
@@ -1427,9 +1433,9 @@ void RenderWidget::Resize(const ResizeParams& params) {
 
   WebSize visual_viewport_size;
   if (IsUseZoomForDSFEnabled()) {
-    visual_viewport_size = gfx::ScaleToCeiledSize(
-        params.visible_viewport_size,
-        GetOriginalDeviceScaleFactor());
+    visual_viewport_size =
+        gfx::ScaleToCeiledSize(params.visible_viewport_size,
+                               GetOriginalScreenInfo().device_scale_factor);
   } else {
     visual_viewport_size = visible_viewport_size_;
   }
@@ -1438,7 +1444,8 @@ void RenderWidget::Resize(const ResizeParams& params) {
   // When resizing, we want to wait to paint before ACK'ing the resize.  This
   // ensures that we only resize as fast as we can paint.  We only need to
   // send an ACK if we are resized to a non-empty rect.
-  if (params.new_size.IsEmpty() || params.physical_backing_size.IsEmpty()) {
+  if (params.new_size.IsEmpty() ||
+      params.compositor_viewport_pixel_size.IsEmpty()) {
     // In this case there is no paint/composite and therefore no
     // ViewHostMsg_ResizeOrRepaint_ACK to send the resize ack with. We'd need to
     // send the ack through a fake ViewHostMsg_ResizeOrRepaint_ACK or a
@@ -1504,7 +1511,7 @@ blink::WebLayerTreeView* RenderWidget::InitializeLayerTreeView() {
     reset_next_paint_is_resize_ack();
   }
 
-  UpdateSurfaceAndScreenInfo(local_surface_id_, physical_backing_size_,
+  UpdateSurfaceAndScreenInfo(local_surface_id_, compositor_viewport_pixel_size_,
                              screen_info_);
   compositor_->SetRasterColorSpace(
       screen_info_.color_space.GetRasterColorSpace());
@@ -1710,13 +1717,14 @@ void RenderWidget::UpdateWebViewWithDeviceScaleFactor() {
   blink::WebView* webview = current_frame ? current_frame->View() : nullptr;
   if (webview) {
     if (IsUseZoomForDSFEnabled())
-      webview->SetZoomFactorForDeviceScaleFactor(GetWebDeviceScaleFactor());
+      webview->SetZoomFactorForDeviceScaleFactor(
+          GetWebScreenInfo().device_scale_factor);
     else
-      webview->SetDeviceScaleFactor(GetWebDeviceScaleFactor());
+      webview->SetDeviceScaleFactor(GetWebScreenInfo().device_scale_factor);
 
     webview->GetSettings()->SetPreferCompositingToLCDTextEnabled(
         PreferCompositingToLCDText(compositor_deps_,
-                                   GetWebDeviceScaleFactor()));
+                                   GetWebScreenInfo().device_scale_factor));
   }
 }
 
@@ -1926,37 +1934,38 @@ void RenderWidget::OnImeFinishComposingText(bool keep_selection) {
 
 void RenderWidget::UpdateSurfaceAndScreenInfo(
     viz::LocalSurfaceId new_local_surface_id,
-    const gfx::Size& new_physical_backing_size,
+    const gfx::Size& new_compositor_viewport_pixel_size,
     const ScreenInfo& new_screen_info) {
-  bool screen_info_changed = screen_info_ != new_screen_info;
   bool orientation_changed =
       screen_info_.orientation_angle != new_screen_info.orientation_angle ||
       screen_info_.orientation_type != new_screen_info.orientation_type;
   bool web_device_scale_factor_changed =
       screen_info_.device_scale_factor != new_screen_info.device_scale_factor;
+  ScreenInfo previous_original_screen_info = GetOriginalScreenInfo();
 
   local_surface_id_ = new_local_surface_id;
-  physical_backing_size_ = new_physical_backing_size;
+  compositor_viewport_pixel_size_ = new_compositor_viewport_pixel_size;
   screen_info_ = new_screen_info;
 
   if (compositor_) {
+    compositor_->SetViewportVisibleRect(ViewportVisibleRect());
     // Note carefully that the DSF specified in |new_screen_info| is not the
     // DSF used by the compositor during device emulation!
-    compositor_->SetViewportSizeAndScale(physical_backing_size_,
-                                         GetOriginalDeviceScaleFactor(),
-                                         local_surface_id_);
+    compositor_->SetViewportSizeAndScale(
+        compositor_viewport_pixel_size_,
+        GetOriginalScreenInfo().device_scale_factor, local_surface_id_);
   }
 
   if (orientation_changed)
     OnOrientationChange();
 
-  if (screen_info_changed) {
+  if (previous_original_screen_info != GetOriginalScreenInfo()) {
     for (auto& observer : render_frame_proxies_)
-      observer.OnScreenInfoChanged(screen_info_);
+      observer.OnScreenInfoChanged(GetOriginalScreenInfo());
 
     // Notify all embedded BrowserPlugins of the updated ScreenInfo.
     for (auto& observer : browser_plugins_)
-      observer.ScreenInfoChanged(screen_info_);
+      observer.ScreenInfoChanged(GetOriginalScreenInfo());
   }
 
   if (web_device_scale_factor_changed)
@@ -2004,10 +2013,14 @@ void RenderWidget::OnUpdateWindowScreenRect(
 }
 
 void RenderWidget::OnSetViewportIntersection(
-    const gfx::Rect& viewport_intersection) {
+    const gfx::Rect& viewport_intersection,
+    const gfx::Rect& compositor_visible_rect) {
   if (auto* frame_widget = GetFrameWidget()) {
     DCHECK_EQ(popup_type_, WebPopupType::kWebPopupTypeNone);
+    viewport_intersection_ = viewport_intersection;
+    compositor_visible_rect_ = compositor_visible_rect;
     frame_widget->SetRemoteViewportIntersection(viewport_intersection);
+    compositor_->SetViewportVisibleRect(ViewportVisibleRect());
   }
 }
 
@@ -2164,7 +2177,7 @@ void RenderWidget::UpdateCompositionInfo(bool immediate_request) {
 
 void RenderWidget::ConvertViewportToWindow(blink::WebRect* rect) {
   if (IsUseZoomForDSFEnabled()) {
-    float reverse = 1 / GetOriginalDeviceScaleFactor();
+    float reverse = 1 / GetOriginalScreenInfo().device_scale_factor;
     // TODO(oshima): We may need to allow pixel precision here as the the
     // anchor element can be placed at half pixel.
     gfx::Rect window_rect =
@@ -2178,10 +2191,10 @@ void RenderWidget::ConvertViewportToWindow(blink::WebRect* rect) {
 
 void RenderWidget::ConvertWindowToViewport(blink::WebFloatRect* rect) {
   if (IsUseZoomForDSFEnabled()) {
-    rect->x *= GetOriginalDeviceScaleFactor();
-    rect->y *= GetOriginalDeviceScaleFactor();
-    rect->width *= GetOriginalDeviceScaleFactor();
-    rect->height *= GetOriginalDeviceScaleFactor();
+    rect->x *= GetOriginalScreenInfo().device_scale_factor;
+    rect->y *= GetOriginalScreenInfo().device_scale_factor;
+    rect->width *= GetOriginalScreenInfo().device_scale_factor;
+    rect->height *= GetOriginalScreenInfo().device_scale_factor;
   }
 }
 
@@ -2372,12 +2385,14 @@ void RenderWidget::DidAutoResize(const gfx::Size& new_size) {
     }
 
     // TODO(ccameron): Note that this destroys any information differentiating
-    // |size_| from |physical_backing_size_|. Also note that the calculation of
-    // |new_physical_backing_size| does not appear to take into account device
-    // emulation.
-    gfx::Size new_physical_backing_size =
-        gfx::ScaleToCeiledSize(size_, GetWebDeviceScaleFactor());
-    UpdateSurfaceAndScreenInfo(viz::LocalSurfaceId(), new_physical_backing_size,
+    // |size_| from |compositor_viewport_pixel_size_|. Also note that the
+    // calculation of |new_compositor_viewport_pixel_size| does not appear to
+    // take into account device emulation.
+    ++auto_resize_sequence_number_;
+    gfx::Size new_compositor_viewport_pixel_size =
+        gfx::ScaleToCeiledSize(size_, GetWebScreenInfo().device_scale_factor);
+    UpdateSurfaceAndScreenInfo(viz::LocalSurfaceId(),
+                               new_compositor_viewport_pixel_size,
                                screen_info_);
 
     if (!resizing_mode_selector_->is_synchronous_mode()) {
@@ -2604,6 +2619,7 @@ void RenderWidget::UnregisterRenderFrame(RenderFrameImpl* frame) {
 
 void RenderWidget::RegisterBrowserPlugin(BrowserPlugin* browser_plugin) {
   browser_plugins_.AddObserver(browser_plugin);
+  browser_plugin->ScreenInfoChanged(GetOriginalScreenInfo());
 }
 
 void RenderWidget::UnregisterBrowserPlugin(BrowserPlugin* browser_plugin) {
@@ -2615,15 +2631,14 @@ void RenderWidget::OnWaitNextFrameForTests(int routing_id) {
                MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE);
 }
 
-float RenderWidget::GetWebDeviceScaleFactor() const {
-  return screen_info_.device_scale_factor;
+const ScreenInfo& RenderWidget::GetWebScreenInfo() const {
+  return screen_info_;
 }
 
-float RenderWidget::GetOriginalDeviceScaleFactor() const {
+const ScreenInfo& RenderWidget::GetOriginalScreenInfo() const {
   return screen_metrics_emulator_
              ? screen_metrics_emulator_->original_screen_info()
-                   .device_scale_factor
-             : screen_info_.device_scale_factor;
+             : screen_info_;
 }
 
 gfx::PointF RenderWidget::ConvertWindowPointToViewport(
@@ -2674,8 +2689,8 @@ void RenderWidget::DidNavigate() {
     return;
   compositor_->SetContentSourceId(++current_content_source_id_);
 
-  UpdateSurfaceAndScreenInfo(viz::LocalSurfaceId(), physical_backing_size_,
-                             screen_info_);
+  UpdateSurfaceAndScreenInfo(viz::LocalSurfaceId(),
+                             compositor_viewport_pixel_size_, screen_info_);
 
   // If surface synchronization is on, navigation implicitly acks any resize
   // that has happened so far so we can get the next ResizeParams containing the
@@ -2719,7 +2734,7 @@ void RenderWidget::DidResizeOrRepaintAck() {
   ViewHostMsg_ResizeOrRepaint_ACK_Params params;
   params.view_size = size_;
   params.flags = next_paint_flags_;
-  params.sequence_number = ++resize_or_repaint_ack_num_;
+  params.sequence_number = auto_resize_sequence_number_;
 
   Send(new ViewHostMsg_ResizeOrRepaint_ACK(routing_id_, params));
   next_paint_flags_ = 0;
@@ -2772,5 +2787,14 @@ PepperPluginInstanceImpl* RenderWidget::GetFocusedPepperPluginInsideWidget() {
   return nullptr;
 }
 #endif
+
+gfx::Rect RenderWidget::ViewportVisibleRect() {
+  return for_oopif_ ? compositor_visible_rect_
+                    : gfx::Rect(compositor_viewport_pixel_size_);
+}
+
+base::WeakPtr<RenderWidget> RenderWidget::AsWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
 
 }  // namespace content

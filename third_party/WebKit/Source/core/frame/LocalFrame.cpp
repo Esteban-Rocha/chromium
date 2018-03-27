@@ -48,6 +48,7 @@
 #include "core/editing/spellcheck/SpellChecker.h"
 #include "core/editing/suggestion/TextSuggestionController.h"
 #include "core/exported/WebPluginContainerImpl.h"
+#include "core/frame/AdTracker.h"
 #include "core/frame/ContentSettingsClient.h"
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameConsole.h"
@@ -56,7 +57,6 @@
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/PerformanceMonitor.h"
 #include "core/frame/Settings.h"
-#include "core/frame/WebLocalFrameImpl.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/PluginDocument.h"
@@ -80,8 +80,8 @@
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "core/probe/CoreProbes.h"
 #include "core/svg/SVGDocumentExtensions.h"
+#include "platform/FrameScheduler.h"
 #include "platform/Histogram.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/PaintCanvas.h"
@@ -96,9 +96,7 @@
 #include "platform/plugins/PluginData.h"
 #include "platform/plugins/PluginScriptForbiddenScope.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/text/TextStream.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "public/platform/InterfaceProvider.h"
 #include "public/platform/InterfaceRegistry.h"
@@ -143,6 +141,46 @@ bool ShouldUseClientLoFiForRequest(
 
   return true;
 }
+
+class EmptyFrameScheduler final : public FrameScheduler {
+ public:
+  EmptyFrameScheduler() { DCHECK(IsMainThread()); }
+
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
+      TaskType type) override {
+    return Platform::Current()->MainThread()->GetTaskRunner();
+  }
+
+  std::unique_ptr<ThrottlingObserverHandle> AddThrottlingObserver(
+      ObserverType,
+      Observer*) override {
+    return nullptr;
+  }
+  void SetFrameVisible(bool) override {}
+  bool IsFrameVisible() const override { return false; }
+  bool IsPageVisible() const override { return false; }
+  void SetPaused(bool) override {}
+  void SetCrossOrigin(bool) override {}
+  bool IsCrossOrigin() const override { return false; }
+  void TraceUrlChange(const String& override) {}
+  FrameScheduler::FrameType GetFrameType() const override {
+    return FrameScheduler::FrameType::kSubframe;
+  }
+  PageScheduler* GetPageScheduler() const override { return nullptr; }
+  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser(
+      WebScopedVirtualTimePauser::VirtualTaskDuration) {
+    return WebScopedVirtualTimePauser();
+  }
+  void DidStartProvisionalLoad(bool is_main_frame) override {}
+  void DidCommitProvisionalLoad(bool is_web_history_inert_commit,
+                                bool is_reload,
+                                bool is_main_frame) override {}
+  void OnFirstMeaningfulPaint() override {}
+  std::unique_ptr<ActiveConnectionHandle> OnActiveConnectionCreated() override {
+    return nullptr;
+  }
+  bool IsExemptFromBudgetBasedThrottling() const override { return false; }
+};
 
 }  // namespace
 
@@ -228,6 +266,7 @@ LocalFrame::~LocalFrame() {
 }
 
 void LocalFrame::Trace(blink::Visitor* visitor) {
+  visitor->Trace(ad_tracker_);
   visitor->Trace(probe_sink_);
   visitor->Trace(performance_monitor_);
   visitor->Trace(idleness_detector_);
@@ -248,6 +287,13 @@ void LocalFrame::Trace(blink::Visitor* visitor) {
   visitor->Trace(computed_node_mapping_);
   Frame::Trace(visitor);
   Supplementable<LocalFrame>::Trace(visitor);
+}
+
+bool LocalFrame::IsLocalRoot() const {
+  if (!Tree().Parent())
+    return true;
+
+  return Tree().Parent()->IsRemoteFrame();
 }
 
 void LocalFrame::Navigate(Document& origin_document,
@@ -284,8 +330,10 @@ void LocalFrame::Detach(FrameDetachType type) {
   // DCHECK(isAttached()) here.
   lifecycle_.AdvanceTo(FrameLifecycle::kDetaching);
 
-  if (IsLocalRoot())
+  if (IsLocalRoot()) {
     performance_monitor_->Shutdown();
+    ad_tracker_->Shutdown();
+  }
   idleness_detector_->Shutdown();
   if (inspector_trace_events_)
     probe_sink_->removeInspectorTraceEvents(inspector_trace_events_);
@@ -348,12 +396,11 @@ void LocalFrame::Detach(FrameDetachType type) {
     GetPage()->GetFocusController().SetFocusedFrame(nullptr);
 
   probe::frameDetachedFromParent(this);
-  Frame::Detach(type);
 
   supplements_.clear();
   frame_scheduler_.reset();
   WeakIdentifierMap<LocalFrame>::NotifyObjectDestroyed(this);
-  lifecycle_.AdvanceTo(FrameLifecycle::kDetached);
+  Frame::Detach(type);
 }
 
 bool LocalFrame::PrepareForCommit() {
@@ -451,21 +498,6 @@ void LocalFrame::SetPagePopupOwner(Element& owner) {
 
 LayoutView* LocalFrame::ContentLayoutObject() const {
   return GetDocument() ? GetDocument()->GetLayoutView() : nullptr;
-}
-
-void LocalFrame::IntrinsicSizingInfoChanged(
-    const IntrinsicSizingInfo& sizing_info) {
-  if (!Owner())
-    return;
-  // Notify the owner. For remote frame owners, notify via
-  // an IPC to the parent renderer; otherwise notify directly.
-  if (Owner()->IsRemote()) {
-    WebLocalFrameImpl::FromFrame(this)
-        ->FrameWidget()
-        ->IntrinsicSizingInfoChanged(sizing_info);
-  } else {
-    Owner()->IntrinsicSizingInfoChanged();
-  }
 }
 
 void LocalFrame::DidChangeVisibilityState() {
@@ -811,10 +843,13 @@ inline LocalFrame::LocalFrame(LocalFrameClient* client,
                               FrameOwner* owner,
                               InterfaceRegistry* interface_registry)
     : Frame(client, page, owner, LocalWindowProxyManager::Create(*this)),
-      frame_scheduler_(page.GetChromeClient().CreateFrameScheduler(
-          client->GetFrameBlameContext(),
-          IsMainFrame() ? WebFrameScheduler::FrameType::kMainFrame
-                        : WebFrameScheduler::FrameType::kSubframe)),
+      frame_scheduler_(page.GetPageScheduler()
+                           ? page.GetPageScheduler()->CreateFrameScheduler(
+                                 client->GetFrameBlameContext(),
+                                 IsMainFrame()
+                                     ? FrameScheduler::FrameType::kMainFrame
+                                     : FrameScheduler::FrameType::kSubframe)
+                           : std::make_unique<EmptyFrameScheduler>()),
       loader_(this),
       navigation_scheduler_(NavigationScheduler::Create(this)),
       script_controller_(ScriptController::Create(
@@ -836,6 +871,7 @@ inline LocalFrame::LocalFrame(LocalFrameClient* client,
       interface_registry_(interface_registry) {
   if (IsLocalRoot()) {
     probe_sink_ = new CoreProbeSink();
+    ad_tracker_ = new AdTracker(this);
     performance_monitor_ = new PerformanceMonitor(this);
     inspector_trace_events_ = new InspectorTraceEvents();
     probe_sink_->addInspectorTraceEvents(inspector_trace_events_);
@@ -845,13 +881,14 @@ inline LocalFrame::LocalFrame(LocalFrameClient* client,
     // it will be updated later.
     UpdateInertIfPossible();
     probe_sink_ = LocalFrameRoot().probe_sink_;
+    ad_tracker_ = LocalFrameRoot().ad_tracker_;
     performance_monitor_ = LocalFrameRoot().performance_monitor_;
   }
   idleness_detector_ = new IdlenessDetector(this);
   inspector_task_runner_->InitIsolate(V8PerIsolateData::MainThreadIsolate());
 }
 
-WebFrameScheduler* LocalFrame::FrameScheduler() {
+FrameScheduler* LocalFrame::GetFrameScheduler() {
   return frame_scheduler_.get();
 }
 
@@ -1252,6 +1289,19 @@ void LocalFrame::ForceSynchronousDocumentInstall(
   // message overlays (the other callers of this method).
   if (GetPage() && GetDocument()->IsSVGDocument())
     GetPage()->GetUseCounter().DidCommitLoad(this);
+}
+
+bool LocalFrame::IsProvisional() const {
+  // Calling this after the frame is marked as completely detached is a bug, as
+  // this state can no longer be accurately calculated.
+  CHECK_NE(FrameLifecycle::kDetached, lifecycle_.GetState());
+
+  if (IsMainFrame()) {
+    return GetPage()->MainFrame() != this;
+  }
+
+  DCHECK(Owner());
+  return Owner()->ContentFrame() != this;
 }
 
 bool LocalFrame::IsUsingDataSavingPreview() const {

@@ -353,6 +353,10 @@ const char kEnableSiteSettings[] = "enable-site-settings";
 // Enables user control over muting tab audio from the tab strip.
 const char kEnableTabAudioMuting[]  = "enable-tab-audio-muting";
 
+// Enables DevTools server for UI (mus, ash, etc). Value should be the port the
+// server is started on. Default port is 9223.
+const char kEnableUiDevTools[] = "enable-ui-devtools";
+
 // Name of the command line flag to force content verification to be on in one
 // of various modes.
 const char kExtensionContentVerification[] = "extension-content-verification";
@@ -371,9 +375,6 @@ const char kExtensionsInstallVerification[] = "extensions-install-verification";
 // be treated as not from the webstore when doing install verification.
 const char kExtensionsNotWebstore[] = "extensions-not-webstore";
 
-// Frequency in seconds for Extensions auto-update.
-const char kExtensionsUpdateFrequency[]     = "extensions-update-frequency";
-
 // If this flag is present then this command line is being delegated to an
 // already running chrome process via the fast path, ie: before chrome.dll is
 // loaded. It is useful to tell the difference for tracking purposes.
@@ -390,10 +391,6 @@ const char kForceAppMode[]                  = "force-app-mode";
 // Forces Desktop to iOS promotion to appear in windows whenever an entrypoint
 // is triggered.
 const char kForceDesktopIOSPromotion[] = "force-desktop-ios-promotion";
-
-// Forces Network Quality Estimator (NQE) to return a specific effective
-// connection type.
-const char kForceEffectiveConnectionType[] = "force-effective-connection-type";
 
 // Forces metrics reporting to be enabled.
 const char kForceEnableMetricsReporting[] = "force-enable-metrics-reporting";
@@ -804,6 +801,10 @@ const char kDisableLoginScreenApps[] = "disable-login-screen-apps";
 // NOTE: Used by the Chrome OS crash_reporter to identify mash processes. If you
 // change or remove the flag please update platform2/crash_reporter.
 const char kMashServiceName[] = "mash-service-name";
+
+// Disables extra Ash-specific rules for positioning new browser windows.
+const char kSkipExtraAshWindowPositioning[] =
+    "skip-extra-ash-window-positioning";
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
@@ -921,6 +922,10 @@ const char kHideIcons[]                     = "hide-icons";
 // This flag is only relevant for Windows currently.
 const char kNoNetworkProfileWarning[]       = "no-network-profile-warning";
 
+// Used in combination with kNotificationLaunchId to specify the inline reply
+// entered in the toast in the Windows Action Center.
+const char kNotificationInlineReply[] = "notification-inline-reply";
+
 // Used for launching Chrome when a toast displayed in the Windows Action Center
 // has been activated. Should contain the launch ID encoded by Chrome.
 const char kNotificationLaunchId[] = "notification-launch-id";
@@ -941,10 +946,6 @@ const char kUninstall[]                     = "uninstall";
 
 // Causes the process to run as a watcher process.
 const char kWatcherProcess[]                = "watcher";
-
-// Enables custom-drawing the titlebar and tabstrip background so that it's not
-// a garish #FFFFFF like it is by default on Windows 10.
-const char kWindows10CustomTitlebar[]       = "windows10-custom-titlebar";
 #endif  // defined(OS_WIN)
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)

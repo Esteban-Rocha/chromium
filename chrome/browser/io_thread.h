@@ -29,9 +29,8 @@
 #include "components/ssl_config/ssl_config_service_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/browser_thread_delegate.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/base/network_change_notifier.h"
-#include "net/nqe/network_quality_estimator.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/url_request_context_owner.h"
 
@@ -131,7 +130,14 @@ class IOThread : public content::BrowserThreadDelegate {
     std::vector<scoped_refptr<const net::CTLogVerifier>> ct_logs;
     std::unique_ptr<net::HttpAuthPreferences> http_auth_preferences;
 
-    std::unique_ptr<net::NetworkQualityEstimator> network_quality_estimator;
+    // NetworkQualityEstimator only for use in dummy in-process
+    // URLRequestContext when network service is enabled.
+    // TODO(mmenke): Remove this, once all consumers only access the
+    // NetworkQualityEstimator through network service APIs. Then will no longer
+    // need to create an in-process one.
+    std::unique_ptr<net::NetworkQualityEstimator>
+        deprecated_network_quality_estimator;
+
     std::unique_ptr<net::RTTAndThroughputEstimatesObserver>
         network_quality_observer;
 
@@ -164,11 +170,6 @@ class IOThread : public content::BrowserThreadDelegate {
 
   // Can only be called on the IO thread.
   Globals* globals();
-
-  // Allows overriding Globals in tests where IOThread::Init() and
-  // IOThread::CleanUp() are not called.  This allows for injecting mocks into
-  // IOThread global objects.
-  void SetGlobalsForTesting(Globals* globals);
 
   net_log::ChromeNetLog* net_log();
 

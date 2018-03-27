@@ -926,6 +926,10 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
     abort_when_bfc_resolved_ |= !layout_result->UnpositionedFloats().IsEmpty();
     if (child_space->FloatsBfcOffset())
       DCHECK(layout_result->UnpositionedFloats().IsEmpty());
+    // If our BFC offset is unknown, and the child got pushed down by floats, so
+    // will we.
+    if (layout_result->IsPushedByFloats())
+      container_builder_.SetIsPushedByFloats();
   }
 
   // A child may have aborted its layout if it resolved its BFC offset. If
@@ -955,12 +959,6 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
         std::make_unique<NGExclusionSpace>(*layout_result->ExclusionSpace());
   }
 
-  // A line-box may have a list of floats which we add as children.
-  if (child.IsInline() &&
-      (container_builder_.BfcOffset() || ConstraintSpace().FloatsBfcOffset())) {
-    AddPositionedFloats(layout_result->PositionedFloats());
-  }
-
   // We have special behaviour for an empty block which gets pushed down due to
   // clearance, see comment inside ComputeInflowPosition.
   bool empty_block_affected_by_clearance = false;
@@ -973,12 +971,18 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
     if (!PositionWithBfcOffset(layout_result->BfcOffset().value(),
                                &child_bfc_offset))
       return false;
-  } else if (container_builder_.BfcOffset()) {
-    child_bfc_offset =
-        PositionWithParentBfc(child, *child_space, child_data, *layout_result,
-                              &empty_block_affected_by_clearance);
-  } else
+  } else {
+    // Layout wasn't able to determine the BFC offset of the child. This has to
+    // mean that the child is empty (block-size-wise).
     DCHECK(is_empty_block);
+    if (container_builder_.BfcOffset()) {
+      // Since we know our own BFC offset, though, we can calculate that of the
+      // child as well.
+      child_bfc_offset = PositionEmptyChildWithParentBfc(
+          child, *child_space, child_data, *layout_result,
+          &empty_block_affected_by_clearance);
+    }
+  }
 
   // We need to re-layout a child if it was affected by clearance in order to
   // produce a new margin strut. For example:
@@ -1028,6 +1032,12 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
     DCHECK(layout_result->ExclusionSpace());
     exclusion_space_ =
         std::make_unique<NGExclusionSpace>(*layout_result->ExclusionSpace());
+  }
+
+  // A line-box may have a list of floats which we add as children.
+  if (child.IsInline() &&
+      (container_builder_.BfcOffset() || ConstraintSpace().FloatsBfcOffset())) {
+    AddPositionedFloats(layout_result->PositionedFloats());
   }
 
   // We must have an actual fragment at this stage.
@@ -1194,12 +1204,12 @@ bool NGBlockLayoutAlgorithm::PositionWithBfcOffset(
   return true;
 }
 
-NGBfcOffset NGBlockLayoutAlgorithm::PositionWithParentBfc(
+NGBfcOffset NGBlockLayoutAlgorithm::PositionEmptyChildWithParentBfc(
     const NGLayoutInputNode& child,
-    const NGConstraintSpace& space,
+    const NGConstraintSpace& child_space,
     const NGInflowChildData& child_data,
     const NGLayoutResult& layout_result,
-    bool* empty_block_affected_by_clearance) {
+    bool* has_clearance) const {
   DCHECK(IsEmptyBlock(child, layout_result));
 
   // The child must be an in-flow zero-block-size fragment, use its end margin
@@ -1217,8 +1227,8 @@ NGBfcOffset NGBlockLayoutAlgorithm::PositionWithParentBfc(
                                child_available_size_.inline_size);
   }
 
-  *empty_block_affected_by_clearance =
-      AdjustToClearance(space.ClearanceOffset(), &child_bfc_offset);
+  *has_clearance =
+      AdjustToClearance(child_space.ClearanceOffset(), &child_bfc_offset);
 
   return child_bfc_offset;
 }
@@ -1407,10 +1417,14 @@ bool NGBlockLayoutAlgorithm::BreakBeforeChild(
     }
   }
 
-  if (!has_processed_first_child_ && !is_pushed_by_floats) {
+  if (!has_processed_first_child_ &&
+      (container_builder_.IsPushedByFloats() || !is_pushed_by_floats)) {
     // We're breaking before the first piece of in-flow content inside this
     // block, even if it's not a valid class C break point [1] in this case. We
-    // really don't want to break here, if we can find something better.
+    // really don't want to break here, if we can find something better. A class
+    // C break point occurs if a first child has been pushed by floats, but this
+    // only applies to the outermost block that gets pushed (in case this parent
+    // and the child have adjoining top margins).
     //
     // [1] https://www.w3.org/TR/css-break-3/#possible-breaks
     container_builder_.SetHasLastResortBreak();
@@ -1602,16 +1616,23 @@ NGBlockLayoutAlgorithm::CreateConstraintSpaceForChild(
   }
 
   WritingMode writing_mode;
+  Optional<LayoutUnit> clearance_offset;
+  if (!constraint_space_.IsNewFormattingContext())
+    clearance_offset = ConstraintSpace().ClearanceOffset();
   if (child.IsInline()) {
-    space_builder.SetClearanceOffset(ConstraintSpace().ClearanceOffset());
     writing_mode = Style().GetWritingMode();
   } else {
     const ComputedStyle& child_style = child.Style();
-    space_builder
-        .SetClearanceOffset(
-            exclusion_space_->ClearanceOffset(child_style.Clear()))
-        .SetIsShrinkToFit(ShouldShrinkToFit(Style(), child_style))
-        .SetTextDirection(child_style.Direction());
+    LayoutUnit child_clearance_offset =
+        exclusion_space_->ClearanceOffset(child_style.Clear());
+    if (clearance_offset) {
+      clearance_offset =
+          std::max(clearance_offset.value(), child_clearance_offset);
+    } else {
+      clearance_offset = child_clearance_offset;
+    }
+    space_builder.SetIsShrinkToFit(ShouldShrinkToFit(Style(), child_style));
+    space_builder.SetTextDirection(child_style.Direction());
     writing_mode = child_style.GetWritingMode();
 
     // PositionListMarker() requires a first line baseline.
@@ -1623,6 +1644,7 @@ NGBlockLayoutAlgorithm::CreateConstraintSpaceForChild(
                : kIdeographicBaseline});
     }
   }
+  space_builder.SetClearanceOffset(clearance_offset);
 
   LayoutUnit space_available;
   if (ConstraintSpace().HasBlockFragmentation()) {

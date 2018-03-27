@@ -30,12 +30,12 @@ import android.widget.TextView;
 import android.widget.TextView.OnEditorActionListener;
 
 import org.chromium.base.ApiCompatibilityUtils;
-import org.chromium.base.ObserverList;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.toolbar.ActionModeController;
 import org.chromium.chrome.browser.toolbar.ToolbarActionModeCallback;
 import org.chromium.chrome.browser.util.FeatureUtilities;
+import org.chromium.chrome.browser.vr_shell.VrShellDelegate;
 import org.chromium.chrome.browser.widget.NumberRollView;
 import org.chromium.chrome.browser.widget.TintedDrawable;
 import org.chromium.chrome.browser.widget.TintedImageButton;
@@ -56,9 +56,9 @@ import javax.annotation.Nullable;
  *
  * @param <E> The type of the selectable items this toolbar interacts with.
  */
-public class SelectableListToolbar<E> extends Toolbar implements SelectionObserver<E>,
-        OnClickListener, OnEditorActionListener, DisplayStyleObserver {
-
+public class SelectableListToolbar<E>
+        extends Toolbar implements SelectionObserver<E>, OnClickListener, OnEditorActionListener,
+                                   DisplayStyleObserver, VrShellDelegate.VrModeObserver {
     /**
      * A delegate that handles searching the list of selectable items associated with this toolbar.
      */
@@ -75,23 +75,6 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
         void onEndSearch();
     }
 
-    /**
-     * An interface to observe events on this toolbar.
-     */
-    public interface SelectableListToolbarObserver {
-        /**
-         * A notification that the theme color of the toolbar has changed.
-         * @param isLightTheme Whether or not the toolbar is using a light theme. When this
-         *                     parameter is true, it indicates that dark drawables should be used.
-         */
-        void onThemeColorChanged(boolean isLightTheme);
-
-        /**
-         * A notification that search mode has been activated for this toolbar.
-         */
-        void onStartSearch();
-    }
-
     /** No navigation button is displayed. **/
     public static final int NAVIGATION_BUTTON_NONE = 0;
     /** Button to open the DrawerLayout. Only valid if mDrawerLayout is set. **/
@@ -100,9 +83,6 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
     public static final int NAVIGATION_BUTTON_BACK = 2;
     /** Button to clear the selection. **/
     public static final int NAVIGATION_BUTTON_SELECTION_BACK = 3;
-
-    /** An observer list for this toolbar. */
-    private final ObserverList<SelectableListToolbarObserver> mObservers = new ObserverList<>();
 
     protected boolean mIsSelectionEnabled;
     protected SelectionDelegate<E> mSelectionDelegate;
@@ -114,8 +94,8 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
     private EditText mSearchEditText;
     private TintedImageButton mClearTextButton;
     private SearchDelegate mSearchDelegate;
-    private boolean mIsLightTheme = true;
     private boolean mSelectableListHasItems;
+    private boolean mIsVrEnabled = false;
 
     protected NumberRollView mNumberRollView;
     private DrawerLayout mDrawerLayout;
@@ -156,8 +136,8 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
     void destroy() {
         mIsDestroyed = true;
         if (mSelectionDelegate != null) mSelectionDelegate.removeObserver(this);
-        mObservers.clear();
         UiUtils.hideKeyboard(mSearchEditText);
+        VrShellDelegate.unregisterVrModeObserver(this);
     }
 
     /**
@@ -222,6 +202,20 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
         }
     }
 
+    @Override
+    public void onEnterVr() {
+        // TODO(https://crbug.com/817177): Editing text is not supported in VR, so we disable
+        // searching.
+        mIsVrEnabled = true;
+        if (mHasSearchView) updateSearchMenuItem();
+    }
+
+    @Override
+    public void onExitVr() {
+        mIsVrEnabled = false;
+        if (mHasSearchView) updateSearchMenuItem();
+    }
+
     /**
      * Inflates and initializes the search view.
      * @param searchDelegate The delegate that will handle performing searches.
@@ -274,6 +268,9 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
                     getResources().getDimensionPixelSize(R.dimen.clear_text_button_end_padding),
                     mClearTextButton.getPaddingBottom());
         }
+
+        VrShellDelegate.registerVrModeObserver(this);
+        if (VrShellDelegate.isInVr()) onEnterVr();
     }
 
     @Override
@@ -410,7 +407,6 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
         mSelectionDelegate.clearSelection();
 
         showSearchViewInternal();
-        for (SelectableListToolbarObserver o : mObservers) o.onStartSearch();
 
         mSearchEditText.requestFocus();
         UiUtils.showKeyboard(mSearchEditText);
@@ -450,9 +446,7 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
     protected void onDataChanged(int numItems) {
         if (mHasSearchView) {
             mSelectableListHasItems = numItems != 0;
-            getMenu()
-                    .findItem(mSearchMenuItemId)
-                    .setVisible(!mIsSelectionEnabled && !mIsSearching && mSelectableListHasItems);
+            updateSearchMenuItem();
         }
     }
 
@@ -545,20 +539,6 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
     }
 
     /**
-     * @return Whether or not the toolbar is currently using a light theme.
-     */
-    public boolean isLightTheme() {
-        return mIsLightTheme;
-    }
-
-    /**
-     * @param observer The observer to add to this toolbar.
-     */
-    public void addObserver(SelectableListToolbarObserver observer) {
-        mObservers.addObserver(observer);
-    }
-
-    /**
      * Set up ActionBarDrawerToggle, a.k.a. hamburger button.
      */
     private void initActionBarDrawerToggle() {
@@ -577,7 +557,7 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
         getMenu().setGroupVisible(mSelectedGroupResId, false);
         if (mHasSearchView) {
             mSearchView.setVisibility(View.GONE);
-            getMenu().findItem(mSearchMenuItemId).setVisible(mSelectableListHasItems);
+            updateSearchMenuItem();
         }
 
         setNavigationButton(NAVIGATION_BUTTON_MENU);
@@ -588,7 +568,6 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
         mNumberRollView.setVisibility(View.GONE);
         mNumberRollView.setNumber(0, false);
 
-        onThemeChanged(true);
         updateDisplayStyleIfNecessary();
     }
 
@@ -605,7 +584,6 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
 
         if (mIsSearching) UiUtils.hideKeyboard(mSearchEditText);
 
-        onThemeChanged(false);
         updateDisplayStyleIfNecessary();
     }
 
@@ -622,8 +600,16 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
             setBackgroundColor(mSearchBackgroundColor);
         }
 
-        onThemeChanged(true);
         updateDisplayStyleIfNecessary();
+    }
+
+    private void updateSearchMenuItem() {
+        if (!mHasSearchView) return;
+        MenuItem searchMenuItem = getMenu().findItem(mSearchMenuItemId);
+        if (searchMenuItem != null) {
+            searchMenuItem.setVisible(mSelectableListHasItems && !mIsSelectionEnabled
+                    && !mIsSearching && !mIsVrEnabled);
+        }
     }
 
     protected void switchToNumberRollView(List<E> selectedItems, boolean wasSelectionEnabled) {
@@ -631,15 +617,6 @@ public class SelectableListToolbar<E> extends Toolbar implements SelectionObserv
         mNumberRollView.setVisibility(View.VISIBLE);
         if (!wasSelectionEnabled) mNumberRollView.setNumber(0, false);
         mNumberRollView.setNumber(selectedItems.size(), true);
-    }
-
-    /**
-     * Update internal state and notify observers that the theme color changed.
-     * @param isLightTheme Whether or not the theme color is light.
-     */
-    private void onThemeChanged(boolean isLightTheme) {
-        mIsLightTheme = isLightTheme;
-        for (SelectableListToolbarObserver o : mObservers) o.onThemeColorChanged(isLightTheme);
     }
 
     private void updateDisplayStyleIfNecessary() {

@@ -88,6 +88,7 @@
 #include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/ThreadableLoader.h"
+#include "core/loader/ThreadableLoadingContext.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/ScopedPagePauser.h"
@@ -113,14 +114,13 @@
 #include "platform/scroll/ScrollbarTestSuite.h"
 #include "platform/testing/HistogramTester.h"
 #include "platform/testing/PaintTestConfigurations.h"
-#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "platform/weborigin/KURLHash.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Forward.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/dtoa/utils.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCache.h"
@@ -2149,7 +2149,7 @@ TEST_P(ParameterizedWebFrameTest,
   web_view_helper.GetWebView()->GetSettings()->SetForceZeroLayoutHeight(true);
   web_view_helper.Resize(WebSize(viewport_width, viewport_height));
 
-  IntPoint hit_point = IntPoint(30, 30);  // button size is 100x100
+  FloatPoint hit_point = FloatPoint(30, 30);  // button size is 100x100
 
   WebLocalFrameImpl* frame = web_view_helper.LocalMainFrame();
   Document* document = frame->GetFrame()->GetDocument();
@@ -2160,11 +2160,11 @@ TEST_P(ParameterizedWebFrameTest,
 
   WebGestureEvent gesture_event(WebInputEvent::kGestureTap,
                                 WebInputEvent::kNoModifiers,
-                                WebInputEvent::GetStaticTimeStampForTests());
+                                WebInputEvent::GetStaticTimeStampForTests(),
+                                kWebGestureDeviceTouchscreen);
   gesture_event.SetFrameScale(1);
-  gesture_event.x = gesture_event.global_x = hit_point.X();
-  gesture_event.y = gesture_event.global_y = hit_point.Y();
-  gesture_event.source_device = kWebGestureDeviceTouchscreen;
+  gesture_event.SetPositionInWidget(hit_point);
+  gesture_event.SetPositionInScreen(hit_point);
   web_view_helper.GetWebView()
       ->MainFrameImpl()
       ->GetFrame()
@@ -6283,35 +6283,35 @@ class CompositedSelectionBoundsTest
                                                .As<v8::Int32>()
                                                ->Value();
 
-    IntPoint hit_point;
+    FloatPoint hit_point;
 
     if (expected_result.Length() >= 17) {
-      hit_point = IntPoint(expected_result.Get(context, 15)
-                               .ToLocalChecked()
-                               .As<v8::Int32>()
-                               ->Value(),
-                           expected_result.Get(context, 16)
-                               .ToLocalChecked()
-                               .As<v8::Int32>()
-                               ->Value());
+      hit_point = FloatPoint(expected_result.Get(context, 15)
+                                 .ToLocalChecked()
+                                 .As<v8::Int32>()
+                                 ->Value(),
+                             expected_result.Get(context, 16)
+                                 .ToLocalChecked()
+                                 .As<v8::Int32>()
+                                 ->Value());
     } else {
       hit_point =
-          IntPoint((start_edge_top_in_layer_x + start_edge_bottom_in_layer_x +
-                    end_edge_top_in_layer_x + end_edge_bottom_in_layer_x) /
-                       4,
-                   (start_edge_top_in_layer_y + start_edge_bottom_in_layer_y +
-                    end_edge_top_in_layer_y + end_edge_bottom_in_layer_y) /
-                           4 +
-                       3);
+          FloatPoint((start_edge_top_in_layer_x + start_edge_bottom_in_layer_x +
+                      end_edge_top_in_layer_x + end_edge_bottom_in_layer_x) /
+                         4,
+                     (start_edge_top_in_layer_y + start_edge_bottom_in_layer_y +
+                      end_edge_top_in_layer_y + end_edge_bottom_in_layer_y) /
+                             4 +
+                         3);
     }
 
     WebGestureEvent gesture_event(WebInputEvent::kGestureTap,
                                   WebInputEvent::kNoModifiers,
-                                  WebInputEvent::GetStaticTimeStampForTests());
+                                  WebInputEvent::GetStaticTimeStampForTests(),
+                                  kWebGestureDeviceTouchscreen);
     gesture_event.SetFrameScale(1);
-    gesture_event.x = gesture_event.global_x = hit_point.X();
-    gesture_event.y = gesture_event.global_y = hit_point.Y();
-    gesture_event.source_device = kWebGestureDeviceTouchscreen;
+    gesture_event.SetPositionInWidget(hit_point);
+    gesture_event.SetPositionInScreen(hit_point);
 
     web_view_helper_.GetWebView()
         ->MainFrameImpl()
@@ -6333,11 +6333,7 @@ class CompositedSelectionBoundsTest
     blink::Node* layer_owner_node_for_start = V8Node::ToImplWithTypeCheck(
         v8::Isolate::GetCurrent(), expected_result.Get(0));
     ASSERT_TRUE(layer_owner_node_for_start);
-    EXPECT_EQ(layer_owner_node_for_start->GetLayoutObject()
-                  ->EnclosingLayer()
-                  ->EnclosingLayerForPaintInvalidation()
-                  ->GetCompositedLayerMapping()
-                  ->MainGraphicsLayer()
+    EXPECT_EQ(GetExpectedLayerForSelection(layer_owner_node_for_start)
                   ->PlatformLayer()
                   ->Id(),
               select_start->layer_id);
@@ -6352,11 +6348,7 @@ class CompositedSelectionBoundsTest
         expected_result.Get(context, 5).ToLocalChecked());
 
     ASSERT_TRUE(layer_owner_node_for_end);
-    EXPECT_EQ(layer_owner_node_for_end->GetLayoutObject()
-                  ->EnclosingLayer()
-                  ->EnclosingLayerForPaintInvalidation()
-                  ->GetCompositedLayerMapping()
-                  ->MainGraphicsLayer()
+    EXPECT_EQ(GetExpectedLayerForSelection(layer_owner_node_for_end)
                   ->PlatformLayer()
                   ->Id(),
               select_end->layer_id);
@@ -6406,6 +6398,18 @@ class CompositedSelectionBoundsTest
     va_end(aux_files);
 
     RunTest(test_file);
+  }
+
+  GraphicsLayer* GetExpectedLayerForSelection(blink::Node* node) const {
+    CompositedLayerMapping* clm = node->GetLayoutObject()
+                                      ->EnclosingLayer()
+                                      ->EnclosingLayerForPaintInvalidation()
+                                      ->GetCompositedLayerMapping();
+
+    // If the Node is a scroller, the selection will be relative to its
+    // scrolling contents layer.
+    return clm->ScrollingContentsLayer() ? clm->ScrollingContentsLayer()
+                                         : clm->MainGraphicsLayer();
   }
 
   CompositedSelectionBoundsTestWebViewClient fake_selection_web_view_client_;
@@ -6484,10 +6488,9 @@ class DisambiguationPopupTestWebViewClient
 
 static WebCoalescedInputEvent FatTap(int x, int y, int diameter) {
   WebGestureEvent event(WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = x;
-  event.y = y;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(x, y));
   event.data.tap.width = diameter;
   event.data.tap.height = diameter;
   return WebCoalescedInputEvent(event);
@@ -10072,10 +10075,9 @@ TEST_P(ParameterizedWebFrameTest, FrameWidgetTest) {
   helper.GetWebView()->Resize(WebSize(1000, 1000));
 
   WebGestureEvent event(WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
-                        WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = kWebGestureDeviceTouchscreen;
-  event.x = 20;
-  event.y = 20;
+                        WebInputEvent::GetStaticTimeStampForTests(),
+                        kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(WebFloatPoint(20, 20));
   child_frame->FrameWidget()->HandleInputEvent(WebCoalescedInputEvent(event));
   EXPECT_TRUE(child_widget_client.DidHandleGestureEvent());
 
@@ -10123,14 +10125,16 @@ TEST_P(ParameterizedWebFrameTest, LoaderOriginAccess) {
   request.SetFetchRequestMode(network::mojom::FetchRequestMode::kCORS);
   ResourceLoaderOptions resource_loader_options;
   DocumentThreadableLoader::LoadResourceSynchronously(
-      *frame->GetDocument(), request, client, options, resource_loader_options);
+      *ThreadableLoadingContext::Create(*frame->GetDocument()), request, client,
+      options, resource_loader_options);
   EXPECT_TRUE(client.Failed());
 
   client.Reset();
   // Try to load the request with cross origin access. Should succeed.
   request.SetFetchRequestMode(network::mojom::FetchRequestMode::kNoCORS);
   DocumentThreadableLoader::LoadResourceSynchronously(
-      *frame->GetDocument(), request, client, options, resource_loader_options);
+      *ThreadableLoadingContext::Create(*frame->GetDocument()), request, client,
+      options, resource_loader_options);
   EXPECT_FALSE(client.Failed());
 }
 
@@ -10465,12 +10469,11 @@ class WebFrameOverscrollTest
                                        float delta_x = 0.0,
                                        float delta_y = 0.0) {
     WebGestureEvent event(type, WebInputEvent::kNoModifiers,
-                          WebInputEvent::GetStaticTimeStampForTests());
+                          WebInputEvent::GetStaticTimeStampForTests(),
+                          GetParam().second);
     // TODO(wjmaclean): Make sure that touchpad device is only ever used for
     // gesture scrolling event types.
-    event.source_device = GetParam().second;
-    event.x = 100;
-    event.y = 100;
+    event.SetPositionInWidget(WebFloatPoint(100, 100));
     if (type == WebInputEvent::kGestureScrollUpdate) {
       event.data.scroll_update.delta_x = delta_x;
       event.data.scroll_update.delta_y = delta_y;
@@ -11553,18 +11556,15 @@ TEST_P(ParameterizedWebFrameTest, ScrollBeforeLayoutDoesntCrash) {
   Document* document = web_view->MainFrameImpl()->GetFrame()->GetDocument();
   document->documentElement()->SetLayoutObject(nullptr);
 
-  WebGestureEvent begin_event(WebInputEvent::kGestureScrollBegin,
-                              WebInputEvent::kNoModifiers,
-                              WebInputEvent::GetStaticTimeStampForTests());
-  begin_event.source_device = kWebGestureDeviceTouchpad;
-  WebGestureEvent update_event(WebInputEvent::kGestureScrollUpdate,
-                               WebInputEvent::kNoModifiers,
-                               WebInputEvent::GetStaticTimeStampForTests());
-  update_event.source_device = kWebGestureDeviceTouchpad;
-  WebGestureEvent end_event(WebInputEvent::kGestureScrollEnd,
-                            WebInputEvent::kNoModifiers,
-                            WebInputEvent::GetStaticTimeStampForTests());
-  end_event.source_device = kWebGestureDeviceTouchpad;
+  WebGestureEvent begin_event(
+      WebInputEvent::kGestureScrollBegin, WebInputEvent::kNoModifiers,
+      WebInputEvent::GetStaticTimeStampForTests(), kWebGestureDeviceTouchpad);
+  WebGestureEvent update_event(
+      WebInputEvent::kGestureScrollUpdate, WebInputEvent::kNoModifiers,
+      WebInputEvent::GetStaticTimeStampForTests(), kWebGestureDeviceTouchpad);
+  WebGestureEvent end_event(
+      WebInputEvent::kGestureScrollEnd, WebInputEvent::kNoModifiers,
+      WebInputEvent::GetStaticTimeStampForTests(), kWebGestureDeviceTouchpad);
 
   // Try GestureScrollEnd and GestureScrollUpdate first to make sure that not
   // seeing a Begin first doesn't break anything. (This currently happens).
@@ -11896,6 +11896,35 @@ TEST_P(WebFrameSimTest, DisplayNoneIFrameHasNoLayoutObjects) {
   EXPECT_FALSE(iframe_doc->documentElement()->GetLayoutObject());
 }
 
+// Although it is not spec compliant, many websites intentionally call
+// Window.print() on display:none iframes. https://crbug.com/819327.
+TEST_P(WebFrameSimTest, DisplayNoneIFramePrints) {
+  SimRequest main_resource("https://example.com/test.html", "text/html");
+  SimRequest frame_resource("https://example.com/frame.html", "text/html");
+
+  LoadURL("https://example.com/test.html");
+  main_resource.Complete(
+      "<!DOCTYPE html>"
+      "<iframe src=frame.html style='display: none'></iframe>");
+  frame_resource.Complete(
+      "<!DOCTYPE html>"
+      "<html><body>This is a visible iframe.</body></html>");
+
+  Element* element = GetDocument().QuerySelector("iframe");
+  HTMLFrameOwnerElement* frame_owner_element = ToHTMLFrameOwnerElement(element);
+  Document* iframe_doc = frame_owner_element->contentDocument();
+  EXPECT_FALSE(iframe_doc->documentElement()->GetLayoutObject());
+
+  FloatSize page_size(400, 400);
+  float maximum_shrink_ratio = 1.0;
+  iframe_doc->GetFrame()->StartPrinting(page_size, page_size,
+                                        maximum_shrink_ratio);
+  EXPECT_TRUE(iframe_doc->documentElement()->GetLayoutObject());
+
+  iframe_doc->GetFrame()->EndPrinting();
+  EXPECT_FALSE(iframe_doc->documentElement()->GetLayoutObject());
+}
+
 TEST_P(WebFrameSimTest, NormalIFrameHasLayoutObjects) {
   SimRequest main_resource("https://example.com/test.html", "text/html");
   SimRequest frame_resource("https://example.com/frame.html", "text/html");
@@ -11972,6 +12001,39 @@ TEST_P(WebFrameSimTest, RtlInitialScrollOffsetWithViewport) {
   Compositor().BeginFrame();
   ScrollableArea* area = GetDocument().View()->LayoutViewportScrollableArea();
   ASSERT_EQ(ScrollOffset(0, 0), area->GetScrollOffset());
+}
+
+TEST_P(WebFrameSimTest, LayoutViewportExceedsLayoutOverflow) {
+  // This test fails without RLS (but doesn't cause visible paint clipping due
+  // to differences in composited layer geometry logic).
+  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled())
+    return;
+
+  WebView().GetSettings()->SetViewportEnabled(true);
+  WebView().GetSettings()->SetViewportMetaEnabled(true);
+
+  WebView().ResizeWithBrowserControls(WebSize(400, 540), 60, 0, true);
+  WebView().SetDefaultPageScaleLimits(0.25f, 2);
+
+  SimRequest main_resource("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  main_resource.Complete(R"HTML(
+    <meta name='viewport' content='width=device-width, minimum-scale=1'>
+    <body style='margin: 0; height: 95vh'>
+  )HTML");
+
+  Compositor().BeginFrame();
+  ScrollableArea* area = GetDocument().View()->LayoutViewportScrollableArea();
+  ASSERT_EQ(540, area->VisibleHeight());
+  ASSERT_EQ(IntSize(400, 570), area->ContentsSize());
+
+  // Hide browser controls, growing layout viewport without affecting ICB.
+  WebView().ResizeWithBrowserControls(WebSize(400, 600), 60, 0, false);
+  Compositor().BeginFrame();
+
+  // ContentsSize() should grow to accomodate new visible size.
+  ASSERT_EQ(600, area->VisibleHeight());
+  ASSERT_EQ(IntSize(400, 600), area->ContentsSize());
 }
 
 TEST_P(WebFrameSimTest, NamedLookupIgnoresEmptyNames) {
@@ -12130,7 +12192,8 @@ TEST_P(ParameterizedWebFrameTest, ShowVirtualKeyboardOnElementFocus) {
 
   // Simulate an input element focus leading to Element::focus() call with a
   // user gesture.
-  local_frame->SetHasReceivedUserGesture();
+  Frame::NotifyUserActivation(local_frame->GetFrame(),
+                              UserGestureToken::kNewGesture);
   local_frame->ExecuteScript(
       WebScriptSource("window.focus();"
                       "document.querySelector('input').focus();"));
@@ -12522,7 +12585,7 @@ class SlimmingPaintWebFrameTest : public PaintTestConfigurations,
 
   WebLocalFrame* LocalMainFrame() { return web_view_helper_->LocalMainFrame(); }
 
-  LocalFrameView* LocalFrameView() {
+  LocalFrameView* GetLocalFrameView() {
     return web_view_helper_->LocalMainFrame()->GetFrameView();
   }
 
@@ -12554,7 +12617,7 @@ class SlimmingPaintWebFrameTest : public PaintTestConfigurations,
 
  private:
   PaintArtifactCompositor* paint_artifact_compositor() {
-    return LocalFrameView()->GetPaintArtifactCompositorForTesting();
+    return GetLocalFrameView()->GetPaintArtifactCompositorForTesting();
   }
   FrameTestHelpers::TestWebViewClient web_view_client_;
   std::unique_ptr<FrameTestHelpers::WebViewHelper> web_view_helper_;
@@ -12638,7 +12701,7 @@ TEST_P(SlimmingPaintWebFrameTest, FrameViewScroll) {
 
   WebView()->UpdateAllLifecyclePhases();
 
-  auto* scrollable_area = LocalFrameView()->LayoutViewportScrollableArea();
+  auto* scrollable_area = GetLocalFrameView()->LayoutViewportScrollableArea();
   EXPECT_NE(nullptr, scrollable_area);
 
   EXPECT_EQ(ScrollHitTestLayerCount(), 1u);

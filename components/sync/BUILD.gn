@@ -824,6 +824,7 @@ source_set("unit_tests") {
     "driver/model_type_controller_unittest.cc",
     "driver/shared_change_processor_unittest.cc",
     "driver/startup_controller_unittest.cc",
+    "driver/sync_service_utils_unittest.cc",
     "driver/sync_stopped_reporter_unittest.cc",
     "driver/sync_util_unittest.cc",
     "engine/cycle/sync_cycle_snapshot_unittest.cc",
@@ -1062,6 +1063,7 @@ if (is_android) {
     deps = [
       ":test_support_proto_java_prepare",
     ]
+    generate_lite = true
   }
 
   android_library("sync_java_test_support") {

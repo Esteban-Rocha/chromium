@@ -26,12 +26,13 @@
 #include "platform/scheduler/renderer/idle_time_estimator.h"
 #include "platform/scheduler/renderer/main_thread_scheduler_helper.h"
 #include "platform/scheduler/renderer/main_thread_task_queue.h"
+#include "platform/scheduler/renderer/page_scheduler_impl.h"
 #include "platform/scheduler/renderer/queueing_time_estimator.h"
 #include "platform/scheduler/renderer/render_widget_signals.h"
 #include "platform/scheduler/renderer/renderer_metrics_helper.h"
 #include "platform/scheduler/renderer/task_cost_estimator.h"
+#include "platform/scheduler/renderer/use_case.h"
 #include "platform/scheduler/renderer/user_model.h"
-#include "platform/scheduler/renderer/web_view_scheduler_impl.h"
 #include "platform/scheduler/util/tracing_helper.h"
 #include "public/platform/scheduler/renderer/renderer_scheduler.h"
 
@@ -39,7 +40,7 @@ namespace base {
 namespace trace_event {
 class ConvertableToTraceFormat;
 }
-}
+}  // namespace base
 
 namespace blink {
 namespace scheduler {
@@ -49,7 +50,7 @@ class RendererSchedulerImplTest;
 FORWARD_DECLARE_TEST(RendererSchedulerImplTest, Tracing);
 }  // namespace renderer_scheduler_impl_unittest
 class RenderWidgetSchedulingState;
-class WebViewSchedulerImpl;
+class PageSchedulerImpl;
 class TaskQueueThrottler;
 
 class PLATFORM_EXPORT RendererSchedulerImpl
@@ -61,40 +62,10 @@ class PLATFORM_EXPORT RendererSchedulerImpl
       public base::trace_event::TraceLog::AsyncEnabledStateObserver,
       public AutoAdvancingVirtualTimeDomain::Observer {
  public:
-  // Keep RendererScheduler::UseCaseToString in sync with this enum.
-  enum class UseCase {
-    // No active use case detected.
-    kNone,
-    // A continuous gesture (e.g., scroll, pinch) which is being driven by the
-    // compositor thread.
-    kCompositorGesture,
-    // An unspecified touch gesture which is being handled by the main thread.
-    // Note that since we don't have a full view of the use case, we should be
-    // careful to prioritize all work equally.
-    kMainThreadCustomInputHandling,
-    // A continuous gesture (e.g., scroll, pinch) which is being driven by the
-    // compositor thread but also observed by the main thread. An example is
-    // synchronized scrolling where a scroll listener on the main thread changes
-    // page layout based on the current scroll position.
-    kSynchronizedGesture,
-    // A gesture has recently started and we are about to run main thread touch
-    // listeners to find out the actual gesture type. To minimize touch latency,
-    // only input handling work should run in this state.
-    kTouchstart,
-    // A page is loading.
-    kLoading,
-    // A continuous gesture (e.g., scroll) which is being handled by the main
-    // thread.
-    kMainThreadGesture,
-    // Must be the last entry.
-    kUseCaseCount,
-    kFirstUseCase = kNone,
-  };
-
   // Don't use except for tracing.
   struct TaskDescriptionForTracing {
     TaskType task_type;
-    MainThreadTaskQueue::QueueType queue_type;
+    base::Optional<MainThreadTaskQueue::QueueType> queue_type;
 
     // Required in order to wrap in TraceableState.
     constexpr bool operator!=(const TaskDescriptionForTracing& rhs) const {
@@ -105,7 +76,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   static const char* UseCaseToString(UseCase use_case);
   static const char* RAILModeToString(v8::RAILMode rail_mode);
   static const char* VirtualTimePolicyToString(
-      WebViewScheduler::VirtualTimePolicy virtual_time_policy);
+      PageScheduler::VirtualTimePolicy);
   // The lowest bucket for fine-grained Expected Queueing Time reporting.
   static const int kMinExpectedQueueingTimeBucket = 1;
   // The highest bucket for fine-grained Expected Queueing Time reporting, in
@@ -215,8 +186,8 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void RegisterTimeDomain(TimeDomain* time_domain);
   void UnregisterTimeDomain(TimeDomain* time_domain);
 
-  using VirtualTimePolicy = WebViewScheduler::VirtualTimePolicy;
-  using VirtualTimeObserver = WebViewScheduler::VirtualTimeObserver;
+  using VirtualTimePolicy = PageScheduler::VirtualTimePolicy;
+  using VirtualTimeObserver = PageScheduler::VirtualTimeObserver;
 
   using BaseTimeOverridePolicy =
       AutoAdvancingVirtualTimeDomain::BaseTimeOverridePolicy;
@@ -240,17 +211,16 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void DecrementVirtualTimePauseCount();
   void MaybeAdvanceVirtualTime(base::TimeTicks new_virtual_time);
 
-  void AddWebViewScheduler(WebViewSchedulerImpl* web_view_scheduler);
-  void RemoveWebViewScheduler(WebViewSchedulerImpl* web_view_scheduler);
+  void AddPageScheduler(PageSchedulerImpl*);
+  void RemovePageScheduler(PageSchedulerImpl*);
 
-  void AddTaskTimeObserver(TaskTimeObserver* task_time_observer);
-  void RemoveTaskTimeObserver(TaskTimeObserver* task_time_observer);
+  void AddTaskTimeObserver(TaskTimeObserver*);
+  void RemoveTaskTimeObserver(TaskTimeObserver*);
 
   // Snapshots this RendererScheduler for tracing.
   void CreateTraceEventObjectSnapshot() const;
 
-  // Called when one of associated WebView schedulers has changed audio
-  // state.
+  // Called when one of associated page schedulers has changed audio state.
   void OnAudioStateChanged();
 
   // Tells the scheduler that a provisional load has committed. Must be called
@@ -308,12 +278,20 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void OnTraceLogEnabled() override;
   void OnTraceLogDisabled() override;
 
+  base::WeakPtr<RendererSchedulerImpl> GetWeakPtr();
+
  protected:
   // RendererScheduler implementation.
   // Use *TaskQueue internally.
   scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> InputTaskRunner() override;
+
+  // `current_use_case` will be overwritten by the next call to UpdatePolicy.
+  // Thus, this function should be only used for testing purposes.
+  void SetCurrentUseCaseForTest(UseCase use_case) {
+    main_thread_only().current_use_case = use_case;
+  }
 
  private:
   friend class RenderWidgetSchedulingState;
@@ -485,6 +463,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void OnIdlePeriodEnded() override;
 
   void OnPendingTasksChanged(bool has_tasks) override;
+  void DispatchRequestBeginMainFrameNotExpected(bool has_tasks);
 
   void EndIdlePeriod();
 
@@ -681,8 +660,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
         keep_active_fetch_or_worker;
     TraceableState<bool, kTracingCategoryNameInfo>
         stopping_when_backgrounded_enabled;
-    TraceableState<bool, kTracingCategoryNameInfo>
-        stopped_when_backgrounded;
+    TraceableState<bool, kTracingCategoryNameInfo> stopped_when_backgrounded;
     TraceableCounter<base::TimeDelta, kTracingCategoryNameInfo>
         loading_task_estimated_cost;
     TraceableCounter<base::TimeDelta, kTracingCategoryNameInfo>
@@ -710,9 +688,9 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     std::unique_ptr<base::SingleSampleMetric> max_queueing_time_metric;
     base::TimeDelta max_queueing_time;
     base::TimeTicks background_status_changed_at;
-    std::set<WebViewSchedulerImpl*> web_view_schedulers;  // Not owned.
-    RAILModeObserver* rail_mode_observer;                 // Not owned.
-    WakeUpBudgetPool* wake_up_budget_pool;                // Not owned.
+    std::set<PageSchedulerImpl*> page_schedulers;  // Not owned.
+    RAILModeObserver* rail_mode_observer;          // Not owned.
+    WakeUpBudgetPool* wake_up_budget_pool;         // Not owned.
     RendererMetricsHelper metrics_helper;
     TraceableState<RendererProcessType, kTracingCategoryNameTopLevel>
         process_type;
@@ -750,18 +728,15 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     UserModel user_model;
     TraceableState<bool, kTracingCategoryNameInfo>
         awaiting_touch_start_response;
-    TraceableState<bool, kTracingCategoryNameInfo>
-        in_idle_period;
+    TraceableState<bool, kTracingCategoryNameInfo> in_idle_period;
     TraceableState<bool, kTracingCategoryNameInfo>
         begin_main_frame_on_critical_path;
     TraceableState<bool, kTracingCategoryNameInfo>
         last_gesture_was_compositor_driven;
-    TraceableState<bool, kTracingCategoryNameInfo>
-        default_gesture_prevented;
+    TraceableState<bool, kTracingCategoryNameInfo> default_gesture_prevented;
     TraceableState<bool, kTracingCategoryNameInfo>
         have_seen_a_potentially_blocking_gesture;
-    TraceableState<bool, kTracingCategoryNameInfo>
-        waiting_for_meaningful_paint;
+    TraceableState<bool, kTracingCategoryNameInfo> waiting_for_meaningful_paint;
     TraceableState<bool, kTracingCategoryNameInfo>
         have_seen_input_since_navigation;
   };

@@ -15,7 +15,6 @@
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 #include "content/public/browser/browser_thread_delegate.h"
@@ -32,7 +31,6 @@ namespace {
 // Friendly names for the well-known threads.
 static const char* const g_browser_thread_names[BrowserThread::ID_COUNT] = {
   "",  // UI (name assembled in browser_main.cc).
-  "Chrome_ProcessLauncherThread",  // PROCESS_LAUNCHER
   "Chrome_IOThread",  // IO
 };
 
@@ -118,8 +116,8 @@ struct BrowserThreadGlobals {
   base::Lock lock;
 
   // This array is filled either as the underlying threads start and invoke
-  // Init() or in RedirectThreadIDToTaskRunner() for threads that are being
-  // redirected. It is not emptied during shutdown in order to support
+  // Init() or in BrowserThreadImpl() when a MessageLoop* is provided at
+  // construction. It is not emptied during shutdown in order to support
   // RunsTasksInCurrentSequence() until the very end.
   scoped_refptr<base::SingleThreadTaskRunner>
       task_runners[BrowserThread::ID_COUNT];
@@ -202,12 +200,6 @@ void BrowserThreadImpl::Init() {
     DCHECK(globals.task_runners[identifier_]->RunsTasksInCurrentSequence());
   }
 #endif  // DCHECK_IS_ON()
-
-  if (identifier_ == BrowserThread::PROCESS_LAUNCHER) {
-    // Nesting and task observers are not allowed on redirected threads.
-    base::RunLoop::DisallowNestingOnCurrentThread();
-    message_loop()->DisallowTaskObservers();
-  }
 }
 
 // We disable optimizations for this block of functions so the compiler doesn't
@@ -216,13 +208,6 @@ MSVC_DISABLE_OPTIMIZE()
 MSVC_PUSH_DISABLE_WARNING(4748)
 
 NOINLINE void BrowserThreadImpl::UIThreadRun(base::RunLoop* run_loop) {
-  volatile int line_number = __LINE__;
-  Thread::Run(run_loop);
-  CHECK_GT(line_number, 0);
-}
-
-NOINLINE void BrowserThreadImpl::ProcessLauncherThreadRun(
-    base::RunLoop* run_loop) {
   volatile int line_number = __LINE__;
   Thread::Run(run_loop);
   CHECK_GT(line_number, 0);
@@ -254,8 +239,6 @@ void BrowserThreadImpl::Run(base::RunLoop* run_loop) {
   switch (identifier_) {
     case BrowserThread::UI:
       return UIThreadRun(run_loop);
-    case BrowserThread::PROCESS_LAUNCHER:
-      return ProcessLauncherThreadRun(run_loop);
     case BrowserThread::IO:
       return IOThreadRun(run_loop);
     case BrowserThread::ID_COUNT:
@@ -380,69 +363,6 @@ bool BrowserThreadImpl::StartAndWaitForTesting() {
 }
 
 // static
-void BrowserThreadImpl::RedirectThreadIDToTaskRunner(
-    BrowserThread::ID identifier,
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
-  DCHECK(task_runner);
-
-  BrowserThreadGlobals& globals = g_globals.Get();
-  base::AutoLock lock(globals.lock);
-
-  DCHECK(!globals.task_runners[identifier]);
-  DCHECK_EQ(globals.states[identifier], BrowserThreadState::UNINITIALIZED);
-
-  globals.task_runners[identifier] = std::move(task_runner);
-  globals.states[identifier] = BrowserThreadState::RUNNING;
-}
-
-// static
-void BrowserThreadImpl::StopRedirectionOfThreadID(
-    BrowserThread::ID identifier) {
-  BrowserThreadGlobals& globals = g_globals.Get();
-  base::AutoLock auto_lock(globals.lock);
-
-  DCHECK(globals.task_runners[identifier]);
-
-  // Change the state to SHUTDOWN to stop accepting new tasks. Note: this is
-  // different from non-redirected threads which continue accepting tasks while
-  // being joined and only quit when idle. However, any tasks for which this
-  // difference matters was already racy as any thread posting a task after the
-  // Signal task below can't be synchronized with the joining thread. Therefore,
-  // that task could already come in before or after the join had completed in
-  // the non-redirection world. Entering SHUTDOWN early merely skews this race
-  // towards making it less likely such a task is accepted by the joined thread
-  // which is fine.
-  DCHECK_EQ(globals.states[identifier], BrowserThreadState::RUNNING);
-  globals.states[identifier] = BrowserThreadState::SHUTDOWN;
-
-  // Wait for all pending tasks to complete.
-  base::WaitableEvent flushed(base::WaitableEvent::ResetPolicy::MANUAL,
-                              base::WaitableEvent::InitialState::NOT_SIGNALED);
-  globals.task_runners[identifier]->PostTask(
-      FROM_HERE,
-      base::BindOnce(&base::WaitableEvent::Signal, base::Unretained(&flushed)));
-  {
-    base::AutoUnlock auto_unlock(globals.lock);
-    flushed.Wait();
-  }
-
-  // Only reset the task runner after running pending tasks so that
-  // BrowserThread::CurrentlyOn() works in their scope.
-  globals.task_runners[identifier] = nullptr;
-
-  // Note: it's still possible for tasks to be posted to that task runner after
-  // this point (e.g. through a previously obtained ThreadTaskRunnerHandle or by
-  // one of the last tasks re-posting to its ThreadTaskRunnerHandle) but the
-  // BrowserThread API itself won't accept tasks. Such tasks are ultimately
-  // guaranteed to run before TaskScheduler::Shutdown() returns but may break
-  // the assumption in PostTaskHelper that BrowserThread::ID A > B will always
-  // succeed to post to B. This is pretty much the only observable difference
-  // between a redirected thread and a real one and is one we're willing to live
-  // with for this experiment. TODO(gab): fix this before enabling the
-  // experiment by default on trunk, http://crbug.com/653916.
-}
-
-// static
 bool BrowserThreadImpl::PostTaskHelper(BrowserThread::ID identifier,
                                        const base::Location& from_here,
                                        base::OnceClosure task,
@@ -465,6 +385,12 @@ bool BrowserThreadImpl::PostTaskHelper(BrowserThread::ID identifier,
   BrowserThreadGlobals& globals = g_globals.Get();
   if (!target_thread_outlives_current)
     globals.lock.Acquire();
+
+  // Posting tasks before BrowserThreads are initialized is incorrect as it
+  // would silently no-op. If you need to support posting early, gate it on
+  // BrowserThread::IsThreadInitialized(). If you hit this in unittests, you
+  // most likely posted a task outside the scope of a TestBrowserThreadBundle.
+  DCHECK_GE(globals.states[identifier], BrowserThreadState::RUNNING);
 
   const bool accepting_tasks =
       globals.states[identifier] == BrowserThreadState::RUNNING;

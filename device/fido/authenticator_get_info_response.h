@@ -10,10 +10,11 @@
 #include <string>
 #include <vector>
 
+#include "base/component_export.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "device/fido/authenticator_supported_options.h"
-#include "device/fido/ctap_constants.h"
+#include "device/fido/fido_constants.h"
 
 namespace device {
 
@@ -21,10 +22,9 @@ namespace device {
 // versions, options, AAGUID(Authenticator Attestation GUID), other
 // authenticator device information.
 // https://fidoalliance.org/specs/fido-v2.0-rd-20170927/fido-client-to-authenticator-protocol-v2.0-rd-20170927.html#authenticatorGetInfo
-class AuthenticatorGetInfoResponse {
+class COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorGetInfoResponse {
  public:
-  AuthenticatorGetInfoResponse(CtapDeviceResponseCode response_code,
-                               std::vector<std::string> versions,
+  AuthenticatorGetInfoResponse(std::vector<std::string> versions,
                                std::vector<uint8_t> aaguid);
   AuthenticatorGetInfoResponse(AuthenticatorGetInfoResponse&& that);
   AuthenticatorGetInfoResponse& operator=(AuthenticatorGetInfoResponse&& other);
@@ -38,7 +38,6 @@ class AuthenticatorGetInfoResponse {
   AuthenticatorGetInfoResponse& SetOptions(
       AuthenticatorSupportedOptions options);
 
-  CtapDeviceResponseCode response_code() const { return response_code_; }
   const std::vector<std::string>& versions() { return versions_; }
   const std::vector<uint8_t>& aaguid() const { return aaguid_; }
   const base::Optional<uint8_t>& max_msg_size() const { return max_msg_size_; }
@@ -53,7 +52,6 @@ class AuthenticatorGetInfoResponse {
   }
 
  private:
-  CtapDeviceResponseCode response_code_;
   std::vector<std::string> versions_;
   std::vector<uint8_t> aaguid_;
   base::Optional<uint8_t> max_msg_size_;

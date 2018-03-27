@@ -57,6 +57,9 @@ class ASH_EXPORT PowerButtonController
     LEGACY,
   };
 
+  // The physical display side of power button.
+  enum class PowerButtonPosition { NONE, LEFT, TOP, RIGHT, BOTTOM };
+
   // Amount of time since last screen state change that power button event needs
   // to be ignored.
   static constexpr base::TimeDelta kScreenStateChangeDelay =
@@ -72,6 +75,18 @@ class ASH_EXPORT PowerButtonController
   // ignored.
   static constexpr base::TimeDelta kIgnorePowerButtonAfterResumeDelay =
       base::TimeDelta::FromSeconds(2);
+
+  // Value of switches::kAshPowerButtonPosition stored in JSON format. These
+  // are the field names of the flag.
+  static constexpr const char* kPositionField = "position";
+  static constexpr const char* kXField = "x";
+  static constexpr const char* kYField = "y";
+
+  // Value of |kPositionField|.
+  static constexpr const char* kLeftPosition = "left";
+  static constexpr const char* kRightPosition = "right";
+  static constexpr const char* kTopPosition = "top";
+  static constexpr const char* kBottomPosition = "bottom";
 
   explicit PowerButtonController(
       BacklightsForcedOffSetter* backlights_forced_off_setter);
@@ -98,13 +113,14 @@ class ASH_EXPORT PowerButtonController
       const display::DisplayConfigurator::DisplayStateList& outputs) override;
 
   // chromeos::PowerManagerClient::Observer:
-  void BrightnessChanged(int level, bool user_initiated) override;
+  void ScreenBrightnessChanged(
+      const power_manager::BacklightBrightnessChange& change) override;
   void PowerButtonEventReceived(bool down,
                                 const base::TimeTicks& timestamp) override;
   void SuspendImminent(power_manager::SuspendImminent::Reason reason) override;
   void SuspendDone(const base::TimeDelta& sleep_duration) override;
 
-  // Initializes |turn_screen_off_for_tap_| and |screenshot_controller_|
+  // Initializes |default_turn_screen_off_for_tap_| and |screenshot_controller_|
   // according to the tablet mode switch in |result|.
   void OnGetSwitchStates(
       base::Optional<chromeos::PowerManagerClient::SwitchStates> result);
@@ -130,12 +146,17 @@ class ASH_EXPORT PowerButtonController
  private:
   friend class PowerButtonControllerTestApi;
 
+  // Returns true if the screen should be turned off in response to the power
+  // button being tapped.
+  bool ShouldTurnScreenOffForTap() const;
+
   // Stops |power_button_menu_timer_|, |shutdown_timer_| and dismisses the power
   // button menu.
   void StopTimersAndDismissMenu();
 
-  // Called by |power_button_menu_timer_| to start showing power button menu.
-  void OnPowerButtonMenuTimeout();
+  // Starts the power menu animation. Called when a clamshell device's power
+  // button is pressed or when |power_button_menu_timer_| fires.
+  void StartPowerMenuAnimation();
 
   // Called by |shutdown_timer_| to turn the screen off and request shutdown.
   void OnShutdownTimeout();
@@ -145,16 +166,26 @@ class ASH_EXPORT PowerButtonController
   void ProcessCommandLine();
 
   // Initializes tablet power button behavior related members
-  // |turn_screen_off_for_tap_| and |screenshot_controller_|.
+  // |default_turn_screen_off_for_tap_| and |screenshot_controller_|.
   void InitTabletPowerButtonMembers();
 
   // Locks the screen if the "Show lock screen when waking from sleep" pref is
   // set and locking is possible.
   void LockScreenIfRequired();
 
+  // Sets |show_menu_animation_done_| to true.
+  void SetShowMenuAnimationDone();
+
+  // A helper function called by ProcessCommandLine to parse the value of
+  // switches::kAshPowerButtonPosition.
+  void ParsePowerButtonPositionSwitch();
+
   // Are the power or lock buttons currently held?
   bool power_button_down_ = false;
   bool lock_button_down_ = false;
+
+  // True if the device is curently in tablet mode (per TabletModeController).
+  bool in_tablet_mode_ = false;
 
   // Has the screen brightness been reduced to 0%?
   bool brightness_is_zero_ = false;
@@ -163,6 +194,9 @@ class ASH_EXPORT PowerButtonController
   // for Chrome OS's docked mode, where a Chromebook's lid is closed while an
   // external display is connected).
   bool internal_display_off_and_external_display_on_ = false;
+
+  // True after the animation that shows the power menu has finished.
+  bool show_menu_animation_done_ = false;
 
   // Saves the button type for this power button.
   ButtonType button_type_ = ButtonType::NORMAL;
@@ -178,8 +212,10 @@ class ASH_EXPORT PowerButtonController
   // True if the device has tablet mode switch.
   bool has_tablet_mode_switch_ = false;
 
-  // True if should turn screen off when tapping the power button.
-  bool turn_screen_off_for_tap_ = false;
+  // True if we should turn screen off when the power button is tapped.
+  // This may be overridden by a feature; use ShouldTurnScreenOffForTap() to
+  // get the actual desired behavior.
+  bool default_turn_screen_off_for_tap_ = false;
 
   // True if the screen was off when the power button was pressed.
   bool screen_off_when_power_button_down_ = false;
@@ -212,12 +248,22 @@ class ASH_EXPORT PowerButtonController
   // Runs OnShutdownTimeout() to start shutdown.
   base::OneShotTimer shutdown_timer_;
 
-  // Started when the power button is pressed and stopped when it's released.
-  // Runs OnPowerButtonMenuTimeout() to show the power button menu.
+  // Started when the power button of convertible/slate/detachable devices is
+  // pressed and stopped when it's released. Runs StartPowerMenuAnimation() to
+  // show the power button menu.
   base::OneShotTimer power_button_menu_timer_;
 
   // The fullscreen widget of power button menu.
   std::unique_ptr<views::Widget> menu_widget_;
+
+  // The physical display side of power button in landscape primary.
+  PowerButtonPosition power_button_position_ = PowerButtonPosition::NONE;
+
+  // The center of the power button's offset from the top of the screen (for
+  // left/right) or left side of the screen (for top/bottom) in
+  // landscape_primary. Values are in [0.0, 1.0] and express a fraction of the
+  // display's height or width, respectively.
+  double power_button_offset_percentage_ = 0.f;
 
   ScopedObserver<BacklightsForcedOffSetter, BacklightsForcedOffSetter::Observer>
       backlights_forced_off_observer_;

@@ -154,6 +154,8 @@ class AppBannerManagerTest : public AppBannerManager {
 class AppBannerManagerBrowserTest : public InProcessBrowserTest {
  public:
   void SetUpOnMainThread() override {
+    feature_list_.InitWithFeatures({}, {features::kExperimentalAppBanners,
+                                        features::kDesktopPWAWindowing});
     AppBannerSettingsHelper::SetTotalEngagementToTrigger(10);
     SiteEngagementScore::SetParamValuesForTesting();
     ASSERT_TRUE(embedded_test_server()->Start());
@@ -313,6 +315,9 @@ class AppBannerManagerBrowserTest : public InProcessBrowserTest {
     EXPECT_EQ(expected_will_show, manager->banner_shown());
     EXPECT_EQ(expected_state, manager->state());
   }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
 };
 
 IN_PROC_BROWSER_TEST_F(AppBannerManagerBrowserTest, WebAppBannerCreated) {

@@ -42,12 +42,15 @@ void ContextualSearchTabHelper::OnContextualSearchPrefChanged() {
   Java_ContextualSearchTabHelper_onContextualSearchPrefChanged(env, jobj);
 }
 
-void ContextualSearchTabHelper::OnShowUnhandledTapUIIfNeeded(int x_px,
-                                                             int y_px) {
+void ContextualSearchTabHelper::OnShowUnhandledTapUIIfNeeded(
+    int x_px,
+    int y_px,
+    int font_size_dips,
+    int text_run_length) {
   JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jobject> jobj = weak_java_ref_.get(env);
-  Java_ContextualSearchTabHelper_onShowUnhandledTapUIIfNeeded(env, jobj, x_px,
-                                                              y_px);
+  Java_ContextualSearchTabHelper_onShowUnhandledTapUIIfNeeded(
+      env, jobj, x_px, y_px, font_size_dips, text_run_length);
 }
 
 void ContextualSearchTabHelper::InstallUnhandledTapNotifierIfNeeded(
@@ -59,7 +62,9 @@ void ContextualSearchTabHelper::InstallUnhandledTapNotifierIfNeeded(
   content::WebContents* base_web_contents =
       content::WebContents::FromJavaWebContents(j_base_web_contents);
   DCHECK(base_web_contents);
-  if (!unhandled_tap_web_contents_observer_) {
+  if (!unhandled_tap_web_contents_observer_ ||
+      base_web_contents !=
+          unhandled_tap_web_contents_observer_->web_contents()) {
     unhandled_tap_web_contents_observer_.reset(
         new contextual_search::UnhandledTapWebContentsObserver(
             base_web_contents, device_scale_factor,

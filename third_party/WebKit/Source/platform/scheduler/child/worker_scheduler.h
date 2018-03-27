@@ -19,12 +19,14 @@
 
 namespace blink {
 namespace scheduler {
+class WorkerSchedulerProxy;
 
 class PLATFORM_EXPORT WorkerScheduler : public ChildScheduler {
  public:
   ~WorkerScheduler() override;
 
-  static std::unique_ptr<WorkerScheduler> Create();
+  static std::unique_ptr<WorkerScheduler> Create(WebThreadType thread_type,
+                                                 WorkerSchedulerProxy* proxy);
 
   // Blink should use WorkerScheduler::DefaultTaskQueue instead of
   // ChildScheduler::DefaultTaskRunner.
@@ -33,8 +35,6 @@ class PLATFORM_EXPORT WorkerScheduler : public ChildScheduler {
   // Must be called before the scheduler can be used. Does any post construction
   // initialization needed such as initializing idle period detection.
   virtual void Init() = 0;
-
-  virtual void SetThreadType(WebThreadType thread_type) = 0;
 
   virtual void OnTaskCompleted(WorkerTaskQueue* worker_task_queue,
                                const TaskQueue::Task& task,

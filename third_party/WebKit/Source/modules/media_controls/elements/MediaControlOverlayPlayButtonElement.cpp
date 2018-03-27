@@ -214,10 +214,12 @@ void MediaControlOverlayPlayButtonElement::DefaultEventHandler(Event* event) {
       // case their is a second tap.
       if (tap_timer_.IsActive())
         return;
+      tap_was_touch_event_ = MediaControlsImpl::IsTouchEvent(event);
       tap_timer_.StartOneShot(kDoubleTapDelay, FROM_HERE);
     } else {
       // Cancel the play pause event.
       tap_timer_.Stop();
+      tap_was_touch_event_.reset();
 
       if (RuntimeEnabledFeatures::DoubleTapToJumpOnVideoEnabled()) {
         // Jump forwards or backwards based on the position of the tap.
@@ -230,11 +232,13 @@ void MediaControlOverlayPlayButtonElement::DefaultEventHandler(Event* event) {
           MaybeJump(kNumberOfSecondsToJump * -1);
         }
       } else {
-        // Enter or exit fullscreen.
-        if (MediaElement().IsFullscreen())
-          GetMediaControls().ExitFullscreen();
-        else
-          GetMediaControls().EnterFullscreen();
+        if (GetMediaControls().IsFullscreenEnabled()) {
+          // Enter or exit fullscreen.
+          if (MediaElement().IsFullscreen())
+            GetMediaControls().ExitFullscreen();
+          else
+            GetMediaControls().EnterFullscreen();
+        }
       }
 
       event->SetDefaultHandled();
@@ -255,7 +259,9 @@ WebSize MediaControlOverlayPlayButtonElement::GetSizeOrDefault() const {
 }
 
 void MediaControlOverlayPlayButtonElement::TapTimerFired(TimerBase*) {
-  GetMediaControls().MaybeToggleControlsFromTap();
+  if (tap_was_touch_event_.value())
+    GetMediaControls().MaybeToggleControlsFromTap();
+  tap_was_touch_event_.reset();
 }
 
 void MediaControlOverlayPlayButtonElement::Trace(blink::Visitor* visitor) {

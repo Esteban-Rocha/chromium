@@ -12,6 +12,7 @@
 #include "core/CoreExport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerClients.h"
+#include "core/workers/WorkerOrWorkletModuleFetchCoordinator.h"
 #include "core/workers/WorkerSettings.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
@@ -19,7 +20,6 @@
 #include "platform/weborigin/ReferrerPolicy.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/Optional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/mojom/net/ip_address_space.mojom-blink.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom-blink.h"
 
@@ -46,6 +46,7 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
       const base::UnguessableToken& parent_devtools_token,
       std::unique_ptr<WorkerSettings>,
       V8CacheOptions,
+      WorkerOrWorkletModuleFetchCoordinator*,
       service_manager::mojom::blink::InterfaceProviderPtrInfo = {});
 
   ~GlobalScopeCreationParams() = default;
@@ -106,6 +107,9 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
   std::unique_ptr<WorkerSettings> worker_settings;
 
   V8CacheOptions v8_cache_options;
+
+  CrossThreadPersistent<WorkerOrWorkletModuleFetchCoordinator>
+      module_fetch_coordinator;
 
   service_manager::mojom::blink::InterfaceProviderPtrInfo interface_provider;
 

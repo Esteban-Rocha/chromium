@@ -31,6 +31,13 @@ config("config") {
   ]
 }
 
+config("disable_deprecated_errors") {
+  cflags = [
+    "-Wno-deprecated",
+    "-Wno-deprecated-declarations",
+  ]
+}
+
 _icon_names = [
   "ic_check",
   "ic_check_circle",
@@ -130,6 +137,7 @@ source_set("material_components_ios") {
     "src/components/Dialogs/src/ColorThemer/MDCAlertColorThemer.m",
     "src/components/Dialogs/src/MDCAlertController.h",
     "src/components/Dialogs/src/MDCAlertController.m",
+    "src/components/Dialogs/src/MDCAlertControllerView.h",
     "src/components/Dialogs/src/MDCDialogPresentationController.h",
     "src/components/Dialogs/src/MDCDialogPresentationController.m",
     "src/components/Dialogs/src/MDCDialogTransitionController.h",
@@ -137,6 +145,8 @@ source_set("material_components_ios") {
     "src/components/Dialogs/src/MaterialDialogs.h",
     "src/components/Dialogs/src/UIViewController+MaterialDialogs.h",
     "src/components/Dialogs/src/UIViewController+MaterialDialogs.m",
+    "src/components/Dialogs/src/private/MDCAlertControllerView+Private.h",
+    "src/components/Dialogs/src/private/MDCAlertControllerView+Private.m",
     "src/components/Dialogs/src/private/MDCDialogShadowedView.h",
     "src/components/Dialogs/src/private/MDCDialogShadowedView.m",
     "src/components/Dialogs/src/private/MaterialDialogsStrings.h",
@@ -322,6 +332,10 @@ source_set("material_components_ios") {
     ":config",
     "//build/config/compiler:enable_arc",
     "//build/config/compiler:no_chromium_code",
+
+    # material_components_ios internally uses deprecated methods.
+    # Disable the warning about deprecation usage.
+    ":disable_deprecated_errors",
   ]
 }
 

@@ -44,8 +44,7 @@
 #include "core/animation/CSSVisibilityInterpolationType.h"
 #include "core/css/CSSSyntaxDescriptor.h"
 #include "core/css/PropertyRegistry.h"
-#include "core/css/properties/CSSProperty.h"
-#include "platform/wtf/PtrUtil.h"
+#include "core/css/properties/css_property.h"
 
 namespace blink {
 
@@ -162,6 +161,7 @@ const InterpolationTypes& CSSInterpolationTypesMap::Get(
     case CSSPropertyStrokeMiterlimit:
     case CSSPropertyStrokeOpacity:
     case CSSPropertyColumnCount:
+    case CSSPropertyTextSizeAdjust:
     case CSSPropertyWidows:
     case CSSPropertyZIndex:
       applicable_types->push_back(

@@ -12,6 +12,7 @@
 #import "ios/chrome/browser/ui/main/bvc_container_view_controller.h"
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_adaptor.h"
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_mediator.h"
+#import "ios/chrome/browser/ui/tab_grid/tab_grid_paging.h"
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_transition_handler.h"
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_view_controller.h"
 
@@ -72,6 +73,30 @@
   return self.adaptor;
 }
 
+- (TabModel*)regularTabModel {
+  // Ensure tab model actually used by the mediator is returned, as it may have
+  // been updated.
+  return self.regularTabsMediator ? self.regularTabsMediator.tabModel
+                                  : _regularTabModel;
+}
+
+- (void)setRegularTabModel:(TabModel*)regularTabModel {
+  self.regularTabsMediator.tabModel = regularTabModel;
+  _regularTabModel = regularTabModel;
+}
+
+- (TabModel*)incognitoTabModel {
+  // Ensure tab model actually used by the mediator is returned, as it may have
+  // been updated.
+  return self.incognitoTabsMediator ? self.incognitoTabsMediator.tabModel
+                                    : _incognitoTabModel;
+}
+
+- (void)setIncognitoTabModel:(TabModel*)incognitoTabModel {
+  self.incognitoTabsMediator.tabModel = incognitoTabModel;
+  _incognitoTabModel = incognitoTabModel;
+}
+
 #pragma mark - MainCoordinator properties
 
 - (id<ViewControllerSwapping>)viewControllerSwapper {
@@ -85,6 +110,7 @@
       [[TabGridViewController alloc] init];
   self.transitionHandler = [[TabGridTransitionHandler alloc] init];
   self.transitionHandler.provider = mainViewController;
+  mainViewController.modalPresentationStyle = UIModalPresentationCustom;
   mainViewController.transitioningDelegate = self.transitionHandler;
   mainViewController.tabPresentationDelegate = self;
   _mainViewController = mainViewController;
@@ -98,10 +124,11 @@
 
   self.regularTabsMediator = [[TabGridMediator alloc]
       initWithConsumer:mainViewController.regularTabsConsumer];
-  self.regularTabsMediator.tabModel = self.regularTabModel;
+  self.regularTabsMediator.tabModel = _regularTabModel;
   self.incognitoTabsMediator = [[TabGridMediator alloc]
       initWithConsumer:mainViewController.incognitoTabsConsumer];
-  self.incognitoTabsMediator.tabModel = self.incognitoTabModel;
+  self.incognitoTabsMediator.tabModel = _incognitoTabModel;
+  self.adaptor.incognitoMediator = self.incognitoTabsMediator;
   mainViewController.regularTabsDelegate = self.regularTabsMediator;
   mainViewController.incognitoTabsDelegate = self.incognitoTabsMediator;
   mainViewController.regularTabsImageDataSource = self.regularTabsMediator;
@@ -188,14 +215,21 @@
 
 #pragma mark - TabPresentationDelegate
 
-- (void)showActiveTab {
-  // Figure out which tab model is the active one. If the view controller is
-  // showing the incognito panel, and there's more than one incognito tab, then
-  // the incognito model is active. Otherwise the regular model is active.
-  TabModel* activeTabModel = self.regularTabModel;
-  if (self.mainViewController.currentPage == TabGridPageIncognitoTabs &&
-      self.incognitoTabModel.count > 0) {
-    activeTabModel = self.incognitoTabModel;
+- (void)showActiveTabInPage:(TabGridPage)page {
+  DCHECK(self.regularTabModel && self.incognitoTabModel);
+  TabModel* activeTabModel;
+  switch (page) {
+    case TabGridPageIncognitoTabs:
+      DCHECK_GT(self.incognitoTabModel.count, 0U);
+      activeTabModel = self.incognitoTabModel;
+      break;
+    case TabGridPageRegularTabs:
+      DCHECK_GT(self.regularTabModel.count, 0U);
+      activeTabModel = self.regularTabModel;
+      break;
+    case TabGridPageRemoteTabs:
+      NOTREACHED() << "It is invalid to have an active tab in remote tabs.";
+      break;
   }
   // Trigger the transition through the TabSwitcher delegate. This will in turn
   // call back into this coordinator via the ViewControllerSwapping protocol.
@@ -206,6 +240,7 @@
 #pragma mark - BrowserCommands
 
 - (void)openNewTab:(OpenNewTabCommand*)command {
+  DCHECK(self.regularTabModel && self.incognitoTabModel);
   TabModel* activeTabModel =
       command.incognito ? self.incognitoTabModel : self.regularTabModel;
   // TODO(crbug.com/804587) : It is better to use the mediator to insert a

@@ -112,18 +112,17 @@ extern const char kEnablePrintPreviewRegisterPromos[];
 extern const char kEnablePushApiBackgroundMode[];
 extern const char kEnableSiteSettings[];
 extern const char kEnableTabAudioMuting[];
+extern const char kEnableUiDevTools[];
 extern const char kExtensionContentVerification[];
 extern const char kExtensionContentVerificationBootstrap[];
 extern const char kExtensionContentVerificationEnforce[];
 extern const char kExtensionContentVerificationEnforceStrict[];
 extern const char kExtensionsInstallVerification[];
 extern const char kExtensionsNotWebstore[];
-extern const char kExtensionsUpdateFrequency[];
 extern const char kFastStart[];
 extern const char kForceAndroidAppMode[];
 extern const char kForceAppMode[];
 extern const char kForceDesktopIOSPromotion[];
-extern const char kForceEffectiveConnectionType[];
 extern const char kForceEnableMetricsReporting[];
 extern const char kForceFirstRun[];
 extern const char kForceFirstRunDialog[];
@@ -249,6 +248,7 @@ extern const char kCroshCommand[];
 extern const char kDisableLoggingRedirect[];
 extern const char kDisableLoginScreenApps[];
 extern const char kMashServiceName[];
+extern const char kSkipExtraAshWindowPositioning[];
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
@@ -286,13 +286,13 @@ extern const char kEnableCloudPrintXps[];
 extern const char kEnableProfileShortcutManager[];
 extern const char kHideIcons[];
 extern const char kNoNetworkProfileWarning[];
+extern const char kNotificationInlineReply[];
 extern const char kNotificationLaunchId[];
 extern const char kPrefetchArgumentBrowserBackground[];
 extern const char kPrefetchArgumentWatcher[];
 extern const char kShowIcons[];
 extern const char kUninstall[];
 extern const char kWatcherProcess[];
-extern const char kWindows10CustomTitlebar[];
 #endif  // defined(OS_WIN)
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)

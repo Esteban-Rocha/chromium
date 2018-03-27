@@ -79,6 +79,7 @@
 #include "components/search_engines/template_url_service.h"
 #include "components/sessions/core/tab_restore_service.h"
 #include "components/web_cache/browser/web_cache_manager.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/browsing_data_filter_builder.h"
 #include "content/public/browser/plugin_data_remover.h"
 #include "content/public/browser/ssl_host_state_delegate.h"
@@ -86,7 +87,7 @@
 #include "media/mojo/services/video_decode_perf_history.h"
 #include "net/cookies/cookie_store.h"
 #include "net/http/http_transaction_factory.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/url_util.h"
@@ -326,8 +327,7 @@ bool DoesOriginMatchEmbedderMask(int origin_type_mask,
 }  // namespace
 
 ChromeBrowsingDataRemoverDelegate::ChromeBrowsingDataRemoverDelegate(
-    BrowserContext* browser_context,
-    history::HistoryService* history_service)
+    BrowserContext* browser_context)
     : profile_(Profile::FromBrowserContext(browser_context)),
 #if BUILDFLAG(ENABLE_PLUGINS)
       flash_lso_helper_(BrowsingDataFlashLSOHelper::Create(browser_context)),
@@ -335,11 +335,7 @@ ChromeBrowsingDataRemoverDelegate::ChromeBrowsingDataRemoverDelegate(
 #if defined(OS_ANDROID)
       webapp_registry_(new WebappRegistry()),
 #endif
-      history_observer_(this),
       weak_ptr_factory_(this) {
-  if (history_service) {
-    history_observer_.Add(history_service);
-  }
 }
 
 ChromeBrowsingDataRemoverDelegate::~ChromeBrowsingDataRemoverDelegate() {}
@@ -354,15 +350,6 @@ ChromeBrowsingDataRemoverDelegate::GetOriginTypeMatcher() const {
   return base::BindRepeating(&DoesOriginMatchEmbedderMask);
 }
 
-void ChromeBrowsingDataRemoverDelegate::OnURLsDeleted(
-    history::HistoryService* history_service,
-    const history::DeletionTimeRange& time_range,
-    bool expired,
-    const history::URLRows& deleted_rows,
-    const std::set<GURL>& favicon_urls) {
-  if (!expired && !profile_->IsGuestSession())
-    browsing_data::RemoveNavigationEntries(profile_, time_range, deleted_rows);
-}
 
 bool ChromeBrowsingDataRemoverDelegate::MayRemoveDownloadHistory() const {
   return profile_->GetPrefs()->GetBoolean(prefs::kAllowDeletingBrowserHistory);
@@ -775,6 +762,23 @@ void ChromeBrowsingDataRemoverDelegate::RemoveEmbedderData(
         SearchPermissionsService::Factory::GetForBrowserContext(profile_);
     search_permissions_service->ResetDSEPermissions();
 #endif
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  // DATA_TYPE_BOOKMARKS
+  if (remove_mask & DATA_TYPE_BOOKMARKS) {
+    auto* bookmark_model = BookmarkModelFactory::GetForBrowserContext(profile_);
+    if (bookmark_model) {
+      if (delete_begin_.is_null() &&
+          (delete_end_.is_null() || delete_end_.is_max())) {
+        bookmark_model->RemoveAllUserBookmarks();
+      } else {
+        // Bookmark deletion is only implemented to remove all data after a
+        // profile deletion. A full implementation would need to traverse the
+        // whole tree and check timestamps against delete_begin and delete_end.
+        NOTIMPLEMENTED();
+      }
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////

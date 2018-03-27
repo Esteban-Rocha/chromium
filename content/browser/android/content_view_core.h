@@ -5,43 +5,30 @@
 #ifndef CONTENT_BROWSER_ANDROID_CONTENT_VIEW_CORE_H_
 #define CONTENT_BROWSER_ANDROID_CONTENT_VIEW_CORE_H_
 
-#include <stdint.h>
-
-#include <memory>
-#include <vector>
-
 #include "base/android/jni_android.h"
 #include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/compiler_specific.h"
-#include "base/i18n/rtl.h"
 #include "base/macros.h"
-#include "base/process/process.h"
-#include "content/browser/renderer_host/render_widget_host_view_android.h"
-#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "ui/android/view_android.h"
-#include "ui/gfx/geometry/rect.h"
-#include "ui/gfx/geometry/rect_f.h"
-#include "ui/gfx/selection_bound.h"
-#include "url/gurl.h"
 
 namespace ui {
+class ViewAndroid;
 class WindowAndroid;
 }
 
 namespace content {
 
 class RenderWidgetHostViewAndroid;
+class WebContentsImpl;
 
 class ContentViewCore : public WebContentsObserver {
  public:
-  static ContentViewCore* FromWebContents(WebContents* web_contents);
   ContentViewCore(JNIEnv* env,
                   const base::android::JavaRef<jobject>& obj,
                   WebContents* web_contents,
                   float dpi_scale);
+
+  ~ContentViewCore() override;
 
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
   WebContents* GetWebContents() const;
@@ -50,13 +37,6 @@ class ContentViewCore : public WebContentsObserver {
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
   // --------------------------------------------------------------------------
-
-  base::android::ScopedJavaLocalRef<jobject> GetWebContentsAndroid(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj);
-  base::android::ScopedJavaLocalRef<jobject> GetJavaWindowAndroid(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj);
 
   void UpdateWindowAndroid(
       JNIEnv* env,
@@ -76,19 +56,6 @@ class ContentViewCore : public WebContentsObserver {
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj,
       jint orientation);
-  jboolean SendMouseWheelEvent(JNIEnv* env,
-                               const base::android::JavaParamRef<jobject>& obj,
-                               jlong time_ms,
-                               jfloat x,
-                               jfloat y,
-                               jfloat ticks_x,
-                               jfloat ticks_y,
-                               jfloat pixels_per_tick);
-
-  void SetTextHandlesTemporarilyHidden(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj,
-      jboolean hidden);
 
   void ResetGestureDetection(JNIEnv* env,
                              const base::android::JavaParamRef<jobject>& obj);
@@ -109,60 +76,14 @@ class ContentViewCore : public WebContentsObserver {
                    const base::android::JavaParamRef<jobject>& obj,
                    jfloat dipScale);
 
-  jint GetBackgroundColor(JNIEnv* env, jobject obj);
-
-  void SetTextTrackSettings(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj,
-      jboolean textTracksEnabled,
-      const base::android::JavaParamRef<jstring>& textTrackBackgroundColor,
-      const base::android::JavaParamRef<jstring>& textTrackFontFamily,
-      const base::android::JavaParamRef<jstring>& textTrackFontStyle,
-      const base::android::JavaParamRef<jstring>& textTrackFontVariant,
-      const base::android::JavaParamRef<jstring>& textTrackTextColor,
-      const base::android::JavaParamRef<jstring>& textTrackTextShadow,
-      const base::android::JavaParamRef<jstring>& textTrackTextSize);
-
-  void SetBackgroundOpaque(JNIEnv* env,
-                           const base::android::JavaParamRef<jobject>& jobj,
-                           jboolean opaque);
-
-  jboolean UsingSynchronousCompositing(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj);
-
-  // --------------------------------------------------------------------------
-  // Public methods that call to Java via JNI
-  // --------------------------------------------------------------------------
-
-  void HidePopupsAndPreserveSelection();
-
-  void RequestDisallowInterceptTouchEvent();
-
-  // Returns the context with which the ContentViewCore was created, typically
-  // the Activity context.
-  base::android::ScopedJavaLocalRef<jobject> GetContext() const;
-
-  // --------------------------------------------------------------------------
-  // Methods called from native code
-  // --------------------------------------------------------------------------
-
-  void UpdateCursor(const content::CursorInfo& info);
-  void OnTouchDown(const base::android::ScopedJavaLocalRef<jobject>& event);
-
   ui::ViewAndroid* GetViewAndroid() const;
 
  private:
-  class ContentViewUserData;
-
-  friend class ContentViewUserData;
-  ~ContentViewCore() override;
 
   // WebContentsObserver implementation.
   void RenderViewReady() override;
   void RenderViewHostChanged(RenderViewHost* old_host,
                              RenderViewHost* new_host) override;
-  void WebContentsDestroyed() override;
 
   // --------------------------------------------------------------------------
   // Other private methods and data

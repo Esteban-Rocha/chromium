@@ -127,8 +127,13 @@ extern const int kTrayPopupSystemInfoRowHeight;
 
 // The colors used when --enable-features=SystemTrayUnified flag is enabled.
 constexpr SkColor kUnifiedMenuBackgroundColor = SkColorSetRGB(0x20, 0x21, 0x24);
+constexpr SkColor kUnifiedMenuBackgroundColorWithBlur =
+    SkColorSetA(kUnifiedMenuBackgroundColor, 0xB3);
+constexpr float kUnifiedMenuBackgroundBlur = 30.f;
 constexpr SkColor kUnifiedMenuTextColor = SkColorSetRGB(0xf1, 0xf2, 0xf3);
 constexpr SkColor kUnifiedMenuIconColor = SkColorSetRGB(0xf1, 0xf2, 0xf3);
+constexpr SkColor kUnifiedMenuSecondaryTextColor =
+    SkColorSetA(kUnifiedMenuIconColor, 0xa3);
 constexpr SkColor kUnifiedMenuIconColorDisabled =
     SkColorSetA(kUnifiedMenuIconColor, 0xa3);
 constexpr SkColor kUnifiedMenuButtonColor =
@@ -136,16 +141,26 @@ constexpr SkColor kUnifiedMenuButtonColor =
 constexpr SkColor kUnifiedMenuButtonColorActive =
     SkColorSetRGB(0x25, 0x81, 0xdf);
 
+constexpr gfx::Insets kUnifiedMenuItemPadding(0, 16, 16, 16);
+constexpr gfx::Insets kUnifiedSliderPadding(0, 16);
+
 constexpr int kUnifiedTopShortcutSpacing = 16;
 constexpr gfx::Insets kUnifiedTopShortcutPadding(0, 16);
 
+constexpr int kUnifiedSystemInfoHeight = 16;
+constexpr int kUnifiedSystemInfoSpacing = 8;
+
 // Constants used in FeaturePodsView of UnifiedSystemTray.
 constexpr int kUnifiedFeaturePodIconSize = 48;
-constexpr gfx::Size kUnifiedFeaturePodSize(64, 88);
+constexpr gfx::Size kUnifiedFeaturePodSize(80, 88);
+constexpr gfx::Size kUnifiedFeaturePodCollapsedSize(48, 48);
 constexpr int kUnifiedFeaturePodVerticalPadding = 28;
-constexpr int kUnifiedFeaturePodHorizontalSidePadding = 52;
+constexpr int kUnifiedFeaturePodHorizontalSidePadding = 28;
 constexpr int kUnifiedFeaturePodHorizontalMiddlePadding = 32;
+constexpr int kUnifiedFeaturePodCollapsedVerticalPadding = 16;
+constexpr int kUnifiedFeaturePodCollapsedHorizontalPadding = 24;
 constexpr int kUnifiedFeaturePodItemsInRow = 3;
+constexpr int kUnifiedFeaturePodMaxItemsInCollapsed = 5;
 
 }  // namespace ash
 

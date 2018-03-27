@@ -24,6 +24,7 @@
 #import "ui/events/keycodes/keyboard_code_conversion_mac.h"
 #include "ui/gfx/canvas_paint_mac.h"
 #include "ui/gfx/decorated_text.h"
+#import "ui/gfx/decorated_text_mac.h"
 #include "ui/gfx/geometry/rect.h"
 #import "ui/gfx/mac/coordinate_conversion.h"
 #include "ui/gfx/path.h"
@@ -198,42 +199,6 @@ base::string16 AttributedSubstringForRangeHelper(
 
   client->GetTextFromRange(*actual_range, &substring);
   return substring;
-}
-
-NSAttributedString* GetAttributedString(
-    const gfx::DecoratedText& decorated_text) {
-  base::scoped_nsobject<NSMutableAttributedString> str(
-      [[NSMutableAttributedString alloc]
-          initWithString:base::SysUTF16ToNSString(decorated_text.text)]);
-  [str beginEditing];
-
-  NSValue* const line_style =
-      @(NSUnderlineStyleSingle | NSUnderlinePatternSolid);
-
-  for (const auto& attribute : decorated_text.attributes) {
-    DCHECK(!attribute.range.is_reversed());
-    DCHECK_LE(attribute.range.end(), [str length]);
-
-    NSMutableDictionary* attrs = [NSMutableDictionary dictionary];
-    NSRange range = attribute.range.ToNSRange();
-
-    if (attribute.font.GetNativeFont())
-      attrs[NSFontAttributeName] = attribute.font.GetNativeFont();
-
-    // NSFont does not have underline as an attribute. Hence handle it
-    // separately.
-    const bool underline = attribute.font.GetStyle() & gfx::Font::UNDERLINE;
-    if (underline)
-      attrs[NSUnderlineStyleAttributeName] = line_style;
-
-    if (attribute.strike)
-      attrs[NSStrikethroughStyleAttributeName] = line_style;
-
-    [str setAttributes:attrs range:range];
-  }
-
-  [str endEditing];
-  return str.autorelease();
 }
 
 ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
@@ -649,11 +614,16 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
 
 // NSView implementation.
 
-// Always refuse first responder. Note this does not prevent the view becoming
-// first responder via -[NSWindow makeFirstResponder:] when invoked during Init
-// or by FocusManager.
+// Refuse first responder, unless we are already first responder. Note this does
+// not prevent the view becoming first responder via -[NSWindow
+// makeFirstResponder:] when invoked during Init or by FocusManager.
+//
+// The condition is to work around an AppKit quirk. When a window is being
+// ordered front, if its current first responder returns |NO| for this method,
+// it resigns it if it can find another responder in the key loop that replies
+// |YES|.
 - (BOOL)acceptsFirstResponder {
-  return NO;
+  return [[self window] firstResponder] == self;
 }
 
 - (BOOL)becomeFirstResponder {
@@ -904,7 +874,7 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   views::View::ConvertPointToTarget(hostedView_, target, &locationInTarget);
   gfx::DecoratedText decoratedWord;
   gfx::Point baselinePoint;
-  if (!wordLookupClient->GetDecoratedWordAtPoint(
+  if (!wordLookupClient->GetWordLookupDataAtPoint(
           locationInTarget, &decoratedWord, &baselinePoint)) {
     return;
   }
@@ -913,7 +883,8 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   views::View::ConvertPointToTarget(target, hostedView_, &baselinePoint);
   NSPoint baselinePointAppKit = NSMakePoint(
       baselinePoint.x(), NSHeight([self frame]) - baselinePoint.y());
-  [self showDefinitionForAttributedString:GetAttributedString(decoratedWord)
+  [self showDefinitionForAttributedString:
+            gfx::GetAttributedStringFromDecoratedText(decoratedWord)
                                   atPoint:baselinePointAppKit];
 }
 
@@ -1464,16 +1435,16 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   composition.text = base::SysNSStringToUTF16(text);
   composition.selection = gfx::Range(selectedRange);
 
-  // Add a black underline with a transparent background to the composition
-  // text. TODO(karandeepb): On Cocoa textfields, the target clause of the
-  // composition has a thick underlines. The composition text also has
+  // Add an underline with text color and a transparent background to the
+  // composition text. TODO(karandeepb): On Cocoa textfields, the target clause
+  // of the composition has a thick underlines. The composition text also has
   // discontinous underlines for different clauses. This is also supported in
   // the Chrome renderer. Add code to extract underlines from |text| once our
   // render text implementation supports thick underlines and discontinous
   // underlines for consecutive characters. See http://crbug.com/612675.
-  composition.ime_text_spans.push_back(ui::ImeTextSpan(
-      ui::ImeTextSpan::Type::kComposition, 0, [text length], SK_ColorBLACK,
-      ui::ImeTextSpan::Thickness::kThin, SK_ColorTRANSPARENT));
+  composition.ime_text_spans.push_back(
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, [text length],
+                      ui::ImeTextSpan::Thickness::kThin, SK_ColorTRANSPARENT));
   textInputClient_->SetCompositionText(composition);
   hasUnhandledKeyDownEvent_ = NO;
 }

@@ -76,11 +76,9 @@ void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view) {
     // be called during nested WebContents destruction. See
     // https://crbug.com/644306.
     if (is_scroll_bubbling_ && GetParentRenderWidgetHostView() &&
-        GetParentRenderWidgetHostView()
-            ->GetRenderWidgetHostImpl()
-            ->delegate()) {
+        GetParentRenderWidgetHostView()->host()->delegate()) {
       GetParentRenderWidgetHostView()
-          ->GetRenderWidgetHostImpl()
+          ->host()
           ->delegate()
           ->GetInputEventRouter()
           ->CancelScrollBubbling(view_);
@@ -211,23 +209,23 @@ void CrossProcessFrameConnector::BubbleScrollEvent(
   if (!parent_view)
     return;
 
-  auto* event_router =
-      parent_view->GetRenderWidgetHostImpl()->delegate()->GetInputEventRouter();
+  auto* event_router = parent_view->host()->delegate()->GetInputEventRouter();
 
-  gfx::Vector2d offset_from_parent =
-      screen_space_rect_in_dip_.OffsetFromOrigin();
+  // We will only convert the coordinates back to the root here. The
+  // RenderWidgetHostInputEventRouter will determine which ancestor view will
+  // receive a resent gesture event, so it will be responsible for converting to
+  // the coordinates of the target view.
   blink::WebGestureEvent resent_gesture_event(event);
-  // TODO(kenrb, wjmaclean): Do we need to account for transforms here?
-  // See https://crbug.com/626020.
-  resent_gesture_event.x += offset_from_parent.x();
-  resent_gesture_event.y += offset_from_parent.y();
+  const gfx::PointF root_point =
+      view_->TransformPointToRootCoordSpaceF(event.PositionInWidget());
+  resent_gesture_event.SetPositionInWidget(root_point);
 
   if (view_->wheel_scroll_latching_enabled()) {
     if (event.GetType() == blink::WebInputEvent::kGestureScrollBegin) {
-      event_router->BubbleScrollEvent(parent_view, resent_gesture_event);
+      event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
       is_scroll_bubbling_ = true;
     } else if (is_scroll_bubbling_) {
-      event_router->BubbleScrollEvent(parent_view, resent_gesture_event);
+      event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
     }
     if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
         event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
@@ -235,12 +233,12 @@ void CrossProcessFrameConnector::BubbleScrollEvent(
     }
   } else {  // !view_->wheel_scroll_latching_enabled()
     if (event.GetType() == blink::WebInputEvent::kGestureScrollUpdate) {
-      event_router->BubbleScrollEvent(parent_view, resent_gesture_event);
+      event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
       is_scroll_bubbling_ = true;
     } else if ((event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
                 event.GetType() == blink::WebInputEvent::kGestureFlingStart) &&
                is_scroll_bubbling_) {
-      event_router->BubbleScrollEvent(parent_view, resent_gesture_event);
+      event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
       is_scroll_bubbling_ = false;
     }
   }
@@ -295,10 +293,13 @@ void CrossProcessFrameConnector::OnUpdateResizeParams(
 }
 
 void CrossProcessFrameConnector::OnUpdateViewportIntersection(
-    const gfx::Rect& viewport_intersection) {
+    const gfx::Rect& viewport_intersection,
+    const gfx::Rect& compositor_visible_rect) {
   viewport_intersection_rect_ = viewport_intersection;
+  compositor_visible_rect_ = compositor_visible_rect;
   if (view_)
-    view_->UpdateViewportIntersection(viewport_intersection);
+    view_->UpdateViewportIntersection(viewport_intersection,
+                                      compositor_visible_rect);
 }
 
 void CrossProcessFrameConnector::OnVisibilityChanged(bool visible) {
@@ -313,13 +314,11 @@ void CrossProcessFrameConnector::OnVisibilityChanged(bool visible) {
   if (frame_proxy_in_parent_renderer_->frame_tree_node()
           ->render_manager()
           ->ForInnerDelegate()) {
-    view_->GetRenderWidgetHostImpl()
-        ->delegate()
-        ->OnRenderFrameProxyVisibilityChanged(visible);
+    view_->host()->delegate()->OnRenderFrameProxyVisibilityChanged(visible);
     return;
   }
 
-  if (visible && !view_->GetRenderWidgetHostImpl()->delegate()->IsHidden()) {
+  if (visible && !view_->host()->delegate()->IsHidden()) {
     view_->Show();
   } else if (!visible) {
     view_->Hide();

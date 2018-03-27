@@ -36,6 +36,12 @@ enum UiElementType {
   kTypeToastText,
   kTypeSnackbarButton,
   kTypeSnackbarDescription,
+  kTypeCursorBackground,
+  kTypeCursorForeground,
+  kTypeOverflowMenuButton,
+  kTypeOverflowMenuItem,
+  kTypeTooltip,
+  kTypeLabel,
 
   // This must be last.
   kNumUiElementTypes,

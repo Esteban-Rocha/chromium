@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "base/optional.h"
+#include "base/stl_util.h"
+#include "cc/paint/image_analysis_state.h"
 #include "cc/paint/paint_export.h"
 #include "cc/paint/paint_image.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -105,6 +107,17 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
 
   ~PaintShader() override;
 
+  void set_has_animated_images(bool has_animated_images) {
+    image_analysis_state_ = has_animated_images
+                                ? ImageAnalysisState::kAnimatedImages
+                                : ImageAnalysisState::kNoAnimatedImages;
+  }
+  ImageAnalysisState image_analysis_state() const {
+    return image_analysis_state_;
+  }
+
+  bool has_discardable_images() const;
+
   SkMatrix GetLocalMatrix() const {
     return local_matrix_ ? *local_matrix_ : SkMatrix::I();
   }
@@ -115,7 +128,7 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
   }
 
   const gfx::SizeF* tile_scale() const {
-    return tile_scale_ ? &*tile_scale_ : nullptr;
+    return base::OptionalOrNullptr(tile_scale_);
   }
   const sk_sp<PaintRecord>& paint_record() const { return record_; }
   bool GetRasterizationTileRect(const SkMatrix& ctm, SkRect* tile_rect) const;
@@ -195,6 +208,8 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
   // the PaintShader but we always construct it at creation time to ensure that
   // accesses to it are thread-safe.
   sk_sp<SkShader> cached_shader_;
+
+  ImageAnalysisState image_analysis_state_ = ImageAnalysisState::kNoAnalysis;
 
   DISALLOW_COPY_AND_ASSIGN(PaintShader);
 };

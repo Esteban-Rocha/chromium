@@ -26,7 +26,6 @@
 #include "platform/wtf/BitVector.h"
 
 #include "platform/wtf/LeakAnnotations.h"
-#include "platform/wtf/PrintStream.h"
 #include "platform/wtf/allocator/Partitions.h"
 #include <algorithm>
 #include <string.h>
@@ -40,7 +39,7 @@ void BitVector::SetSlow(const BitVector& other) {
   } else {
     OutOfLineBits* new_out_of_line_bits = OutOfLineBits::Create(other.size());
     memcpy(new_out_of_line_bits->Bits(), other.Bits(), ByteCount(other.size()));
-    new_bits_or_pointer = BitwiseCast<uintptr_t>(new_out_of_line_bits) >> 1;
+    new_bits_or_pointer = bit_cast<uintptr_t>(new_out_of_line_bits) >> 1;
   }
   if (!IsInline())
     OutOfLineBits::Destroy(GetOutOfLineBits());
@@ -109,16 +108,7 @@ void BitVector::ResizeOutOfLine(size_t num_bits) {
     }
     OutOfLineBits::Destroy(GetOutOfLineBits());
   }
-  bits_or_pointer_ = BitwiseCast<uintptr_t>(new_out_of_line_bits) >> 1;
-}
-
-void BitVector::Dump(PrintStream& out) {
-  for (size_t i = 0; i < size(); ++i) {
-    if (Get(i))
-      out.Printf("1");
-    else
-      out.Printf("-");
-  }
+  bits_or_pointer_ = bit_cast<uintptr_t>(new_out_of_line_bits) >> 1;
 }
 
 }  // namespace WTF

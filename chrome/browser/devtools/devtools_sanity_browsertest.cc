@@ -54,6 +54,7 @@
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_manager_test_delegate.h"
 #include "components/prefs/pref_service.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -2148,9 +2149,35 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestOpenInNewTabFilter) {
   }
 }
 
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, LoadNetworkResourceForFrontend) {
+  embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL url(embedded_test_server()->GetURL("/"));
+  ui_test_utils::NavigateToURL(browser(),
+                               embedded_test_server()->GetURL("/hello.html"));
+  window_ =
+      DevToolsWindowTesting::OpenDevToolsWindowSync(GetInspectedTab(), false);
+  RunTestMethod("testLoadResourceForFrontend", url.spec().c_str());
+  DevToolsWindowTesting::CloseDevToolsWindowSync(window_);
+}
+
 IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsSanityTest, InspectElement) {
   GURL url(embedded_test_server()->GetURL("a.com", "/devtools/oopif.html"));
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(), url, 2);
+  GURL iframe_url(
+      embedded_test_server()->GetURL("b.com", "/devtools/oopif_frame.html"));
+
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+
+  content::TestNavigationManager navigation_manager(tab, url);
+  content::TestNavigationManager navigation_manager_iframe(tab, iframe_url);
+
+  tab->GetController().LoadURL(url, content::Referrer(),
+                               ui::PAGE_TRANSITION_LINK, std::string());
+
+  navigation_manager.WaitForNavigationFinished();
+  navigation_manager_iframe.WaitForNavigationFinished();
+  content::WaitForLoadStop(tab);
 
   std::vector<RenderFrameHost*> frames = GetInspectedTab()->GetAllFrames();
   ASSERT_EQ(2u, frames.size());
@@ -2166,11 +2193,26 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsSanityTest, InspectElement) {
   DevToolsWindowTesting::CloseDevToolsWindowSync(window);
 }
 
+// Flaky on Mus. See https://crbug.com/819285.
 IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsSanityTest,
-                       InputDispatchEventsToOOPIF) {
+                       DISABLED_InputDispatchEventsToOOPIF) {
   GURL url(
       embedded_test_server()->GetURL("a.com", "/devtools/oopif-input.html"));
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(), url, 2);
+  GURL iframe_url(embedded_test_server()->GetURL(
+      "b.com", "/devtools/oopif-input-frame.html"));
+
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+
+  content::TestNavigationManager navigation_manager(tab, url);
+  content::TestNavigationManager navigation_manager_iframe(tab, iframe_url);
+
+  tab->GetController().LoadURL(url, content::Referrer(),
+                               ui::PAGE_TRANSITION_LINK, std::string());
+
+  navigation_manager.WaitForNavigationFinished();
+  navigation_manager_iframe.WaitForNavigationFinished();
+  content::WaitForLoadStop(tab);
+
   for (auto* frame : GetInspectedTab()->GetAllFrames())
     content::WaitForChildFrameSurfaceReady(frame);
   DevToolsWindow* window =

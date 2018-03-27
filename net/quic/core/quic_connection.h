@@ -172,6 +172,10 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Called when a self address change is observed. Returns true if self address
   // change is allowed.
   virtual bool AllowSelfAddressChange() const = 0;
+
+  // Called when an ACK is received with a larger |largest_acked| than
+  // previously observed.
+  virtual void OnForwardProgressConfirmed() = 0;
 };
 
 // Interface which gets callbacks from the QuicConnection at interesting
@@ -262,7 +266,7 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
 
   // Called when the version negotiation is successful.
   virtual void OnSuccessfulVersionNegotiation(
-      const QuicTransportVersion& version) {}
+      const ParsedQuicVersion& version) {}
 
   // Called when a CachedNetworkParameters is sent to the client.
   virtual void OnSendConnectionState(
@@ -356,7 +360,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   void AdjustNetworkParameters(QuicBandwidth bandwidth, QuicTime::Delta rtt);
 
   // Returns the max pacing rate for the connection.
-  QuicBandwidth MaxPacingRate() const;
+  virtual QuicBandwidth MaxPacingRate() const;
 
   // Sets the number of active streams on the connection for congestion control.
   void SetNumOpenStreams(size_t num_streams);
@@ -375,19 +379,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // otherwise.
   virtual bool SendControlFrame(const QuicFrame& frame);
 
-  // Send a RST_STREAM frame to the peer.
-  virtual void SendRstStream(QuicStreamId id,
-                             QuicRstStreamErrorCode error,
-                             QuicStreamOffset bytes_written);
-
   // Called when stream |id| is reset because of |error|.
   virtual void OnStreamReset(QuicStreamId id, QuicRstStreamErrorCode error);
-
-  // Send a BLOCKED frame to the peer.
-  virtual void SendBlocked(QuicStreamId id);
-
-  // Send a WINDOW_UPDATE frame to the peer.
-  virtual void SendWindowUpdate(QuicStreamId id, QuicStreamOffset byte_offset);
 
   // Closes the connection.
   // |connection_close_behavior| determines whether or not a connection close
@@ -396,11 +389,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
       QuicErrorCode error,
       const QuicString& details,
       ConnectionCloseBehavior connection_close_behavior);
-
-  // Sends a GOAWAY frame.
-  virtual void SendGoAway(QuicErrorCode error,
-                          QuicStreamId last_good_stream_id,
-                          const QuicString& reason);
 
   // Returns statistics tracked for this connection.
   const QuicConnectionStats& GetStats();
@@ -424,6 +412,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Called when an error occurs while attempting to write a packet to the
   // network.
   void OnWriteError(int error_code);
+
+  // Whether |result| represents a MSG TOO BIG write error.
+  bool IsMsgTooBig(const WriteResult& result);
 
   // If the socket is not blocked, writes queued packets.
   void WriteIfNotBlocked();
@@ -501,6 +492,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // QuicSentPacketManager::NetworkChangeVisitor
   void OnCongestionChange() override;
+  // TODO(wangyix): remove OnPathDegrading() once
+  // FLAGS_quic_reloadable_flag_quic_path_degrading_alarm is deprecated.
   void OnPathDegrading() override;
   void OnPathMtuIncreased(QuicPacketLength packet_size) override;
 
@@ -583,11 +576,11 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // if the retransmission alarm is not running.
   void OnPingTimeout();
 
-  // Sends a ping frame.
-  void SendPing();
-
   // Sets up a packet with an QuicAckFrame and sends it out.
   void SendAck();
+
+  // Called when the path degrading alarm fires.
+  void OnPathDegradingTimeout();
 
   // Called when an RTO fires.  Resets the retransmission alarm if there are
   // remaining unacked packets.
@@ -758,11 +751,16 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     defer_send_in_response_to_packets_ = defer;
   }
 
-  bool use_control_frame_manager() const { return use_control_frame_manager_; }
-
   bool session_decides_what_to_write() const;
 
   void SetRetransmittableOnWireAlarm();
+
+  // Sets the current per-packet options for the connection. The QuicConnection
+  // does not take ownership of |options|; |options| must live for as long as
+  // the QuicConnection is in use.
+  void set_per_packet_options(PerPacketOptions* options) {
+    per_packet_options_ = options;
+  }
 
  protected:
   // Calls cancel() on all the alarms owned by this connection.
@@ -786,12 +784,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Returns the current per-packet options for the connection.
   PerPacketOptions* per_packet_options() { return per_packet_options_; }
-  // Sets the current per-packet options for the connection. The QuicConnection
-  // does not take ownership of |options|; |options| must live for as long as
-  // the QuicConnection is in use.
-  void set_per_packet_options(PerPacketOptions* options) {
-    per_packet_options_ = options;
-  }
 
   AddressChangeType active_peer_migration_type() {
     return active_peer_migration_type_;
@@ -906,6 +898,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Sets the retransmission alarm based on SentPacketManager.
   void SetRetransmissionAlarm();
 
+  // Sets the path degrading alarm.
+  void SetPathDegradingAlarm();
+
   // Sets the MTU discovery alarm if necessary.
   // |sent_packet_number| is the recently sent packet number.
   void MaybeSetMtuAlarm(QuicPacketNumber sent_packet_number);
@@ -943,7 +938,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Called when last received ack frame has been processed.
   // |send_stop_waiting| indicates whether a stop waiting needs to be sent.
-  void PostProcessAfterAckFrame(bool send_stop_waiting);
+  // |acked_new_packet| is true if a previously-unacked packet was acked.
+  void PostProcessAfterAckFrame(bool send_stop_waiting, bool acked_new_packet);
 
   QuicFramer framer_;
 
@@ -1102,6 +1098,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // An alarm that fires when there have been no retransmittable packets on the
   // wire for some period.
   QuicArenaScopedPtr<QuicAlarm> retransmittable_on_wire_alarm_;
+  // An alarm that fires when this connection is considered degrading.
+  QuicArenaScopedPtr<QuicAlarm> path_degrading_alarm_;
 
   // Neither visitor is owned by this class.
   QuicConnectionVisitorInterface* visitor_;
@@ -1215,8 +1213,20 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Id of latest sent control frame. 0 if no control frame has been sent.
   QuicControlFrameId last_control_frame_id_;
 
-  // Latched value of quic_reloadable_flag_quic_use_control_frame_manager.
-  const bool use_control_frame_manager_;
+  // Latched value of
+  // quic_reloadable_flag_quic_server_early_version_negotiation.
+  const bool negotiate_version_early_;
+
+  // Latched value of
+  // quic_reloadable_flag_quic_always_discard_packets_after_close.
+  const bool always_discard_packets_after_close_;
+  // Latched valure of
+  // quic_reloadable_flag_quic_handle_write_results_for_connectivity_probe.
+  const bool handle_write_results_for_connectivity_probe_;
+
+  // Latched value of
+  // quic_reloadable_flag_quic_path_degrading_alarm
+  const bool use_path_degrading_alarm_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

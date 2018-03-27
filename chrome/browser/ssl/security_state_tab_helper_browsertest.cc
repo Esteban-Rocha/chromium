@@ -35,6 +35,7 @@
 #include "components/security_state/core/features.h"
 #include "components/security_state/core/security_state.h"
 #include "components/strings/grit/components_strings.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -2151,7 +2152,7 @@ IN_PROC_BROWSER_TEST_F(SecurityStateTabHelperTest,
   // Create a new browser in Guest Mode.
   EXPECT_EQ(1U, BrowserList::GetInstance()->size());
   content::WindowedNotificationObserver browser_creation_observer(
-      chrome::NOTIFICATION_BROWSER_WINDOW_READY,
+      chrome::NOTIFICATION_BROWSER_OPENED,
       content::NotificationService::AllSources());
   profiles::SwitchToGuestProfile(ProfileManager::CreateCallback());
   browser_creation_observer.Wait();

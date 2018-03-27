@@ -709,11 +709,11 @@ TEST_F(KeyboardControllerAnimationTest, ContainerAnimation) {
   gfx::Transform transform;
   transform.Translate(0, keyboard::kFullWidthKeyboardAnimationDistance);
   EXPECT_EQ(transform, layer->transform());
-  // animation occurs in a cloned layer, so the actual final bounds should
-  // already be applied to the container.
-  EXPECT_EQ(keyboard_container()->bounds(), notified_visible_bounds());
-  EXPECT_EQ(keyboard_container()->bounds(), notified_occluding_bounds());
-  EXPECT_TRUE(notified_is_available());
+  // Actual final bounds should be notified after animation finishes to avoid
+  // flash of background being seen.
+  EXPECT_EQ(gfx::Rect(), notified_visible_bounds());
+  EXPECT_EQ(gfx::Rect(), notified_occluding_bounds());
+  EXPECT_FALSE(notified_is_available());
 
   RunAnimationForLayer(layer);
   EXPECT_TRUE(keyboard_container()->IsVisible());
@@ -751,7 +751,7 @@ TEST_F(KeyboardControllerAnimationTest, ContainerAnimation) {
   EXPECT_FALSE(notified_is_available());
 
   SetModeCallbackInvocationCounter invocation_counter;
-  controller()->SetContainerType(ContainerType::FLOATING,
+  controller()->SetContainerType(ContainerType::FLOATING, base::nullopt,
                                  invocation_counter.GetInvocationCallback());
   EXPECT_EQ(1, invocation_counter.invocation_count_for_status(true));
   EXPECT_EQ(0, invocation_counter.invocation_count_for_status(false));
@@ -767,10 +767,42 @@ TEST_F(KeyboardControllerAnimationTest, ContainerAnimation) {
   // callback should do nothing when container mode is set to the current active
   // container type. An unnecessary call gets registered synchronously as a
   // failure status to the callback.
-  controller()->SetContainerType(ContainerType::FLOATING,
+  controller()->SetContainerType(ContainerType::FLOATING, base::nullopt,
                                  invocation_counter.GetInvocationCallback());
   EXPECT_EQ(1, invocation_counter.invocation_count_for_status(true));
   EXPECT_EQ(1, invocation_counter.invocation_count_for_status(false));
+}
+
+TEST_F(KeyboardControllerAnimationTest, ChangeContainerModeWithBounds) {
+  ScopedAccessibilityKeyboardEnabler scoped_keyboard_enabler;
+  SetModeCallbackInvocationCounter invocation_counter;
+
+  ui::Layer* layer = keyboard_container()->layer();
+  ShowKeyboard();
+  RunAnimationForLayer(layer);
+  EXPECT_EQ(ContainerType::FULL_WIDTH, controller()->GetActiveContainerType());
+  EXPECT_TRUE(keyboard_container()->IsVisible());
+  EXPECT_TRUE(contents_window()->IsVisible());
+
+  // Changing the mode to another mode invokes hiding + showing.
+  const gfx::Rect target_bounds(0, 0, 1200, 600);
+  controller()->SetContainerType(ContainerType::FLOATING,
+                                 base::make_optional(target_bounds),
+                                 invocation_counter.GetInvocationCallback());
+  // The container window shouldn't be resized until it's hidden even if the
+  // target bounds is passed to |SetContainerType|.
+  EXPECT_EQ(gfx::Rect(), notified_visible_bounds());
+  EXPECT_EQ(0, invocation_counter.invocation_count_for_status(true));
+  EXPECT_EQ(0, invocation_counter.invocation_count_for_status(false));
+  RunAnimationForLayer(layer);
+  // Hiding animation finished. The container window should be resized to the
+  // target bounds.
+  EXPECT_EQ(keyboard_container()->bounds().size(), target_bounds.size());
+  // Then showing animation automatically start.
+  layer = keyboard_container()->layer();
+  RunAnimationForLayer(layer);
+  EXPECT_EQ(1, invocation_counter.invocation_count_for_status(true));
+  EXPECT_EQ(0, invocation_counter.invocation_count_for_status(false));
 }
 
 // Show keyboard during keyboard hide animation should abort the hide animation

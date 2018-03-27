@@ -30,9 +30,12 @@
 
 #include "core/animation/Animation.h"
 
+#include <limits>
+#include <memory>
+
 #include "core/animation/AnimationTimeline.h"
 #include "core/animation/DocumentTimeline.h"
-#include "core/animation/KeyframeEffectReadOnly.h"
+#include "core/animation/KeyframeEffect.h"
 #include "core/animation/PendingAnimations.h"
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/StyleChangeReason.h"
@@ -51,7 +54,6 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/wtf/MathExtras.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
 #include "public/platform/WebCompositorSupport.h"
@@ -66,7 +68,7 @@ static unsigned NextSequenceNumber() {
 }
 }
 
-Animation* Animation::Create(AnimationEffectReadOnly* effect,
+Animation* Animation::Create(AnimationEffect* effect,
                              AnimationTimeline* timeline) {
   if (!timeline || !timeline->IsDocumentTimeline()) {
     // FIXME: Support creating animations without a timeline.
@@ -88,7 +90,7 @@ Animation* Animation::Create(AnimationEffectReadOnly* effect,
 }
 
 Animation* Animation::Create(ExecutionContext* execution_context,
-                             AnimationEffectReadOnly* effect,
+                             AnimationEffect* effect,
                              ExceptionState& exception_state) {
   DCHECK(RuntimeEnabledFeatures::WebAnimationsAPIEnabled());
 
@@ -97,7 +99,7 @@ Animation* Animation::Create(ExecutionContext* execution_context,
 }
 
 Animation* Animation::Create(ExecutionContext* execution_context,
-                             AnimationEffectReadOnly* effect,
+                             AnimationEffect* effect,
                              AnimationTimeline* timeline,
                              ExceptionState& exception_state) {
   DCHECK(RuntimeEnabledFeatures::WebAnimationsAPIEnabled());
@@ -111,11 +113,11 @@ Animation* Animation::Create(ExecutionContext* execution_context,
 
 Animation::Animation(ExecutionContext* execution_context,
                      DocumentTimeline& timeline,
-                     AnimationEffectReadOnly* content)
+                     AnimationEffect* content)
     : ContextLifecycleObserver(execution_context),
       play_state_(kIdle),
       playback_rate_(1),
-      start_time_(NullValue()),
+      start_time_(),
       hold_time_(0),
       sequence_number_(NextSequenceNumber()),
       content_(content),
@@ -164,8 +166,21 @@ bool Animation::Limited(double current_time) const {
          (playback_rate_ > 0 && current_time >= EffectEnd());
 }
 
-void Animation::setCurrentTime(double new_current_time, bool is_null) {
+void Animation::setCurrentTime(double new_current_time,
+                               bool is_null,
+                               ExceptionState& exception_state) {
   PlayStateUpdateScope update_scope(*this, kTimingUpdateOnDemand);
+
+  // Step 1. of the procedure to silently set the current time of an
+  // animation states that we abort if the new time is null.
+  if (is_null) {
+    // If the current time is resolved, then throw a TypeError.
+    if (!IsNull(CurrentTimeInternal())) {
+      exception_state.ThrowTypeError(
+          "currentTime may not be changed from resolved to unresolved");
+    }
+    return;
+  }
 
   if (PlayStateInternal() == kIdle)
     paused_ = true;
@@ -185,14 +200,14 @@ void Animation::SetCurrentTimeInternal(double new_current_time,
   bool old_held = held_;
   bool outdated = false;
   bool is_limited = Limited(new_current_time);
-  held_ = paused_ || !playback_rate_ || is_limited || std::isnan(start_time_);
+  held_ = paused_ || !playback_rate_ || is_limited || !start_time_;
   if (held_) {
     if (!old_held || hold_time_ != new_current_time)
       outdated = true;
     hold_time_ = new_current_time;
     if (paused_ || !playback_rate_) {
-      start_time_ = NullValue();
-    } else if (is_limited && std::isnan(start_time_) &&
+      start_time_ = WTF::nullopt;
+    } else if (is_limited && !start_time_ &&
                reason == kTimingUpdateForAnimationFrame) {
       start_time_ = CalculateStartTime(new_current_time);
     }
@@ -214,7 +229,7 @@ void Animation::UpdateCurrentTimingState(TimingUpdateReason reason) {
     return;
   if (held_) {
     double new_current_time = hold_time_;
-    if (play_state_ == kFinished && !IsNull(start_time_) && timeline_) {
+    if (play_state_ == kFinished && start_time_ && timeline_) {
       // Add hystersis due to floating point error accumulation
       if (!Limited(CalculateCurrentTime() + 0.001 * playback_rate_)) {
         // The current time became unlimited, eg. due to a backwards
@@ -235,13 +250,14 @@ void Animation::UpdateCurrentTimingState(TimingUpdateReason reason) {
 }
 
 double Animation::startTime(bool& is_null) const {
-  double result = startTime();
-  is_null = std::isnan(result);
-  return result;
+  WTF::Optional<double> result = startTime();
+  is_null = !result;
+  return result.value_or(0);
 }
 
-double Animation::startTime() const {
-  return start_time_ * 1000;
+WTF::Optional<double> Animation::startTime() const {
+  return start_time_ ? WTF::make_optional(start_time_.value() * 1000)
+                     : WTF::nullopt;
 }
 
 double Animation::currentTime(bool& is_null) {
@@ -253,7 +269,7 @@ double Animation::currentTime(bool& is_null) {
 double Animation::currentTime() {
   PlayStateUpdateScope update_scope(*this, kTimingUpdateOnDemand);
 
-  if (PlayStateInternal() == kIdle || (!held_ && !HasStartTime()))
+  if (PlayStateInternal() == kIdle || (!held_ && !start_time_))
     return std::numeric_limits<double>::quiet_NaN();
 
   return CurrentTimeInternal() * 1000;
@@ -277,7 +293,7 @@ double Animation::UnlimitedCurrentTimeInternal() const {
 #if DCHECK_IS_ON()
   CurrentTimeInternal();
 #endif
-  return PlayStateInternal() == kPaused || IsNull(start_time_)
+  return PlayStateInternal() == kPaused || !start_time_
              ? CurrentTimeInternal()
              : CalculateCurrentTime();
 }
@@ -294,7 +310,8 @@ bool Animation::PreCommit(
       (Paused() || compositor_state_->playback_rate != playback_rate_);
   bool hard_change =
       compositor_state_ && (compositor_state_->effect_changed ||
-                            compositor_state_->start_time != start_time_);
+                            compositor_state_->start_time != start_time_ ||
+                            !compositor_state_->start_time || !start_time_);
 
   // FIXME: softChange && !hardChange should generate a Pause/ThenStart,
   // not a Cancel, but we can't communicate these to the compositor yet.
@@ -314,7 +331,7 @@ bool Animation::PreCommit(
     compositor_state_ = nullptr;
   }
 
-  DCHECK(!compositor_state_ || !std::isnan(compositor_state_->start_time));
+  DCHECK(!compositor_state_ || compositor_state_->start_time);
 
   if (!should_start) {
     current_time_pending_ = false;
@@ -328,7 +345,7 @@ bool Animation::PreCommit(
       if (failure_code.Ok()) {
         CreateCompositorAnimation();
         StartAnimationOnCompositor(composited_element_ids);
-        compositor_state_ = WTF::WrapUnique(new CompositorState(*this));
+        compositor_state_ = std::make_unique<CompositorState>(*this);
       } else {
         // failure_code.Ok() is equivalent of |will_composite| = true, so if the
         // |can_composite| is true here, then we know that it is a main thread
@@ -367,17 +384,18 @@ void Animation::PostCommit(double timeline_time) {
 
   switch (compositor_state_->pending_action) {
     case kStart:
-      if (!std::isnan(compositor_state_->start_time)) {
-        DCHECK_EQ(start_time_, compositor_state_->start_time);
+      if (compositor_state_->start_time) {
+        DCHECK_EQ(start_time_.value(), compositor_state_->start_time.value());
         compositor_state_->pending_action = kNone;
       }
       break;
     case kPause:
     case kPauseThenStart:
-      DCHECK(std::isnan(start_time_));
+      DCHECK(!start_time_);
       compositor_state_->pending_action = kNone;
       SetCurrentTimeInternal(
-          (timeline_time - compositor_state_->start_time) * playback_rate_,
+          (timeline_time - compositor_state_->start_time.value()) *
+              playback_rate_,
           kTimingUpdateForAnimationFrame);
       current_time_pending_ = false;
       break;
@@ -392,12 +410,14 @@ void Animation::NotifyCompositorStartTime(double timeline_time) {
 
   if (compositor_state_) {
     DCHECK_EQ(compositor_state_->pending_action, kStart);
-    DCHECK(std::isnan(compositor_state_->start_time));
+    DCHECK(!compositor_state_->start_time);
 
     double initial_compositor_hold_time = compositor_state_->hold_time;
     compositor_state_->pending_action = kNone;
+    // TODO(crbug.com/791086): Determine whether this can ever be null.
+    double start_time = timeline_time + CurrentTimeInternal() / -playback_rate_;
     compositor_state_->start_time =
-        timeline_time + CurrentTimeInternal() / -playback_rate_;
+        IsNull(start_time) ? WTF::nullopt : WTF::make_optional(start_time);
 
     if (start_time_ == timeline_time) {
       // The start time was set to the incoming compositor start time.
@@ -408,8 +428,7 @@ void Animation::NotifyCompositorStartTime(double timeline_time) {
       return;
     }
 
-    if (!std::isnan(start_time_) ||
-        CurrentTimeInternal() != initial_compositor_hold_time) {
+    if (start_time_ || CurrentTimeInternal() != initial_compositor_hold_time) {
       // A new start time or current time was set while starting.
       SetCompositorPending(true);
       return;
@@ -421,7 +440,7 @@ void Animation::NotifyCompositorStartTime(double timeline_time) {
 
 void Animation::NotifyStartTime(double timeline_time) {
   if (Playing()) {
-    DCHECK(std::isnan(start_time_));
+    DCHECK(!start_time_);
     DCHECK(held_);
 
     if (playback_rate_ == 0) {
@@ -441,25 +460,30 @@ void Animation::NotifyStartTime(double timeline_time) {
 
 bool Animation::Affects(const Element& element,
                         const CSSProperty& property) const {
-  if (!content_ || !content_->IsKeyframeEffectReadOnly())
+  if (!content_ || !content_->IsKeyframeEffect())
     return false;
 
-  const KeyframeEffectReadOnly* effect =
-      ToKeyframeEffectReadOnly(content_.Get());
+  const KeyframeEffect* effect = ToKeyframeEffect(content_.Get());
   return (effect->target() == &element) &&
          effect->Affects(PropertyHandle(property));
 }
 
-double Animation::CalculateStartTime(double current_time) const {
-  return timeline_->EffectiveTime() - current_time / playback_rate_;
+WTF::Optional<double> Animation::CalculateStartTime(double current_time) const {
+  WTF::Optional<double> start_time =
+      timeline_->EffectiveTime() - current_time / playback_rate_;
+  DCHECK(!IsNull(start_time.value()));
+  return start_time;
 }
 
 double Animation::CalculateCurrentTime() const {
-  if (IsNull(start_time_) || !timeline_)
+  // TODO(crbug.com/818196): By spec, this should be unresolved, not 0.
+  if (!start_time_ || !timeline_)
     return 0;
-  return (timeline_->EffectiveTime() - start_time_) * playback_rate_;
+  return (timeline_->EffectiveTime() - start_time_.value()) * playback_rate_;
 }
 
+// TODO(crbug.com/771722): This doesn't handle anim.startTime = null; we just
+// silently convert that to anim.startTime = 0.
 void Animation::setStartTime(double start_time, bool is_null) {
   PlayStateUpdateScope update_scope(*this, kTimingUpdateOnDemand);
 
@@ -472,12 +496,12 @@ void Animation::setStartTime(double start_time, bool is_null) {
   SetStartTimeInternal(start_time / 1000);
 }
 
-void Animation::SetStartTimeInternal(double new_start_time) {
+void Animation::SetStartTimeInternal(WTF::Optional<double> new_start_time) {
   DCHECK(!paused_);
-  DCHECK(std::isfinite(new_start_time));
-  DCHECK_NE(new_start_time, start_time_);
+  DCHECK(new_start_time.has_value());
+  DCHECK(new_start_time != start_time_);
 
-  bool had_start_time = HasStartTime();
+  bool had_start_time = start_time_.has_value();
   double previous_current_time = CurrentTimeInternal();
   start_time_ = new_start_time;
   if (held_ && playback_rate_) {
@@ -504,7 +528,7 @@ void Animation::SetStartTimeInternal(double new_start_time) {
   }
 }
 
-void Animation::setEffect(AnimationEffectReadOnly* new_effect) {
+void Animation::setEffect(AnimationEffect* new_effect) {
   if (content_ == new_effect)
     return;
   PlayStateUpdateScope update_scope(*this, kTimingUpdateOnDemand,
@@ -549,12 +573,12 @@ Animation::AnimationPlayState Animation::PlayStateInternal() const {
   return play_state_;
 }
 
-Animation::AnimationPlayState Animation::CalculatePlayState() {
+Animation::AnimationPlayState Animation::CalculatePlayState() const {
   if (paused_ && !current_time_pending_)
     return kPaused;
   if (play_state_ == kIdle)
     return kIdle;
-  if (current_time_pending_ || (IsNull(start_time_) && playback_rate_ != 0))
+  if (current_time_pending_ || (!start_time_ && playback_rate_ != 0))
     return kPending;
   if (Limited())
     return kFinished;
@@ -615,7 +639,7 @@ void Animation::play(ExceptionState& exception_state) {
   }
 
   if (!Playing()) {
-    start_time_ = NullValue();
+    start_time_ = WTF::nullopt;
   }
 
   if (PlayStateInternal() == kIdle) {
@@ -628,11 +652,11 @@ void Animation::play(ExceptionState& exception_state) {
   UnpauseInternal();
 
   if (playback_rate_ > 0 && (current_time < 0 || current_time >= EffectEnd())) {
-    start_time_ = NullValue();
+    start_time_ = WTF::nullopt;
     SetCurrentTimeInternal(0, kTimingUpdateOnDemand);
   } else if (playback_rate_ < 0 &&
              (current_time <= 0 || current_time > EffectEnd())) {
-    start_time_ = NullValue();
+    start_time_ = WTF::nullopt;
     SetCurrentTimeInternal(EffectEnd(), kTimingUpdateOnDemand);
   }
 }
@@ -737,12 +761,12 @@ void Animation::setPlaybackRate(double playback_rate) {
 
   PlayStateUpdateScope update_scope(*this, kTimingUpdateOnDemand);
 
-  double start_time_before = start_time_;
+  WTF::Optional<double> start_time_before = start_time_;
   SetPlaybackRateInternal(playback_rate);
 
   // Adds a UseCounter to check if setting playbackRate causes a compensatory
   // seek forcing a change in start_time_
-  if (!std::isnan(start_time_before) && start_time_ != start_time_before &&
+  if (start_time_before && start_time_ != start_time_before &&
       play_state_ != kFinished) {
     UseCounter::Count(GetExecutionContext(),
                       WebFeature::kAnimationSetPlaybackRateCompensatorySeek);
@@ -753,7 +777,7 @@ void Animation::SetPlaybackRateInternal(double playback_rate) {
   DCHECK(std::isfinite(playback_rate));
   DCHECK_NE(playback_rate, playback_rate_);
 
-  if (!Limited() && !Paused() && HasStartTime())
+  if (!Limited() && !Paused() && start_time_)
     current_time_pending_ = true;
 
   double stored_current_time = CurrentTimeInternal();
@@ -762,7 +786,7 @@ void Animation::SetPlaybackRateInternal(double playback_rate) {
     finished_ = false;
 
   playback_rate_ = playback_rate;
-  start_time_ = std::numeric_limits<double>::quiet_NaN();
+  start_time_ = WTF::nullopt;
   SetCurrentTimeInternal(stored_current_time, kTimingUpdateOnDemand);
 }
 
@@ -793,7 +817,7 @@ CompositorAnimations::FailureCode Animation::CheckCanStartAnimationOnCompositor(
   if (!code.Ok()) {
     return code;
   }
-  return ToKeyframeEffectReadOnly(content_.Get())
+  return ToKeyframeEffect(content_.Get())
       ->CheckCanStartAnimationOnCompositor(playback_rate_);
 }
 
@@ -835,17 +859,16 @@ Animation::CheckCanStartAnimationOnCompositorInternal(
     return CompositorAnimations::FailureCode::Actionable(
         "Animation has no animation effect");
   }
-  if (!content_->IsKeyframeEffectReadOnly()) {
+  if (!content_->IsKeyframeEffect()) {
     return CompositorAnimations::FailureCode::NonActionable(
         "Animation effect is not keyframe-based");
   }
 
   // If the optional element id set has no value we must be in SPv1 mode in
   // which case we trust the compositing logic will create a layer if needed.
-  if (composited_element_ids.has_value()) {
+  if (composited_element_ids) {
     DCHECK(RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
-    Element* target_element =
-        ToKeyframeEffectReadOnly(content_.Get())->target();
+    Element* target_element = ToKeyframeEffect(content_.Get())->target();
     if (!target_element) {
       return CompositorAnimations::FailureCode::Actionable(
           "Animation is not attached to an element");
@@ -883,19 +906,21 @@ void Animation::StartAnimationOnCompositor(
 
   bool reversed = playback_rate_ < 0;
 
-  double start_time = TimelineInternal()->ZeroTime() + StartTimeInternal();
-  if (reversed) {
-    start_time -= EffectEnd() / fabs(playback_rate_);
-  }
-
+  // TODO(crbug.com/791086): Make StartAnimationOnCompositor use WTF::Optional.
+  double start_time = NullValue();
   double time_offset = 0;
-  if (std::isnan(start_time)) {
+  if (start_time_) {
+    start_time = TimelineInternal()->ZeroTime() + start_time_.value();
+    if (reversed)
+      start_time -= EffectEnd() / fabs(playback_rate_);
+  } else {
     time_offset =
         reversed ? EffectEnd() - CurrentTimeInternal() : CurrentTimeInternal();
     time_offset = time_offset / fabs(playback_rate_);
   }
+
   DCHECK_NE(compositor_group_, 0);
-  ToKeyframeEffectReadOnly(content_.Get())
+  ToKeyframeEffect(content_.Get())
       ->StartAnimationOnCompositor(compositor_group_, start_time, time_offset,
                                    playback_rate_);
 }
@@ -912,9 +937,16 @@ void Animation::SetCompositorPending(bool effect_changed) {
   if (compositor_pending_ || is_paused_for_testing_) {
     return;
   }
+  // In general, we need to update the compositor-side if anything has changed
+  // on the blink version of the animation. There is also an edge case; if
+  // neither the compositor nor blink side have a start time we still have to
+  // sync them. This can happen if the blink side animation was started, the
+  // compositor side hadn't started on its side yet, and then the blink side
+  // start time was cleared (e.g. by setting current time).
   if (!compositor_state_ || compositor_state_->effect_changed ||
       compositor_state_->playback_rate != playback_rate_ ||
-      compositor_state_->start_time != start_time_) {
+      compositor_state_->start_time != start_time_ ||
+      !compositor_state_->start_time || !start_time_) {
     compositor_pending_ = true;
     TimelineInternal()->GetDocument()->GetPendingAnimations().Add(this);
   }
@@ -922,7 +954,7 @@ void Animation::SetCompositorPending(bool effect_changed) {
 
 void Animation::CancelAnimationOnCompositor() {
   if (HasActiveAnimationsOnCompositor())
-    ToKeyframeEffectReadOnly(content_.Get())->CancelAnimationOnCompositor();
+    ToKeyframeEffect(content_.Get())->CancelAnimationOnCompositor();
 
   DestroyCompositorAnimation();
 }
@@ -931,22 +963,21 @@ void Animation::RestartAnimationOnCompositor() {
   if (!HasActiveAnimationsOnCompositor())
     return;
 
-  if (ToKeyframeEffectReadOnly(content_.Get())->CancelAnimationOnCompositor())
+  if (ToKeyframeEffect(content_.Get())->CancelAnimationOnCompositor())
     SetCompositorPending(true);
 }
 
 void Animation::CancelIncompatibleAnimationsOnCompositor() {
-  if (content_ && content_->IsKeyframeEffectReadOnly())
-    ToKeyframeEffectReadOnly(content_.Get())
+  if (content_ && content_->IsKeyframeEffect())
+    ToKeyframeEffect(content_.Get())
         ->CancelIncompatibleAnimationsOnCompositor();
 }
 
 bool Animation::HasActiveAnimationsOnCompositor() {
-  if (!content_ || !content_->IsKeyframeEffectReadOnly())
+  if (!content_ || !content_->IsKeyframeEffect())
     return false;
 
-  return ToKeyframeEffectReadOnly(content_.Get())
-      ->HasActiveAnimationsOnCompositor();
+  return ToKeyframeEffect(content_.Get())->HasActiveAnimationsOnCompositor();
 }
 
 bool Animation::Update(TimingUpdateReason reason) {
@@ -970,7 +1001,7 @@ bool Animation::Update(TimingUpdateReason reason) {
   }
 
   if ((idle || Limited()) && !finished_) {
-    if (reason == kTimingUpdateForAnimationFrame && (idle || HasStartTime())) {
+    if (reason == kTimingUpdateForAnimationFrame && (idle || start_time_)) {
       if (idle) {
         const AtomicString& event_type = EventTypeNames::cancel;
         if (GetExecutionContext() && HasEventListeners(event_type)) {
@@ -1016,12 +1047,12 @@ void Animation::SpecifiedTimingChanged() {
 }
 
 bool Animation::IsEventDispatchAllowed() const {
-  return Paused() || HasStartTime();
+  return Paused() || start_time_;
 }
 
 double Animation::TimeToEffectChange() {
   DCHECK(!outdated_);
-  if (!HasStartTime() || held_)
+  if (!start_time_ || held_)
     return std::numeric_limits<double>::infinity();
 
   if (!content_)
@@ -1031,7 +1062,7 @@ double Animation::TimeToEffectChange() {
                       : content_->TimeToReverseEffectChange() / -playback_rate_;
 
   return !HasActiveAnimationsOnCompositor() &&
-                 content_->GetPhase() == AnimationEffectReadOnly::kPhaseActive
+                 content_->GetPhase() == AnimationEffect::kPhaseActive
              ? 0
              : result;
 }
@@ -1045,7 +1076,7 @@ void Animation::cancel() {
   held_ = false;
   paused_ = false;
   play_state_ = kIdle;
-  start_time_ = NullValue();
+  start_time_ = WTF::nullopt;
   current_time_pending_ = false;
   ForceServiceOnNextFrame();
 }
@@ -1106,9 +1137,9 @@ void Animation::AttachCompositedLayers() {
     return;
 
   DCHECK(content_);
-  DCHECK(content_->IsKeyframeEffectReadOnly());
+  DCHECK(content_->IsKeyframeEffect());
 
-  ToKeyframeEffectReadOnly(content_.Get())->AttachCompositedLayers();
+  ToKeyframeEffect(content_.Get())->AttachCompositedLayers();
 }
 
 void Animation::DetachCompositedLayers() {
@@ -1240,7 +1271,7 @@ void Animation::AddedEventListener(
 void Animation::PauseForTesting(double pause_time) {
   SetCurrentTimeInternal(pause_time, kTimingUpdateOnDemand);
   if (HasActiveAnimationsOnCompositor())
-    ToKeyframeEffectReadOnly(content_.Get())
+    ToKeyframeEffect(content_.Get())
         ->PauseAnimationForTestingOnCompositor(CurrentTimeInternal());
   is_paused_for_testing_ = true;
   pause();
@@ -1258,10 +1289,10 @@ void Animation::DisableCompositedAnimationForTesting() {
 }
 
 void Animation::InvalidateKeyframeEffect(const TreeScope& tree_scope) {
-  if (!content_ || !content_->IsKeyframeEffectReadOnly())
+  if (!content_ || !content_->IsKeyframeEffect())
     return;
 
-  Element* target = ToKeyframeEffectReadOnly(content_.Get())->target();
+  Element* target = ToKeyframeEffect(content_.Get())->target();
 
   // TODO(alancutter): Remove dependency of this function on CSSAnimations.
   // This function makes the incorrect assumption that the animation uses

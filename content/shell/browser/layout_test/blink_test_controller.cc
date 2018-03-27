@@ -53,6 +53,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/layouttest_support.h"
 #include "content/shell/browser/layout_test/devtools_protocol_test_bindings.h"
+#include "content/shell/browser/layout_test/fake_bluetooth_chooser.h"
 #include "content/shell/browser/layout_test/layout_test_bluetooth_chooser_factory.h"
 #include "content/shell/browser/layout_test/layout_test_content_browser_client.h"
 #include "content/shell/browser/layout_test/layout_test_devtools_bindings.h"
@@ -176,8 +177,12 @@ BlinkTestResultPrinter::BlinkTestResultPrinter(std::ostream* output,
 BlinkTestResultPrinter::~BlinkTestResultPrinter() {
 }
 
+void BlinkTestResultPrinter::StartStateDump() {
+  state_ = DURING_STATE_DUMP;
+}
+
 void BlinkTestResultPrinter::PrintTextHeader() {
-  if (state_ != DURING_TEST)
+  if (state_ != DURING_STATE_DUMP)
     return;
   if (!capture_text_only_)
     *output_ << "Content-Type: text/plain\n";
@@ -236,7 +241,7 @@ void BlinkTestResultPrinter::PrintImageFooter() {
 }
 
 void BlinkTestResultPrinter::PrintAudioHeader() {
-  DCHECK_EQ(state_, DURING_TEST);
+  DCHECK_EQ(state_, DURING_STATE_DUMP);
   if (!capture_text_only_)
     *output_ << "Content-Type: audio/wav\n";
   state_ = IN_AUDIO_BLOCK;
@@ -283,7 +288,7 @@ void BlinkTestResultPrinter::AddMessageRaw(const std::string& message) {
 void BlinkTestResultPrinter::AddErrorMessage(const std::string& message) {
   if (!capture_text_only_)
     *error_ << message << "\n";
-  if (state_ != DURING_TEST)
+  if (state_ != DURING_TEST && state_ != DURING_STATE_DUMP)
     return;
   PrintTextHeader();
   *output_ << message << "\n";
@@ -497,6 +502,7 @@ bool BlinkTestController::ResetAfterLayoutTest() {
   prefs_ = WebPreferences();
   should_override_prefs_ = false;
   LayoutTestContentBrowserClient::Get()->SetPopupBlockingEnabled(false);
+  navigation_history_dump_ = "";
 
 #if defined(OS_ANDROID)
   // Re-using the shell's main window on Android causes issues with networking
@@ -546,6 +552,36 @@ void BlinkTestController::OnTestFinishedInSecondaryRenderer() {
       main_render_view_host->GetRoutingID()));
 }
 
+void BlinkTestController::OnInitiateCaptureDump(
+    bool capture_navigation_history) {
+  if (capture_navigation_history) {
+    RenderFrameHost* main_rfh = main_window_->web_contents()->GetMainFrame();
+    for (auto* window : Shell::windows()) {
+      WebContents* web_contents = window->web_contents();
+      // Only capture the history from windows in the same process as the main
+      // window. During layout tests, we only use two processes when a devtools
+      // window is open.
+      // TODO(https://crbug.com/771003): Dump history for all WebContentses, not
+      // just ones that happen to be in the same process as the main test
+      // window's main frame.
+      if (main_rfh->GetProcess() != web_contents->GetMainFrame()->GetProcess())
+        continue;
+
+      navigation_history_dump_ +=
+          "\n============== Back Forward List ==============\n";
+      navigation_history_dump_ += DumpHistoryForWebContents(web_contents);
+      navigation_history_dump_ +=
+          "===============================================\n";
+    }
+  }
+
+  RenderFrameHost* rfh = main_window_->web_contents()->GetMainFrame();
+  printer_->StartStateDump();
+  GetLayoutTestControlPtr(rfh)->CaptureDump(
+      base::BindOnce(&BlinkTestController::OnCaptureDumpCompleted,
+                     weak_factory_.GetWeakPtr()));
+}
+
 bool BlinkTestController::IsMainWindow(WebContents* web_contents) const {
   return main_window_ && web_contents == main_window_->web_contents();
 }
@@ -553,9 +589,17 @@ bool BlinkTestController::IsMainWindow(WebContents* web_contents) const {
 std::unique_ptr<BluetoothChooser> BlinkTestController::RunBluetoothChooser(
     RenderFrameHost* frame,
     const BluetoothChooser::EventHandler& event_handler) {
+  // TODO(https://crbug.com/509038): Remove |bluetooth_chooser_factory_| once
+  // all of the Web Bluetooth tests are migrated to external/wpt/.
   if (bluetooth_chooser_factory_) {
     return bluetooth_chooser_factory_->RunBluetoothChooser(frame,
                                                            event_handler);
+  }
+  auto next_fake_bluetooth_chooser =
+      LayoutTestContentBrowserClient::Get()->GetNextFakeBluetoothChooser();
+  if (next_fake_bluetooth_chooser) {
+    next_fake_bluetooth_chooser->SetEventHandler(event_handler);
+    return next_fake_bluetooth_chooser;
   }
   return std::make_unique<LayoutTestFirstDeviceBluetoothChooser>(event_handler);
 }
@@ -567,16 +611,12 @@ bool BlinkTestController::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_PrintMessage, OnPrintMessage)
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_PrintMessageToStderr,
                         OnPrintMessageToStderr)
-    IPC_MESSAGE_HANDLER(ShellViewHostMsg_TextDump, OnTextDump)
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_InitiateLayoutDump,
                         OnInitiateLayoutDump)
-    IPC_MESSAGE_HANDLER(ShellViewHostMsg_ImageDump, OnImageDump)
-    IPC_MESSAGE_HANDLER(ShellViewHostMsg_AudioDump, OnAudioDump)
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_OverridePreferences,
                         OnOverridePreferences)
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_SetPopupBlockingEnabled,
                         OnSetPopupBlockingEnabled)
-    IPC_MESSAGE_HANDLER(ShellViewHostMsg_TestFinished, OnTestFinished)
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_NavigateSecondaryWindow,
                         OnNavigateSecondaryWindow)
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_GoToOffset, OnGoToOffset)
@@ -814,6 +854,17 @@ void BlinkTestController::OnAllSharedWorkersDestroyed() {
   }
 }
 
+void BlinkTestController::OnCaptureDumpCompleted(
+    mojom::LayoutTestDumpPtr dump) {
+  if (dump->audio)
+    OnAudioDump(*dump->audio);
+  if (dump->layout)
+    OnTextDump(*dump->layout);
+  if (!dump->actual_pixel_hash.empty())
+    OnImageDump(dump->actual_pixel_hash, dump->pixels);
+  OnTestFinished();
+}
+
 void BlinkTestController::OnImageDump(const std::string& actual_pixel_hash,
                                       const SkBitmap& image) {
   printer_->PrintImageHeader(actual_pixel_hash, expected_pixel_hash_);
@@ -861,30 +912,11 @@ void BlinkTestController::OnAudioDump(const std::vector<unsigned char>& dump) {
   printer_->PrintAudioFooter();
 }
 
-void BlinkTestController::OnTextDump(const std::string& dump,
-                                     bool should_dump_history) {
+void BlinkTestController::OnTextDump(const std::string& dump) {
   printer_->PrintTextHeader();
   printer_->PrintTextBlock(dump);
-  if (should_dump_history) {
-    RenderFrameHost* main_rfh = main_window_->web_contents()->GetMainFrame();
-    for (auto* window : Shell::windows()) {
-      WebContents* web_contents = window->web_contents();
-      // Only capture the history from windows in the same process as the main
-      // window. During layout tests, we only use two processes when a devtools
-      // window is open.
-      // TODO(https://crbug.com/771003): Dump history for all WebContentses, not
-      // just ones that happen to be in the same process as the main test
-      // window's main frame.
-      if (main_rfh->GetProcess() != web_contents->GetMainFrame()->GetProcess())
-        continue;
-
-      printer_->PrintTextBlock(
-          "\n============== Back Forward List ==============\n");
-      printer_->PrintTextBlock(DumpHistoryForWebContents(web_contents));
-      printer_->PrintTextBlock(
-          "===============================================\n");
-    }
-  }
+  if (!navigation_history_dump_.empty())
+    printer_->PrintTextBlock(navigation_history_dump_);
   printer_->PrintTextFooter();
 }
 

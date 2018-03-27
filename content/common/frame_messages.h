@@ -512,12 +512,14 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameReplicationState)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(unique_name)
   IPC_STRUCT_TRAITS_MEMBER(feature_policy_header)
+  IPC_STRUCT_TRAITS_MEMBER(active_sandbox_flags)
   IPC_STRUCT_TRAITS_MEMBER(frame_policy)
   IPC_STRUCT_TRAITS_MEMBER(accumulated_csp_headers)
   IPC_STRUCT_TRAITS_MEMBER(scope)
   IPC_STRUCT_TRAITS_MEMBER(insecure_request_policy)
   IPC_STRUCT_TRAITS_MEMBER(insecure_navigations_set)
   IPC_STRUCT_TRAITS_MEMBER(has_potentially_trustworthy_unique_origin)
+  IPC_STRUCT_TRAITS_MEMBER(has_received_user_gesture)
   IPC_STRUCT_TRAITS_MEMBER(has_received_user_gesture_before_nav)
 IPC_STRUCT_TRAITS_END()
 
@@ -1117,8 +1119,11 @@ IPC_MESSAGE_ROUTED0(FrameMsg_EnableViewSourceMode)
 // ScopedPageLoadDeferrer is on the stack for SwapOut.
 IPC_MESSAGE_ROUTED0(FrameMsg_SuppressFurtherDialogs)
 
+// Notifies the RenderFrame about a user activation from the browser side.
+IPC_MESSAGE_ROUTED0(FrameMsg_NotifyUserActivation)
+
 // Tells the frame to consider itself to have received a user gesture (based
-// on a user gesture processed in a different process).
+// on a user gesture processed in a different renderer process).
 IPC_MESSAGE_ROUTED0(FrameMsg_SetHasReceivedUserGesture)
 
 // Tells the frame to mark that the previous document on that frame had received
@@ -1482,8 +1487,11 @@ IPC_MESSAGE_ROUTED5(FrameHostMsg_UpdateResizeParams,
 
 // Sent by a parent frame to update its child's viewport intersection rect for
 // use by the IntersectionObserver API.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_UpdateViewportIntersection,
-                    gfx::Rect /* viewport_intersection */)
+// compositor_rect is dependent on the intersection rect and indicates the
+// area of the child frame that needs to be rastered. It is in physical pixels.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_UpdateViewportIntersection,
+                    gfx::Rect /* viewport_intersection */,
+                    gfx::Rect /* compositor_visible_rect */)
 
 // Informs the child that the frame has changed visibility.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_VisibilityChanged, bool /* visible */)
@@ -1532,22 +1540,21 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_JavaScriptExecuteResponse,
                     base::ListValue  /* result */)
 
 // A request to run a JavaScript dialog.
-IPC_SYNC_MESSAGE_ROUTED4_2(FrameHostMsg_RunJavaScriptDialog,
+IPC_SYNC_MESSAGE_ROUTED3_2(FrameHostMsg_RunJavaScriptDialog,
                            base::string16 /* in - alert message */,
                            base::string16 /* in - default prompt */,
-                           GURL /* in - originating page URL */,
                            content::JavaScriptDialogType /* in - type */,
                            bool /* out - success */,
                            base::string16 /* out - user_input field */)
 
 // Displays a dialog to confirm that the user wants to navigate away from the
 // page. Replies true if yes, and false otherwise. The reply string is ignored,
-// but is included so that we can use OnJavaScriptMessageBoxClosed.
-IPC_SYNC_MESSAGE_ROUTED2_2(FrameHostMsg_RunBeforeUnloadConfirm,
-                           GURL,           /* in - originating frame URL */
-                           bool            /* in - is a reload */,
-                           bool            /* out - success */,
-                           base::string16  /* out - This is ignored.*/)
+// but is included so that we can use
+// RenderFrameHostImpl::SendJavaScriptDialogReply.
+IPC_SYNC_MESSAGE_ROUTED1_2(FrameHostMsg_RunBeforeUnloadConfirm,
+                           bool /* in - is a reload */,
+                           bool /* out - success */,
+                           base::string16 /* out - This is ignored.*/)
 
 // Notify browser the theme color has been changed.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeThemeColor,

@@ -27,7 +27,6 @@
 #include "core/frame/LocalDOMWindow.h"
 
 #include <memory>
-#include <string>
 #include <utility>
 
 #include "bindings/core/v8/BindingSecurity.h"
@@ -92,7 +91,6 @@
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/WindowPerformance.h"
 #include "platform/EventDispatchForbiddenScope.h"
-#include "platform/WebFrameScheduler.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/ScrollbarTheme.h"
@@ -343,8 +341,6 @@ Document* LocalDOMWindow::InstallNewDocument(const String& mime_type,
           GetFrame()->View());
     }
   }
-
-  GetFrame()->Selection().UpdateSecureKeyboardEntryIfActive();
 
   if (GetFrame()->IsCrossOriginSubframe())
     document_->RecordDeferredLoadReason(WouldLoadReason::kCreated);

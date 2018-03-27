@@ -13,6 +13,8 @@ source_set("table_view") {
     "table_view_model.mm",
   ]
   deps = [
+    ":styler",
+    "//base",
     "//ios/chrome/app/strings",
     "//ios/chrome/browser/ui/list_model",
     "//ui/base",
@@ -22,11 +24,20 @@ source_set("table_view") {
   ]
 }
 
+source_set("styler") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+  sources = [
+    "chrome_table_view_styler.h",
+    "chrome_table_view_styler.mm",
+  ]
+}
+
 source_set("unit_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
   testonly = true
   sources = [
     "chrome_table_view_controller_unittest.mm",
+    "table_view_model_unittest.mm",
   ]
   deps = [
     ":table_view",

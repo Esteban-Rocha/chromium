@@ -199,17 +199,18 @@ void StartURLLoader(const network::ResourceRequest& request,
   scoped_refptr<base::SingleThreadTaskRunner> target_runner =
       source->source()->TaskRunnerForRequestPath(path);
   if (!target_runner) {
-    source->source()->StartDataRequest(path, wc_getter,
-                                       data_available_callback);
+    source->source()->StartDataRequest(path, std::move(wc_getter),
+                                       std::move(data_available_callback));
     return;
   }
 
   // The DataSource wants StartDataRequest to be called on a specific
   // thread, usually the UI thread, for this path.
   target_runner->PostTask(
-      FROM_HERE, base::BindOnce(&URLDataSource::StartDataRequest,
-                                base::Unretained(source->source()), path,
-                                wc_getter, data_available_callback));
+      FROM_HERE,
+      base::BindOnce(&URLDataSource::StartDataRequest,
+                     base::Unretained(source->source()), path,
+                     std::move(wc_getter), std::move(data_available_callback)));
 }
 
 class WebUIURLLoaderFactory : public network::mojom::URLLoaderFactory,
@@ -243,6 +244,7 @@ class WebUIURLLoaderFactory : public network::mojom::URLLoaderFactory,
                             const net::MutableNetworkTrafficAnnotationTag&
                                 traffic_annotation) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    DCHECK(!request.download_to_file);
 
     if (request.url.scheme() != scheme_) {
       DVLOG(1) << "Bad scheme: " << request.url.scheme();
@@ -330,10 +332,6 @@ std::unique_ptr<network::mojom::URLLoaderFactory> CreateWebUIURLLoader(
     RenderFrameHost* render_frame_host,
     const std::string& scheme,
     base::flat_set<std::string> allowed_hosts) {
-  // At present we have no use-case for a need to allow all hosts if
-  // constructing via this method. If this changes remove the DCHECK below and
-  // WebUIURLLoaderFactory will not filter.
-  DCHECK(!allowed_hosts.empty());
   return std::make_unique<WebUIURLLoaderFactory>(render_frame_host, scheme,
                                                  std::move(allowed_hosts));
 }

@@ -515,6 +515,23 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
       return MatchSelector(next_context, result);
     }
 
+    case CSSSelector::kShadowPart:
+      // We ascend through ancestor shadow host elements until we reach the host
+      // in the TreeScope associated with the style rule. We then match against
+      // that host.
+      if (RuntimeEnabledFeatures::CSSPartPseudoElementEnabled()) {
+        while (next_context.element) {
+          next_context.element = next_context.element->OwnerShadowHost();
+          if (!next_context.element)
+            return kSelectorFailsCompletely;
+
+          if (next_context.element->GetTreeScope() ==
+              context.scope->GetTreeScope())
+            return MatchSelector(next_context, result);
+        }
+      }
+      return kSelectorFailsCompletely;
+      break;
     case CSSSelector::kSubSelector:
       break;
   }
@@ -1134,7 +1151,16 @@ bool SelectorChecker::CheckPseudoElement(const SelectorCheckingContext& context,
       return false;
     }
     case CSSSelector::kPseudoPart:
-      // TODO(crbug/805271): Implement this.
+      if (!RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
+        return false;
+      if (const SpaceSplitString* part_names = element.PartNames()) {
+        if (part_names->Contains(selector.Argument())) {
+          // TODO(crbug/805271): Until partmap is implemented, only consider
+          // styling parts from scope directly containing the shadow host.
+          Element* host = element.OwnerShadowHost();
+          return host && host->GetTreeScope() == context.scope->GetTreeScope();
+        }
+      }
       return false;
     case CSSSelector::kPseudoPlaceholder:
       if (ShadowRoot* root = element.ContainingShadowRoot()) {
@@ -1361,10 +1387,19 @@ bool SelectorChecker::MatchesFocusPseudoClass(const Element& element) {
 }
 
 bool SelectorChecker::MatchesFocusVisiblePseudoClass(const Element& element) {
+  bool force_pseudo_state = false;
+  probe::forcePseudoState(const_cast<Element*>(&element),
+                          CSSSelector::kPseudoFocusVisible,
+                          &force_pseudo_state);
+  if (force_pseudo_state)
+    return true;
   bool always_show_focus_ring =
       IsHTMLFormControlElement(element) &&
       ToHTMLFormControlElement(element).ShouldShowFocusRingOnMouseFocus();
-  return MatchesFocusPseudoClass(element) &&
+  // Avoid probing for force_pseudo_state. Otherwise, as currently implemented,
+  // :focus-visible will always match if :focus is forced, since no focus
+  // source flags will be set.
+  return element.IsFocused() && IsFrameFocused(element) &&
          (!element.WasFocusedByMouse() || always_show_focus_ring);
 }
 

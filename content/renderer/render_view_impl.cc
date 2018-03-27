@@ -97,7 +97,7 @@
 #include "content/renderer/web_ui_extension_data.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/media_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/renderers/audio_renderer_impl.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "net/base/data_url.h"
@@ -579,9 +579,10 @@ void RenderViewImpl::Initialize(
     main_render_frame_ = RenderFrameImpl::CreateMainFrame(
         this, params->main_frame_routing_id,
         std::move(main_frame_interface_provider),
-        params->main_frame_widget_routing_id, params->hidden, screen_info(),
-        compositor_deps_, opener_frame, params->devtools_main_frame_token,
-        params->replicated_frame_state, params->has_committed_real_load);
+        params->main_frame_widget_routing_id, params->hidden,
+        GetWebScreenInfo(), compositor_deps_, opener_frame,
+        params->devtools_main_frame_token, params->replicated_frame_state,
+        params->has_committed_real_load);
   }
 
   // TODO(dcheng): Shouldn't these be mutually exclusive at this point? See
@@ -741,6 +742,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       prefs.application_cache_enabled);
   settings->SetHistoryEntryRequiresUserGesture(
       prefs.history_entry_requires_user_gesture);
+  settings->SetShouldThrottlePushState(!prefs.disable_pushstate_throttle);
   settings->SetHyperlinkAuditingEnabled(prefs.hyperlink_auditing_enabled);
   settings->SetCookieEnabled(prefs.cookie_enabled);
   settings->SetNavigateOnDragDrop(prefs.navigate_on_drag_drop);
@@ -1028,35 +1030,6 @@ const blink::WebView* RenderViewImpl::webview() const {
   return webview_;
 }
 
-#if BUILDFLAG(ENABLE_PLUGINS)
-
-#if defined(OS_MACOSX)
-void RenderViewImpl::OnGetRenderedText() {
-  if (!webview())
-    return;
-
-  if (!webview()->MainFrame()->IsWebLocalFrame())
-    return;
-
-  // Get rendered text from WebLocalFrame.
-  // TODO: Currently IPC truncates any data that has a
-  // size > kMaximumMessageSize. May be split the text into smaller chunks and
-  // send back using multiple IPC. See http://crbug.com/393444.
-  static const size_t kMaximumMessageSize = 8 * 1024 * 1024;
-  // TODO(dglazkov): Using this API is wrong. It's not OOPIF-compatible and
-  // sends text in the wrong order. See http://crbug.com/584798.
-  // TODO(dglazkov): WebFrameContentDumper should only be used for
-  // testing purposes. See http://crbug.com/585164.
-  std::string text =
-      WebFrameContentDumper::DumpWebViewAsText(webview(), kMaximumMessageSize)
-          .Utf8();
-
-  Send(new ViewMsg_GetRenderedTextCompleted(GetRoutingID(), text));
-}
-#endif  // defined(OS_MACOSX)
-
-#endif  // ENABLE_PLUGINS
-
 // RenderWidgetInputHandlerDelegate -----------------------------------------
 
 bool RenderViewImpl::RenderWidgetWillHandleMouseEvent(
@@ -1131,10 +1104,9 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnSetHistoryOffsetAndLength)
     IPC_MESSAGE_HANDLER(PageMsg_AudioStateChanged, OnAudioStateChanged)
     IPC_MESSAGE_HANDLER(PageMsg_UpdateScreenInfo, OnUpdateScreenInfo)
+    IPC_MESSAGE_HANDLER(PageMsg_FreezePage, OnFreezePage)
 
 #if defined(OS_MACOSX)
-    IPC_MESSAGE_HANDLER(ViewMsg_GetRenderedText,
-                        OnGetRenderedText)
     IPC_MESSAGE_HANDLER(ViewMsg_Close, OnClose)
 #endif
     // Adding a new message? Add platform independent ones first, then put the
@@ -1371,7 +1343,7 @@ WebView* RenderViewImpl::CreateView(WebLocalFrame* creator,
                  base::Unretained(creator_frame), opened_by_user_gesture);
 
   RenderViewImpl* view = RenderViewImpl::Create(
-      compositor_deps_, std::move(view_params), show_callback,
+      compositor_deps_, std::move(view_params), std::move(show_callback),
       creator->GetTaskRunner(blink::TaskType::kUnthrottled));
 
   return view->webview();
@@ -1818,7 +1790,7 @@ gfx::Size RenderViewImpl::GetSize() const {
 }
 
 float RenderViewImpl::GetDeviceScaleFactor() const {
-  return GetWebDeviceScaleFactor();
+  return GetWebScreenInfo().device_scale_factor;
 }
 
 float RenderViewImpl::GetZoomLevel() const {
@@ -1908,8 +1880,10 @@ void RenderViewImpl::OnEnableAutoResize(const gfx::Size& min_size,
 
   if (IsUseZoomForDSFEnabled()) {
     webview()->EnableAutoResizeMode(
-        gfx::ScaleToCeiledSize(min_size, GetWebDeviceScaleFactor()),
-        gfx::ScaleToCeiledSize(max_size, GetWebDeviceScaleFactor()));
+        gfx::ScaleToCeiledSize(min_size,
+                               GetWebScreenInfo().device_scale_factor),
+        gfx::ScaleToCeiledSize(max_size,
+                               GetWebScreenInfo().device_scale_factor));
   } else {
     webview()->EnableAutoResizeMode(min_size, max_size);
   }
@@ -1928,7 +1902,8 @@ void RenderViewImpl::OnDisableAutoResize(const gfx::Size& new_size) {
     ResizeParams resize_params;
     resize_params.screen_info = screen_info_;
     resize_params.new_size = new_size;
-    resize_params.physical_backing_size = physical_backing_size_;
+    resize_params.compositor_viewport_pixel_size =
+        compositor_viewport_pixel_size_;
     resize_params.browser_controls_shrink_blink_size =
         browser_controls_shrink_blink_size_;
     resize_params.top_controls_height = top_controls_height_;
@@ -1947,7 +1922,7 @@ void RenderViewImpl::OnSetLocalSurfaceIdForAutoResize(
     const content::ScreenInfo& screen_info,
     uint32_t content_source_id,
     const viz::LocalSurfaceId& local_surface_id) {
-  if (!auto_resize_mode_ || resize_or_repaint_ack_num_ != sequence_number) {
+  if (!auto_resize_mode_ || auto_resize_sequence_number_ != sequence_number) {
     DidResizeOrRepaintAck();
     return;
   }
@@ -1957,8 +1932,10 @@ void RenderViewImpl::OnSetLocalSurfaceIdForAutoResize(
 
   if (IsUseZoomForDSFEnabled()) {
     webview()->EnableAutoResizeMode(
-        gfx::ScaleToCeiledSize(min_size, GetWebDeviceScaleFactor()),
-        gfx::ScaleToCeiledSize(max_size, GetWebDeviceScaleFactor()));
+        gfx::ScaleToCeiledSize(min_size,
+                               GetWebScreenInfo().device_scale_factor),
+        gfx::ScaleToCeiledSize(max_size,
+                               GetWebScreenInfo().device_scale_factor));
   } else {
     webview()->EnableAutoResizeMode(min_size, max_size);
   }
@@ -2085,7 +2062,7 @@ void RenderViewImpl::OnResize(const ResizeParams& params) {
   if (device_scale_factor_for_testing_) {
     ResizeParams p(params);
     p.screen_info.device_scale_factor = *device_scale_factor_for_testing_;
-    p.physical_backing_size =
+    p.compositor_viewport_pixel_size =
         gfx::ScaleToCeiledSize(p.new_size, p.screen_info.device_scale_factor);
     RenderWidget::OnResize(p);
   } else {
@@ -2173,6 +2150,12 @@ void RenderViewImpl::OnUpdateScreenInfo(const ScreenInfo& screen_info) {
   // ViewMsg_Resize.
   if (!main_render_frame_)
     screen_info_ = screen_info;
+}
+
+void RenderViewImpl::OnFreezePage() {
+  if (webview()) {
+    webview()->FreezePage();
+  }
 }
 
 GURL RenderViewImpl::GetURLForGraphicsContext3D() {
@@ -2288,7 +2271,8 @@ bool RenderViewImpl::DidTapMultipleTargets(
 
   // The touch_rect, target_rects and zoom_rect are in the outer viewport
   // reference frame.
-  float to_pix = IsUseZoomForDSFEnabled() ? 1 : GetWebDeviceScaleFactor();
+  float to_pix =
+      IsUseZoomForDSFEnabled() ? 1 : GetWebScreenInfo().device_scale_factor;
   gfx::Rect zoom_rect;
   float new_total_scale =
       DisambiguationPopupHelper::ComputeZoomAreaAndScaleFactor(
@@ -2331,7 +2315,7 @@ bool RenderViewImpl::DidTapMultipleTargets(
         // device scale will be applied in WebKit
         // --> zoom_rect doesn't include device scale,
         //     but WebKit will still draw on zoom_rect *
-        //     GetWebDeviceScaleFactor()
+        //     GetWebScreenInfo().device_scale_factor
         canvas.scale(new_total_scale / to_pix, new_total_scale / to_pix);
         canvas.translate(-zoom_rect.x() * to_pix, -zoom_rect.y() * to_pix);
 
@@ -2409,7 +2393,8 @@ void RenderViewImpl::SetDeviceScaleFactorForTesting(float factor) {
   params.screen_info.device_scale_factor = factor;
   params.new_size = size();
   params.visible_viewport_size = visible_viewport_size_;
-  params.physical_backing_size = gfx::ScaleToCeiledSize(size(), factor);
+  params.compositor_viewport_pixel_size =
+      gfx::ScaleToCeiledSize(size(), factor);
   params.browser_controls_shrink_blink_size = false;
   params.top_controls_height = 0.f;
   params.is_fullscreen_granted = is_fullscreen_granted();
@@ -2425,7 +2410,7 @@ void RenderViewImpl::SetDeviceColorSpaceForTesting(
   params.screen_info.color_space = color_space;
   params.new_size = size();
   params.visible_viewport_size = visible_viewport_size_;
-  params.physical_backing_size = physical_backing_size_;
+  params.compositor_viewport_pixel_size = compositor_viewport_pixel_size_;
   params.browser_controls_shrink_blink_size = false;
   params.top_controls_height = 0.f;
   params.is_fullscreen_granted = is_fullscreen_granted();

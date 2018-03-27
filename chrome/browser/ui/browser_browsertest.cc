@@ -1841,7 +1841,13 @@ IN_PROC_BROWSER_TEST_F(BrowserTest2, NoTabsInPopups) {
 }
 #endif
 
-IN_PROC_BROWSER_TEST_F(BrowserTest, WindowOpenClose1) {
+// Flaky on Chrome OS only. TODO(https://crbug.com/823043) fix it.
+#if defined(OS_CHROMEOS)
+#define MAYBE_WindowOpenClose1 DISABLED_WindowOpenClose1
+#else
+#define MAYBE_WindowOpenClose1 WindowOpenClose1
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_WindowOpenClose1) {
   base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisablePopupBlocking);
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -1858,7 +1864,13 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, WindowOpenClose1) {
   EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
 }
 
-IN_PROC_BROWSER_TEST_F(BrowserTest, WindowOpenClose2) {
+// Flaky on Chrome OS only. TODO(https://crbug.com/823043) fix it.
+#if defined(OS_CHROMEOS)
+#define MAYBE_WindowOpenClose2 DISABLED_WindowOpenClose2
+#else
+#define MAYBE_WindowOpenClose2 WindowOpenClose2
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_WindowOpenClose2) {
   base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisablePopupBlocking);
   ASSERT_TRUE(embedded_test_server()->Start());

@@ -13,16 +13,12 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
-
-namespace base {
-class MessageLoop;
-class Thread;
-}
+#include "content/public/browser/browser_thread.h"
 
 namespace content {
 
@@ -67,17 +63,12 @@ class CONTENT_EXPORT BrowserThread {
     // The main thread in the browser.
     UI,
 
-    // Used to launch and terminate Chrome processes.
-    PROCESS_LAUNCHER,
-
     // This is the thread that processes non-blocking IO, i.e. IPC and network.
-    // Blocking IO should happen in TaskScheduler.
+    // Blocking I/O should happen in TaskScheduler.
     IO,
 
-    // NOTE: do not add new threads here that are only used by a small number of
-    // files. Instead you should just use a Thread class and pass its
-    // task runner around. Named threads there are only for threads that
-    // are used in many places.
+    // NOTE: do not add new threads here. Instead you should just use
+    // base::Create*TaskRunnerWithTraits.
 
     // This identifier does not represent a thread.  Instead it counts the
     // number of well-known threads.  Insert new well-known threads before this

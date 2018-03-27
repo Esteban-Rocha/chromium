@@ -47,11 +47,10 @@ public class AwAutofillManager {
 
     public AwAutofillManager(Context context) {
         if (DEBUG) Log.i(TAG, "constructor");
-        if (AwContents.activityFromContext(context) == null) {
-            mDisabled = true;
-            return;
-        }
         mAutofillManager = context.getSystemService(AutofillManager.class);
+        mDisabled = mAutofillManager == null || !mAutofillManager.isEnabled();
+        if (mDisabled) return;
+
         mMonitor = new AutofillInputUIMonitor(this);
         mAutofillManager.registerCallback(mMonitor);
     }

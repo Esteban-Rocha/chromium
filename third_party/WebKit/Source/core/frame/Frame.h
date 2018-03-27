@@ -40,6 +40,7 @@
 #include "core/page/FrameTree.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Forward.h"
+#include "platform/wtf/Optional.h"
 #include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 
 namespace blink {
@@ -87,6 +88,7 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   virtual void Navigate(const FrameLoadRequest&) = 0;
   virtual void Reload(FrameLoadType, ClientRedirectPolicy) = 0;
 
+  // The base Detach() method must be the last line of overrides of Detach().
   virtual void Detach(FrameDetachType);
   void DisconnectOwnerElement();
   virtual bool ShouldClose() = 0;
@@ -99,7 +101,6 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   virtual FrameView* View() const = 0;
 
   bool IsMainFrame() const;
-  bool IsLocalRoot() const;
 
   FrameOwner* Owner() const;
   void SetOwner(FrameOwner*);
@@ -139,7 +140,8 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
 
   virtual void DidChangeVisibilityState();
 
-  void UpdateUserActivationInFrameTree();
+  // This should never be called from outside Frame or WebFrame.
+  void NotifyUserActivationInLocalTree();
 
   bool HasBeenActivated() const {
     return user_activation_state_.HasBeenActive();
@@ -158,8 +160,10 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   // Creates a |UserGestureIndicator| that contains a |UserGestureToken| with
   // the given status.  Also activates the user activation state of the
   // |LocalFrame| (provided it's non-null) and all its ancestors.
+  //
+  // TODO(mustaq): Move the user activation entry-points to LocalFrame.
   static std::unique_ptr<UserGestureIndicator> NotifyUserActivation(
-      Frame*,
+      LocalFrame*,
       UserGestureToken::Status = UserGestureToken::kPossiblyExistingGesture);
 
   // Returns the transient user activation state of the |LocalFrame|, provided
@@ -170,7 +174,7 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   //
   // TODO(mustaq): clarify/enforce the relation between the two params after
   // null-frame main-thread cases (crbug.com/730690) have been removed.
-  static bool HasTransientUserActivation(Frame*,
+  static bool HasTransientUserActivation(LocalFrame*,
                                          bool checkIfMainThread = false);
 
   // Consumes the transient user activation state of the |LocalFrame|, provided
@@ -179,7 +183,7 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   //
   // The |checkIfMainThread| parameter determines if the token based gestures
   // (legacy code) must be used in a thread-safe manner.
-  static bool ConsumeTransientUserActivation(Frame*,
+  static bool ConsumeTransientUserActivation(LocalFrame*,
                                              bool checkIfMainThread = false);
 
   bool IsAttached() const {
@@ -199,6 +203,7 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   const base::UnguessableToken& GetDevToolsFrameToken() const {
     return devtools_frame_token_;
   }
+  const CString& ToTraceValue();
 
  protected:
   Frame(FrameClient*, Page&, FrameOwner*, WindowProxyManager*);
@@ -209,7 +214,11 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   Member<FrameOwner> owner_;
   Member<DOMWindow> dom_window_;
 
+  // A LocalFrame is the primary "owner" of the activation state.  The state in
+  // a RemoteFrame serves as a cache for the corresponding LocalFrame state (to
+  // avoid double hops through the browser during reading).
   UserActivationState user_activation_state_;
+
   bool has_received_user_gesture_before_nav_ = false;
 
   FrameLifecycle lifecycle_;
@@ -221,6 +230,9 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
 
  private:
   // Activates the user activation state of this frame and all its ancestors.
+  //
+  // TODO(mustaq): Move the user activation (private) entry-points to
+  // LocalFrame.
   void NotifyUserActivation();
 
   bool HasTransientUserActivation() {
@@ -236,6 +248,7 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   // TODO(sashab): Investigate if this can be represented with m_lifecycle.
   bool is_loading_;
   base::UnguessableToken devtools_frame_token_;
+  WTF::Optional<CString> trace_value_;
 };
 
 inline FrameClient* Frame::Client() const {
@@ -253,6 +266,14 @@ inline FrameTree& Frame::Tree() const {
 // Allow equality comparisons of Frames by reference or pointer,
 // interchangeably.
 DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(Frame)
+
+// This method should be used instead of Frame* pointer
+// in a TRACE_EVENT_XXX macro. Example:
+//
+// TRACE_EVENT1("category", "event_name", "frame", ToTraceValue(GetFrame()));
+static inline CString ToTraceValue(Frame* frame) {
+  return frame ? frame->ToTraceValue() : CString();
+}
 
 }  // namespace blink
 

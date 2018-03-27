@@ -26,12 +26,16 @@ namespace autofill {
 
 const base::Feature kAutofillAlwaysFillAddresses{
     "AlwaysFillAddresses", base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kAutofillAutoDismissableUpstreamBubble{
+    "AutofillAutoDismissableUpstreamBubble", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreateDataForTest{
     "AutofillCreateDataForTest", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardAssist{
     "AutofillCreditCardAssist", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillScanCardholderName{
     "AutofillScanCardholderName", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAutofillCreditCardBankNameDisplay{
+    "AutofillCreditCardBankNameDisplay", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardAblationExperiment{
     "AutofillCreditCardAblationExperiment", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardPopupLayout{
@@ -78,7 +82,7 @@ const char kAutofillCreditCardLastUsedDateShowExpirationDateKey[] =
 
 #if defined(OS_MACOSX)
 const base::Feature kCreditCardAutofillTouchBar{
-    "CreditCardAutofillTouchBar", base::FEATURE_DISABLED_BY_DEFAULT};
+    "CreditCardAutofillTouchBar", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_MACOSX)
 
 namespace {
@@ -119,8 +123,16 @@ bool IsAutofillCreditCardPopupLayoutExperimentEnabled() {
   return base::FeatureList::IsEnabled(kAutofillCreditCardPopupLayout);
 }
 
+bool IsAutofillAutoDismissableUpstreamBubbleExperimentEnabled() {
+  return base::FeatureList::IsEnabled(kAutofillAutoDismissableUpstreamBubble);
+}
+
 bool IsAutofillCreditCardLastUsedDateDisplayExperimentEnabled() {
   return base::FeatureList::IsEnabled(kAutofillCreditCardLastUsedDateDisplay);
+}
+
+bool IsAutofillCreditCardBankNameDisplayExperimentEnabled() {
+  return base::FeatureList::IsEnabled(kAutofillCreditCardBankNameDisplay);
 }
 
 // |GetCreditCardPopupParameterUintValue| returns 0 if experiment parameter is
@@ -219,6 +231,17 @@ bool IsCreditCardUploadEnabled(const PrefService* pref_service,
   // Check Autofill sync setting.
   if (!(sync_service && sync_service->CanSyncStart() &&
         sync_service->GetPreferredDataTypes().Has(syncer::AUTOFILL_PROFILE))) {
+    return false;
+  }
+
+  // Check if sync is not in a permanent error state.
+  syncer::SyncService::SyncTokenStatus token_status =
+      sync_service->GetSyncTokenStatus();
+  if ((token_status.connection_status ==
+           syncer::ConnectionStatus::CONNECTION_AUTH_ERROR ||
+       token_status.connection_status ==
+           syncer::ConnectionStatus::CONNECTION_SERVER_ERROR) &&
+      token_status.last_get_token_error.IsPersistentError()) {
     return false;
   }
 

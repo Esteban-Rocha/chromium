@@ -10,7 +10,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/trace_event/trace_event.h"
 #include "media/base/media_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "third_party/libyuv/include/libyuv.h"
 
 #if defined(OS_ANDROID)
@@ -92,7 +92,8 @@ bool HasPlatformDecoderSupport() {
 }
 
 bool PlatformHasOpusSupport() {
-  return base::android::BuildInfo::GetInstance()->sdk_int() >= 21;
+  return base::android::BuildInfo::GetInstance()->sdk_int() >=
+         base::android::SDK_VERSION_LOLLIPOP;
 }
 #endif  // defined(OS_ANDROID)
 

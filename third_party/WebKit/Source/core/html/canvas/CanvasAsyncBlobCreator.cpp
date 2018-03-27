@@ -17,7 +17,6 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/threading/BackgroundTaskRunner.h"
 #include "platform/wtf/Functional.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
@@ -217,6 +216,7 @@ void CanvasAsyncBlobCreator::Dispose() {
   parent_frame_task_runner_.Clear();
   callback_.Clear();
   script_promise_resolver_.Clear();
+  image_ = nullptr;
 }
 
 bool CanvasAsyncBlobCreator::EncodeImage(const double& quality) {

@@ -205,6 +205,7 @@ class PLATFORM_EXPORT HeapObjectHeader {
   bool IsMarked() const;
   void Mark();
   void Unmark();
+  bool TryMark();
 
   // The payload starts directly after the HeapObjectHeader, and the payload
   // size does not include the sizeof(HeapObjectHeader).
@@ -332,11 +333,6 @@ inline bool IsPageHeaderAddress(Address address) {
            kBlinkGuardPageSize);
 }
 
-// Callback used for unit testing the marking of conservative pointers
-// (|CheckAndMarkPointer|). For each pointer that has been discovered to point
-// to a heap object, the callback is invoked with a pointer to its header. If
-// the callback returns true, the object will not be marked.
-using MarkedPointerCallbackForTesting = bool (*)(HeapObjectHeader*);
 #endif
 
 // |BasePage| is a base class for |NormalPage| and |LargeObjectPage|.
@@ -379,20 +375,6 @@ class BasePage {
 
 #if defined(ADDRESS_SANITIZER)
   virtual void PoisonUnmarkedObjects() = 0;
-#endif
-
-  // Check if the given address points to an object in this heap page. If so,
-  // find the start of that object and mark it using the given |Visitor|.
-  // Otherwise do nothing. The pointer must be within the same aligned
-  // |kBlinkPageSize| as |this|.
-  //
-  // This is used during conservative stack scanning to conservatively mark all
-  // objects that could be referenced from the stack.
-  virtual void CheckAndMarkPointer(MarkingVisitor*, Address) = 0;
-#if DCHECK_IS_ON()
-  virtual void CheckAndMarkPointer(MarkingVisitor*,
-                                   Address,
-                                   MarkedPointerCallbackForTesting) = 0;
 #endif
 
   class HeapSnapshotInfo {
@@ -534,12 +516,6 @@ class PLATFORM_EXPORT NormalPage final : public BasePage {
 #if defined(ADDRESS_SANITIZER)
   void PoisonUnmarkedObjects() override;
 #endif
-  void CheckAndMarkPointer(MarkingVisitor*, Address) override;
-#if DCHECK_IS_ON()
-  void CheckAndMarkPointer(MarkingVisitor*,
-                           Address,
-                           MarkedPointerCallbackForTesting) override;
-#endif
 
   void TakeSnapshot(base::trace_event::MemoryAllocatorDump*,
                     ThreadState::GCSnapshotInfo&,
@@ -631,12 +607,6 @@ class LargeObjectPage final : public BasePage {
   void MakeConsistentForMutator() override;
 #if defined(ADDRESS_SANITIZER)
   void PoisonUnmarkedObjects() override;
-#endif
-  void CheckAndMarkPointer(MarkingVisitor*, Address) override;
-#if DCHECK_IS_ON()
-  void CheckAndMarkPointer(MarkingVisitor*,
-                           Address,
-                           MarkedPointerCallbackForTesting) override;
 #endif
 
   void TakeSnapshot(base::trace_event::MemoryAllocatorDump*,
@@ -1100,6 +1070,14 @@ NO_SANITIZE_ADDRESS inline void HeapObjectHeader::Unmark() {
   CheckHeader();
   DCHECK(IsMarked());
   encoded_ &= ~kHeaderMarkBitMask;
+}
+
+NO_SANITIZE_ADDRESS inline bool HeapObjectHeader::TryMark() {
+  CheckHeader();
+  if (encoded_ & kHeaderMarkBitMask)
+    return false;
+  encoded_ |= kHeaderMarkBitMask;
+  return true;
 }
 
 NO_SANITIZE_ADDRESS inline bool BasePage::IsValid() const {

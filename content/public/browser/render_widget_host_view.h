@@ -5,8 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_RENDER_WIDGET_HOST_VIEW_H_
 #define CONTENT_PUBLIC_BROWSER_RENDER_WIDGET_HOST_VIEW_H_
 
-#include <memory>
-
+#include "base/containers/flat_set.h"
+#include "base/optional.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
@@ -22,9 +22,21 @@ class Rect;
 class Size;
 }
 
+namespace mojo {
+template <class T>
+class InterfacePtr;
+}
+
 namespace ui {
 class TextInputClient;
 }
+
+namespace viz {
+namespace mojom {
+class FrameSinkVideoCapturer;
+using FrameSinkVideoCapturerPtr = mojo::InterfacePtr<FrameSinkVideoCapturer>;
+}  // namespace mojom
+}  // namespace viz
 
 namespace content {
 
@@ -151,6 +163,12 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Returns true if the mouse pointer is currently locked.
   virtual bool IsMouseLocked() = 0;
 
+  // Start/Stop intercepting future system keyboard events.
+  virtual bool LockKeyboard(base::Optional<base::flat_set<int>> keys) = 0;
+  virtual void UnlockKeyboard() = 0;
+  // Returns true if keyboard lock is active.
+  virtual bool IsKeyboardLocked() = 0;
+
   // Retrives the size of the viewport for the visible region. May be smaller
   // than the view size if a portion of the view is obstructed (e.g. by a
   // virtual keyboard).
@@ -167,7 +185,7 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Copies the given subset of the view's surface, optionally scales it, and
   // returns the result as a bitmap via the provided callback. This is meant for
   // one-off snapshots. For continuous video capture of the surface, please use
-  // viz::FrameSinkManager::CreateVideoCapturer() instead.
+  // CreateVideoCapturer() instead.
   //
   // |src_rect| is either the subset of the view's surface, in view coordinates,
   // or empty to indicate that all of it should be copied. This is NOT the same
@@ -189,6 +207,12 @@ class CONTENT_EXPORT RenderWidgetHostView {
       const gfx::Rect& src_rect,
       const gfx::Size& output_size,
       base::OnceCallback<void(const SkBitmap&)> callback) = 0;
+
+  // Creates a video capturer, which will allow the caller to receive a stream
+  // of media::VideoFrames captured from this view. The capturer is configured
+  // to target this view, so there is no need to call ChangeTarget() before
+  // Start(). See viz.mojom.FrameSinkVideoCapturer for documentation.
+  virtual viz::mojom::FrameSinkVideoCapturerPtr CreateVideoCapturer() = 0;
 
   // Notification that a node was touched.
   // The |editable| parameter indicates if the node is editable, for e.g.
@@ -219,14 +243,8 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Brings up the dictionary showing a definition for the selected text.
   virtual void ShowDefinitionForSelection() = 0;
 
-  // Returns |true| if Mac OS X text to speech is supported.
-  virtual bool SupportsSpeech() const = 0;
   // Tells the view to speak the currently selected text.
   virtual void SpeakSelection() = 0;
-  // Returns |true| if text is currently being spoken by Mac OS X.
-  virtual bool IsSpeaking() const = 0;
-  // Stops speaking, if it is currently in progress.
-  virtual void StopSpeaking() = 0;
 #endif  // defined(OS_MACOSX)
 };
 

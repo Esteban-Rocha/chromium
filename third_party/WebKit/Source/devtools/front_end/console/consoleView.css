@@ -33,7 +33,8 @@
 }
 
 .console-view > .toolbar {
-    border-bottom: 1px solid #dadada;
+    background-color: var(--toolbar-bg-color);
+    border-bottom: var(--divider-border);
 }
 
 .console-view-wrapper {
@@ -47,7 +48,8 @@
 
 .console-settings-pane {
     flex: none;
-    border-bottom: 1px solid #dadada;
+    background-color: var(--toolbar-bg-color);
+    border-bottom: var(--divider-border);
 }
 
 .console-settings-pane .toolbar {
@@ -256,12 +258,17 @@
     color: red !important;
 }
 
+.console-system-type.console-info-level {
+    color: blue;
+}
+
 .-theme-with-dark-background .console-error-level .console-message-text,
 .-theme-with-dark-background .console-error-level .console-view-object-properties-section {
     color: hsl(0, 100%, 75%) !important;
 }
 
-.-theme-with-dark-background .console-verbose-level .console-message-text {
+.-theme-with-dark-background .console-verbose-level:not(.console-warning-level) .console-message-text,
+.-theme-with-dark-background .console-system-type.console-info-level {
     color: hsl(220, 100%, 65%) !important;
 }
 

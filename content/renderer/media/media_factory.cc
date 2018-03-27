@@ -30,7 +30,7 @@
 #include "media/blink/webencryptedmediaclient_impl.h"
 #include "media/blink/webmediaplayer_impl.h"
 #include "media/filters/context_3d.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/renderers/default_renderer_factory.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
@@ -350,11 +350,11 @@ MediaFactory::CreateRendererFactorySelector(
 #if defined(OS_ANDROID)
   DCHECK(remote_interfaces_);
 
-  // The only MojoRendererService that is registered at the RenderFrameHost
-  // level uses the MediaPlayerRenderer as its underlying media::Renderer.
   auto mojo_media_player_renderer_factory =
       std::make_unique<media::MojoRendererFactory>(
-          media::MojoRendererFactory::GetGpuFactoriesCB(), remote_interfaces_);
+          media::mojom::HostedRendererType::kMediaPlayer,
+          media::MojoRendererFactory::GetGpuFactoriesCB(),
+          GetMediaInterfaceFactory());
 
   // Always give |factory_selector| a MediaPlayerRendererClient factory. WMPI
   // might fallback to it if the final redirected URL is an HLS url.
@@ -384,6 +384,7 @@ MediaFactory::CreateRendererFactorySelector(
     factory_selector->AddFactory(
         media::RendererFactorySelector::FactoryType::MOJO,
         std::make_unique<media::MojoRendererFactory>(
+            media::mojom::HostedRendererType::kDefault,
             base::Bind(&RenderThreadImpl::GetGpuFactories,
                        base::Unretained(render_thread)),
             GetMediaInterfaceFactory()));

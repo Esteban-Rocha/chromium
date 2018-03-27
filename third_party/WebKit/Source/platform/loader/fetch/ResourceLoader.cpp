@@ -42,7 +42,6 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/weborigin/SecurityViolationReportingPolicy.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Time.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "public/platform/Platform.h"
@@ -169,13 +168,16 @@ void ResourceLoader::SetDefersLoading(bool defers) {
 
 void ResourceLoader::DidChangePriority(ResourceLoadPriority load_priority,
                                        int intra_priority_value) {
-  if (loader_) {
+  if (scheduler_->IsRunning(scheduler_client_id_)) {
+    DCHECK(loader_);
+    DCHECK_NE(ResourceLoadScheduler::kInvalidClientId, scheduler_client_id_);
     loader_->DidChangePriority(
         static_cast<WebURLRequest::Priority>(load_priority),
         intra_priority_value);
+  } else {
+    scheduler_->SetPriority(scheduler_client_id_, load_priority,
+                            intra_priority_value);
   }
-  scheduler_->SetPriority(scheduler_client_id_, load_priority,
-                          intra_priority_value);
 }
 
 void ResourceLoader::ScheduleCancel() {
@@ -688,8 +690,6 @@ void ResourceLoader::HandleError(const ResourceError& error) {
 }
 
 void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
-  // downloadToFile is not supported for synchronous requests.
-  DCHECK(!request.DownloadToFile());
   DCHECK(loader_);
   DCHECK_EQ(request.Priority(), ResourceLoadPriority::kHighest);
 
@@ -699,8 +699,10 @@ void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
   WebData data_out;
   int64_t encoded_data_length = WebURLLoaderClient::kUnknownEncodedDataLength;
   int64_t encoded_body_length = 0;
+  base::Optional<int64_t> downloaded_file_length;
   loader_->LoadSynchronously(request_in, response_out, error_out, data_out,
-                             encoded_data_length, encoded_body_length);
+                             encoded_data_length, encoded_body_length,
+                             downloaded_file_length);
 
   // A message dispatched while synchronously fetching the resource
   // can bring about the cancellation of this load.
@@ -729,6 +731,11 @@ void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
       return true;
     });
     resource_->SetResourceBuffer(data_out);
+  }
+
+  if (downloaded_file_length) {
+    DCHECK(request.DownloadToFile());
+    DidDownloadData(*downloaded_file_length, encoded_body_length);
   }
   DidFinishLoading(CurrentTimeTicksInSeconds(), encoded_data_length,
                    encoded_body_length, decoded_body_length, false);

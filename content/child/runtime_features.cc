@@ -130,9 +130,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::EnableFileSystem(false);
 
-  if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
-    WebRuntimeFeatures::EnableExperimentalCanvasFeatures(true);
-
   if (!command_line.HasSwitch(switches::kDisableAcceleratedJpegDecoding))
     WebRuntimeFeatures::EnableDecodeToYUV(true);
 
@@ -253,10 +250,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
       "FramebustingNeedsSameOriginOrUserGesture",
       base::FeatureList::IsEnabled(
           features::kFramebustingNeedsSameOriginOrUserGesture));
-
-  WebRuntimeFeatures::EnableFeatureFromString(
-      "VibrateRequiresUserGesture",
-      base::FeatureList::IsEnabled(features::kVibrateRequiresUserGesture));
 
   if (command_line.HasSwitch(switches::kDisableBackgroundTimerThrottling))
     WebRuntimeFeatures::EnableTimerThrottlingForBackgroundTabs(false);
@@ -424,6 +417,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kStopLoadingInBackground))
     WebRuntimeFeatures::EnableStopLoadingInBackground(true);
 
+  if (base::FeatureList::IsEnabled(features::kStopNonTimersInBackground))
+    WebRuntimeFeatures::EnableStopNonTimersInBackground(true);
+
   WebRuntimeFeatures::EnablePWAFullCodeCache(
       base::FeatureList::IsEnabled(features::kPWAFullCodeCache));
 
@@ -438,6 +434,10 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (base::FeatureList::IsEnabled(features::kUnifiedTouchAdjustment))
     WebRuntimeFeatures::EnableUnifiedTouchAdjustment(true);
+
+  // Make srcset on link rel=preload work with SignedHTTPExchange flag too.
+  if (base::FeatureList::IsEnabled(features::kSignedHTTPExchange))
+    WebRuntimeFeatures::EnablePreloadImageSrcSetEnabled(true);
 };
 
 }  // namespace content

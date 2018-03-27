@@ -33,6 +33,7 @@
 #include <algorithm>
 #include "core/animation/Animation.h"
 #include "core/animation/AnimationClock.h"
+#include "core/animation/AnimationEffect.h"
 #include "core/animation/DocumentTimelineOptions.h"
 #include "core/animation/ElementAnimations.h"
 #include "core/dom/Document.h"
@@ -41,7 +42,6 @@
 #include "core/page/Page.h"
 #include "platform/animation/CompositorAnimationTimeline.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
-#include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 
@@ -103,7 +103,7 @@ void DocumentTimeline::AnimationAttached(Animation& animation) {
   animations_.insert(&animation);
 }
 
-Animation* DocumentTimeline::Play(AnimationEffectReadOnly* child) {
+Animation* DocumentTimeline::Play(AnimationEffect* child) {
   if (!document_)
     return nullptr;
 

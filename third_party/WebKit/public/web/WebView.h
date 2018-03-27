@@ -41,6 +41,7 @@
 
 namespace blink {
 
+class PageScheduler;
 class WebFrame;
 class WebHitTestResult;
 class WebLocalFrame;
@@ -50,7 +51,6 @@ class WebRemoteFrame;
 class WebSettings;
 class WebString;
 class WebViewClient;
-class WebViewScheduler;
 struct WebDeviceEmulationParams;
 struct WebFloatPoint;
 struct WebMediaPlayerAction;
@@ -404,7 +404,7 @@ class WebView : protected WebWidget {
 
   // Scheduling -----------------------------------------------------------
 
-  virtual WebViewScheduler* Scheduler() const = 0;
+  virtual PageScheduler* Scheduler() const = 0;
 
   // Visibility -----------------------------------------------------------
 
@@ -428,6 +428,11 @@ class WebView : protected WebWidget {
   // to call the WebViewClient::acceptLanguages().
   virtual void AcceptLanguagesChanged() = 0;
 
+  // Lifecycle state ------------------------------------------------------
+
+  // Freeze the page and all the local frames.
+  virtual void FreezePage() = 0;
+
   // Testing functionality for TestRunner ---------------------------------
 
   // Force the webgl context to fail so that webglcontextcreationerror
@@ -437,6 +442,11 @@ class WebView : protected WebWidget {
   // Force the drawing buffer used by webgl contexts to fail so that the webgl
   // context's ability to deal with that failure gracefully can be tested.
   virtual void ForceNextDrawingBufferCreationToFail() = 0;
+
+  // Media engagement -------------------------------------------------------
+
+  // Sets the high media engagement bit for this webview's page.
+  virtual void SetHasHighMediaEngagement(bool has_high_media_engagement) = 0;
 
   // TODO(lfg): Remove this once the refactor of WebView/WebWidget is
   // completed.

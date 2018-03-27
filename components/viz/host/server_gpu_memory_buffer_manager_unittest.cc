@@ -74,6 +74,9 @@ class TestGpuService : public mojom::GpuService {
   void CreateJpegDecodeAccelerator(
       media::mojom::JpegDecodeAcceleratorRequest jda_request) override {}
 
+  void CreateJpegEncodeAccelerator(
+      media::mojom::JpegEncodeAcceleratorRequest jea_request) override {}
+
   void CreateVideoEncodeAcceleratorProvider(
       media::mojom::VideoEncodeAcceleratorProviderRequest request) override {}
 
@@ -113,6 +116,8 @@ class TestGpuService : public mojom::GpuService {
   void GpuSwitched() override {}
 
   void DestroyAllChannels() override {}
+
+  void OnBackgrounded() override {}
 
   void Crash() override {}
 

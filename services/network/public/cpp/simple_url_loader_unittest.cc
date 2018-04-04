@@ -795,19 +795,18 @@ TEST_P(SimpleURLLoaderTest, OnResponseStartedCallback) {
   base::RunLoop run_loop;
   GURL actual_url;
   std::string foo_header_value;
-  test_helper->simple_url_loader()->SetOnResponseStartedCallback(
-      base::BindRepeating(
-          [](GURL* out_final_url, std::string* foo_header_value,
-             base::OnceClosure quit_closure, const GURL& final_url,
-             const ResourceResponseHead& response_head) {
-            *out_final_url = final_url;
-            if (response_head.headers) {
-              response_head.headers->EnumerateHeader(/*iter=*/nullptr, "foo",
-                                                     foo_header_value);
-            }
-            std::move(quit_closure).Run();
-          },
-          &actual_url, &foo_header_value, run_loop.QuitClosure()));
+  test_helper->simple_url_loader()->SetOnResponseStartedCallback(base::BindOnce(
+      [](GURL* out_final_url, std::string* foo_header_value,
+         base::OnceClosure quit_closure, const GURL& final_url,
+         const ResourceResponseHead& response_head) {
+        *out_final_url = final_url;
+        if (response_head.headers) {
+          response_head.headers->EnumerateHeader(/*iter=*/nullptr, "foo",
+                                                 foo_header_value);
+        }
+        std::move(quit_closure).Run();
+      },
+      &actual_url, &foo_header_value, run_loop.QuitClosure()));
   test_helper->StartSimpleLoaderAndWait(url_loader_factory_.get());
   run_loop.Run();
 
@@ -822,7 +821,7 @@ TEST_P(SimpleURLLoaderTest, DeleteInOnResponseStartedCallback) {
   SimpleLoaderTestHelper* unowned_test_helper = test_helper.get();
   base::RunLoop run_loop;
   unowned_test_helper->simple_url_loader()->SetOnResponseStartedCallback(
-      base::BindRepeating(
+      base::BindOnce(
           [](std::unique_ptr<SimpleLoaderTestHelper> test_helper,
              base::OnceClosure quit_closure, const GURL& final_url,
              const ResourceResponseHead& response_head) {
@@ -1502,8 +1501,7 @@ class MockURLLoader : public network::mojom::URLLoader {
           response_info.headers =
               new net::HttpResponseHeaders(net::HttpUtil::AssembleRawHeaders(
                   headers.c_str(), headers.size()));
-          client_->OnReceiveResponse(response_info,
-                                     base::Optional<net::SSLInfo>(), nullptr);
+          client_->OnReceiveResponse(response_info, nullptr);
           break;
         }
         case TestLoaderEvent::kReceived401Response: {
@@ -1512,8 +1510,7 @@ class MockURLLoader : public network::mojom::URLLoader {
           response_info.headers =
               new net::HttpResponseHeaders(net::HttpUtil::AssembleRawHeaders(
                   headers.c_str(), headers.size()));
-          client_->OnReceiveResponse(response_info,
-                                     base::Optional<net::SSLInfo>(), nullptr);
+          client_->OnReceiveResponse(response_info, nullptr);
           break;
         }
         case TestLoaderEvent::kReceived501Response: {
@@ -1522,8 +1519,7 @@ class MockURLLoader : public network::mojom::URLLoader {
           response_info.headers =
               new net::HttpResponseHeaders(net::HttpUtil::AssembleRawHeaders(
                   headers.c_str(), headers.size()));
-          client_->OnReceiveResponse(response_info,
-                                     base::Optional<net::SSLInfo>(), nullptr);
+          client_->OnReceiveResponse(response_info, nullptr);
           break;
         }
         case TestLoaderEvent::kBodyBufferReceived: {

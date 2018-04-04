@@ -32,7 +32,7 @@
 #include "core/dom/ClassCollection.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/ElementShadow.h"
+#include "core/dom/ShadowRoot.h"
 #include "core/frame/FrameTestHelpers.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Location.h"
@@ -52,9 +52,9 @@
 using blink::URLTestHelpers::ToKURL;
 
 namespace blink {
-namespace testing {
+namespace test {
 
-class MHTMLLoadingTest : public ::testing::Test {
+class MHTMLLoadingTest : public testing::Test {
  public:
   MHTMLLoadingTest() = default;
 
@@ -70,7 +70,7 @@ class MHTMLLoadingTest : public ::testing::Test {
                              const std::string& file_name) {
     URLTestHelpers::RegisterMockedURLLoad(
         ToKURL(url),
-        testing::CoreTestDataPath(WebString::FromUTF8("mhtml/" + file_name)),
+        test::CoreTestDataPath(WebString::FromUTF8("mhtml/" + file_name)),
         WebString::FromUTF8("multipart/related"));
   }
 
@@ -248,5 +248,5 @@ TEST_F(MHTMLLoadingTest, LoadMHTMLContainingSoftLineBreaks) {
       "AVeryLongID012345678901234567890123456789012345678901234567890End"));
 }
 
-}  // namespace testing
+}  // namespace test
 }  // namespace blink

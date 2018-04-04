@@ -83,6 +83,7 @@
 #include "content/browser/shared_worker/shared_worker_service_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/webauth/authenticator_impl.h"
+#include "content/browser/webauth/scoped_virtual_authenticator_environment.h"
 #include "content/browser/websockets/websocket_manager.h"
 #include "content/browser/webui/url_data_manager_backend.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
@@ -104,6 +105,7 @@
 #include "content/common/swapped_out_messages.h"
 #include "content/common/url_loader_factory_bundle.mojom.h"
 #include "content/common/widget.mojom.h"
+#include "content/common/wrapper_shared_url_loader_factory.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
@@ -150,9 +152,12 @@
 #include "services/resource_coordinator/public/cpp/resource_coordinator_features.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_url_loader_factory.h"
 #include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 #include "third_party/WebKit/public/common/frame/frame_policy.h"
 #include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/public/platform/modules/webauth/virtual_authenticator.mojom.h"
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/ax_tree_id_registry.h"
 #include "ui/accessibility/ax_tree_update.h"
@@ -374,6 +379,46 @@ bool IsOutOfProcessNetworkService() {
 
 }  // namespace
 
+RenderFrameHostImpl::PendingNavigation::PendingNavigation(
+    const CommonNavigationParams& common_params,
+    mojom::BeginNavigationParamsPtr begin_params,
+    scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory)
+    : common_params(common_params),
+      begin_params(std::move(begin_params)),
+      blob_url_loader_factory(std::move(blob_url_loader_factory)) {}
+
+RenderFrameHostImpl::PendingNavigation::~PendingNavigation() = default;
+
+class RenderFrameHostImpl::DroppedInterfaceRequestLogger
+    : public service_manager::mojom::InterfaceProvider {
+ public:
+  DroppedInterfaceRequestLogger(
+      service_manager::mojom::InterfaceProviderRequest request)
+      : binding_(this) {
+    binding_.Bind(std::move(request));
+  }
+  ~DroppedInterfaceRequestLogger() override {
+    UMA_HISTOGRAM_EXACT_LINEAR("RenderFrameHostImpl.DroppedInterfaceRequests",
+                               num_dropped_requests_, 20);
+  }
+
+ protected:
+  // service_manager::mojom::InterfaceProvider:
+  void GetInterface(const std::string& interface_name,
+                    mojo::ScopedMessagePipeHandle pipe) override {
+    ++num_dropped_requests_;
+    DLOG(WARNING)
+        << "InterfaceRequest was dropped, the document is no longer active: "
+        << interface_name;
+  }
+
+ private:
+  mojo::Binding<service_manager::mojom::InterfaceProvider> binding_;
+  int num_dropped_requests_ = 0;
+
+  DISALLOW_COPY_AND_ASSIGN(DroppedInterfaceRequestLogger);
+};
+
 // static
 RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
                                          int render_frame_id) {
@@ -537,6 +582,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
       DCHECK(!render_widget_host_->owned_by_render_frame_host());
       render_widget_host_->SetWidget(std::move(widget));
     }
+    render_widget_host_->SetFrameDepth(frame_tree_node_->depth());
     render_widget_host_->SetWidgetInputHandler(std::move(widget_handler),
                                                std::move(host_request));
     render_widget_host_->input_router()->SetFrameTreeNodeId(
@@ -1252,6 +1298,8 @@ void RenderFrameHostImpl::SetRenderFrameCreated(bool created) {
       render_widget_host_->SetWidgetInputHandler(std::move(widget_handler),
                                                  std::move(host_request));
     }
+    render_widget_host_->input_router()->SetFrameTreeNodeId(
+        frame_tree_node_->frame_tree_node_id());
     viz::mojom::InputTargetClientPtr input_target_client;
     remote_interfaces_->GetInterface(&input_target_client);
     input_target_client_ = input_target_client.get();
@@ -1274,8 +1322,9 @@ void RenderFrameHostImpl::Init() {
   waiting_for_init_ = false;
   if (pending_navigate_) {
     frame_tree_node()->navigator()->OnBeginNavigation(
-        frame_tree_node(), pending_navigate_->first,
-        std::move(pending_navigate_->second));
+        frame_tree_node(), pending_navigate_->common_params,
+        std::move(pending_navigate_->begin_params),
+        std::move(pending_navigate_->blob_url_loader_factory));
     pending_navigate_.reset();
   }
 }
@@ -1568,7 +1617,11 @@ void RenderFrameHostImpl::DidCommitProvisionalLoad(
     // request end of a new InterfaceProvider connection that will be used by
     // the new document to issue interface requests to access RenderFrameHost
     // services.
-    document_scoped_interface_provider_binding_.Close();
+    auto interface_provider_request_of_previous_document =
+        document_scoped_interface_provider_binding_.Unbind();
+    dropped_interface_request_logger_ =
+        std::make_unique<DroppedInterfaceRequestLogger>(
+            std::move(interface_provider_request_of_previous_document));
     BindInterfaceProviderRequest(std::move(interface_provider_request));
   } else {
     // If there had already been a real load committed in the frame, and this is
@@ -1739,7 +1792,7 @@ void RenderFrameHostImpl::SwapOut(
   // simulating the receipt of swap out ack.
   is_waiting_for_swapout_ack_ = true;
   if (frame_tree_node_->IsMainFrame())
-    render_view_host_->set_is_active(false);
+    render_view_host_->SetIsActive(false);
 }
 
 void RenderFrameHostImpl::OnBeforeUnloadACK(
@@ -2825,10 +2878,19 @@ void RenderFrameHostImpl::CreateNewWindow(
 
   bool no_javascript_access = false;
 
-  // Filter out URLs that this process cannot request.
+  // Filter out URLs to which navigation is disallowed from this context.
+  //
+  // Note that currently, "javascript:" URLs and empty strings (both of which
+  // are legal arguments to window.open) make it here; FilterURL rewrites them
+  // to "about:blank" -- they shouldn't be cancelled.
   GetProcess()->FilterURL(false, &params->target_url);
+  if (!GetContentClient()->browser()->ShouldAllowOpenURL(GetSiteInstance(),
+                                                         params->target_url)) {
+    params->target_url = GURL(url::kAboutBlankURL);
+  }
 
-  // Ignore creation when sent from a frame that's not current or created.
+  // Ignore window creation when sent from a frame that's not current or
+  // created.
   bool can_create_window =
       IsCurrent() && render_frame_created_ &&
       GetContentClient()->browser()->CanCreateWindow(
@@ -2968,7 +3030,8 @@ void RenderFrameHostImpl::IssueKeepAliveHandle(
 //  otherwise mojo bad message reporting.
 void RenderFrameHostImpl::BeginNavigation(
     const CommonNavigationParams& common_params,
-    mojom::BeginNavigationParamsPtr begin_params) {
+    mojom::BeginNavigationParamsPtr begin_params,
+    blink::mojom::BlobURLTokenPtr blob_url_token) {
   if (!is_active())
     return;
 
@@ -2999,14 +3062,27 @@ void RenderFrameHostImpl::BeginNavigation(
     return;
   }
 
+  if (blob_url_token && !validated_params.url.SchemeIsBlob()) {
+    mojo::ReportBadMessage("Blob URL Token, but not a blob: URL");
+    return;
+  }
+  scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory;
+  if (blob_url_token) {
+    blob_url_loader_factory =
+        ChromeBlobStorageContext::URLLoaderFactoryForToken(
+            GetSiteInstance()->GetBrowserContext(), std::move(blob_url_token));
+  }
+
   if (waiting_for_init_) {
     pending_navigate_ = std::make_unique<PendingNavigation>(
-        validated_params, std::move(begin_params));
+        validated_params, std::move(begin_params),
+        std::move(blob_url_loader_factory));
     return;
   }
 
   frame_tree_node()->navigator()->OnBeginNavigation(
-      frame_tree_node(), validated_params, std::move(begin_params));
+      frame_tree_node(), validated_params, std::move(begin_params),
+      std::move(blob_url_loader_factory));
 }
 
 void RenderFrameHostImpl::SubresourceResponseStarted(
@@ -3015,9 +3091,9 @@ void RenderFrameHostImpl::SubresourceResponseStarted(
   delegate_->SubresourceResponseStarted(url, cert_status);
 }
 
-void RenderFrameHostImpl::SubresourceLoadComplete(
-    mojom::SubresourceLoadInfoPtr subresource_load_info) {
-  delegate_->SubresourceLoadComplete(std::move(subresource_load_info));
+void RenderFrameHostImpl::ResourceLoadComplete(
+    mojom::ResourceLoadInfoPtr resource_load_info) {
+  delegate_->ResourceLoadComplete(std::move(resource_load_info));
 }
 
 namespace {
@@ -3171,6 +3247,14 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
     registry_->AddInterface(
         base::Bind(&RenderFrameHostImpl::BindAuthenticatorRequest,
                    base::Unretained(this)));
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableWebAuthTestingAPI)) {
+      auto* environment_singleton =
+          ScopedVirtualAuthenticatorEnvironment::GetInstance();
+      registry_->AddInterface(base::BindRepeating(
+          &ScopedVirtualAuthenticatorEnvironment::AddBinding,
+          base::Unretained(environment_singleton)));
+    }
   }
 #endif  // !defined(OS_ANDROID)
 

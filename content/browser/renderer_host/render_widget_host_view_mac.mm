@@ -42,7 +42,6 @@
 #import "ui/base/clipboard/clipboard_util_mac.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/base/cocoa/cocoa_base_utils.h"
-#import "ui/base/cocoa/fullscreen_window_manager.h"
 #import "ui/base/cocoa/secure_password_input.h"
 #include "ui/base/cocoa/text_services_context_menu.h"
 #include "ui/display/display.h"
@@ -54,102 +53,6 @@
 using blink::WebInputEvent;
 using blink::WebMouseEvent;
 using blink::WebGestureEvent;
-
-// A window subclass that allows the fullscreen window to become main and gain
-// keyboard focus. This is only used for pepper flash. Normal fullscreen is
-// handled by the browser.
-@interface PepperFlashFullscreenWindow : NSWindow
-@end
-
-@implementation PepperFlashFullscreenWindow
-
-- (BOOL)canBecomeKeyWindow {
-  return YES;
-}
-
-- (BOOL)canBecomeMainWindow {
-  return YES;
-}
-
-@end
-
-@interface RenderWidgetPopupWindow : NSWindow {
-   // The event tap that allows monitoring of all events, to properly close with
-   // a click outside the bounds of the window.
-  id clickEventTap_;
-}
-@end
-
-@implementation RenderWidgetPopupWindow
-
-- (id)initWithContentRect:(NSRect)contentRect
-                styleMask:(NSUInteger)windowStyle
-                  backing:(NSBackingStoreType)bufferingType
-                    defer:(BOOL)deferCreation {
-  if (self = [super initWithContentRect:contentRect
-                              styleMask:windowStyle
-                                backing:bufferingType
-                                  defer:deferCreation]) {
-    [self setBackgroundColor:[NSColor clearColor]];
-    [self startObservingClicks];
-  }
-  return self;
-}
-
-- (void)close {
-  [self stopObservingClicks];
-  [super close];
-}
-
-// Gets called when the menubar is clicked.
-// Needed because the local event monitor doesn't see the click on the menubar.
-- (void)beganTracking:(NSNotification*)notification {
-  [self close];
-}
-
-// Install the callback.
-- (void)startObservingClicks {
-  clickEventTap_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSAnyEventMask
-      handler:^NSEvent* (NSEvent* event) {
-          if ([event window] == self)
-            return event;
-          NSEventType eventType = [event type];
-          if (eventType == NSLeftMouseDown || eventType == NSRightMouseDown)
-            [self close];
-          return event;
-  }];
-
-  NSNotificationCenter* notificationCenter =
-      [NSNotificationCenter defaultCenter];
-  [notificationCenter addObserver:self
-         selector:@selector(beganTracking:)
-             name:NSMenuDidBeginTrackingNotification
-           object:[NSApp mainMenu]];
-}
-
-// Remove the callback.
-- (void)stopObservingClicks {
-  if (!clickEventTap_)
-    return;
-
-  [NSEvent removeMonitor:clickEventTap_];
-   clickEventTap_ = nil;
-
-  NSNotificationCenter* notificationCenter =
-      [NSNotificationCenter defaultCenter];
-  [notificationCenter removeObserver:self
-                name:NSMenuDidBeginTrackingNotification
-              object:[NSApp mainMenu]];
-}
-
-@end
-
-namespace {
-
-// Maximum number of characters we allow in a tooltip.
-const size_t kMaxTooltipLength = 1024;
-
-}  // namespace
 
 namespace content {
 
@@ -166,7 +69,11 @@ SkColor RenderWidgetHostViewMac::BrowserCompositorMacGetGutterColor() const {
   return last_frame_root_background_color_;
 }
 
-void RenderWidgetHostViewMac::BrowserCompositorMacOnBeginFrame() {
+void RenderWidgetHostViewMac::BrowserCompositorMacOnBeginFrame(
+    base::TimeTicks frame_time) {
+  // ProgressFling must get called for middle click autoscroll fling on Mac.
+  if (host())
+    host()->ProgressFling(frame_time);
   UpdateNeedsBeginFramesInternal();
 }
 
@@ -180,6 +87,10 @@ void RenderWidgetHostViewMac::DidReceiveFirstFrameAfterNavigation() {
 
 void RenderWidgetHostViewMac::DestroyCompositorForShutdown() {
   browser_compositor_.reset();
+}
+
+void RenderWidgetHostViewMac::WasResized() {
+  host()->WasResized();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -356,94 +267,13 @@ void RenderWidgetHostViewMac::InitAsPopup(
     RenderWidgetHostView* parent_host_view,
     const gfx::Rect& pos) {
   // This path is used by the time/date picker.
-  bool activatable = popup_type_ == blink::kWebPopupTypeNone;
-  [cocoa_view() setCloseOnDeactivate:YES];
-  [cocoa_view() setCanBeKeyView:activatable ? YES : NO];
-
-  popup_window_.reset([[RenderWidgetPopupWindow alloc]
-      initWithContentRect:gfx::ScreenRectToNSRect(pos)
-                styleMask:NSBorderlessWindowMask
-                  backing:NSBackingStoreBuffered
-                    defer:NO]);
-  [popup_window_ setLevel:NSPopUpMenuWindowLevel];
-  [popup_window_ setReleasedWhenClosed:NO];
-  [popup_window_ makeKeyAndOrderFront:nil];
-  [[popup_window_ contentView] addSubview:cocoa_view()];
-  [cocoa_view() setFrame:[[popup_window_ contentView] bounds]];
-  [cocoa_view() setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
-  [[NSNotificationCenter defaultCenter]
-      addObserver:cocoa_view()
-         selector:@selector(popupWindowWillClose:)
-             name:NSWindowWillCloseNotification
-           object:popup_window_];
+  ns_view_bridge_->InitAsPopup(pos, popup_type_);
 }
 
-// This function creates the fullscreen window and hides the dock and menubar if
-// necessary. Note, this codepath is only used for pepper flash when
-// pp::FlashFullScreen::SetFullscreen() is called. If
-// pp::FullScreen::SetFullscreen() is called then the entire browser window
-// will enter fullscreen instead.
 void RenderWidgetHostViewMac::InitAsFullscreen(
     RenderWidgetHostView* reference_host_view) {
-  // TODO(ccameron): Delete this if it isn't used.
+  // This path appears never to be reached.
   NOTREACHED();
-  RenderWidgetHostViewMac* parent_view =
-      static_cast<RenderWidgetHostViewMac*>(reference_host_view);
-  NSWindow* parent_window = nil;
-  if (parent_view)
-    parent_window = [parent_view->cocoa_view() window];
-  NSScreen* screen = [parent_window screen];
-  if (!screen)
-    screen = [NSScreen mainScreen];
-
-  pepper_fullscreen_window_.reset([[PepperFlashFullscreenWindow alloc]
-      initWithContentRect:[screen frame]
-                styleMask:NSBorderlessWindowMask
-                  backing:NSBackingStoreBuffered
-                    defer:NO]);
-  [pepper_fullscreen_window_ setLevel:NSFloatingWindowLevel];
-  [pepper_fullscreen_window_ setReleasedWhenClosed:NO];
-  [cocoa_view() setCanBeKeyView:YES];
-  [cocoa_view() setFrame:[[pepper_fullscreen_window_ contentView] bounds]];
-  [cocoa_view() setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
-  // If the pepper fullscreen window isn't opaque then there are performance
-  // issues when it's on the discrete GPU and the Chrome window is being drawn
-  // to. http://crbug.com/171911
-  [pepper_fullscreen_window_ setOpaque:YES];
-
-  // Note that this forms a reference cycle between the fullscreen window and
-  // the rwhvmac: The PepperFlashFullscreenWindow retains cocoa_view(),
-  // but cocoa_view() keeps pepper_fullscreen_window_ in an instance variable.
-  // This cycle is normally broken when -keyEvent: receives an <esc> key, which
-  // explicitly calls Shutdown on the host(), which calls
-  // Destroy() on RWHVMac, which drops the reference to
-  // pepper_fullscreen_window_.
-  [[pepper_fullscreen_window_ contentView] addSubview:cocoa_view()];
-
-  // Note that this keeps another reference to pepper_fullscreen_window_.
-  fullscreen_window_manager_.reset([[FullscreenWindowManager alloc]
-      initWithWindow:pepper_fullscreen_window_.get()
-       desiredScreen:screen]);
-  [fullscreen_window_manager_ enterFullscreenMode];
-  [pepper_fullscreen_window_ makeKeyAndOrderFront:nil];
-}
-
-void RenderWidgetHostViewMac::release_pepper_fullscreen_window_for_testing() {
-  // See comment in InitAsFullscreen(): There is a reference cycle between
-  // rwhvmac and fullscreen window, which is usually broken by hitting <esc>.
-  // Tests that test pepper fullscreen mode without sending an <esc> event
-  // need to call this method to break the reference cycle.
-  [fullscreen_window_manager_ exitFullscreenMode];
-  fullscreen_window_manager_.reset();
-  [pepper_fullscreen_window_ close];
-  pepper_fullscreen_window_.reset();
-}
-
-int RenderWidgetHostViewMac::window_number() const {
-  NSWindow* window = [cocoa_view() window];
-  if (!window)
-    return -1;
-  return [window windowNumber];
 }
 
 void RenderWidgetHostViewMac::UpdateDisplayVSyncParameters() {
@@ -570,48 +400,7 @@ void RenderWidgetHostViewMac::SetSize(const gfx::Size& size) {
 }
 
 void RenderWidgetHostViewMac::SetBounds(const gfx::Rect& rect) {
-  // |rect.size()| is view coordinates, |rect.origin| is screen coordinates,
-  // TODO(thakis): fix, http://crbug.com/73362
-
-  // During the initial creation of the RenderWidgetHostView in
-  // WebContentsImpl::CreateRenderViewForRenderManager, SetSize is called with
-  // an empty size. In the Windows code flow, it is not ignored because
-  // subsequent sizing calls from the OS flow through TCVW::WasSized which calls
-  // SetSize() again. On Cocoa, we rely on the Cocoa view struture and resizer
-  // flags to keep things sized properly. On the other hand, if the size is not
-  // empty then this is a valid request for a pop-up.
-  if (rect.size().IsEmpty())
-    return;
-
-  // Ignore the position of |rect| for non-popup rwhvs. This is because
-  // background tabs do not have a window, but the window is required for the
-  // coordinate conversions. Popups are always for a visible tab.
-  //
-  // Note: If |cocoa_view_| has been removed from the view hierarchy, it's still
-  // valid for resizing to be requested (e.g., during tab capture, to size the
-  // view to screen-capture resolution). In this case, simply treat the view as
-  // relative to the screen.
-  BOOL isRelativeToScreen =
-      IsPopup() || ![[cocoa_view() superview] isKindOfClass:[BaseView class]];
-  if (isRelativeToScreen) {
-    // The position of |rect| is screen coordinate system and we have to
-    // consider Cocoa coordinate system is upside-down and also multi-screen.
-    NSRect frame = gfx::ScreenRectToNSRect(rect);
-    if (IsPopup())
-      [popup_window_ setFrame:frame display:YES];
-    else
-      [cocoa_view() setFrame:frame];
-  } else {
-    BaseView* superview = static_cast<BaseView*>([cocoa_view() superview]);
-    gfx::Rect rect2 = [superview flipNSRectToRect:[cocoa_view() frame]];
-    rect2.set_width(rect.width());
-    rect2.set_height(rect.height());
-    [cocoa_view() setFrame:[superview flipRectToNSRect:rect2]];
-  }
-}
-
-gfx::Vector2dF RenderWidgetHostViewMac::GetLastScrollOffset() const {
-  return last_scroll_offset_;
+  ns_view_bridge_->SetBounds(rect);
 }
 
 gfx::NativeView RenderWidgetHostViewMac::GetNativeView() const {
@@ -623,11 +412,11 @@ gfx::NativeViewAccessible RenderWidgetHostViewMac::GetNativeViewAccessible() {
 }
 
 void RenderWidgetHostViewMac::Focus() {
-  [[cocoa_view() window] makeFirstResponder:cocoa_view()];
+  ns_view_bridge_->MakeFirstResponder();
 }
 
 bool RenderWidgetHostViewMac::HasFocus() const {
-  return [[cocoa_view() window] firstResponder] == cocoa_view();
+  return is_first_responder_;
 }
 
 bool RenderWidgetHostViewMac::IsSurfaceAvailableForCopy() const {
@@ -649,8 +438,7 @@ void RenderWidgetHostViewMac::UpdateCursor(const WebCursor& cursor) {
 }
 
 void RenderWidgetHostViewMac::DisplayCursor(const WebCursor& cursor) {
-  WebCursor web_cursor = cursor;
-  [cocoa_view() updateCursor:web_cursor.GetNativeCursor()];
+  ns_view_bridge_->DisplayCursor(cursor);
 }
 
 CursorManager* RenderWidgetHostViewMac::GetCursorManager() {
@@ -711,7 +499,7 @@ void RenderWidgetHostViewMac::OnUpdateTextInputStateCalled(
 void RenderWidgetHostViewMac::OnImeCancelComposition(
     TextInputManager* text_input_manager,
     RenderWidgetHostViewBase* updated_view) {
-  [cocoa_view() cancelComposition];
+  ns_view_bridge_->ClearMarkedText();
 }
 
 void RenderWidgetHostViewMac::OnImeCompositionRangeChanged(
@@ -723,7 +511,7 @@ void RenderWidgetHostViewMac::OnImeCompositionRangeChanged(
     return;
   // The RangeChanged message is only sent with valid values. The current
   // caret position (start == end) will be sent if there is no IME range.
-  [cocoa_view() setMarkedRange:info->range.ToNSRange()];
+  ns_view_bridge_->SetMarkedRange(info->range);
 }
 
 void RenderWidgetHostViewMac::OnSelectionBoundsChanged(
@@ -768,13 +556,15 @@ void RenderWidgetHostViewMac::OnTextSelectionChanged(
   if (!selection)
     return;
 
-  [cocoa_view() setSelectedRange:selection->range().ToNSRange()];
-  // Updates markedRange when there is no marked text so that retrieving
-  // markedRange immediately after calling setMarkdText: returns the current
-  // caret position.
-  if (![cocoa_view() hasMarkedText]) {
-    [cocoa_view() setMarkedRange:selection->range().ToNSRange()];
-  }
+  ns_view_bridge_->SetSelectedRange(selection->range());
+}
+
+void RenderWidgetHostViewMac::OnRenderFrameMetadataChanged() {
+  last_frame_root_background_color_ = host()
+                                          ->render_frame_metadata_provider()
+                                          ->LastRenderFrameMetadata()
+                                          .root_background_color;
+  RenderWidgetHostViewBase::OnRenderFrameMetadataChanged();
 }
 
 void RenderWidgetHostViewMac::RenderProcessGone(base::TerminationStatus status,
@@ -786,27 +576,11 @@ void RenderWidgetHostViewMac::Destroy() {
   // FrameSinkIds registered with RenderWidgetHostInputEventRouter
   // have already been cleared when RenderWidgetHostViewBase notified its
   // observers of our impending destruction.
-  [[NSNotificationCenter defaultCenter]
-      removeObserver:cocoa_view()
-                name:NSWindowWillCloseNotification
-              object:popup_window_];
 
   // We've been told to destroy.
-  [cocoa_view() retain];
-  [cocoa_view() removeFromSuperview];
-  [cocoa_view() autorelease];
-
-  [popup_window_ close];
-  popup_window_.autorelease();
-
-  [fullscreen_window_manager_ exitFullscreenMode];
-  fullscreen_window_manager_.reset();
-  [pepper_fullscreen_window_ close];
-
-  // This can be called as part of processing the window's responder
-  // chain, for instance |-performKeyEquivalent:|.  In that case the
-  // object needs to survive until the stack unwinds.
-  pepper_fullscreen_window_.autorelease();
+  if (ns_view_bridge_)
+    ns_view_bridge_->Destroy();
+  ns_view_bridge_.reset();
 
   // Delete the delegated frame state, which will reach back into
   // host().
@@ -829,25 +603,9 @@ void RenderWidgetHostViewMac::Destroy() {
   RenderWidgetHostViewBase::Destroy();
 }
 
-// Called from the renderer to tell us what the tooltip text should be. It
-// calls us frequently so we need to cache the value to prevent doing a lot
-// of repeat work.
 void RenderWidgetHostViewMac::SetTooltipText(
     const base::string16& tooltip_text) {
-  if (tooltip_text != tooltip_text_ && [[cocoa_view() window] isKeyWindow]) {
-    tooltip_text_ = tooltip_text;
-
-    // Clamp the tooltip length to kMaxTooltipLength. It's a DOS issue on
-    // Windows; we're just trying to be polite. Don't persist the trimmed
-    // string, as then the comparison above will always fail and we'll try to
-    // set it again every single time the mouse moves.
-    base::string16 display_text = tooltip_text_;
-    if (tooltip_text_.length() > kMaxTooltipLength)
-      display_text = tooltip_text_.substr(0, kMaxTooltipLength);
-
-    NSString* tooltip_nsstring = base::SysUTF16ToNSString(display_text);
-    [cocoa_view() setToolTipAtMousePoint:tooltip_nsstring];
-  }
+  ns_view_bridge_->SetTooltipText(tooltip_text);
 }
 
 viz::ScopedSurfaceIdAllocator RenderWidgetHostViewMac::ResizeDueToAutoResize(
@@ -946,33 +704,7 @@ void RenderWidgetHostViewMac::SpeakSelection() {
 //
 
 void RenderWidgetHostViewMac::SetShowingContextMenu(bool showing) {
-  // Create a fake mouse event to inform the render widget that the mouse
-  // left or entered.
-  NSWindow* window = [cocoa_view() window];
-  // TODO(asvitkine): If the location outside of the event stream doesn't
-  // correspond to the current event (due to delayed event processing), then
-  // this may result in a cursor flicker if there are later mouse move events
-  // in the pipeline. Find a way to use the mouse location from the event that
-  // dismissed the context menu.
-  NSPoint location = [window mouseLocationOutsideOfEventStream];
-  NSTimeInterval event_time = [[NSApp currentEvent] timestamp];
-  NSEvent* event = [NSEvent mouseEventWithType:NSMouseMoved
-                                      location:location
-                                 modifierFlags:0
-                                     timestamp:event_time
-                                  windowNumber:window_number()
-                                       context:nil
-                                   eventNumber:0
-                                    clickCount:0
-                                      pressure:0];
-  WebMouseEvent web_event = WebMouseEventBuilder::Build(event, cocoa_view());
-  web_event.SetModifiers(web_event.GetModifiers() |
-                         WebInputEvent::kRelativeMotionEvent);
-  ForwardMouseEvent(web_event);
-}
-
-bool RenderWidgetHostViewMac::IsPopup() const {
-  return popup_type_ != blink::kWebPopupTypeNone;
+  ns_view_bridge_->SetShowingContextMenu(showing);
 }
 
 void RenderWidgetHostViewMac::CopyFromSurface(
@@ -981,16 +713,6 @@ void RenderWidgetHostViewMac::CopyFromSurface(
     base::OnceCallback<void(const SkBitmap&)> callback) {
   browser_compositor_->GetDelegatedFrameHost()->CopyFromCompositingSurface(
       src_subrect, dst_size, std::move(callback));
-}
-
-void RenderWidgetHostViewMac::ForwardMouseEvent(const WebMouseEvent& event) {
-  if (host())
-    host()->ForwardMouseEvent(event);
-
-  if (event.GetType() == WebInputEvent::kMouseLeave) {
-    [cocoa_view() setToolTipAtMousePoint:nil];
-    tooltip_text_.clear();
-  }
 }
 
 void RenderWidgetHostViewMac::SetNeedsBeginFrames(bool needs_begin_frames) {
@@ -1011,15 +733,6 @@ void RenderWidgetHostViewMac::OnResizeDueToAutoResizeComplete(
 
 void RenderWidgetHostViewMac::SetWantsAnimateOnlyBeginFrames() {
   browser_compositor_->SetWantsAnimateOnlyBeginFrames();
-}
-
-void RenderWidgetHostViewMac::KillSelf() {
-  if (!weak_factory_.HasWeakPtrs()) {
-    [cocoa_view() setHidden:YES];
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&RenderWidgetHostViewMac::ShutdownHost,
-                              weak_factory_.GetWeakPtr()));
-  }
 }
 
 bool RenderWidgetHostViewMac::GetLineBreakIndex(
@@ -1197,7 +910,7 @@ bool RenderWidgetHostViewMac::ShouldContinueToPauseForFrame() {
 void RenderWidgetHostViewMac::FocusedNodeChanged(
     bool is_editable_node,
     const gfx::Rect& node_bounds_in_screen) {
-  [cocoa_view() cancelComposition];
+  ns_view_bridge_->ClearMarkedText();
 
   // If the Mac Zoom feature is enabled, update it with the bounds of the
   // current focused node so that it can ensure that it's scrolled into view.
@@ -1220,9 +933,6 @@ void RenderWidgetHostViewMac::SubmitCompositorFrame(
     viz::CompositorFrame frame,
     viz::mojom::HitTestRegionListPtr hit_test_region_list) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewMac::OnSwapCompositorFrame");
-
-  last_frame_root_background_color_ = frame.metadata.root_background_color;
-  last_scroll_offset_ = frame.metadata.root_scroll_offset;
 
   page_at_minimum_scale_ =
       frame.metadata.page_scale_factor == frame.metadata.min_page_scale_factor;
@@ -1261,7 +971,7 @@ bool RenderWidgetHostViewMac::LockMouse() {
   [NSCursor hide];
 
   // Clear the tooltip window.
-  SetTooltipText(base::string16());
+  ns_view_bridge_->SetTooltipText(base::string16());
 
   return true;
 }
@@ -1510,6 +1220,32 @@ RenderWidgetHostViewMac* RenderWidgetHostViewMac::GetRenderWidgetHostViewMac() {
   return this;
 }
 
+void RenderWidgetHostViewMac::OnNSViewRequestShutdown() {
+  if (!weak_factory_.HasWeakPtrs()) {
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::BindOnce(&RenderWidgetHostViewMac::ShutdownHost,
+                                  weak_factory_.GetWeakPtr()));
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewIsFirstResponderChanged(
+    bool is_first_responder) {
+  if (is_first_responder_ == is_first_responder)
+    return;
+  is_first_responder_ = is_first_responder;
+  if (is_first_responder_) {
+    host()->GotFocus();
+    SetTextInputActive(true);
+  } else {
+    SetTextInputActive(false);
+    host()->LostFocus();
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewWindowIsKeyChanged(bool is_key) {
+  SetActive(is_key);
+}
+
 void RenderWidgetHostViewMac::OnNSViewBoundsInWindowChanged(
     const gfx::Rect& view_bounds_in_window_dip,
     bool attached_to_window) {
@@ -1549,6 +1285,64 @@ void RenderWidgetHostViewMac::OnNSViewDisplayChanged(
     const display::Display& display) {
   display_ = display;
   UpdateNSViewAndDisplayProperties();
+}
+
+void RenderWidgetHostViewMac::OnNSViewRouteOrProcessMouseEvent(
+    const blink::WebMouseEvent& const_web_event) {
+  blink::WebMouseEvent web_event = const_web_event;
+  ui::LatencyInfo latency_info(ui::SourceEventType::OTHER);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+  if (ShouldRouteEvent(web_event)) {
+    host()->delegate()->GetInputEventRouter()->RouteMouseEvent(this, &web_event,
+                                                               latency_info);
+  } else {
+    ProcessMouseEvent(web_event, latency_info);
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewRouteOrProcessWheelEvent(
+    const blink::WebMouseWheelEvent& const_web_event) {
+  blink::WebMouseWheelEvent web_event = const_web_event;
+  ui::LatencyInfo latency_info(ui::SourceEventType::WHEEL);
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+  if (wheel_scroll_latching_enabled()) {
+    mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
+        web_event, ShouldRouteEvent(web_event));
+    if (web_event.phase == blink::WebMouseWheelEvent::kPhaseEnded) {
+      // A wheel end event is scheduled and will get dispatched if momentum
+      // phase doesn't start in 100ms. Don't sent the wheel end event
+      // immediately.
+      return;
+    }
+  }
+  if (ShouldRouteEvent(web_event)) {
+    host()->delegate()->GetInputEventRouter()->RouteMouseWheelEvent(
+        this, &web_event, latency_info);
+  } else {
+    ProcessMouseWheelEvent(web_event, latency_info);
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewForwardMouseEvent(
+    const blink::WebMouseEvent& web_event) {
+  if (host())
+    host()->ForwardMouseEvent(web_event);
+
+  if (web_event.GetType() == WebInputEvent::kMouseLeave)
+    ns_view_bridge_->SetTooltipText(base::string16());
+}
+
+void RenderWidgetHostViewMac::OnNSViewForwardWheelEvent(
+    const blink::WebMouseWheelEvent& const_web_event) {
+  blink::WebMouseWheelEvent web_event = const_web_event;
+  if (wheel_scroll_latching_enabled()) {
+    mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(web_event,
+                                                                   false);
+  } else {
+    ui::LatencyInfo latency_info(ui::SourceEventType::WHEEL);
+    latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+    host()->ForwardWheelEventWithLatencyInfo(web_event, latency_info);
+  }
 }
 
 Class GetRenderWidgetHostViewCocoaClassForTesting() {

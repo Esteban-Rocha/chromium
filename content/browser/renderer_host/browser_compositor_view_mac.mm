@@ -476,7 +476,7 @@ void BrowserCompositorMac::OnFirstSurfaceActivation(
 }
 
 void BrowserCompositorMac::OnBeginFrame(base::TimeTicks frame_time) {
-  client_->BrowserCompositorMacOnBeginFrame();
+  client_->BrowserCompositorMacOnBeginFrame(frame_time);
 }
 
 bool BrowserCompositorMac::IsAutoResizeEnabled() const {
@@ -495,9 +495,11 @@ ui::Compositor* BrowserCompositorMac::CompositorForTesting() const {
 }
 
 void BrowserCompositorMac::DidNavigate() {
-  delegated_frame_host_->WasResized(
-      dfh_local_surface_id_allocator_.GenerateId(), dfh_size_dip_,
-      cc::DeadlinePolicy::UseExistingDeadline());
+  const viz::LocalSurfaceId& new_local_surface_id =
+      dfh_local_surface_id_allocator_.GenerateId();
+  client_->WasResized();
+  delegated_frame_host_->WasResized(new_local_surface_id, dfh_size_dip_,
+                                    cc::DeadlinePolicy::UseExistingDeadline());
   delegated_frame_host_->DidNavigate();
 }
 

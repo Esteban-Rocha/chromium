@@ -569,6 +569,17 @@ blink::ParsedFeaturePolicy CreateFPHeaderMatchesAll(
   return result;
 }
 
+// Check frame depth on node, widget, and process all match expected depth.
+void CheckFrameDepth(unsigned int expected_depth, FrameTreeNode* node) {
+  EXPECT_EQ(expected_depth, node->depth());
+  RenderProcessHost::Priority priority =
+      node->current_frame_host()->GetRenderWidgetHost()->GetPriority();
+  EXPECT_EQ(expected_depth, priority.frame_depth);
+  EXPECT_EQ(
+      expected_depth,
+      node->current_frame_host()->GetProcess()->GetFrameDepthForTesting());
+}
+
 }  // namespace
 
 //
@@ -7126,7 +7137,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   // termination.
   RenderProcessHost* subframe_process =
       root->child_at(0)->current_frame_host()->GetProcess();
-  subframe_process->IncrementKeepAliveRefCount();
+  subframe_process->IncrementKeepAliveRefCount(
+      RenderProcessHostImpl::KeepAliveClientType::kFetch);
 
   // Navigate the subframe away from b.com.  Since this is the last active
   // frame in the b.com process, this causes the RenderWidget and RenderView to
@@ -7148,7 +7160,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   // process hasn't heard the OnChannelError yet).  This race will need to be
   // fixed.
 
-  subframe_process->DecrementKeepAliveRefCount();
+  subframe_process->DecrementKeepAliveRefCount(
+      RenderProcessHostImpl::KeepAliveClientType::kFetch);
 }
 
 // Tests that an input event targeted to a out-of-process iframe correctly
@@ -10942,6 +10955,171 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   // Make sure the child frame keeps generating compositor frames.
   ChildFrameCompositorFrameSwapCounter counter(child_view);
   counter.WaitForNewFrames(10u);
+}
+
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, FrameDepthSimple) {
+  // Five nodes, from depth 0 to 4.
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b(c(d(e))))"));
+  const size_t number_of_nodes = 5;
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  FrameTreeNode* node = web_contents()->GetFrameTree()->root();
+  for (unsigned int expected_depth = 0; expected_depth < number_of_nodes;
+       ++expected_depth) {
+    CheckFrameDepth(expected_depth, node);
+
+    if (expected_depth + 1 < number_of_nodes)
+      node = node->child_at(0);
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, FrameDepthTest) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(a,b(a))"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  CheckFrameDepth(0u, root);
+
+  FrameTreeNode* child0 = root->child_at(0);
+  {
+    EXPECT_EQ(1u, child0->depth());
+    RenderProcessHost::Priority priority =
+        child0->current_frame_host()->GetRenderWidgetHost()->GetPriority();
+    // Same site instance as root.
+    EXPECT_EQ(0u, priority.frame_depth);
+    EXPECT_EQ(
+        0u,
+        child0->current_frame_host()->GetProcess()->GetFrameDepthForTesting());
+  }
+
+  FrameTreeNode* child1 = root->child_at(1);
+  CheckFrameDepth(1u, child1);
+  // In addition, site b's inactive Widget should not contribute priority.
+  RenderViewHostImpl* child1_rvh =
+      child1->current_frame_host()->render_view_host();
+  EXPECT_FALSE(child1_rvh->is_active());
+  EXPECT_EQ(RenderProcessHostImpl::kMaxFrameDepthForPriority,
+            child1_rvh->GetWidget()->GetPriority().frame_depth);
+  EXPECT_FALSE(static_cast<RenderWidgetHostOwnerDelegate*>(child1_rvh)
+                   ->ShouldContributePriorityToProcess());
+
+  FrameTreeNode* grand_child = root->child_at(1)->child_at(0);
+  {
+    EXPECT_EQ(2u, grand_child->depth());
+    RenderProcessHost::Priority priority =
+        grand_child->current_frame_host()->GetRenderWidgetHost()->GetPriority();
+    EXPECT_EQ(2u, priority.frame_depth);
+    // Same process as root
+    EXPECT_EQ(0u, grand_child->current_frame_host()
+                      ->GetProcess()
+                      ->GetFrameDepthForTesting());
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, VisibilityFrameDepthTest) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  GURL popup_url(embedded_test_server()->GetURL("b.com", "/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  Shell* new_shell = OpenPopup(root->child_at(0), popup_url, "");
+  FrameTreeNode* popup_root =
+      static_cast<WebContentsImpl*>(new_shell->web_contents())
+          ->GetFrameTree()
+          ->root();
+
+  // Subframe and popup share the same process. Both are visible, so depth
+  // should be 0.
+  RenderProcessHost* subframe_process =
+      root->child_at(0)->current_frame_host()->GetProcess();
+  RenderProcessHost* popup_process =
+      popup_root->current_frame_host()->GetProcess();
+  EXPECT_EQ(subframe_process, popup_process);
+  EXPECT_EQ(2, popup_process->VisibleClientCount());
+  EXPECT_EQ(0u, popup_process->GetFrameDepthForTesting());
+
+  // Hide popup. Process should have one visible client and depth should be 1,
+  // since depth 0 popup is hidden.
+  new_shell->web_contents()->WasHidden();
+  EXPECT_EQ(1, popup_process->VisibleClientCount());
+  EXPECT_EQ(1u, popup_process->GetFrameDepthForTesting());
+
+  // Navigate main page to same origin as popup in same BrowsingInstance,
+  // s main page should run in the same process as the popup. The depth on the
+  // process should be 0, from the main frame of main page.
+  EXPECT_TRUE(NavigateToURLInSameBrowsingInstance(shell(), popup_url));
+  // Performing a Load causes aura window to be focused (see
+  // Shell::LoadURLForFrame) which recomputes window occlusion for all windows
+  // (on chromeos) which unhides the popup. Hide popup again.
+  new_shell->web_contents()->WasHidden();
+  RenderProcessHost* new_root_process =
+      root->current_frame_host()->GetProcess();
+  EXPECT_EQ(new_root_process, popup_process);
+  EXPECT_EQ(1, popup_process->VisibleClientCount());
+  EXPECT_EQ(0u, popup_process->GetFrameDepthForTesting());
+
+  // Go back on main page. Should go back to same state as before navigation.
+  TestNavigationObserver back_load_observer(shell()->web_contents());
+  shell()->web_contents()->GetController().GoBack();
+  back_load_observer.Wait();
+  EXPECT_EQ(1, popup_process->VisibleClientCount());
+  EXPECT_EQ(1u, popup_process->GetFrameDepthForTesting());
+
+  // Unhide popup. Should go back to same state as before hide.
+  new_shell->web_contents()->WasShown();
+  EXPECT_EQ(2, popup_process->VisibleClientCount());
+  EXPECT_EQ(0u, popup_process->GetFrameDepthForTesting());
+}
+
+// Ensure that after a main frame with an OOPIF is navigated cross-site, the
+// unload handler in the OOPIF sees correct main frame origin, namely the old
+// and not the new origin.  See https://crbug.com/825283.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       ParentOriginDoesNotChangeInUnloadHandler) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  // Open a popup on b.com.  The b.com subframe on the main frame will use this
+  // in its unload handler.
+  GURL b_url(embedded_test_server()->GetURL("b.com", "/title1.html"));
+  EXPECT_TRUE(OpenPopup(shell()->web_contents(), b_url, "popup"));
+
+  // Add an unload handler to b.com subframe, which will look up the top
+  // frame's origin and send it via domAutomationController.  Unfortunately,
+  // the subframe's browser-side state will have been torn down when it runs
+  // the unload handler, so to ensure that the message can be received, send it
+  // through the popup.
+  EXPECT_TRUE(
+      ExecuteScript(root->child_at(0),
+                    "window.onunload = function(e) {"
+                    "  window.open('','popup').domAutomationController.send("
+                    "      'top-origin ' + location.ancestorOrigins[0]);"
+                    "};"));
+
+  // Navigate the main frame to c.com and wait for the message from the
+  // subframe's unload handler.
+  GURL c_url(embedded_test_server()->GetURL("c.com", "/title1.html"));
+  DOMMessageQueue msg_queue;
+  EXPECT_TRUE(NavigateToURL(shell(), c_url));
+  std::string message, top_origin;
+  while (msg_queue.WaitForMessage(&message)) {
+    base::TrimString(message, "\"", &message);
+    auto message_parts = base::SplitString(message, " ", base::TRIM_WHITESPACE,
+                                           base::SPLIT_WANT_NONEMPTY);
+    if (message_parts[0] == "top-origin") {
+      top_origin = message_parts[1];
+      break;
+    }
+  }
+
+  // The top frame's origin should be a.com, not c.com.
+  EXPECT_EQ(top_origin + "/", main_url.GetOrigin().spec());
 }
 
 }  // namespace content

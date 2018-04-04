@@ -28,9 +28,14 @@ constexpr int kMenuItemVerticalPadding = 16;
 // The amount of rounding applied to the corners of the menu view.
 constexpr int kMenuViewRoundRectRadiusDp = 16;
 
+// Horizontal padding between two menu items.
+constexpr int kPaddingBetweenMenuItmes = 8;
+
 }  // namespace
 
 using PowerButtonPosition = PowerButtonController::PowerButtonPosition;
+
+constexpr base::TimeDelta PowerButtonMenuView::kMenuAnimationDuration;
 
 PowerButtonMenuView::PowerButtonMenuView(
     PowerButtonPosition power_button_position)
@@ -55,8 +60,7 @@ void PowerButtonMenuView::ScheduleShowHideAnimation(bool show) {
   animation.AddObserver(this);
   animation.SetTweenType(show ? gfx::Tween::EASE_IN
                               : gfx::Tween::FAST_OUT_LINEAR_IN);
-  animation.SetTransitionDuration(
-      base::TimeDelta::FromMilliseconds(kAnimationTimeoutMs));
+  animation.SetTransitionDuration(kMenuAnimationDuration);
 
   layer()->SetOpacity(show ? 1.0f : 0.f);
 
@@ -141,8 +145,10 @@ void PowerButtonMenuView::Layout() {
   const gfx::Rect rect(GetContentsBounds());
   gfx::Rect power_off_rect(rect);
   power_off_rect.set_size(power_off_item_->GetPreferredSize());
-  power_off_rect.Offset(
-      gfx::Vector2d(kMenuItemVerticalPadding, kMenuItemHorizontalPadding));
+  power_off_rect.Offset(gfx::Vector2d(
+      kMenuItemVerticalPadding - PowerButtonMenuItemView::kItemBorderThickness,
+      kMenuItemHorizontalPadding -
+          PowerButtonMenuItemView::kItemBorderThickness));
   power_off_item_->SetBoundsRect(power_off_rect);
 
   if (sign_out_item_) {
@@ -150,8 +156,11 @@ void PowerButtonMenuView::Layout() {
     sign_out_rect.set_size(sign_out_item_->GetPreferredSize());
     sign_out_rect.Offset(
         gfx::Vector2d(kMenuItemHorizontalPadding +
-                          power_off_item_->GetPreferredSize().width(),
-                      kMenuItemVerticalPadding));
+                          power_off_item_->GetPreferredSize().width() +
+                          kPaddingBetweenMenuItmes -
+                          PowerButtonMenuItemView::kItemBorderThickness,
+                      kMenuItemVerticalPadding -
+                          PowerButtonMenuItemView::kItemBorderThickness));
     sign_out_item_->SetBoundsRect(sign_out_rect);
   }
 }
@@ -176,7 +185,8 @@ gfx::Size PowerButtonMenuView::CalculatePreferredSize() const {
                                2 * kMenuItemVerticalPadding);
   menu_size.set_width(sign_out_item_
                           ? 2 * PowerButtonMenuItemView::kMenuItemWidth +
-                                2 * kMenuItemHorizontalPadding
+                                2 * kMenuItemHorizontalPadding +
+                                kPaddingBetweenMenuItmes
                           : PowerButtonMenuItemView::kMenuItemWidth +
                                 2 * kMenuItemHorizontalPadding);
   return menu_size;

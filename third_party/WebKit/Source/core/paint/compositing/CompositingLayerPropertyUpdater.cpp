@@ -90,10 +90,17 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
     // any control clips on the squashing layer's object which should not apply
     // on squashed layers.
     const auto* clipping_container = paint_layer->ClippingContainer();
-    state.SetClip(
-        clipping_container
-            ? clipping_container->FirstFragment().ContentsProperties().Clip()
-            : ClipPaintPropertyNode::Root());
+    if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
+      state.SetClip(
+          clipping_container
+              ? clipping_container->FirstFragment().ContentsProperties().Clip()
+              : ClipPaintPropertyNode::Root());
+    } else {
+      state.SetClip(
+          clipping_container
+              ? clipping_container->FirstFragment().ContentsProperties().Clip()
+              : paint_layer->GetLayoutObject().GetFrameView()->ContentClip());
+    }
     squashing_layer->SetLayerState(
         state,
         snapped_paint_offset + mapping->SquashingLayerOffsetFromLayoutObject());
@@ -104,6 +111,8 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
     const auto* properties = fragment_data.PaintProperties();
     DCHECK(properties && properties->Mask());
     state.SetEffect(properties->Mask());
+    state.SetClip(properties->MaskClip());
+
     mask_layer->SetLayerState(
         state, snapped_paint_offset + mask_layer->OffsetFromLayoutObject());
   }

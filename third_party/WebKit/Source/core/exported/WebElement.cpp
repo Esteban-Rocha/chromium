@@ -32,7 +32,6 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Element.h"
-#include "core/dom/ElementShadow.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/fullscreen/Fullscreen.h"
 #include "core/html/custom/CustomElement.h"
@@ -62,8 +61,8 @@ bool WebElement::IsEditable() const {
   if (HasEditableStyle(*element))
     return true;
 
-  if (element->IsTextControl()) {
-    if (!ToTextControlElement(element)->IsDisabledOrReadOnly())
+  if (auto* text_control = ToTextControlOrNull(element)) {
+    if (!text_control->IsDisabledOrReadOnly())
       return true;
   }
 

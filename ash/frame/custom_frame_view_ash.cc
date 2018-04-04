@@ -89,9 +89,10 @@ class CustomFrameViewAshWindowStateDelegate : public wm::WindowStateDelegate,
   void OnTabletModeStarted() override {
     if (window_state_->IsFullscreen())
       return;
-
+    views::Widget* widget =
+        views::Widget::GetWidgetForNativeWindow(window_state_->window());
     if (Shell::Get()->tablet_mode_controller()->ShouldAutoHideTitlebars(
-            nullptr)) {
+            widget)) {
       immersive_fullscreen_controller_->SetEnabled(
           ImmersiveFullscreenController::WINDOW_TYPE_OTHER, true);
     }
@@ -132,9 +133,11 @@ class CustomFrameViewAshWindowStateDelegate : public wm::WindowStateDelegate,
   // wm::WindowStateObserver:
   void OnPostWindowStateTypeChange(wm::WindowState* window_state,
                                    mojom::WindowStateType old_type) override {
+    views::Widget* widget =
+        views::Widget::GetWidgetForNativeWindow(window_state->window());
     if (Shell::Get()->tablet_mode_controller() &&
         Shell::Get()->tablet_mode_controller()->ShouldAutoHideTitlebars(
-            nullptr)) {
+            widget)) {
       DCHECK(immersive_fullscreen_controller_);
       if (window_state->IsMinimized() &&
           immersive_fullscreen_controller_->IsEnabled()) {
@@ -145,7 +148,6 @@ class CustomFrameViewAshWindowStateDelegate : public wm::WindowStateDelegate,
         immersive_fullscreen_controller_->SetEnabled(
             ImmersiveFullscreenController::WINDOW_TYPE_OTHER, true);
       }
-
       return;
     }
 
@@ -155,6 +157,13 @@ class CustomFrameViewAshWindowStateDelegate : public wm::WindowStateDelegate,
       immersive_fullscreen_controller_->SetEnabled(
           ImmersiveFullscreenController::WINDOW_TYPE_OTHER, false);
     }
+  }
+
+  CustomFrameViewAsh* GetFrameView() {
+    views::Widget* widget =
+        views::Widget::GetWidgetForNativeWindow(window_state_->window());
+    return static_cast<CustomFrameViewAsh*>(
+        widget->non_client_view()->frame_view());
   }
 
   wm::WindowState* window_state_;
@@ -270,7 +279,7 @@ void CustomFrameViewAsh::OverlayView::Layout() {
   int onscreen_height = header_height_
                             ? *header_height_
                             : header_view_->GetPreferredOnScreenHeight();
-  if (onscreen_height == 0 || !enabled()) {
+  if (onscreen_height == 0 || !visible()) {
     header_view_->SetVisible(false);
   } else {
     const int height =
@@ -372,6 +381,13 @@ void CustomFrameViewAsh::SetHeaderHeight(base::Optional<int> height) {
 
 views::View* CustomFrameViewAsh::GetHeaderView() {
   return header_view_;
+}
+
+gfx::Rect CustomFrameViewAsh::GetClientBoundsForWindowBounds(
+    const gfx::Rect& window_bounds) const {
+  gfx::Rect client_bounds(window_bounds);
+  client_bounds.Inset(0, NonClientTopBorderHeight(), 0, 0);
+  return client_bounds;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -528,24 +544,38 @@ SkColor CustomFrameViewAsh::GetInactiveFrameColorForTest() const {
   return header_view_->GetInactiveFrameColor();
 }
 
+void CustomFrameViewAsh::UpdateHeaderView() {
+  SplitViewController* split_view_controller =
+      Shell::Get()->split_view_controller();
+  if (in_overview_mode_ && split_view_controller->IsSplitViewModeActive() &&
+      split_view_controller->GetDefaultSnappedWindow() ==
+          frame_->GetNativeWindow()) {
+    // TODO(sammiequon): This works for now, but we may have to check if
+    // |frame_|'s native window is in the overview list instead.
+    SetShouldPaintHeader(true);
+  } else {
+    SetShouldPaintHeader(!in_overview_mode_);
+  }
+}
+
 void CustomFrameViewAsh::SetShouldPaintHeader(bool paint) {
   header_view_->SetShouldPaintHeader(paint);
 }
 
 void CustomFrameViewAsh::OnOverviewModeStarting() {
   in_overview_mode_ = true;
-  OnOverviewOrSplitViewModeChanged();
+  UpdateHeaderView();
 }
 
 void CustomFrameViewAsh::OnOverviewModeEnded() {
   in_overview_mode_ = false;
-  OnOverviewOrSplitViewModeChanged();
+  UpdateHeaderView();
 }
 
 void CustomFrameViewAsh::OnSplitViewStateChanged(
     SplitViewController::State /* previous_state */,
     SplitViewController::State /* current_state */) {
-  OnOverviewOrSplitViewModeChanged();
+  UpdateHeaderView();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -566,6 +596,11 @@ CustomFrameViewAsh::GetFrameCaptionButtonContainerViewForTest() {
 }
 
 int CustomFrameViewAsh::NonClientTopBorderHeight() const {
+  // TODO(oshima): CustomFrameViewAsh should be able to tell if it's
+  // in immersive mode and return 0, instead of using custom logic.
+  if (zero_top_border_height_)
+    return 0;
+
   // The frame should not occupy the window area when it's in fullscreen,
   // not visible or disabled.
   if (frame_->IsFullscreen() || !visible() || !enabled())
@@ -579,20 +614,6 @@ int CustomFrameViewAsh::NonClientTopBorderHeight() const {
     return 0;
 
   return header_view_->GetPreferredHeight();
-}
-
-void CustomFrameViewAsh::OnOverviewOrSplitViewModeChanged() {
-  SplitViewController* split_view_controller =
-      Shell::Get()->split_view_controller();
-  if (in_overview_mode_ && split_view_controller->IsSplitViewModeActive() &&
-      split_view_controller->GetDefaultSnappedWindow() ==
-          frame_->GetNativeWindow()) {
-    // TODO(sammiequon): This works for now, but we may have to check if
-    // |frame_|'s native window is in the overview list instead.
-    SetShouldPaintHeader(true);
-  } else {
-    SetShouldPaintHeader(!in_overview_mode_);
-  }
 }
 
 }  // namespace ash

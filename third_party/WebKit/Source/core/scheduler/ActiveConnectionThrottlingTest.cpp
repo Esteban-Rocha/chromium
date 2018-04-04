@@ -6,13 +6,13 @@
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/testing/sim/SimRequest.h"
 #include "core/testing/sim/SimTest.h"
-#include "platform/scheduler/renderer/page_scheduler.h"
+#include "platform/scheduler/public/page_scheduler.h"
 #include "platform/testing/TestingPlatformSupport.h"
 #include "platform/testing/TestingPlatformSupportWithWebRTC.h"
 #include "public/web/WebScriptSource.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::_;
+using testing::_;
 
 namespace blink {
 

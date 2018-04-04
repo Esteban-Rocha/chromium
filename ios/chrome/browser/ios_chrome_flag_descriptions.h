@@ -45,9 +45,11 @@ extern const char kNewClearBrowsingDataUIDescription[];
 extern const char kExternalSearchName[];
 extern const char kExternalSearchDescription[];
 
-// Title and description for the flag to enable use of FeedbackKit V2.
+// Title and description for the flags to enable use of FeedbackKit V2.
 extern const char kFeedbackKitV2Name[];
 extern const char kFeedbackKitV2Description[];
+extern const char kFeedbackKitV2WithSSOServiceName[];
+extern const char kFeedbackKitV2WithSSOServiceDescription[];
 
 // Title and description for the flag to enable History batch filtering.
 extern const char kHistoryBatchUpdatesFilterName[];
@@ -57,6 +59,10 @@ extern const char kHistoryBatchUpdatesFilterDescription[];
 // demo mode.
 extern const char kInProductHelpDemoModeName[];
 extern const char kInProductHelpDemoModeDescription[];
+
+// Title and description for the flag to enable ITunes links store kit handling.
+extern const char kITunesLinksStoreKitHandlingName[];
+extern const char kITunesLinksStoreKitHandlingDescription[];
 
 // Title, description, and options for Google UI menu for handling mailto links.
 extern const char kMailtoHandlingWithGoogleUIName[];
@@ -122,6 +128,14 @@ extern const char kToolbarButtonPositionsDescription[];
 // Title and description for the flag to enable the phase 1 UI Refresh.
 extern const char kUIRefreshPhase1Name[];
 extern const char kUIRefreshPhase1Description[];
+
+// Title and description for the flag to toggle the flag of the search button.
+extern const char kSearchIconToggleName[];
+extern const char kSearchIconToggleDescription[];
+
+// Title and description for the flag to enable the unified consent.
+extern const char kUnifiedConsentName[];
+extern const char kUnifiedConsentDescription[];
 
 // Title and description for the flag to enable the ddljson Doodle API.
 extern const char kUseDdljsonApiName[];

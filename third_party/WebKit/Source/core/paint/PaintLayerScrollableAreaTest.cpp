@@ -14,7 +14,7 @@
 #include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
-using ::testing::_;
+using testing::_;
 
 namespace blink {
 namespace {
@@ -38,7 +38,7 @@ class PaintLayerScrollableAreaTest : public RenderingTest {
         chrome_client_(new ScrollableAreaMockChromeClient) {}
 
   ~PaintLayerScrollableAreaTest() override {
-    ::testing::Mock::VerifyAndClearExpectations(&GetChromeClient());
+    testing::Mock::VerifyAndClearExpectations(&GetChromeClient());
   }
 
   ScrollableAreaMockChromeClient& GetChromeClient() const override {
@@ -899,6 +899,37 @@ TEST_F(PaintLayerScrollableAreaTest, HitTestOverlayScrollbars) {
   hit_result = HitTestResult(hit_request, LayoutPoint(5, 95));
   GetDocument().GetLayoutView()->HitTest(hit_result);
   EXPECT_EQ(hit_result.GetScrollbar(), scrollable_area->HorizontalScrollbar());
+}
+
+TEST_F(PaintLayerScrollableAreaTest, CompositedStickyDescendant) {
+  SetBodyInnerHTML(R"HTML(
+    <div id=scroller style="overflow: scroll; width: 500px; height: 300px;
+        will-change: transform">
+      <div id=sticky style="top: 0px; position: sticky; background: green">
+      </div>
+      <div style="width: 10px; height: 700px; background: lightblue"></div>
+    </div>
+  )HTML");
+  auto* scroller =
+      ToLayoutBoxModelObject(GetLayoutObjectByElementId("scroller"));
+  auto* scrollable_area = scroller->GetScrollableArea();
+  EXPECT_EQ(kPaintsIntoOwnBacking, scroller->Layer()->GetCompositingState());
+  auto* sticky = ToLayoutBoxModelObject(GetLayoutObjectByElementId("sticky"));
+
+  EXPECT_EQ(FloatSize(0, 0), sticky->FirstFragment()
+                                 .LocalBorderBoxProperties()
+                                 .Transform()
+                                 ->Matrix()
+                                 .To2DTranslation());
+
+  scrollable_area->SetScrollOffset(ScrollOffset(0, 50), kUserScroll);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  EXPECT_EQ(FloatSize(0, 50), sticky->FirstFragment()
+                                  .LocalBorderBoxProperties()
+                                  .Transform()
+                                  ->Matrix()
+                                  .To2DTranslation());
 }
 
 class NonRLSPaintLayerScrollableAreaTest

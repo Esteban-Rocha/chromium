@@ -544,8 +544,8 @@ bool FakeServer::Start(uint32_t shell_version) {
   (void)server_fd.release();
 
   base::Thread::Options options;
-  options.message_pump_factory =
-      base::Bind(&FakeServer::CreateMessagePump, base::Unretained(this));
+  options.message_pump_factory = base::BindRepeating(
+      &FakeServer::CreateMessagePump, base::Unretained(this));
   if (!base::Thread::StartWithOptions(options))
     return false;
 
@@ -556,7 +556,7 @@ bool FakeServer::Start(uint32_t shell_version) {
 
 void FakeServer::Pause() {
   task_runner()->PostTask(
-      FROM_HERE, base::Bind(&FakeServer::DoPause, base::Unretained(this)));
+      FROM_HERE, base::BindOnce(&FakeServer::DoPause, base::Unretained(this)));
   pause_event_.Wait();
 }
 

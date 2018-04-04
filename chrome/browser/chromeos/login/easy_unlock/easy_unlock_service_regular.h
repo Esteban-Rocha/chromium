@@ -15,9 +15,9 @@
 #include "build/build_config.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service.h"
 #include "chrome/browser/chromeos/login/easy_unlock/short_lived_user_context.h"
+#include "chromeos/components/proximity_auth/screenlock_bridge.h"
 #include "components/cryptauth/cryptauth_device_manager.h"
 #include "components/prefs/pref_change_registrar.h"
-#include "components/proximity_auth/screenlock_bridge.h"
 
 namespace base {
 class DictionaryValue;
@@ -105,7 +105,7 @@ class EasyUnlockServiceRegular
   bool IsChromeOSLoginEnabled() const override;
   void OnWillFinalizeUnlock(bool success) override;
   void OnSuspendDoneInternal() override;
-  void HandleUserReauth(const chromeos::UserContext& user_context) override;
+  void HandleUserReauth(const UserContext& user_context) override;
 
   // CryptAuthDeviceManager::Observer:
   void OnSyncStarted() override;
@@ -131,7 +131,7 @@ class EasyUnlockServiceRegular
 
   // Called with the user's credentials (e.g. username and password) after the
   // user reauthenticates to begin setup.
-  void OpenSetupAppAfterReauth(const chromeos::UserContext& user_context);
+  void OpenSetupAppAfterReauth(const UserContext& user_context);
 
   // Called after a cryptohome RemoveKey or RefreshKey operation to set the
   // proper hardlock state if the operation is successful.
@@ -139,7 +139,7 @@ class EasyUnlockServiceRegular
       EasyUnlockScreenlockStateHandler::HardlockState state_on_success,
       bool success);
 
-  std::unique_ptr<chromeos::ShortLivedUserContext> short_lived_user_context_;
+  std::unique_ptr<ShortLivedUserContext> short_lived_user_context_;
 
   // Updates local state with the preference from the user's profile, so they
   // can be accessed on the sign-in screen.

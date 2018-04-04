@@ -17,7 +17,7 @@
 #import "base/strings/sys_string_conversions.h"
 #import "base/test/ios/wait_util.h"
 #include "base/test/scoped_feature_list.h"
-#include "ios/web/navigation/placeholder_navigation_util.h"
+#import "ios/web/navigation/wk_navigation_util.h"
 #import "ios/web/public/crw_navigation_item_storage.h"
 #import "ios/web/public/crw_session_storage.h"
 #include "ios/web/public/features.h"
@@ -290,6 +290,11 @@ TEST_F(WebStateImplTest, ObserverTest) {
   EXPECT_EQ(web_state_.get(), observer->was_shown_info()->web_state);
   EXPECT_TRUE(web_state_->IsVisible());
 
+  // Test that WasShown() callback is not called for the second time.
+  observer = std::make_unique<TestWebStateObserver>(web_state_.get());
+  web_state_->WasShown();
+  EXPECT_FALSE(observer->was_shown_info());
+
   // Test that WasHidden() is called.
   ASSERT_TRUE(web_state_->IsVisible());
   ASSERT_FALSE(observer->was_hidden_info());
@@ -297,6 +302,11 @@ TEST_F(WebStateImplTest, ObserverTest) {
   ASSERT_TRUE(observer->was_hidden_info());
   EXPECT_EQ(web_state_.get(), observer->was_hidden_info()->web_state);
   EXPECT_FALSE(web_state_->IsVisible());
+
+  // Test that WasHidden() callback is not called for the second time.
+  observer = std::make_unique<TestWebStateObserver>(web_state_.get());
+  web_state_->WasHidden();
+  EXPECT_FALSE(observer->was_hidden_info());
 
   // Test that LoadProgressChanged() is called.
   ASSERT_FALSE(observer->change_loading_progress_info());
@@ -485,8 +495,8 @@ TEST_F(WebStateImplTest, ObserverTest) {
 TEST_F(WebStateImplTest, PlaceholderNavigationNotExposedToObservers) {
   TestWebStateObserver observer(web_state_.get());
   FakeNavigationContext context;
-  context.SetUrl(placeholder_navigation_util::CreatePlaceholderUrlForUrl(
-      GURL("chrome://newtab")));
+  context.SetUrl(
+      wk_navigation_util::CreatePlaceholderUrlForUrl(GURL("chrome://newtab")));
 
   // Test that OnPageLoaded() is not called.
   web_state_->OnPageLoaded(context.GetUrl(), true /* load_success */);

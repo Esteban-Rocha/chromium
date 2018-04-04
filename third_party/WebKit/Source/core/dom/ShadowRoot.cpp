@@ -28,28 +28,38 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/string_or_trusted_html.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/css/StyleEngine.h"
 #include "core/css/StyleSheetList.h"
 #include "core/css/resolver/StyleResolver.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/ShadowRootRareDataV0.h"
+#include "core/dom/ShadowRootV0.h"
 #include "core/dom/SlotAssignment.h"
 #include "core/dom/Text.h"
 #include "core/dom/V0InsertionPoint.h"
 #include "core/dom/WhitespaceAttacher.h"
+#include "core/dom/ng/slot_assignment_engine.h"
 #include "core/dom/trustedtypes/TrustedHTML.h"
 #include "core/editing/serializers/Serialization.h"
+#include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLShadowElement.h"
 #include "core/html/HTMLSlotElement.h"
 #include "core/layout/LayoutObject.h"
+#include "platform/EventDispatchForbiddenScope.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
 
+void ShadowRoot::Distribute() {
+  if (IsV1())
+    DistributeV1();
+  else
+    V0().Distribute();
+}
+
 struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope {
   char empty_class_fields_due_to_gc_mixin_marker[1];
-  Member<void*> willbe_member[3];
+  Member<void*> member[3];
   unsigned counters_and_flags[1];
 };
 
@@ -63,9 +73,12 @@ ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
       child_shadow_root_count_(0),
       type_(static_cast<unsigned short>(type)),
       registered_with_parent_shadow_root_(false),
-      descendant_insertion_points_is_valid_(false),
       delegates_focus_(false),
-      unused_(0) {}
+      needs_distribution_recalc_(false),
+      unused_(0) {
+  if (IsV0())
+    shadow_root_v0_ = new ShadowRootV0(*this);
+}
 
 ShadowRoot::~ShadowRoot() = default;
 
@@ -163,15 +176,15 @@ void ShadowRoot::RebuildLayoutTree(WhitespaceAttacher& whitespace_attacher) {
 }
 
 void ShadowRoot::AttachLayoutTree(AttachContext& context) {
-  DocumentFragment::AttachLayoutTree(context);
+  Node::AttachContext children_context(context);
+  DocumentFragment::AttachLayoutTree(children_context);
 }
 
 void ShadowRoot::DetachLayoutTree(const AttachContext& context) {
-  if (context.clear_invalidation) {
-    GetDocument().GetStyleEngine().GetStyleInvalidator().ClearInvalidation(
-        *this);
-  }
-  DocumentFragment::DetachLayoutTree(context);
+  Node::AttachContext children_context(context);
+  children_context.clear_invalidation = true;
+  GetDocument().GetStyleEngine().GetStyleInvalidator().ClearInvalidation(*this);
+  DocumentFragment::DetachLayoutTree(children_context);
 }
 
 Node::InsertionNotificationRequest ShadowRoot::InsertedInto(
@@ -180,6 +193,9 @@ Node::InsertionNotificationRequest ShadowRoot::InsertedInto(
 
   if (!insertion_point->isConnected())
     return kInsertionDone;
+
+  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+    GetDocument().GetSlotAssignmentEngine().Connected(*this);
 
   // FIXME: When parsing <video controls>, insertedInto() is called many times
   // without invoking removedFrom.  For now, we check
@@ -199,6 +215,8 @@ Node::InsertionNotificationRequest ShadowRoot::InsertedInto(
 
 void ShadowRoot::RemovedFrom(ContainerNode* insertion_point) {
   if (insertion_point->isConnected()) {
+    if (NeedsSlotAssignmentRecalc())
+      GetDocument().GetSlotAssignmentEngine().Disconnected(*this);
     GetDocument().GetStyleEngine().ShadowRootRemovedFromDocument(this);
     if (registered_with_parent_shadow_root_) {
       ShadowRoot* root = host().ContainingShadowRoot();
@@ -225,6 +243,10 @@ void ShadowRoot::SetNeedsAssignmentRecalc() {
   return slot_assignment_->SetNeedsAssignmentRecalc();
 }
 
+bool ShadowRoot::NeedsSlotAssignmentRecalc() const {
+  return slot_assignment_ && slot_assignment_->NeedsAssignmentRecalc();
+}
+
 void ShadowRoot::ChildrenChanged(const ChildrenChange& change) {
   ContainerNode::ChildrenChanged(change);
 
@@ -237,73 +259,27 @@ void ShadowRoot::ChildrenChanged(const ChildrenChange& change) {
   }
 }
 
-ShadowRootRareDataV0& ShadowRoot::EnsureShadowRootRareDataV0() {
-  if (shadow_root_rare_data_v0_)
-    return *shadow_root_rare_data_v0_;
-
-  shadow_root_rare_data_v0_ = new ShadowRootRareDataV0;
-  return *shadow_root_rare_data_v0_;
-}
-
-bool ShadowRoot::ContainsShadowElements() const {
-  return shadow_root_rare_data_v0_
-             ? shadow_root_rare_data_v0_->ContainsShadowElements()
-             : false;
-}
-
-bool ShadowRoot::ContainsContentElements() const {
-  return shadow_root_rare_data_v0_
-             ? shadow_root_rare_data_v0_->ContainsContentElements()
-             : false;
-}
-
-unsigned ShadowRoot::DescendantShadowElementCount() const {
-  return shadow_root_rare_data_v0_
-             ? shadow_root_rare_data_v0_->DescendantShadowElementCount()
-             : 0;
-}
-
-void ShadowRoot::DidAddInsertionPoint(V0InsertionPoint* insertion_point) {
-  EnsureShadowRootRareDataV0().DidAddInsertionPoint(insertion_point);
-  InvalidateDescendantInsertionPoints();
-}
-
-void ShadowRoot::DidRemoveInsertionPoint(V0InsertionPoint* insertion_point) {
-  shadow_root_rare_data_v0_->DidRemoveInsertionPoint(insertion_point);
-  InvalidateDescendantInsertionPoints();
-}
-
-void ShadowRoot::InvalidateDescendantInsertionPoints() {
-  descendant_insertion_points_is_valid_ = false;
-  shadow_root_rare_data_v0_->ClearDescendantInsertionPoints();
-}
-
-const HeapVector<Member<V0InsertionPoint>>&
-ShadowRoot::DescendantInsertionPoints() {
-  DEFINE_STATIC_LOCAL(HeapVector<Member<V0InsertionPoint>>, empty_list,
-                      (new HeapVector<Member<V0InsertionPoint>>));
-  if (shadow_root_rare_data_v0_ && descendant_insertion_points_is_valid_)
-    return shadow_root_rare_data_v0_->DescendantInsertionPoints();
-
-  descendant_insertion_points_is_valid_ = true;
-
-  if (!ContainsInsertionPoints())
-    return empty_list;
-
-  HeapVector<Member<V0InsertionPoint>> insertion_points;
-  for (V0InsertionPoint& insertion_point :
-       Traversal<V0InsertionPoint>::DescendantsOf(*this))
-    insertion_points.push_back(&insertion_point);
-
-  EnsureShadowRootRareDataV0().SetDescendantInsertionPoints(insertion_points);
-
-  return shadow_root_rare_data_v0_->DescendantInsertionPoints();
-}
-
 StyleSheetList& ShadowRoot::StyleSheets() {
   if (!style_sheet_list_)
     SetStyleSheets(StyleSheetList::Create(this));
   return *style_sheet_list_;
+}
+
+void ShadowRoot::SetNeedsDistributionRecalcWillBeSetNeedsAssignmentRecalc() {
+  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled() && IsV1())
+    SetNeedsAssignmentRecalc();
+  else
+    SetNeedsDistributionRecalc();
+}
+
+void ShadowRoot::SetNeedsDistributionRecalc() {
+  DCHECK(!(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled() && IsV1()));
+  if (needs_distribution_recalc_)
+    return;
+  needs_distribution_recalc_ = true;
+  host().MarkAncestorsWithChildNeedsDistributionRecalc();
+  if (!IsV1())
+    V0().ClearDistribution();
 }
 
 void ShadowRoot::DistributeV1() {
@@ -311,9 +287,9 @@ void ShadowRoot::DistributeV1() {
 }
 
 void ShadowRoot::Trace(blink::Visitor* visitor) {
-  visitor->Trace(shadow_root_rare_data_v0_);
-  visitor->Trace(slot_assignment_);
   visitor->Trace(style_sheet_list_);
+  visitor->Trace(slot_assignment_);
+  visitor->Trace(shadow_root_v0_);
   TreeScope::Trace(visitor);
   DocumentFragment::Trace(visitor);
 }

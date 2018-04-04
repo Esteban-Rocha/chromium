@@ -92,10 +92,10 @@ class MediaStubLocalFrameClient : public EmptyLocalFrameClient {
   }
 };
 
-using ::testing::_;
-using ::testing::AtLeast;
-using ::testing::Invoke;
-using ::testing::Return;
+using testing::_;
+using testing::AtLeast;
+using testing::Invoke;
+using testing::Return;
 
 }  // anonymous namespace
 
@@ -150,7 +150,7 @@ TEST_F(HTMLMediaElementEventListenersTest, RemovingFromDocumentCollectsAll) {
     EXPECT_TRUE(persistent_video->HasEventListeners());
   }
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   ThreadState::Current()->CollectAllGarbage();
 
@@ -180,7 +180,7 @@ TEST_F(HTMLMediaElementEventListenersTest,
   EXPECT_TRUE(GetDocument().HasEventListeners());
   EXPECT_TRUE(Video()->HasEventListeners());
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   ThreadState::Current()->CollectAllGarbage();
 
@@ -197,7 +197,7 @@ TEST_F(HTMLMediaElementEventListenersTest,
   GetDocument().body()->SetInnerHTMLFromString("<body><video></video></body>");
   Video()->SetSrc("http://example.com");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   EXPECT_NE(WebMediaPlayer(), nullptr);
 
@@ -209,7 +209,7 @@ TEST_F(HTMLMediaElementEventListenersTest,
   Fullscreen::RequestFullscreen(*Video());
   Fullscreen::From(GetDocument()).DidEnterFullscreen();
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   Persistent<Document> persistent_document = &GetDocument();
   Persistent<MediaCustomControlsFullscreenDetector> detector =
@@ -225,7 +225,7 @@ TEST_F(HTMLMediaElementEventListenersTest,
 
   DestroyDocument();
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   // Document should not have listeners as the ExecutionContext is destroyed.
   EXPECT_FALSE(persistent_document->HasEventListeners());
@@ -273,7 +273,7 @@ class HTMLMediaElementWithMockSchedulerTest
 };
 
 TEST_F(HTMLMediaElementWithMockSchedulerTest, OneTimeupdatePerSeek) {
-  ::testing::InSequence dummy;
+  testing::InSequence dummy;
   GetDocument().body()->SetInnerHTMLFromString("<body><video></video></body>");
 
   // Set a src to trigger WebMediaPlayer creation.
@@ -322,7 +322,7 @@ TEST_F(HTMLMediaElementWithMockSchedulerTest, OneTimeupdatePerSeek) {
 }
 
 TEST_F(HTMLMediaElementWithMockSchedulerTest, PeriodicTimeupdateAfterSeek) {
-  ::testing::InSequence dummy;
+  testing::InSequence dummy;
   GetDocument().body()->SetInnerHTMLFromString("<body><video></video></body>");
 
   // Set a src to trigger WebMediaPlayer creation.

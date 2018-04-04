@@ -22,6 +22,8 @@ namespace switches {
 
 MEDIA_EXPORT extern const char kAudioBufferSize[];
 
+MEDIA_EXPORT extern const char kAudioServiceQuitTimeoutMs[];
+
 MEDIA_EXPORT extern const char kAutoplayPolicy[];
 
 MEDIA_EXPORT extern const char kDisableAudioOutput[];
@@ -103,7 +105,6 @@ namespace media {
 MEDIA_EXPORT extern const base::Feature kAv1Decoder;
 MEDIA_EXPORT extern const base::Feature kBackgroundVideoPauseOptimization;
 MEDIA_EXPORT extern const base::Feature kBackgroundVideoTrackOptimization;
-MEDIA_EXPORT extern const base::Feature kComplexityBasedVideoBuffering;
 MEDIA_EXPORT extern const base::Feature kExternalClearKeyForTesting;
 MEDIA_EXPORT extern const base::Feature kLowDelayVideoRenderingOnLiveStream;
 MEDIA_EXPORT extern const base::Feature kMediaCastOverlayButton;
@@ -137,6 +138,7 @@ MEDIA_EXPORT extern const base::Feature kUseModernMediaControls;
 MEDIA_EXPORT extern const base::Feature kVideoFullscreenOrientationLock;
 MEDIA_EXPORT extern const base::Feature kVideoRotateToFullscreen;
 MEDIA_EXPORT extern const base::Feature kMediaDrmPersistentLicense;
+MEDIA_EXPORT extern const base::Feature kCafMediaRouterImpl;
 #endif  // defined(OS_ANDROID)
 
 #if defined(OS_WIN)

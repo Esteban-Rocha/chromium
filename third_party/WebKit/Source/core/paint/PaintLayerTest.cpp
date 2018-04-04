@@ -28,10 +28,9 @@ class PaintLayerTest : public PaintTestConfigurations, public RenderingTest {
   }
 };
 
-INSTANTIATE_TEST_CASE_P(
-    All,
-    PaintLayerTest,
-    ::testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
+INSTANTIATE_TEST_CASE_P(All,
+                        PaintLayerTest,
+                        testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
 
 TEST_P(PaintLayerTest, ChildWithoutPaintLayer) {
   SetBodyInnerHTML(
@@ -510,7 +509,7 @@ TEST_P(PaintLayerTest, DescendantDependentFlagsStopsAtThrottledFrames) {
   iframe->setAttribute(HTMLNames::styleAttr, "transform: translateY(5555px)");
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Ensure intersection observer notifications get delivered.
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_FALSE(GetDocument().View()->IsHiddenForThrottling());
   EXPECT_TRUE(ChildDocument().View()->IsHiddenForThrottling());
 

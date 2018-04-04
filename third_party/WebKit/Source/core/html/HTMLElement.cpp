@@ -34,7 +34,6 @@
 #include "core/css_property_names.h"
 #include "core/css_value_keywords.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/FlatTreeTraversal.h"
@@ -77,7 +76,6 @@ namespace blink {
 
 using namespace cssvalue;
 using namespace HTMLNames;
-using namespace WTF;
 
 using namespace std;
 

@@ -381,6 +381,12 @@ void WallpaperControllerClient::IsActiveUserWallpaperControlledByPolicy(
       std::move(callback));
 }
 
+void WallpaperControllerClient::GetActiveUserWallpaperLocation(
+    ash::mojom::WallpaperController::GetActiveUserWallpaperLocationCallback
+        callback) {
+  wallpaper_controller_->GetActiveUserWallpaperLocation(std::move(callback));
+}
+
 void WallpaperControllerClient::ShouldShowWallpaperSetting(
     ash::mojom::WallpaperController::ShouldShowWallpaperSettingCallback
         callback) {
@@ -417,20 +423,10 @@ void WallpaperControllerClient::BindAndSetClient() {
   CHECK(PathService::Get(chrome::DIR_CHROMEOS_CUSTOM_WALLPAPERS,
                          &chromeos_custom_wallpapers_path));
 
-  // Set the static variables in WallpaperController to make it work under MASH.
-  // The reason we do this is so that the static utility functions in
-  // WallpaperController in ash continue to work under MASH.
-  // TODO(wzang|xdai): Create a WallpaperPaths class under //ash/public/cpp and
-  // move all the unititly functions there. See https://crbug.com/795159.
-  ash::WallpaperController::dir_user_data_path_ = user_data_path;
-  ash::WallpaperController::dir_chrome_os_wallpapers_path_ =
-      chromeos_wallpapers_path;
-  ash::WallpaperController::dir_chrome_os_custom_wallpapers_path_ =
-      chromeos_custom_wallpapers_path;
-
   wallpaper_controller_->Init(
       std::move(client), user_data_path, chromeos_wallpapers_path,
       chromeos_custom_wallpapers_path,
+      policy_handler_.device_wallpaper_file_path(),
       policy_handler_.IsDeviceWallpaperPolicyEnforced());
 }
 

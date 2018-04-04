@@ -16,7 +16,7 @@ namespace blink {
 
 class GraphicsContext;
 
-class PaintControllerTestBase : public ::testing::Test {
+class PaintControllerTestBase : public testing::Test {
  public:
   PaintControllerTestBase()
       : root_paint_property_client_("root"),
@@ -46,7 +46,7 @@ class PaintControllerTestBase : public ::testing::Test {
   void InitRootChunk() {
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
       GetPaintController().UpdateCurrentPaintChunkProperties(
-          root_paint_chunk_id_, testing::DefaultPaintChunkProperties());
+          root_paint_chunk_id_, test::DefaultPaintChunkProperties());
     }
   }
 

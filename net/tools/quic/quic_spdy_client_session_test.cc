@@ -303,7 +303,7 @@ TEST_P(QuicSpdyClientSessionTest, InvalidPacketReceived) {
   QuicSocketAddress client_address(TestPeerIPAddress(), kTestPort);
 
   EXPECT_CALL(*connection_, ProcessUdpPacket(server_address, client_address, _))
-      .WillRepeatedly(Invoke(implicit_cast<MockQuicConnection*>(connection_),
+      .WillRepeatedly(Invoke(static_cast<MockQuicConnection*>(connection_),
                              &MockQuicConnection::ReallyProcessUdpPacket));
   EXPECT_CALL(*connection_, OnCanWrite()).Times(AnyNumber());
   EXPECT_CALL(*connection_, OnError(_)).Times(1);
@@ -325,7 +325,7 @@ TEST_P(QuicSpdyClientSessionTest, InvalidPacketReceived) {
   QuicConnectionId connection_id = session_->connection()->connection_id();
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructEncryptedPacket(
       connection_id, false, false, 100, "data", PACKET_8BYTE_CONNECTION_ID,
-      PACKET_6BYTE_PACKET_NUMBER, nullptr, Perspective::IS_SERVER));
+      PACKET_4BYTE_PACKET_NUMBER, nullptr, Perspective::IS_SERVER));
   std::unique_ptr<QuicReceivedPacket> received(
       ConstructReceivedPacket(*packet, QuicTime::Zero()));
   // Change the last byte of the encrypted data.
@@ -341,7 +341,7 @@ TEST_P(QuicSpdyClientSessionTest, InvalidFramedPacketReceived) {
   QuicSocketAddress client_address(TestPeerIPAddress(), kTestPort);
 
   EXPECT_CALL(*connection_, ProcessUdpPacket(server_address, client_address, _))
-      .WillRepeatedly(Invoke(implicit_cast<MockQuicConnection*>(connection_),
+      .WillRepeatedly(Invoke(static_cast<MockQuicConnection*>(connection_),
                              &MockQuicConnection::ReallyProcessUdpPacket));
   EXPECT_CALL(*connection_, OnError(_)).Times(1);
 
@@ -350,7 +350,7 @@ TEST_P(QuicSpdyClientSessionTest, InvalidFramedPacketReceived) {
   ParsedQuicVersionVector versions = {GetParam()};
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructMisFramedEncryptedPacket(
       connection_id, false, false, 100, "data", PACKET_8BYTE_CONNECTION_ID,
-      PACKET_6BYTE_PACKET_NUMBER, &versions, Perspective::IS_SERVER));
+      PACKET_4BYTE_PACKET_NUMBER, &versions, Perspective::IS_SERVER));
   std::unique_ptr<QuicReceivedPacket> received(
       ConstructReceivedPacket(*packet, QuicTime::Zero()));
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(1);

@@ -94,17 +94,6 @@ CORE_EXPORT bool EndsOfNodeAreVisuallyDistinctPositions(const Node*);
 CORE_EXPORT Position CanonicalPositionOf(const Position&);
 CORE_EXPORT PositionInFlatTree CanonicalPositionOf(const PositionInFlatTree&);
 
-// Bounds of (possibly transformed) caret in absolute coords
-CORE_EXPORT IntRect AbsoluteCaretBoundsOf(const VisiblePosition&);
-CORE_EXPORT IntRect AbsoluteCaretBoundsOf(const VisiblePositionInFlatTree&);
-
-IntRect AbsoluteCaretRectOfPosition(
-    const PositionWithAffinity&,
-    LayoutUnit* extra_width_to_end_of_line = nullptr);
-
-CORE_EXPORT IntRect AbsoluteSelectionBoundsOf(const VisiblePosition&);
-CORE_EXPORT IntRect AbsoluteSelectionBoundsOf(const VisiblePositionInFlatTree&);
-
 CORE_EXPORT UChar32 CharacterAfter(const VisiblePosition&);
 CORE_EXPORT UChar32 CharacterAfter(const VisiblePositionInFlatTree&);
 CORE_EXPORT UChar32 CharacterBefore(const VisiblePosition&);
@@ -237,16 +226,6 @@ bool InSameParagraph(const VisiblePosition&,
                      const VisiblePosition&,
                      EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
 EphemeralRange ExpandToParagraphBoundary(const EphemeralRange&);
-
-// blocks (true paragraphs; line break elements don't break blocks)
-VisiblePosition StartOfBlock(
-    const VisiblePosition&,
-    EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
-VisiblePosition EndOfBlock(
-    const VisiblePosition&,
-    EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
-bool IsStartOfBlock(const VisiblePosition&);
-bool IsEndOfBlock(const VisiblePosition&);
 
 // document
 CORE_EXPORT VisiblePosition StartOfDocument(const VisiblePosition&);

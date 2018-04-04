@@ -67,6 +67,18 @@ Polymer({
     /** @type {?print_preview.MeasurementSystem} */
     measurementSystem: Object,
 
+    /** @private {boolean} Whether the plugin is loaded */
+    pluginLoaded_: {
+      type: Boolean,
+      value: false,
+    },
+
+    /** @private {boolean} Whether the document is ready */
+    documentReady_: {
+      type: Boolean,
+      value: false,
+    },
+
     /** @private {string} */
     previewState_: {
       type: String,
@@ -78,7 +90,8 @@ Polymer({
     previewLoaded_: {
       type: Boolean,
       notify: true,
-      computed: 'computePreviewLoaded_(previewState_)',
+      computed: 'computePreviewLoaded_(' +
+          'previewState_, pluginLoaded_, documentReady_)',
     },
   },
 
@@ -91,9 +104,10 @@ Polymer({
     'onSettingsChanged_(settings.color.value, settings.cssBackground.value, ' +
         'settings.fitToPage.value, settings.headerFooter.value, ' +
         'settings.layout.value, settings.margins.value, ' +
-        'settings.mediaSize.value, settings.ranges.value,' +
-        'settings.selectionOnly.value, settings.scaling.value, ' +
-        'settings.rasterize.value, destination.id, destination.capabilities)',
+        'settings.customMargins.value, settings.mediaSize.value, ' +
+        'settings.ranges.value, settings.selectionOnly.value, ' +
+        'settings.scaling.value, settings.rasterize.value, destination.id, ' +
+        'destination.capabilities)',
   ],
 
   /** @private {print_preview.NativeLayer} */
@@ -107,12 +121,6 @@ Polymer({
 
   /** @private {HTMLEmbedElement|print_preview_new.PDFPlugin} */
   plugin_: null,
-
-  /** @private {boolean} Whether the plugin is loaded */
-  pluginLoaded_: false,
-
-  /** @private {boolean} Whether the document is ready */
-  documentReady_: false,
 
   /** @override */
   attached: function() {
@@ -139,7 +147,9 @@ Polymer({
    * @private
    */
   computePreviewLoaded_: function() {
-    return this.previewState_ == PreviewAreaState_.DISPLAY_PREVIEW;
+    return this.previewState_ == PreviewAreaState_.DISPLAY_PREVIEW ||
+        (this.documentReady_ && this.pluginLoaded_ &&
+         this.previewState_ == PreviewAreaState_.OPEN_IN_PREVIEW);
   },
 
   /** @return {boolean} Whether the preview is loaded. */
@@ -162,7 +172,7 @@ Polymer({
 
       fromElement = fromElement.parentElement;
     }
-    marginControlContainer.visible = true;
+    marginControlContainer.setInvisible(false);
   },
 
   /**
@@ -180,11 +190,7 @@ Polymer({
 
       toElement = toElement.parentElement;
     }
-
-    if (marginControlContainer.isDragging())
-      return;
-
-    marginControlContainer.visible = false;
+    marginControlContainer.setInvisible(true);
   },
 
   /** @private */
@@ -237,9 +243,9 @@ Polymer({
     if (this.previewState_ == PreviewAreaState_.LOADING)
       return this.i18n('loading');
     if (this.previewState_ == PreviewAreaState_.OPEN_IN_PREVIEW)
-      return this.i18n('openPdfInPreview');
+      return this.i18n('openingPDFInPreview');
     if (this.previewState_ == PreviewAreaState_.INVALID_SETTINGS)
-      return this.i18n('invalidSettings');
+      return this.i18n('invalidPrinterSettings');
     if (this.previewState_ == PreviewAreaState_.PREVIEW_FAILED)
       return this.i18n('previewFailed');
     return '';
@@ -255,7 +261,8 @@ Polymer({
             this.onPreviewStart_(previewUid, -1);
           this.documentReady_ = true;
           if (this.pluginLoaded_) {
-            this.previewState_ = PreviewAreaState_.DISPLAY_PREVIEW;
+            if (this.previewState_ != PreviewAreaState_.OPEN_IN_PREVIEW)
+              this.previewState_ = PreviewAreaState_.DISPLAY_PREVIEW;
             this.fire('preview-loaded');
           }
         },
@@ -290,6 +297,14 @@ Polymer({
         break;
     }
   },
+
+  // <if expr="macosx">
+  /** Set the preview state to display the "opening in preview" message. */
+  setOpeningPdfInPreview: function() {
+    assert(cr.isMac);
+    this.previewState_ = PreviewAreaState_.OPEN_IN_PREVIEW;
+  },
+  // </if>
 
   /**
    * @param {number} previewUid The unique identifier of the preview.
@@ -375,7 +390,8 @@ Polymer({
   onPluginLoad_: function() {
     this.pluginLoaded_ = true;
     if (this.documentReady_) {
-      this.previewState_ = PreviewAreaState_.DISPLAY_PREVIEW;
+      if (this.previewState_ != PreviewAreaState_.OPEN_IN_PREVIEW)
+        this.previewState_ = PreviewAreaState_.DISPLAY_PREVIEW;
       this.fire('preview-loaded');
     }
   },
@@ -528,14 +544,7 @@ Polymer({
 
     if (this.getSettingValue('margins') ==
         print_preview.ticket_items.MarginsTypeValue.CUSTOM) {
-      // TODO (rbpotter): Replace this with real values when custom margins are
-      // implemented.
-      ticket.marginsCustom = {
-        marginTop: 70,
-        marginRight: 70,
-        marginBottom: 70,
-        marginLeft: 70,
-      };
+      ticket.marginsCustom = this.getSettingValue('customMargins');
     }
     let pageCount = -1;
     if (this.inFlightRequestId_ > 0) {

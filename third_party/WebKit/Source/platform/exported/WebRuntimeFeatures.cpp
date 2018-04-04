@@ -88,6 +88,10 @@ void WebRuntimeFeatures::EnableAudioOutputDevices(bool enable) {
   RuntimeEnabledFeatures::SetAudioOutputDevicesEnabled(enable);
 }
 
+void WebRuntimeFeatures::EnableCacheInlineScriptCode(bool enable) {
+  RuntimeEnabledFeatures::SetCacheInlineScriptCodeEnabled(enable);
+}
+
 void WebRuntimeFeatures::EnableCanvas2dImageChromium(bool enable) {
   RuntimeEnabledFeatures::SetCanvas2dImageChromiumEnabled(enable);
 }
@@ -490,10 +494,6 @@ void WebRuntimeFeatures::EnablePWAFullCodeCache(bool enable) {
   RuntimeEnabledFeatures::SetPWAFullCodeCacheEnabled(enable);
 }
 
-void WebRuntimeFeatures::EnableDoubleTapToJumpOnVideo(bool enable) {
-  RuntimeEnabledFeatures::SetDoubleTapToJumpOnVideoEnabled(enable);
-}
-
 void WebRuntimeFeatures::EnableCodeCacheAfterExecute(bool enable) {
   RuntimeEnabledFeatures::SetCodeCacheAfterExecuteEnabled(enable);
 }
@@ -504,6 +504,10 @@ void WebRuntimeFeatures::EnableUnifiedTouchAdjustment(bool enable) {
 
 void WebRuntimeFeatures::EnableMojoBlobURLs(bool enable) {
   RuntimeEnabledFeatures::SetMojoBlobURLsEnabled(enable);
+}
+
+void WebRuntimeFeatures::EnableOffMainThreadWebSocket(bool enable) {
+  RuntimeEnabledFeatures::SetOffMainThreadWebSocketEnabled(enable);
 }
 
 }  // namespace blink

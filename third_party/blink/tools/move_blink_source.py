@@ -68,8 +68,19 @@ class FileType(object):
                 return FileType.NONE
             return FileType.BUILD
         if basename.endswith('.html') and re.search(
-                r'third_party/WebKit/LayoutTests/(geolocation-api|installedapp|' +
-                r'media/mediasession|payments|presentation|webshare)', slash_dir):
+                r'third_party/WebKit/LayoutTests/('
+                r'fast/dom/shadow|'
+                r'fast/forms/color|'
+                r'geolocation-api|'
+                r'http/tests/budget|'
+                r'http/tests/credentialmanager|'
+                r'http/tests/security/powerfulFeatureRestrictions|'
+                r'installedapp|'
+                r'media/mediasession|'
+                r'payments|'
+                r'presentation|'
+                r'reporting-observer|'
+                r'webshare)', slash_dir):
             return FileType.LAYOUT_TESTS_WITH_MOJOM
         return FileType.NONE
 
@@ -102,7 +113,6 @@ class MoveBlinkSource(object):
         """
         _log.info('Planning renaming ...')
         file_pairs = plan_blink_move(self._fs, [])
-        _log.info('Will move %d files', len(file_pairs))
 
         self._create_basename_maps(file_pairs)
         dirs = self._update_file_content(apply_only)
@@ -182,9 +192,13 @@ class MoveBlinkSource(object):
              [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
             ('tools/android/loading/request_track.py',
              [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
+            ('tools/cfi/blacklist.txt',
+             [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
             ('tools/gritsettings/resource_ids',
              [('third_party/WebKit/public', 'third_party/blink/public'),
               ('third_party/WebKit/Source', 'third_party/blink/renderer')]),
+            ('tools/include_tracer.py',
+             [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
             ('tools/metrics/actions/extract_actions.py',
              [('third_party/WebKit/Source', 'third_party/blink/renderer')]),
             ('tools/metrics/histograms/update_editor_commands.py',
@@ -237,7 +251,6 @@ Bug: 768828
         if apply_only:
             file_pairs = [(src, dest) for (src, dest) in file_pairs
                           if 'third_party/WebKit/' + src.replace('\\', '/') in apply_only]
-            print 'Update file_pairs = ', file_pairs
         _log.info('Will move %d files', len(file_pairs))
 
         git = Git(cwd=self._repo_root)
@@ -359,7 +372,7 @@ Bug: 768828
                 source_header = source_base.replace('.proto', '.pb.h')
                 basename_map[source_header] = dest_base.replace('.proto', '.pb.h')
                 pattern += re.escape(source_header) + '|'
-        _log.info('Rename %d files for snake_case', len(basename_map))
+        _log.debug('Rename %d files for snake_case', len(basename_map))
         self._basename_map = basename_map
         self._basename_re = re.compile(pattern[0:len(pattern) - 1] + ')(?=["\']|$)')
         self._idl_generated_impl_headers = idl_headers
@@ -449,7 +462,8 @@ Bug: 768828
         return self._update_basename(content)
 
     def _update_layout_tests(self, content):
-        return content.replace('file:///gen/third_party/WebKit/', 'file:///gen/third_party/blink/renderer/')
+        return content.replace('file:///gen/third_party/WebKit/public/',
+                               'file:///gen/third_party/blink/public/')
 
     def _update_basename(self, content):
         return self._basename_re.sub(lambda match: self._basename_map[match.group(1)], content)
@@ -482,7 +496,7 @@ Bug: 768828
                 content = self._update_owners(content)
             elif file_type == FileType.DEPS:
                 if self._fs.dirname(file_path) == self._repo_root:
-                    _log.info("Skip //DEPS")
+                    _log.debug("Skip //DEPS")
                     continue
                 content = self._update_deps(content)
             elif file_type == FileType.BLINK_DEPS:
@@ -501,9 +515,9 @@ Bug: 768828
             if self._options.run and (not apply_only or file_path.replace('\\', '/') in apply_only):
                 self._fs.write_text_file(file_path, content)
                 self._updated_files.append(file_path)
+                _log.info('Updated %s', self._shorten_path(file_path))
             if file_type == FileType.DEPS:
                 self._append_unless_upper_dir_exists(updated_deps_dirs, self._fs.dirname(file_path))
-            _log.info('Updated %s', self._shorten_path(file_path))
         return updated_deps_dirs
 
     def _update_cpp_includes_in_directories(self, dirs, apply_only):
@@ -515,6 +529,8 @@ Bug: 768828
                      '.h.tmpl', 'xpath_grammar.y', '.gperf')))
             for file_path in files:
                 posix_file_path = file_path.replace('\\', '/')
+                if '/third_party/WebKit/Source/bindings/tests/results/' in posix_file_path:
+                    continue
                 original_content = self._fs.read_text_file(file_path)
 
                 content = self._update_cpp_includes(original_content)
@@ -528,7 +544,7 @@ Bug: 768828
                 if self._options.run and (not apply_only or posix_file_path in apply_only):
                     self._fs.write_text_file(file_path, content)
                     self._updated_files.append(file_path)
-                _log.info('Updated %s', self._shorten_path(file_path))
+                    _log.info('Updated %s', self._shorten_path(file_path))
 
     def _replace_include_path(self, match):
         include_or_import = match.group(1)
@@ -624,13 +640,13 @@ Bug: 768828
             if should_write:
                 self._fs.write_text_file(full_path, content)
                 self._updated_files.append(full_path)
-            _log.info('Updated %s', file_path)
+                _log.info('Updated %s', file_path)
         else:
             _log.warning('%s does not contain specified source strings.', file_path)
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG,
+    logging.basicConfig(level=logging.INFO,
                         format='[%(asctime)s %(levelname)s %(name)s] %(message)s',
                         datefmt='%H:%M:%S')
     parser = argparse.ArgumentParser(description='Blink source mover')

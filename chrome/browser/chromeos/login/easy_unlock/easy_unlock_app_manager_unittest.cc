@@ -27,7 +27,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/grit/browser_resources.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/proximity_auth/switches.h"
+#include "chromeos/components/proximity_auth/switches.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
@@ -43,6 +43,7 @@ namespace easy_unlock_private_api = extensions::api::easy_unlock_private;
 namespace screenlock_private_api = extensions::api::screenlock_private;
 namespace app_runtime_api = extensions::api::app_runtime;
 
+namespace chromeos {
 namespace {
 
 // Sets |*value| to true, also verifying that the value was not previously set.
@@ -214,7 +215,7 @@ class EasyUnlockAppManagerTest : public testing::Test {
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         proximity_auth::switches::kForceLoadEasyUnlockAppInTests);
     extensions::ExtensionSystem* extension_system = SetUpExtensionSystem();
-    app_manager_ = chromeos::EasyUnlockAppManager::Create(
+    app_manager_ = EasyUnlockAppManager::Create(
         extension_system, IDR_EASY_UNLOCK_MANIFEST, GetAppPath());
   }
 
@@ -274,16 +275,16 @@ class EasyUnlockAppManagerTest : public testing::Test {
   }
 
  protected:
-  std::unique_ptr<chromeos::EasyUnlockAppManager> app_manager_;
+  std::unique_ptr<EasyUnlockAppManager> app_manager_;
 
   // Needed by extension system.
   content::TestBrowserThreadBundle thread_bundle_;
 
   // Cros settings and device settings are needed when creating user manager.
-  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
-  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  ScopedTestDeviceSettingsService test_device_settings_service_;
+  ScopedTestCrosSettings test_cros_settings_;
   // Needed for creating ExtensionService.
-  chromeos::ScopedTestUserManager test_user_manager_;
+  ScopedTestUserManager test_user_manager_;
 
   TestingProfile profile_;
 
@@ -578,3 +579,4 @@ TEST_F(EasyUnlockAppManagerTest, SendAuthAttemptedAppDisabled) {
 }
 
 }  // namespace
+}  // namespace chromeos

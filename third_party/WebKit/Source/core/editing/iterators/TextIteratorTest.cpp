@@ -136,10 +136,9 @@ Range* TextIteratorTest::GetBodyRange() const {
   return range;
 }
 
-class ParameterizedTextIteratorTest
-    : public ::testing::WithParamInterface<bool>,
-      private ScopedLayoutNGForTest,
-      public TextIteratorTest {
+class ParameterizedTextIteratorTest : public testing::WithParamInterface<bool>,
+                                      private ScopedLayoutNGForTest,
+                                      public TextIteratorTest {
  public:
   ParameterizedTextIteratorTest() : ScopedLayoutNGForTest(GetParam()) {}
 
@@ -152,7 +151,7 @@ class ParameterizedTextIteratorTest
   }
 };
 
-INSTANTIATE_TEST_CASE_P(All, ParameterizedTextIteratorTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, ParameterizedTextIteratorTest, testing::Bool());
 
 TEST_F(TextIteratorTest, BitStackOverflow) {
   const unsigned kBitsInWord = sizeof(unsigned) * 8;
@@ -1045,8 +1044,7 @@ TEST_F(TextIteratorTest, BasicIterationOnChildrenWithStyle) {
 
 TEST_F(TextIteratorTest, BasicIterationInput) {
   SetBodyContent("<input id='a' value='b'>");
-  TextControlElement* input_element =
-      ToTextControlElement(GetDocument().getElementById("a"));
+  auto* input_element = ToTextControl(GetDocument().getElementById("a"));
   const ShadowRoot* shadow_root = input_element->UserAgentShadowRoot();
   const Position start = Position::FirstPositionInNode(*shadow_root);
   const Position end = Position::LastPositionInNode(*shadow_root);
@@ -1055,8 +1053,7 @@ TEST_F(TextIteratorTest, BasicIterationInput) {
 
 TEST_F(TextIteratorTest, BasicIterationInputiWithBr) {
   SetBodyContent("<input id='a' value='b'>");
-  TextControlElement* input_element =
-      ToTextControlElement(GetDocument().getElementById("a"));
+  auto* input_element = ToTextControl(GetDocument().getElementById("a"));
   Element* inner_editor = input_element->InnerEditorElement();
   Element* br = GetDocument().CreateRawElement(HTMLNames::brTag);
   inner_editor->AppendChild(br);

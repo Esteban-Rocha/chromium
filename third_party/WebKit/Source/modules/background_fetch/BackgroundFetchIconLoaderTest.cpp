@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LiICENSE file.
 
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/testing/PageTestBase.h"
 #include "modules/background_fetch/BackgroundFetchIconLoader.h"
 #include "modules/background_fetch/IconDefinition.h"
@@ -11,6 +11,7 @@
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/weborigin/KURL.h"
+#include "public/platform/WebSize.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLLoaderMockFactory.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -28,6 +29,8 @@ constexpr char kBackgroundFetchImageLoaderBaseUrl[] = "http://test.com/";
 constexpr char kBackgroundFetchImageLoaderBaseDir[] = "notifications/";
 constexpr char kBackgroundFetchImageLoaderIcon500x500[] = "500x500.png";
 
+}  // namespace
+
 class BackgroundFetchIconLoaderTest : public PageTestBase {
  public:
   BackgroundFetchIconLoaderTest() : loader_(new BackgroundFetchIconLoader()) {}
@@ -43,8 +46,8 @@ class BackgroundFetchIconLoaderTest : public PageTestBase {
   WebURL RegisterMockedURL(const String& file_name) {
     WebURL registered_url = URLTestHelpers::RegisterMockedURLLoadFromBase(
         kBackgroundFetchImageLoaderBaseUrl,
-        testing::CoreTestDataPath(kBackgroundFetchImageLoaderBaseDir),
-        file_name, "image/png");
+        test::CoreTestDataPath(kBackgroundFetchImageLoaderBaseDir), file_name,
+        "image/png");
     return registered_url;
   }
 
@@ -63,9 +66,11 @@ class BackgroundFetchIconLoaderTest : public PageTestBase {
     icon.setType("image/png");
     icon.setSizes("500x500");
     HeapVector<IconDefinition> icons(1, icon);
-    loader_->Start(GetContext(), icons,
-                   Bind(&BackgroundFetchIconLoaderTest::IconLoaded,
-                        WTF::Unretained(this)));
+    loader_->icons_ = std::move(icons);
+    loader_->DidGetIconDisplaySizeIfSoLoadIcon(
+        GetContext(),
+        Bind(&BackgroundFetchIconLoaderTest::IconLoaded, WTF::Unretained(this)),
+        WebSize(192, 192));
   }
 
   ExecutionContext* GetContext() const { return &GetDocument(); }
@@ -85,5 +90,4 @@ TEST_F(BackgroundFetchIconLoaderTest, SuccessTest) {
   EXPECT_EQ(BackgroundFetchLoadState::kLoadSuccessful, loaded_);
 }
 
-}  // namespace
 }  // namespace blink

@@ -16,6 +16,7 @@
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_tab_grid_button.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_tools_menu_button.h"
 #import "ios/chrome/browser/ui/toolbar/public/omnibox_focuser.h"
+#import "ios/chrome/browser/ui/toolbar/public/toolbar_controller_base_feature.h"
 #import "ios/third_party/material_components_ios/src/components/ProgressView/src/MaterialProgressView.h"
 #import "ios/third_party/material_components_ios/src/components/Typography/src/MaterialTypography.h"
 
@@ -77,6 +78,7 @@
   [self addLongPressGestureToView:self.view.backButton];
   [self addLongPressGestureToView:self.view.forwardButton];
   [self addLongPressGestureToView:self.view.forwardButtonTrailingPosition];
+  [self addLongPressGestureToView:self.view.tabGridButton];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
@@ -144,6 +146,8 @@
 }
 
 - (void)setSearchIcon:(UIImage*)searchIcon {
+  if (IconForSearchButton() == ToolbarSearchButtonIconMagnifying)
+    return;
   [self.view.omniboxButton setImage:searchIcon forState:UIControlStateNormal];
 }
 
@@ -270,6 +274,8 @@
     } else {
       [self.dispatcher showTabHistoryPopupForForwardHistory];
     }
+  } else if (gesture.view == self.view.tabGridButton) {
+    [self.dispatcher showTabGridButtonPopup];
   }
 }
 

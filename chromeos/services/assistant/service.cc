@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "ash/public/interfaces/ash_assistant_controller.mojom.h"
 #include "ash/public/interfaces/constants.mojom.h"
 #include "base/bind.h"
 #include "base/logging.h"
@@ -84,8 +85,14 @@ void Service::BindAssistantPlatformConnection(
 
 void Service::OnSessionActivated(bool activated) {
   DCHECK(client_);
+  session_active_ = activated;
   client_->OnAssistantStatusChanged(activated);
-  assistant_manager_service_->EnableListening(activated);
+  UpdateListeningState();
+}
+
+void Service::OnLockStateChanged(bool locked) {
+  locked_ = locked;
+  UpdateListeningState();
 }
 
 void Service::RequestAccessToken() {
@@ -106,6 +113,14 @@ void Service::Init(mojom::ClientPtr client, mojom::AudioInputPtr audio_input) {
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
   assistant_manager_service_ =
       std::make_unique<AssistantManagerServiceImpl>(std::move(audio_input));
+
+  // Bind to Assistant controller in ash.
+  ash::mojom::AshAssistantControllerPtr assistant_controller;
+  context()->connector()->BindInterface(ash::mojom::kServiceName,
+                                        &assistant_controller);
+  mojom::AssistantPtr ptr;
+  BindAssistantConnection(mojo::MakeRequest(&ptr));
+  assistant_controller->SetAssistant(std::move(ptr));
 #else
   assistant_manager_service_ =
       std::make_unique<FakeAssistantManagerServiceImpl>();
@@ -162,6 +177,12 @@ void Service::AddAshSessionObserver() {
   session_observer_binding_.Bind(mojo::MakeRequest(&observer));
   session_controller->AddSessionActivationObserverForAccountId(
       account_id_, std::move(observer));
+}
+
+void Service::UpdateListeningState() {
+  bool should_listen = !locked_ && session_active_;
+  DVLOG(1) << "Update assistant listening state: " << should_listen;
+  assistant_manager_service_->EnableListening(should_listen);
 }
 
 }  // namespace assistant

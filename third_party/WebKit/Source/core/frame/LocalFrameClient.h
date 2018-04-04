@@ -149,7 +149,8 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
       WebTriggeringEventInfo,
       HTMLFormElement*,
       ContentSecurityPolicyDisposition
-          should_check_main_world_content_security_policy) = 0;
+          should_check_main_world_content_security_policy,
+      mojom::blink::BlobURLTokenPtr) = 0;
 
   virtual void DispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
   virtual void DispatchWillSubmitForm(HTMLFormElement*) = 0;
@@ -206,6 +207,11 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   // Will be called when a new UseCounter feature has been observed in a frame.
   // This propogates feature usage to the browser process for histograms.
   virtual void DidObserveNewFeatureUsage(mojom::WebFeature) {}
+  // Will be called when a new UseCounter CSS property or animated CSS property
+  // has been observed in a frame. This propogates feature usage to the browser
+  // process for histograms.
+  virtual void DidObserveNewCssPropertyUsage(int /*css_property*/,
+                                             bool /*is_animated*/) {}
   // Will be called by a Page upon DidCommitLoad, deciding whether to track
   // UseCounter usage or not based on its url.
   virtual bool ShouldTrackUseCounter(const KURL&) { return true; }
@@ -360,7 +366,7 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
     return nullptr;
   }
 
-  virtual void SetHasReceivedUserGesture(bool received_previously) {}
+  virtual void SetHasReceivedUserGesture() {}
 
   virtual void SetHasReceivedUserGestureBeforeNavigation(bool value) {}
 

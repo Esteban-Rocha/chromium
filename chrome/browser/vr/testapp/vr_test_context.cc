@@ -111,8 +111,8 @@ VrTestContext::VrTestContext() : view_scale_factor_(kDefaultViewScaleFactor) {
   ui_->SetLoading(true);
   ui_->SetLoadProgress(0.4);
   CapturingStateModel capturing_state;
-  capturing_state.video_capture_enabled = true;
-  capturing_state.screen_capture_enabled = true;
+  capturing_state.video_capture_potentially_enabled = true;
+  capturing_state.background_screen_capture_enabled = true;
   capturing_state.bluetooth_connected = true;
   capturing_state.location_access_enabled = true;
   ui_->SetCapturingState(capturing_state);
@@ -132,11 +132,11 @@ void VrTestContext::DrawFrame() {
   // Update the render position of all UI elements (including desktop).
   ui_->scene()->OnBeginFrame(current_time, head_pose_);
   ui_->OnProjMatrixChanged(render_info.left_eye_model.proj_matrix);
-  ui_->ui_renderer()->Draw(render_info);
 
-  // This is required in order to show the WebVR toasts.
-  if (model_->web_vr.has_produced_frames()) {
+  if (web_vr_mode_ && ui_->ShouldRenderWebVr() && webvr_frames_received_) {
     ui_->ui_renderer()->DrawWebVrOverlayForeground(render_info);
+  } else {
+    ui_->ui_renderer()->Draw(render_info);
   }
 
   auto load_progress = (current_time - page_load_start_).InMilliseconds() /
@@ -163,6 +163,13 @@ void VrTestContext::HandleInput(ui::Event* event) {
       case ui::DomCode::US_F:
         fullscreen_ = !fullscreen_;
         ui_->SetFullscreen(fullscreen_);
+        break;
+      case ui::DomCode::US_A:
+        if (model_->platform_toast) {
+          ui_->CancelPlatformToast();
+        } else {
+          ui_->ShowPlatformToast(base::UTF8ToUTF16("Downloading"));
+        }
         break;
       case ui::DomCode::US_H:
         handedness_ = handedness_ == PlatformController::kRightHanded
@@ -191,9 +198,15 @@ void VrTestContext::HandleInput(ui::Event* event) {
       case ui::DomCode::US_S:
         ToggleSplashScreen();
         break;
-      case ui::DomCode::US_R:
+      case ui::DomCode::US_R: {
+        webvr_frames_received_ = true;
+        CapturingStateModel capturing_state;
+        capturing_state.bluetooth_connected = true;
+        capturing_state.location_access_enabled = true;
+        ui_->SetCapturingState(capturing_state);
         ui_->OnWebVrFrameAvailable();
         break;
+      }
       case ui::DomCode::US_E:
         model_->experimental_features_enabled =
             !model_->experimental_features_enabled;
@@ -402,9 +415,12 @@ void VrTestContext::CreateFakeVoiceSearchResult() {
 
 void VrTestContext::CycleWebVrModes() {
   switch (model_->web_vr.state) {
-    case kWebVrNoTimeoutPending:
-      ui_->SetWebVrMode(true, false);
+    case kWebVrNoTimeoutPending: {
+      web_vr_mode_ = true;
+      webvr_frames_received_ = false;
+      ui_->SetWebVrMode(true);
       break;
+    }
     case kWebVrAwaitingMinSplashScreenDuration:
       break;
     case kWebVrAwaitingFirstFrame:
@@ -414,7 +430,12 @@ void VrTestContext::CycleWebVrModes() {
       ui_->OnWebVrTimedOut();
       break;
     case kWebVrTimedOut:
-      ui_->SetWebVrMode(false, false);
+      ui_->SetWebVrMode(false);
+      web_vr_mode_ = false;
+      break;
+    case kWebVrPresenting:
+      ui_->SetWebVrMode(false);
+      web_vr_mode_ = false;
       break;
     default:
       break;
@@ -423,6 +444,8 @@ void VrTestContext::CycleWebVrModes() {
 
 void VrTestContext::ToggleSplashScreen() {
   if (!show_web_vr_splash_screen_) {
+    web_vr_mode_ = true;
+    webvr_frames_received_ = false;
     UiInitialState state;
     state.in_web_vr = true;
     state.web_vr_autopresentation_expected = true;
@@ -458,10 +481,14 @@ void VrTestContext::SetVoiceSearchActive(bool active) {
     ui_->OnSpeechRecognitionStateChanged(SPEECH_RECOGNITION_RECOGNIZING);
 }
 
-void VrTestContext::ExitPresent() {}
+void VrTestContext::ExitPresent() {
+  web_vr_mode_ = false;
+  ui_->SetWebVrMode(false);
+}
+
 void VrTestContext::ExitFullscreen() {
   fullscreen_ = false;
-  ui_->SetFullscreen(fullscreen_);
+  ui_->SetFullscreen(false);
 }
 
 void VrTestContext::Navigate(GURL gurl, NavigationMethod method) {
@@ -503,8 +530,7 @@ void VrTestContext::CloseAllIncognitoTabs() {
 void VrTestContext::ExitCct() {}
 
 void VrTestContext::OnUnsupportedMode(vr::UiUnsupportedMode mode) {
-  if (mode == UiUnsupportedMode::kUnhandledPageInfo ||
-      mode == UiUnsupportedMode::kVoiceSearchNeedsRecordAudioOsPermission) {
+  if (mode == UiUnsupportedMode::kVoiceSearchNeedsRecordAudioOsPermission) {
     ui_->ShowExitVrPrompt(mode);
   }
 }
@@ -578,7 +604,7 @@ void VrTestContext::StopAutocomplete() {
   ui_->SetOmniboxSuggestions(std::make_unique<OmniboxSuggestions>());
 }
 
-typedef bool CapturingStateModel::*CapturingStateModelMemberPtr;
+void VrTestContext::ShowPageInfo() {}
 
 void VrTestContext::CycleIndicators() {
   static size_t state = 0;
@@ -590,7 +616,7 @@ void VrTestContext::CycleIndicators() {
       &CapturingStateModel::bluetooth_connected,
       &CapturingStateModel::screen_capture_enabled};
 
-  state = (state + 1) % (1 << signals.size());
+  state = (state + 1) % (1 << (signals.size() + 1));
   for (size_t i = 0; i < signals.size(); ++i) {
     model_->capturing_state.*signals[i] = state & (1 << i);
   }
@@ -610,10 +636,10 @@ void VrTestContext::CycleOrigin() {
       // Do not show URL
       {GURL(), security_state::SecurityLevel::HTTP_SHOW_WARNING,
        &toolbar::kHttpIcon, base::string16(), false, false},
-      {GURL("file:///C:/path/filename"),
+      {GURL("file://very-very-very-long-file-hostname/path/path/path/path"),
        security_state::SecurityLevel::HTTP_SHOW_WARNING, &toolbar::kHttpIcon,
        base::string16(), true, false},
-      {GURL("file:///C:/path/path/path/path/path/path/path/path"),
+      {GURL("file:///path/path/path/path/path/path/path/path/path"),
        security_state::SecurityLevel::HTTP_SHOW_WARNING, &toolbar::kHttpIcon,
        base::string16(), true, false},
       // Elision-related cases.

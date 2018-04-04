@@ -47,7 +47,6 @@ class ComputedStyle;
 class ContainerNode;
 class Document;
 class Element;
-class ElementShadow;
 class Event;
 class EventDispatchHandlingState;
 class ExceptionState;
@@ -555,7 +554,7 @@ class CORE_EXPORT Node : public EventTarget {
         static_cast<NodeFlags>(kIsConnectedFlag | kIsInShadowTreeFlag));
   }
 
-  ElementShadow* ParentElementShadow() const;
+  ShadowRoot* ParentElementShadowRoot() const;
   bool IsInV1ShadowTree() const;
   bool IsInV0ShadowTree() const;
   bool IsChildOfV1ShadowHost() const;
@@ -572,11 +571,6 @@ class CORE_EXPORT Node : public EventTarget {
   bool ContainsIncludingHostElements(const Node&) const;
   Node* CommonAncestor(const Node&,
                        ContainerNode* (*parent)(const Node&)) const;
-
-  // Number of DOM 16-bit units contained in node. Note that laid out text
-  // length can be different - e.g. because of css-transform:capitalize breaking
-  // up precomposed characters and ligatures.
-  virtual int MaxCharacterOffset() const;
 
   // Whether or not a selection can be started in this object
   virtual bool CanStartSelection() const;

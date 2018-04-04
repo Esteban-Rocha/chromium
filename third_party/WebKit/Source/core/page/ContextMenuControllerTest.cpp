@@ -16,7 +16,7 @@
 #include "public/web/WebContextMenuData.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::Return;
+using testing::Return;
 
 namespace blink {
 
@@ -52,7 +52,7 @@ class TestWebFrameClientImpl : public FrameTestHelpers::TestWebFrameClient {
 
 }  // anonymous namespace
 
-class ContextMenuControllerTest : public ::testing::Test {
+class ContextMenuControllerTest : public testing::Test {
  public:
   void SetUp() {
     web_view_helper_.Initialize(&web_frame_client_);
@@ -99,7 +99,7 @@ TEST_F(ContextMenuControllerTest, VideoNotLoaded) {
   Persistent<HTMLVideoElement> video = HTMLVideoElement::Create(*GetDocument());
   video->SetSrc(video_url);
   GetDocument()->body()->AppendChild(video);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   EXPECT_CALL(*static_cast<MockWebMediaPlayerForContextMenu*>(
                   video->GetWebMediaPlayer()),
@@ -154,7 +154,7 @@ TEST_F(ContextMenuControllerTest, PictureInPictureEnabledVideoLoaded) {
   Persistent<HTMLVideoElement> video = HTMLVideoElement::Create(*GetDocument());
   video->SetSrc(video_url);
   GetDocument()->body()->AppendChild(video);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   EXPECT_CALL(*static_cast<MockWebMediaPlayerForContextMenu*>(
                   video->GetWebMediaPlayer()),
@@ -209,7 +209,7 @@ TEST_F(ContextMenuControllerTest, PictureInPictureDisabledVideoLoaded) {
   Persistent<HTMLVideoElement> video = HTMLVideoElement::Create(*GetDocument());
   video->SetSrc(video_url);
   GetDocument()->body()->AppendChild(video);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   EXPECT_CALL(*static_cast<MockWebMediaPlayerForContextMenu*>(
                   video->GetWebMediaPlayer()),

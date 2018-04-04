@@ -9,10 +9,10 @@
 #include "platform/testing/runtime_enabled_features_test_helpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
-#include "public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "public/platform/scheduler/web_main_thread_scheduler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::ElementsAre;
+using testing::ElementsAre;
 
 namespace blink {
 
@@ -51,7 +51,7 @@ TEST_F(DisableBackgroundThrottlingIsRespectedTest,
 
   // Run delayed tasks for 1 second. All tasks should be completed
   // with throttling disabled.
-  testing::RunDelayedTasks(TimeDelta::FromSeconds(1));
+  test::RunDelayedTasks(TimeDelta::FromSeconds(1));
 
   EXPECT_THAT(ConsoleMessages(), ElementsAre("called f", "called f", "called f",
                                              "called f", "called f"));
@@ -82,7 +82,7 @@ TEST_F(BackgroundRendererThrottlingTest, BackgroundRenderersAreThrottled) {
 
   // Make sure that we run a task once a second.
   for (int i = 0; i < 3; ++i) {
-    testing::RunDelayedTasks(TimeDelta::FromSeconds(1));
+    test::RunDelayedTasks(TimeDelta::FromSeconds(1));
     EXPECT_THAT(ConsoleMessages(), ElementsAre("called f"));
     ConsoleMessages().clear();
   }

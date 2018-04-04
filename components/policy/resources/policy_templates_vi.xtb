@@ -58,6 +58,17 @@
 
       Nếu sử dụng chính sách này, thì tất cả máy in sẽ được cung cấp cho người dùng trừ các máy in có id nằm trong chính sách này.
       </translation>
+<translation id="1181881366217399113">
+      LƯU Ý: Chính sách này chỉ mang tính thử nghiệm và có thể làm hỏng chức năng!
+      Nếu bạn bật chính sách này, mỗi nguồn gốc có tên trong
+      danh sách phân tách bằng dấu phẩy sẽ chạy theo quy trình riêng. Cài đặt này cũng sẽ cách ly
+      các nguồn gốc được đặt tên theo miền phụ; chẳng hạn như việc chỉ định https://example.com/ cũng sẽ
+      khiến cho https://foo.example.com/ bị cách ly vì là một phần của
+      trang https://example.com/.
+      Nếu bạn tắt chính sách này, logic quản lý quy trình Cách ly mỗi trang web sẽ có hiệu lực.
+      Nếu bạn không định cấu hình chính sách này, người dùng sẽ có thể thay đổi cài đặt này.
+      Trên <ph name="PRODUCT_OS_NAME" />, bạn cũng nên đặt chính sách thiết bị <ph name="DEVICE_LOGIN_SCREEN_ISOLATE_ORIGINS_POLICY_NAME" /> thành cùng một giá trị. Nếu các giá trị do hai chính sách chỉ định không khớp nhau, thì có thể sẽ xảy ra hiện tượng chậm trễ khi vào một phiên người dùng trong khi áp dụng giá trị mà chính sách người dùng chỉ định.
+      </translation>
 <translation id="1198465924256827162">Tần suất tải lên trạng thái thiết bị, bằng mili giây.
 
       Nếu chính sách này không được đặt thì tần suất mặc định là 3 giờ. Tần
@@ -250,7 +261,15 @@
       Định dạng của giá trị tuân theo tên của múi giờ trong "Cơ sở dữ liệu múi giờ của IANA" (xem "https://en.wikipedia.org/wiki/Tz_database"). Đặc biệt, bạn có thể tham chiếu hầu hết các múi giờ theo "continent/large_city" hoặc "ocean/large_city".
 
       Đặt chính sách này sẽ tắt hoàn toàn tính năng phân giải múi giờ tự động theo vị trí thiết bị. Thao tác này cũng ghi đè chính sách SystemTimezoneAutomaticDetection.</translation>
+<translation id="1888871729456797026">Mã thông báo đăng ký của chính sách đám mây trên màn hình</translation>
 <translation id="1897365952389968758">Cho phép tất cả các trang web chạy JavaScript</translation>
+<translation id="1906888171268104594">Kiểm soát liệu số liệu sử dụng và dữ liệu chẩn đoán, kể cả báo cáo sự cố, có được báo cáo lại cho Google hay không.
+
+      Nếu bạn đặt thành true, thì <ph name="PRODUCT_OS_NAME" /> sẽ báo cáo số liệu sử dụng và dữ liệu chẩn đoán.
+
+      Nếu bạn đặt thành false, thì tính năng báo cáo số liệu và dữ liệu chẩn đoán sẽ bị tắt.
+
+      Nếu bạn không định cấu hình, thì tính năng báo cáo số liệu và dữ liệu chẩn đoán sẽ bị tắt trên các thiết bị không được quản lý và được bật trên các thiết bị được quản lý.</translation>
 <translation id="193259052151668190">Danh sách cho phép các thiết bị USB có thể tách</translation>
 <translation id="1933378685401357864">Hình nền</translation>
 <translation id="1956493342242507974">Định cấu hình quản lý điện năng trên màn hình đăng nhập trong <ph name="PRODUCT_OS_NAME" />.
@@ -418,6 +437,12 @@
 <translation id="2386362615870139244">Cho phép khóa chế độ thức màn hình</translation>
 <translation id="2411817661175306360">Cảnh báo bảo vệ mật khẩu đang tắt</translation>
 <translation id="2411919772666155530">Chặn thông báo trên các trang web này</translation>
+<translation id="2415979855753196119">Cho phép bạn kiểm soát việc kích hoạt tính năng gắn cờ tài khoản gặp rủi ro về bảo vệ mật khẩu. Gắn cờ tài khoản gặp rủi ro về bảo vệ mật khẩu có nghĩa là thông báo cho Google rằng tài khoản này có nguy cơ bị xâm nhập.
+
+      Nếu bạn đặt chính sách này thành 'PasswordProtectionRiskOff', thì tính năng gắn cờ tài khoản gặp rủi ro về bảo vệ mật khẩu sẽ không được kích hoạt.
+      Nếu bạn đặt chính sách này thành 'PasswordProtectionRiskOnPasswordReuse', thì tính năng gắn cờ tài khoản gặp rủi ro về bảo vệ mật khẩu sẽ được kích hoạt khi người dùng sử dụng lại mật khẩu Google trên một trang web nằm ngoài danh sách cho phép.
+      Nếu bạn đặt chính sách này thành 'PasswordProtectionRiskOnPhishingReuse', thì tính năng gắn cờ tài khoản gặp rủi ro về bảo vệ mật khẩu sẽ được kích hoạt khi người dùng sử dụng lại mật khẩu Google trên trang web lừa đảo.
+      Nếu bạn chưa đặt chính sách này, thì tính năng gắn cờ tài khoản gặp rủi ro về bảo vệ mật khẩu sẽ được kích hoạt khi người dùng sử dụng lại mật khẩu Google trên trang web lừa đảo, tuy nhiên, người dùng có thể thay đổi cài đặt này.</translation>
 <translation id="2418507228189425036">Tắt lưu lịch sử trình duyệt trong <ph name="PRODUCT_NAME" /> và ngăn người dùng thay đổi cài đặt này.
 
       Nếu cài đặt này được bật thì lịch sử duyệt web sẽ không được lưu. Cài đặt này cũng sẽ tắt đồng bộ hóa tab.
@@ -506,6 +531,7 @@
 <translation id="2529700525201305165">Hạn chế người dùng được phép đăng nhập vào <ph name="PRODUCT_NAME" /></translation>
 <translation id="2529880111512635313">Định cấu hình danh sách các ứng dụng và tiện ích buộc phải cài đặt</translation>
 <translation id="253135976343875019">Thời gian chờ cảnh báo trạng thái không sử dụng khi chạy trên nguồn AC</translation>
+<translation id="2536283449105918306">Bật bảo vệ tab-under</translation>
 <translation id="2552966063069741410">Múi giờ</translation>
 <translation id="2562339630163277285">Chỉ định URL của công cụ tìm kiếm được sử dụng để cung cấp kết quả tức thì. URL phải chứa chuỗi <ph name="SEARCH_TERM_MARKER" />. Chuỗi này sẽ được thay thế tại thời điểm truy vấn bằng văn bản mà người dùng đã nhập từ trước tới nay.
 
@@ -613,6 +639,12 @@ Khi chính sách này được đặt thành false hoặc không được địn
 
       Nếu bạn bật cài đặt này, tính năng Xem trước bản in sẽ chọn máy in có sẵn trong hệ điều hành làm máy in mặc định.</translation>
 <translation id="2867699958489427143">Khôi phục và sử dụng phiên bản đích nếu phiên bản hệ điều hành mới hơn phiên bản đích. Thực hiện powerwash đầy đủ trong quá trình này.</translation>
+<translation id="286802604195763750">Cho phép bạn kiểm soát việc kích hoạt cảnh báo bảo vệ mật khẩu. Dịch vụ bảo vệ mật khẩu sẽ cảnh báo người dùng khi họ sử dụng lại mật khẩu được bảo vệ trên các trang web có thể đáng ngờ.
+
+      Nếu bạn đặt chính sách này thành 'PasswordProtectionWarningOff', thì sẽ không có cảnh báo bảo vệ mật khẩu nào hiển thị.
+      Nếu bạn đặt chính sách này thành 'PasswordProtectionWarningOnPasswordReuse', thì cảnh báo bảo vệ mật khẩu sẽ hiển thị khi người dùng sử dụng lại mật khẩu Google trên trang web nằm ngoài danh sách cho phép.
+      Nếu bạn đặt chính sách này thành 'PasswordProtectionWarningOnPhishingReuse', thì cảnh báo bảo vệ mật khẩu sẽ hiển thị khi người dùng sử dụng lại mật khẩu Google của họ trên trang web lừa đảo.
+      Nếu bạn không đặt chính sách này, thì cảnh báo bảo vệ mật khẩu sẽ được kích hoạt khi người dùng sử dụng lại mật khẩu Google của họ trên trang web lừa đảo nhưng người dùng có thể thay đổi cài đặt này.</translation>
 <translation id="2872961005593481000">Tắt</translation>
 <translation id="2874209944580848064">Lưu ý dành cho thiết bị <ph name="PRODUCT_OS_NAME" /> hỗ trợ ứng dụng Android:</translation>
 <translation id="2877225735001246144">Tắt tra cứu CNAME khi thỏa thuận xác thực Kerberos</translation>
@@ -647,6 +679,17 @@ Khi chính sách này được đặt thành false hoặc không được địn
           Phải chỉ định giá trị chính sách bằng mili giây. Các giá trị được giới hạn ở mức nhỏ hơn hoặc bằng độ trễ tắt màn hình (nếu được đặt) và độ trễ khi không sử dụng.</translation>
 <translation id="2987155890997901449">Bật ARC</translation>
 <translation id="2987227569419001736">Kiểm soát việc sử dụng API Web Bluetooth</translation>
+<translation id="2998886474614739865">
+      LƯU Ý: Chính sách này chỉ mang tính thử nghiệm và có thể làm hỏng chức năng!
+      Chính sách này áp dụng cho màn hình đăng nhập. Vui lòng xem cả chính sách <ph name="ISOLATE_ORIGINS_POLICY_NAME" /> áp dụng cho phiên người dùng. Bạn nên đặt cả hai chính sách thành cùng một giá trị. Nếu các giá trị không khớp nhau, thì có thể sẽ xảy ra hiện tượng chậm trễ khi vào một phiên người dùng trong khi áp dụng giá trị mà chính sách người dùng chỉ định.
+      Nếu bạn bật chính sách này, mỗi nguồn gốc có tên trong
+      danh sách phân tách bằng dấu phẩy sẽ chạy theo quy trình riêng. Cài đặt này cũng sẽ cách ly
+      các nguồn gốc được đặt tên theo miền phụ; chẳng hạn như việc chỉ định https://example.com/ cũng sẽ
+      khiến cho https://foo.example.com/ bị cách ly vì là một phần của
+      trang https://example.com/.
+      Nếu bạn tắt chính sách này, logic quản lý quy trình Cách ly mỗi trang web sẽ có hiệu lực.
+      Nếu bạn không định cấu hình chính sách này, cài đặt cách ly trang web mặc định của nền tảng sẽ được sử dụng cho màn hình đăng nhập.
+      </translation>
 <translation id="3016255526521614822">Đưa các ứng dụng ghi chú được phép trên màn hình khóa của <ph name="PRODUCT_OS_NAME" /> vào danh sách cho phép</translation>
 <translation id="3021562480854470924">Số mốc cho phép khôi phục</translation>
 <translation id="3030000825273123558">Bật báo cáo số liệu</translation>
@@ -755,6 +798,17 @@ Khi chính sách này được đặt thành false hoặc không được địn
 
           Nếu bạn đặt chính sách này thành một chuỗi không phải là chuỗi trống, thì chuỗi đó sẽ được sử dụng làm tên của đích <ph name="PRODUCT_NAME" />. Nếu không, tên đích sẽ là tên thiết bị. Nếu bạn không đặt chính sách này, thì tên đích sẽ là tên thiết bị và chủ sở hữu thiết bị (hoặc người dùng từ miền quản lý thiết bị) sẽ được phép thay đổi tên đó. Tên có độ dài tối đa là 24 ký tự.</translation>
 <translation id="3381968327636295719">Sử dụng trình duyệt chính theo mặc định</translation>
+<translation id="3386001018488754001">
+      LƯU Ý: Chính sách này chỉ mang tính thử nghiệm và có thể làm hỏng chức năng!
+      Chính sách này áp dụng cho màn hình đăng nhập. Vui lòng xem cả chính sách <ph name="SITE_PER_PROCESS_POLICY_NAME" /> áp dụng cho phiên người dùng. Bạn nên đặt cả hai chính sách thành cùng một giá trị. Nếu các giá trị không khớp nhau, thì có thể sẽ xảy ra hiện tượng chậm trễ khi vào một phiên người dùng trong khi áp dụng giá trị mà chính sách người dùng chỉ định.
+      Bạn nên xem cài đặt của chính sách IsolateOrigins để
+      khai thác tối đa cả hai khía cạnh, cách cách ly cũng như cách hạn chế tác động đến người dùng, bằng cách sử dụng
+      IsolateOrigins cùng với danh sách các trang web mà bạn muốn cách ly. Cài đặt này,
+      SitePerProcess, sẽ cách ly mọi trang web.
+      Nếu bạn bật chính sách này, mỗi trang web sẽ chạy theo quy trình riêng.
+      Nếu bạn tắt chính sách này, logic quản lý quy trình Cách ly mỗi trang web sẽ có hiệu lực.
+      Nếu bạn không định cấu hình chính sách này, người dùng sẽ có thể thay đổi cài đặt này.
+      </translation>
 <translation id="3395348522300156660">Chỉ định các máy in mà người dùng có thể sử dụng.
 
       Chỉ sử dụng chính sách này nếu đã chọn <ph name="PRINTERS_WHITELIST" /> cho <ph name="DEVICE_PRINTERS_ACCESS_MODE" />
@@ -793,6 +847,10 @@ Khi chính sách này được đặt thành false hoặc không được địn
           Nếu chính sách này bị đặt thành Sai hoặc không được đặt, độ trễ quản lý nguồn và giới hạn thời lượng phiên sẽ bắt đầu chạy ngay lập tức khi bắt đầu phiên.</translation>
 <translation id="3478024346823118645">Xóa dữ liệu người dùng khi đăng xuất</translation>
 <translation id="348495353354674884">Bật bàn phím ảo</translation>
+<translation id="3487623755010328395">
+        Nếu bạn đặt chính sách này, <ph name="PRODUCT_NAME" /> sẽ tìm cách tự đăng ký và áp dụng chính sách đám mây được liên kết cho tất cả hồ sơ.
+
+        Giá trị của chính sách này là một Mã thông báo đăng ký có thể được truy xuất từ Bảng điều khiển dành cho quản trị viên trên Google.</translation>
 <translation id="3496296378755072552">Trình quản lý mật khẩu</translation>
 <translation id="350443680860256679">Định cấu hình ARC</translation>
 <translation id="3504791027627803580">Chỉ định URL của công cụ tìm kiếm được dùng để cung cấp tìm kiếm theo hình ảnh. Yêu cầu tìm kiếm sẽ được gửi bằng phương thức GET. Nếu đặt chính sách DefaultSearchProviderImageURLPostParams thì yêu cầu tìm kiếm theo hình ảnh sẽ sử dụng phương thức POST thay thế.
@@ -1377,6 +1435,17 @@ Khi chính sách này được đặt thành false hoặc không được địn
 
       Nếu chưa đặt chính sách hoặc nếu chính sách được đặt thành chuỗi trống hoặc phạm vi cổng không hợp lệ thì WebRTC được phép sử dụng bất kỳ cổng UDP cục bộ khả dụng nào.</translation>
 <translation id="5290940294294002042">Chỉ định danh sách plugin mà người dùng có thể bật hoặc tắt</translation>
+<translation id="5301787427319106606">
+      LƯU Ý: Chính sách này chỉ mang tính thử nghiệm và có thể làm hỏng chức năng!
+      Bạn nên xem cài đặt của chính sách IsolateOrigins để
+      khai thác tối đa cả hai khía cạnh, cách cách ly cũng như cách hạn chế tác động đến người dùng, bằng cách sử dụng
+      IsolateOrigins cùng với danh sách các trang web mà bạn muốn cách ly. Cài đặt này,
+      SitePerProcess, sẽ cách ly mọi trang web.
+      Nếu bạn bật chính sách này, mỗi trang web sẽ chạy theo quy trình riêng.
+      Nếu bạn tắt chính sách này, logic quản lý quy trình Cách ly trước khi khởi chạy trang web sẽ có hiệu lực.
+      Nếu bạn không định cấu hình chính sách này, người dùng sẽ có thể thay đổi cài đặt này.
+      Trên <ph name="PRODUCT_OS_NAME" />, bạn cũng nên đặt chính sách thiết bị <ph name="DEVICE_LOGIN_SCREEN_SITE_PER_PROCESS_POLICY_NAME" /> thành cùng một giá trị. Nếu các giá trị mà hai chính sách này chỉ định không khớp nhau, thì có thể xảy ra hiện tượng chậm trễ khi vào một phiên người dùng trong khi áp dụng giá trị mà chính sách người dùng chỉ định.
+      </translation>
 <translation id="5302612588919538756">Chính sách này không được dùng nữa, thay vào đó hãy cân nhắc sử dụng SyncDisabled.
 
       Cho phép người dùng đăng nhập vào <ph name="PRODUCT_NAME" />.
@@ -1974,6 +2043,14 @@ Khi chính sách này được đặt thành false hoặc không được địn
 <translation id="706669471845501145">Cho phép các trang web hiển thị thông báo trên màn hình</translation>
 <translation id="7072208053150563108">Tần suất thay đổi mật khẩu máy</translation>
 <translation id="7072406291414141328">Bật điều chỉnh băng thông mạng</translation>
+<translation id="7074513465313721551">Định cấu hình danh sách các miền mà tính năng Duyệt web an toàn sẽ tin tưởng. Điều này có nghĩa là:
+      Duyệt web an toàn sẽ không kiểm tra để tìm các tài nguyên nguy hiểm (ví dụ: lừa đảo, phần mềm độc hại hoặc phần mềm không mong muốn) nếu URL của họ khớp với những miền này.
+      Dịch vụ bảo vệ tài nguyên đã tải xuống của Duyệt web an toàn sẽ không kiểm tra các nội dung tải xuống được lưu trữ trên những miền này.
+      Dịch vụ bảo vệ mật khẩu của Duyệt web an toàn sẽ không kiểm tra để phát hiện hành vi sử dụng lại mật khẩu nếu URL trang khớp với những miền này.
+
+      Nếu bạn bật cài đặt này, thì Duyệt web an toàn sẽ tin tưởng các miền này.
+      Nếu bạn tắt hoặc không đặt cài đặt này, thì dịch vụ bảo vệ mặc định của Duyệt web an toàn sẽ áp dụng cho tất cả các tài nguyên.
+      Chính sách này không áp dụng trên các phiên bản Windows không tham gia vào miền <ph name="MS_AD_NAME" />.</translation>
 <translation id="7079519252486108041">Chặn cửa sổ bật lên trên các trang web này</translation>
 <translation id="7106631983877564505">Bật khóa khi thiết bị chạy <ph name="PRODUCT_OS_NAME" /> không hoạt động hoặc bị treo.
       Nếu bạn bật cài đặt này, người dùng sẽ được yêu cầu cung cấp mật khẩu để mở khóa thiết bị khỏi chế độ ngủ.
@@ -2604,6 +2681,12 @@ Bạn nên định cấu hình chính sách trên Windows qua GPO, mặc dù vi�
 <translation id="9096086085182305205">Danh sách trắng máy chủ xác thực</translation>
 <translation id="9098553063150791878">Chính sách xác thực HTTP</translation>
 <translation id="9105265795073104888">Chỉ một tập hợp con các tùy chọn cấu hình proxy được cung cấp cho các ứng dụng Android. Các ứng dụng Android có thể chọn sử dụng proxy một cách tự nguyện. Bạn không thể buộc các ứng dụng này sử dụng proxy.</translation>
+<translation id="9110615239151047025">Thao tác bật bảo vệ tab-under sẽ chặn những điều hướng bị phát hiện là tab-under.
+
+      Để biết thêm giải thích về tab-under, hãy xem https://www.chromestatus.com/features/5675755719622656.
+      Nếu chính sách này được đặt thành True, thì những điều hướng mà <ph name="PRODUCT_NAME" /> phát hiện là tab-under sẽ bị chặn.
+      Nếu chính sách này được đặt thành False, <ph name="PRODUCT_NAME" /> sẽ cho phép các trang web thực hiện điều hướng tab-under.
+      Theo mặc định, chính sách này được đặt là True.</translation>
 <translation id="9112727953998243860">Tệp cấu hình máy in dành cho doanh nghiệp</translation>
 <translation id="9112897538922695510">Cho phép bạn đăng ký danh sách trình xử lý giao thức. Đây có thể chỉ là một chính sách được đề xuất. Thuộc tính |protocol| của sản phẩm nên được đặt thành lược đồ chẳng hạn như 'mailto' và thuộc tính |url| nên được đặt thành mẫu URL của ứng dụng xử lý lược đồ. Mẫu có thể bao gồm '%s' mà nếu có mặt sẽ được thay thế bằng URL đã xử lý.
 

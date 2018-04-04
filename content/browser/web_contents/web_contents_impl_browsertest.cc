@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <utility>
+#include <vector>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -10,6 +11,7 @@
 #include "base/run_loop.h"
 #include "base/strings/pattern.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/url_formatter/url_formatter.h"
@@ -40,6 +42,7 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "content/public/test/url_loader_interceptor.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
 #include "net/dns/mock_host_resolver.h"
@@ -49,6 +52,12 @@
 #include "url/gurl.h"
 
 namespace content {
+
+#define SCOPE_TRACED(statement) \
+  {                             \
+    SCOPED_TRACE(#statement);   \
+    statement;                  \
+  }
 
 void ResizeWebContentsView(Shell* shell, const gfx::Size& size,
                            bool set_start_page) {
@@ -254,6 +263,92 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_EQ(0, load_observer.session_index_);
   EXPECT_EQ(&shell()->web_contents()->GetController(),
             load_observer.controller_);
+}
+
+namespace {
+
+// Class that waits for a particular load to finish in any frame.  This happens
+// after the commit event.
+class LoadFinishedWaiter : public WebContentsObserver {
+ public:
+  LoadFinishedWaiter(WebContents* web_contents, const GURL& expected_url)
+      : WebContentsObserver(web_contents),
+        expected_url_(expected_url),
+        run_loop_(new base::RunLoop()) {
+    EXPECT_TRUE(web_contents != nullptr);
+  }
+
+  void Wait() { run_loop_->Run(); }
+
+ private:
+  void DidFinishLoad(RenderFrameHost* render_frame_host,
+                     const GURL& url) override {
+    if (url == expected_url_)
+      run_loop_->Quit();
+  }
+
+  GURL expected_url_;
+  std::unique_ptr<base::RunLoop> run_loop_;
+};
+
+}  // namespace
+
+// Ensure that cross-site subframes always notify their parents when they finish
+// loading, so that the page eventually reaches DidStopLoading.  There was a bug
+// where an OOPIF would not notify its parent if (1) it finished loading, but
+// (2) later added a subframe that kept the main frame in the loading state, and
+// (3) all subframes then finished loading.
+// Note that this test makes sense to run with and without OOPIFs.
+// See https://crbug.com/822013#c12.
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       DidStopLoadingWithNestedFrames) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+
+  // Navigate to an A(B, C) page where B is slow to load.  Wait for C to reach
+  // load stop.  A will still be loading due to B.
+  GURL url_a = embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b,c)");
+  GURL url_b = embedded_test_server()->GetURL(
+      "b.com", "/cross_site_iframe_factory.html?b()");
+  GURL url_c = embedded_test_server()->GetURL(
+      "c.com", "/cross_site_iframe_factory.html?c()");
+  TestNavigationManager delayer_b(web_contents, url_b);
+  LoadFinishedWaiter load_waiter_c(web_contents, url_c);
+  shell()->LoadURL(url_a);
+  EXPECT_TRUE(delayer_b.WaitForRequestStart());
+  load_waiter_c.Wait();
+  EXPECT_TRUE(web_contents->IsLoading());
+
+  // At this point, C has finished loading and B is stalled.  Add a slow D frame
+  // within C.
+  GURL url_d = embedded_test_server()->GetURL("d.com", "/title1.html");
+  FrameTreeNode* subframe_c = web_contents->GetFrameTree()->root()->child_at(1);
+  EXPECT_EQ(url_c, subframe_c->current_url());
+  TestNavigationManager delayer_d(web_contents, url_d);
+  const std::string add_d_script = base::StringPrintf(
+      "var f = document.createElement('iframe');"
+      "f.src='%s';"
+      "document.body.appendChild(f);",
+      url_d.spec().c_str());
+  EXPECT_TRUE(content::ExecuteScript(subframe_c, add_d_script));
+  EXPECT_TRUE(delayer_d.WaitForRequestStart());
+  EXPECT_TRUE(web_contents->IsLoading());
+
+  // Let B finish and wait for another load stop.  A will still be loading due
+  // to D.
+  LoadFinishedWaiter load_waiter_b(web_contents, url_b);
+  delayer_b.WaitForNavigationFinished();
+  load_waiter_b.Wait();
+  EXPECT_TRUE(web_contents->IsLoading());
+
+  // Let D finish.  We should get a load stop in the main frame.
+  LoadFinishedWaiter load_waiter_d(web_contents, url_d);
+  delayer_d.WaitForNavigationFinished();
+  load_waiter_d.Wait();
+  EXPECT_TRUE(WaitForLoadStop(web_contents));
+  EXPECT_FALSE(web_contents->IsLoading());
 }
 
 // Test that a renderer-initiated navigation to an invalid URL does not leave
@@ -524,84 +619,165 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_TRUE(new_web_contents_observer.RenderViewCreatedCalled());
 }
 
-// Observer class to track subresource loads.
-class SubresourceLoadObserver : public WebContentsObserver {
+// Observer class to track resource loads.
+class ResourceLoadObserver : public WebContentsObserver {
  public:
-  explicit SubresourceLoadObserver(Shell* shell)
+  explicit ResourceLoadObserver(Shell* shell)
       : WebContentsObserver(shell->web_contents()) {}
 
-  mojom::SubresourceLoadInfo* last_subresource_load_info() const {
-    return last_subresource_load_info_.get();
+  const std::vector<mojom::ResourceLoadInfoPtr>& resource_load_infos() const {
+    return resource_load_infos_;
   }
 
-  GURL last_memory_cached_loaded_url() const {
-    return last_memory_cached_loaded_url_;
+  const std::vector<GURL>& memory_cached_loaded_urls() const {
+    return memory_cached_loaded_urls_;
+  }
+
+  // Use this method with the SCOPED_TRACE macro, so it shows the caller context
+  // if it fails.
+  void CheckResourceLoaded(const GURL& url,
+                           const GURL& referrer,
+                           const std::string& load_method,
+                           content::ResourceType resource_type,
+                           const std::string& mime_type,
+                           const std::string& ip_address,
+                           bool was_cached,
+                           bool first_network_request,
+                           const base::TimeTicks& before_request,
+                           const base::TimeTicks& after_request) {
+    bool resource_load_info_found = false;
+    for (const auto& resource_load_info : resource_load_infos_) {
+      if (resource_load_info->url == url) {
+        resource_load_info_found = true;
+        EXPECT_EQ(referrer, resource_load_info->referrer);
+        EXPECT_EQ(load_method, resource_load_info->method);
+        EXPECT_EQ(resource_type, resource_load_info->resource_type);
+        if (!first_network_request)
+          EXPECT_GT(resource_load_info->request_id, 0);
+        EXPECT_EQ(mime_type, resource_load_info->mime_type);
+        if (!ip_address.empty()) {
+          ASSERT_TRUE(resource_load_info->ip);
+          EXPECT_EQ(ip_address, resource_load_info->ip->ToString());
+        }
+        EXPECT_EQ(was_cached, resource_load_info->was_cached);
+        // Simple sanity check of the request start time.
+        EXPECT_GT(resource_load_info->request_start, before_request);
+        EXPECT_GT(after_request, resource_load_info->request_start);
+      }
+    }
+    EXPECT_TRUE(resource_load_info_found);
   }
 
   void Reset() {
-    last_subresource_load_info_.reset();
-    last_memory_cached_loaded_url_ = GURL();
+    resource_load_infos_.clear();
+    memory_cached_loaded_urls_.clear();
   }
 
  private:
   // WebContentsObserver implementation:
-  void SubresourceLoadComplete(
-      const mojom::SubresourceLoadInfo& subresource_load_info) override {
-    last_subresource_load_info_ = subresource_load_info.Clone();
+  void ResourceLoadComplete(
+      const mojom::ResourceLoadInfo& resource_load_info) override {
+    resource_load_infos_.push_back(resource_load_info.Clone());
   }
 
   void DidLoadResourceFromMemoryCache(const GURL& url,
                                       const std::string& mime_type,
                                       ResourceType resource_type) override {
-    last_memory_cached_loaded_url_ = url;
+    memory_cached_loaded_urls_.push_back(url);
   }
 
-  GURL last_memory_cached_loaded_url_;
-  mojom::SubresourceLoadInfoPtr last_subresource_load_info_;
+  std::vector<GURL> memory_cached_loaded_urls_;
+  std::vector<mojom::ResourceLoadInfoPtr> resource_load_infos_;
 
-  DISALLOW_COPY_AND_ASSIGN(SubresourceLoadObserver);
+  DISALLOW_COPY_AND_ASSIGN(ResourceLoadObserver);
 };
 
-IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, SubresourceLoadComplete) {
-  SubresourceLoadObserver observer(shell());
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, ResourceLoadComplete) {
+  ResourceLoadObserver observer(shell());
   ASSERT_TRUE(embedded_test_server()->Start());
-  GURL page_url(embedded_test_server()->GetURL("/page_with_image.html"));
+  // Load a page with an image and an image.
+  GURL page_url(embedded_test_server()->GetURL("/page_with_iframe.html"));
+  base::TimeTicks before = base::TimeTicks::Now();
   NavigateToURL(shell(), page_url);
-  mojom::SubresourceLoadInfo* subresource_load_info =
-      observer.last_subresource_load_info();
-  ASSERT_TRUE(subresource_load_info);
-  EXPECT_EQ(embedded_test_server()->GetURL("/blank.jpg"),
-            subresource_load_info->url);
-  EXPECT_EQ(page_url, subresource_load_info->referrer);
-  EXPECT_EQ("GET", subresource_load_info->method);
-  EXPECT_EQ(content::RESOURCE_TYPE_IMAGE, subresource_load_info->resource_type);
-  EXPECT_EQ("image/jpeg", subresource_load_info->mime_type);
-  ASSERT_TRUE(subresource_load_info->ip);
-  EXPECT_EQ("127.0.0.1", subresource_load_info->ip->ToString());
+  base::TimeTicks after = base::TimeTicks::Now();
+  ASSERT_EQ(3U, observer.resource_load_infos().size());
+  // TODO(crbug.com/826082): we should test the IP address/MIME type parameters
+  // for frames once they are reported correctly.
+  SCOPE_TRACED(observer.CheckResourceLoaded(
+      page_url, /*referrer=*/GURL(), "GET", content::RESOURCE_TYPE_MAIN_FRAME,
+      /*mime-type*/ "",
+      /*ip_address=*/"",
+      /*was_cached=*/false, /*first_network_request=*/true, before, after));
+  SCOPE_TRACED(observer.CheckResourceLoaded(
+      embedded_test_server()->GetURL("/image.jpg"),
+      /*referrer=*/page_url, "GET", content::RESOURCE_TYPE_IMAGE, "image/jpeg",
+      "127.0.0.1",
+      /*was_cached=*/false, /*first_network_request=*/false, before, after));
+  SCOPE_TRACED(observer.CheckResourceLoaded(
+      embedded_test_server()->GetURL("/title1.html"),
+      /*referrer=*/page_url, "GET", content::RESOURCE_TYPE_SUB_FRAME,
+      /*mime_type=*/"",
+      /*ip_address=*/"",
+      /*was_cached=*/false, /*first_network_request=*/false, before, after));
 }
 
-// Same as WebContentsImplBrowserTest.SubresourceLoadComplete but for a resource
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       ResourceLoadCompleteWithScriptSubresource) {
+  ResourceLoadObserver observer(shell());
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL page_url(embedded_test_server()->GetURL("/web_ui_mojo.html"));
+  NavigateToURL(shell(), page_url);
+  ASSERT_EQ(2U, observer.resource_load_infos().size());
+  EXPECT_EQ(page_url, observer.resource_load_infos()[0]->url);
+  // TODO(crbug.com/826082): This should be net::RequestPriority::HIGHEST.
+  EXPECT_EQ(net::RequestPriority::DEFAULT_PRIORITY,
+            observer.resource_load_infos()[0]->priority);
+  EXPECT_EQ(embedded_test_server()->GetURL("/web_ui_mojo.js"),
+            observer.resource_load_infos()[1]->url);
+  EXPECT_EQ(net::RequestPriority::MEDIUM,
+            observer.resource_load_infos()[1]->priority);
+}
+
+// Same as WebContentsImplBrowserTest.ResourceLoadComplete but with resources
 // retrieved from the network cache.
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
-                       SubresourceLoadCompleteFromNetworkCache) {
-  SubresourceLoadObserver observer(shell());
+                       ResourceLoadCompleteFromNetworkCache) {
+  ResourceLoadObserver observer(shell());
   ASSERT_TRUE(embedded_test_server()->Start());
-  GURL url(
+  GURL page_url(
       embedded_test_server()->GetURL("/page_with_cached_subresource.html"));
-  NavigateToURL(shell(), url);
+  base::TimeTicks before = base::TimeTicks::Now();
+  NavigateToURL(shell(), page_url);
+  base::TimeTicks after = base::TimeTicks::Now();
 
-  mojom::SubresourceLoadInfo* subresource_load_info =
-      observer.last_subresource_load_info();
-  GURL subresource_url = embedded_test_server()->GetURL("/cachetime");
-  ASSERT_TRUE(subresource_load_info);
-  EXPECT_EQ(subresource_url, subresource_load_info->url);
-  EXPECT_FALSE(subresource_load_info->was_cached);
+  // TODO(crbug.com/826082): we should test the IP address/MIME type parameters
+  // for frames once they are reported correctly.
+  GURL resource_url = embedded_test_server()->GetURL("/cachetime");
+  ASSERT_EQ(2U, observer.resource_load_infos().size());
+  SCOPE_TRACED(observer.CheckResourceLoaded(
+      page_url, /*referrer=*/GURL(), "GET", content::RESOURCE_TYPE_MAIN_FRAME,
+      /*mime-type*/ "",
+      /*ip_address=*/"", /*was_cached=*/false, /*first_network_request=*/true,
+      before, after));
+  SCOPE_TRACED(observer.CheckResourceLoaded(
+      resource_url, /*referrer=*/page_url, "GET", content::RESOURCE_TYPE_SCRIPT,
+      "text/html", "127.0.0.1",
+      /*was_cached=*/false, /*first_network_request=*/false, before, after));
+  EXPECT_TRUE(observer.resource_load_infos()[1]->network_accessed);
+  EXPECT_TRUE(observer.memory_cached_loaded_urls().empty());
   observer.Reset();
 
   // Loading again should serve the request out of the in-memory cache.
-  NavigateToURL(shell(), url);
-  ASSERT_FALSE(observer.last_subresource_load_info());
-  EXPECT_EQ(subresource_url, observer.last_memory_cached_loaded_url());
+  before = base::TimeTicks::Now();
+  NavigateToURL(shell(), page_url);
+  after = base::TimeTicks::Now();
+  ASSERT_EQ(1U, observer.resource_load_infos().size());
+  SCOPE_TRACED(observer.CheckResourceLoaded(
+      page_url, /*referrer=*/GURL(), "GET", content::RESOURCE_TYPE_MAIN_FRAME,
+      /*mime-type*/ "", /*ip_address=*/"",
+      /*was_cached=*/false, /*first_network_request=*/false, before, after));
+  ASSERT_EQ(1U, observer.memory_cached_loaded_urls().size());
+  EXPECT_EQ(resource_url, observer.memory_cached_loaded_urls()[0]);
   observer.Reset();
 
   // Kill the renderer process so when the navigate again, it will be a fresh
@@ -609,12 +785,102 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   NavigateToURL(shell(), GURL("chrome:crash"));
 
   // Reload that URL, the subresource should be served from the network cache.
-  NavigateToURL(shell(), url);
-  subresource_load_info = observer.last_subresource_load_info();
-  ASSERT_TRUE(subresource_load_info);
-  EXPECT_EQ(subresource_url, subresource_load_info->url);
-  EXPECT_TRUE(subresource_load_info->was_cached);
-  EXPECT_FALSE(observer.last_memory_cached_loaded_url().is_valid());
+  before = base::TimeTicks::Now();
+  NavigateToURL(shell(), page_url);
+  after = base::TimeTicks::Now();
+  ASSERT_EQ(2U, observer.resource_load_infos().size());
+  SCOPE_TRACED(observer.CheckResourceLoaded(
+      page_url, /*referrer=*/GURL(), "GET", content::RESOURCE_TYPE_MAIN_FRAME,
+      /*mime-type*/ "", /*ip_address=*/"",
+      /*was_cached=*/false, /*first_network_request=*/true, before, after));
+  SCOPE_TRACED(observer.CheckResourceLoaded(
+      resource_url, /*referrer=*/page_url, "GET", content::RESOURCE_TYPE_SCRIPT,
+      "text/html", "127.0.0.1",
+      /*was_cached=*/true, /*first_network_request=*/false, before, after));
+  EXPECT_TRUE(observer.memory_cached_loaded_urls().empty());
+  EXPECT_FALSE(observer.resource_load_infos()[1]->network_accessed);
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       ResourceLoadCompleteFromLocalResource) {
+  ResourceLoadObserver observer(shell());
+  ASSERT_TRUE(embedded_test_server()->Start());
+  NavigateToURL(shell(),
+                GURL(embedded_test_server()->GetURL("/page_with_image.html")));
+  ASSERT_EQ(2U, observer.resource_load_infos().size());
+  // TODO(crbug.com/826082): network_accessed should be true on the frame.
+  EXPECT_FALSE(observer.resource_load_infos()[0]->network_accessed);
+  EXPECT_TRUE(observer.resource_load_infos()[1]->network_accessed);
+  observer.Reset();
+
+  NavigateToURL(shell(), GURL("chrome://gpu"));
+  ASSERT_LE(1U, observer.resource_load_infos().size());
+  for (const mojom::ResourceLoadInfoPtr& resource_load_info :
+       observer.resource_load_infos()) {
+    EXPECT_FALSE(resource_load_info->network_accessed);
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       ResourceLoadCompleteWithRedirect) {
+  ResourceLoadObserver observer(shell());
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL page_destination_url(
+      embedded_test_server()->GetURL("/page_with_image_redirect.html"));
+  GURL page_original_url(embedded_test_server()->GetURL(
+      "/server-redirect?" + page_destination_url.spec()));
+  NavigateToURL(shell(), page_original_url);
+
+  ASSERT_EQ(2U, observer.resource_load_infos().size());
+  const mojom::ResourceLoadInfoPtr& page_load_info =
+      observer.resource_load_infos()[0];
+  // TODO(crbug.com/826082): turn this back on when the ResourceDispatcher
+  // receives redirects for the main frame.
+  // EXPECT_EQ(page_destination_url, page_load_info->url);
+  EXPECT_EQ(page_original_url, page_load_info->original_url);
+
+  GURL image_destination_url(embedded_test_server()->GetURL("/blank.jpg"));
+  GURL image_original_url(
+      embedded_test_server()->GetURL("/server-redirect?blank.jpg"));
+  const mojom::ResourceLoadInfoPtr& image_load_info =
+      observer.resource_load_infos()[1];
+  EXPECT_EQ(image_destination_url, image_load_info->url);
+  EXPECT_EQ(image_original_url, image_load_info->original_url);
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       ResourceLoadCompleteNetError) {
+  ResourceLoadObserver observer(shell());
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL page_url(embedded_test_server()->GetURL("/page_with_image.html"));
+  GURL image_url(embedded_test_server()->GetURL("/blank.jpg"));
+
+  // Load the page without errors.
+  NavigateToURL(shell(), page_url);
+  ASSERT_EQ(2U, observer.resource_load_infos().size());
+  EXPECT_EQ(net::OK, observer.resource_load_infos()[0]->net_error);
+  EXPECT_EQ(net::OK, observer.resource_load_infos()[1]->net_error);
+  observer.Reset();
+
+  // Load the page and simulate a network error.
+  content::URLLoaderInterceptor url_interceptor(base::BindRepeating(
+      [](const GURL& url,
+         content::URLLoaderInterceptor::RequestParams* params) {
+        if (params->url_request.url != url)
+          return false;
+        network::URLLoaderCompletionStatus status;
+        status.error_code = net::ERR_ADDRESS_UNREACHABLE;
+        params->client->OnComplete(status);
+        return true;
+      },
+      image_url));
+  NavigateToURL(shell(), page_url);
+  ASSERT_EQ(2U, observer.resource_load_infos().size());
+  EXPECT_EQ(net::OK, observer.resource_load_infos()[0]->net_error);
+  EXPECT_EQ(net::ERR_ADDRESS_UNREACHABLE,
+            observer.resource_load_infos()[1]->net_error);
 }
 
 struct LoadProgressDelegateAndObserver : public WebContentsDelegate,
@@ -1895,6 +2161,60 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, UpdateLoadState) {
   update_load_state_and_wait();
   EXPECT_EQ(url_formatter::IDNToUnicode("slow.com"),
             web_contents->GetLoadStateHost());
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, PausePageScheduledTasks) {
+  EXPECT_TRUE(embedded_test_server()->Start());
+
+  GURL test_url = embedded_test_server()->GetURL("/pause_schedule_task.html");
+  NavigateToURL(shell(), test_url);
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  int text_length;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      shell(),
+      "domAutomationController.send(document.getElementById('textfield')."
+      "value.length)",
+      &text_length));
+  EXPECT_GT(text_length, 0);
+
+  // Suspend blink schedule tasks.
+  shell()->web_contents()->PausePageScheduledTasks(true);
+
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      shell(),
+      "domAutomationController.send(document.getElementById('textfield')."
+      "value.length)",
+      &text_length));
+  EXPECT_GT(text_length, 0);
+
+  int next_text_length;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      shell(),
+      "domAutomationController.send(document.getElementById('textfield')."
+      "value.length)",
+      &next_text_length));
+  EXPECT_EQ(text_length, next_text_length);
+
+  // Resume the paused blink schedule tasks.
+  shell()->web_contents()->PausePageScheduledTasks(false);
+
+  // We call a document.getElementById five times in order to give the
+  // javascript time to run with DOM again.
+  for (int i = 0; i < 5; i++) {
+    EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+        shell(),
+        "domAutomationController.send(document.getElementById('textfield')."
+        "value.length)",
+        &next_text_length));
+  }
+
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      shell(),
+      "domAutomationController.send(document.getElementById('textfield')."
+      "value.length)",
+      &next_text_length));
+  EXPECT_GT(next_text_length, text_length);
 }
 
 }  // namespace content

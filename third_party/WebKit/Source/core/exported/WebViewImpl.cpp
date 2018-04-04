@@ -137,7 +137,7 @@
 #include "platform/loader/fetch/UniqueIdentifier.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/child/web_scheduler.h"
-#include "platform/scheduler/renderer/page_scheduler.h"
+#include "platform/scheduler/public/page_scheduler.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/wtf/AutoReset.h"
@@ -929,6 +929,10 @@ void WebViewImpl::AcceptLanguagesChanged() {
     return;
 
   GetPage()->AcceptLanguagesChanged();
+}
+
+void WebViewImpl::PausePageScheduledTasks(bool paused) {
+  GetPage()->SetPaused(paused);
 }
 
 WebInputEventResult WebViewImpl::HandleKeyEvent(const WebKeyboardEvent& event) {
@@ -2383,8 +2387,8 @@ static bool IsElementEditable(const Element* element) {
   if (HasEditableStyle(*element))
     return true;
 
-  if (element->IsTextControl()) {
-    if (!ToTextControlElement(element)->IsDisabledOrReadOnly())
+  if (auto* text_control = ToTextControlOrNull(element)) {
+    if (!text_control->IsDisabledOrReadOnly())
       return true;
   }
 

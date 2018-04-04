@@ -11,7 +11,6 @@
 #import "ios/chrome/browser/ui/UIView+SizeClassSupport.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
-#include "ios/chrome/browser/ui/commands/start_voice_search_command.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_collection_synchronizing.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_collection_utils.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_commands.h"
@@ -163,7 +162,9 @@ const UIEdgeInsets kSearchBoxStretchInsets = {3, 3, 3, 3};
   if (self.headerView.cr_widthSizeClass == REGULAR &&
       self.headerView.cr_heightSizeClass == REGULAR &&
       IsUIRefreshPhase1Enabled()) {
-    CGFloat progress = [self.headerView searchFieldProgressForOffset:offset];
+    CGFloat progress =
+        [self.headerView searchFieldProgressForOffset:offset
+                                       safeAreaInsets:safeAreaInsets];
     [self.toolbarDelegate setScrollProgressForTabletOmnibox:progress];
   }
 
@@ -203,7 +204,7 @@ const UIEdgeInsets kSearchBoxStretchInsets = {3, 3, 3, 3};
       self.logoIsShowing, self.promoCanShow, YES);
   CGFloat offsetY =
       headerHeight - ntp_header::kScrolledToTopOmniboxBottomMargin;
-  if (!IsIPadIdiom())
+  if (!content_suggestions::IsRegularXRegularSizeClass(self.view))
     offsetY -= ntp_header::ToolbarHeight();
 
   return offsetY;
@@ -251,24 +252,22 @@ const UIEdgeInsets kSearchBoxStretchInsets = {3, 3, 3, 3};
                         fakeOmnibox:self.fakeOmnibox
                       andHeaderView:self.headerView];
 
-    if (!IsIPadIdiom()) {
-      // iPhone header also contains a toolbar since the normal toolbar is
-      // hidden.
-      if (IsUIRefreshPhase1Enabled()) {
-        // This view controller's view is never actually used, so add to the
-        // parent view controller to avoid hierarchy inconsistencies.
-        [self.parentViewController
-            addChildViewController:self.toolbarViewController];
-        [_headerView addToolbarView:self.toolbarViewController.view];
-        [self.toolbarViewController
-            didMoveToParentViewController:self.parentViewController];
-      } else {
-        [_headerView addToolbarWithReadingListModel:self.readingListModel
-                                         dispatcher:self.dispatcher];
-        [_headerView setToolbarTabCount:self.tabCount];
-        [_headerView setCanGoForward:self.canGoForward];
-        [_headerView setCanGoBack:self.canGoBack];
-      }
+    // iPhone header also contains a toolbar since the normal toolbar is
+    // hidden.
+    if (IsUIRefreshPhase1Enabled()) {
+      // This view controller's view is never actually used, so add to the
+      // parent view controller to avoid hierarchy inconsistencies.
+      [self.parentViewController
+          addChildViewController:self.toolbarViewController];
+      [_headerView addToolbarView:self.toolbarViewController.view];
+      [self.toolbarViewController
+          didMoveToParentViewController:self.parentViewController];
+    } else if (!IsIPadIdiom()) {
+      [_headerView addToolbarWithReadingListModel:self.readingListModel
+                                       dispatcher:self.dispatcher];
+      [_headerView setToolbarTabCount:self.tabCount];
+      [_headerView setCanGoForward:self.canGoForward];
+      [_headerView setCanGoBack:self.canGoBack];
     }
 
     [self.headerView addViewsToSearchField:self.fakeOmnibox];
@@ -366,9 +365,7 @@ const UIEdgeInsets kSearchBoxStretchInsets = {3, 3, 3, 3};
   UIView* voiceSearchButton = base::mac::ObjCCastStrict<UIView>(sender);
   [NamedGuide guideWithName:kVoiceSearchButtonGuide view:voiceSearchButton]
       .constrainedView = voiceSearchButton;
-  StartVoiceSearchCommand* command =
-      [[StartVoiceSearchCommand alloc] initWithOriginView:voiceSearchButton];
-  [self.dispatcher startVoiceSearch:command];
+  [self.dispatcher startVoiceSearch];
 }
 
 - (void)preloadVoiceSearch:(id)sender {
@@ -390,7 +387,7 @@ const UIEdgeInsets kSearchBoxStretchInsets = {3, 3, 3, 3};
     self.logoVendor.showingLogo = self.logoIsShowing;
     [self.doodleHeightConstraint
         setConstant:content_suggestions::doodleHeight(self.logoIsShowing)];
-    if (IsIPadIdiom())
+    if (content_suggestions::IsRegularXRegularSizeClass(self.view))
       [self.fakeOmnibox setHidden:!self.logoIsShowing];
     [self.collectionSynchronizer invalidateLayout];
   }
@@ -426,7 +423,7 @@ const UIEdgeInsets kSearchBoxStretchInsets = {3, 3, 3, 3};
 }
 
 - (void)shiftTilesDown {
-  if (!IsIPadIdiom()) {
+  if (!content_suggestions::IsRegularXRegularSizeClass(self.view)) {
     self.fakeOmnibox.hidden = NO;
     [self.dispatcher onFakeboxBlur];
   }
@@ -438,7 +435,7 @@ const UIEdgeInsets kSearchBoxStretchInsets = {3, 3, 3, 3};
 
 - (void)shiftTilesUp {
   void (^completionBlock)() = ^{
-    if (!IsIPadIdiom()) {
+    if (!content_suggestions::IsRegularXRegularSizeClass(self.view)) {
       [self.dispatcher onFakeboxAnimationComplete];
       [self.headerView fadeOutShadow];
       [self.fakeOmnibox setHidden:YES];

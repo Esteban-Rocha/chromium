@@ -51,8 +51,7 @@
     "benchmarks": [
       "dromaeo",
       "smoothness.gpu_rasterization.polymer",
-      "smoothness.tough_webgl_cases",
-      "v8.detached_context_age_in_gc"
+      "smoothness.tough_webgl_cases"
     ]
   },
   "15": {
@@ -65,11 +64,13 @@
   "16": {
     "benchmarks": [
       "smoothness.gpu_rasterization.tough_filters_cases",
-      "speedometer-future"
+      "speedometer-future",
+       "rendering.mobile"
     ]
   },
   "17": {
     "benchmarks": [
+      "rendering.desktop",
       "smoothness.gpu_rasterization.tough_path_rendering_cases",
       "speedometer2"
     ]

@@ -10,14 +10,14 @@
 #include "platform/CrossThreadFunctional.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/scheduler/child/web_scheduler_impl.h"
-#include "platform/scheduler/child/worker_scheduler_impl.h"
+#include "platform/scheduler/worker/worker_thread_scheduler.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::_;
-using ::testing::AnyOf;
-using ::testing::ElementsAre;
-using ::testing::Invoke;
+using testing::_;
+using testing::AnyOf;
+using testing::ElementsAre;
+using testing::Invoke;
 
 namespace blink {
 namespace scheduler {
@@ -67,7 +67,7 @@ void ShutdownOnThread(WebThreadImplForWorkerScheduler* thread) {
   web_scheduler_impl->Shutdown();
 }
 
-class WebThreadImplForWorkerSchedulerTest : public ::testing::Test {
+class WebThreadImplForWorkerSchedulerTest : public testing::Test {
  public:
   WebThreadImplForWorkerSchedulerTest() = default;
 
@@ -177,8 +177,7 @@ TEST_F(WebThreadImplForWorkerSchedulerTest, TestTaskObserver) {
   // Sometimes we get an internal scheduler task running before or after
   // TestTask as well. This is not a bug, and we need to make sure the test
   // doesn't fail when that happens.
-  EXPECT_THAT(calls,
-              ::testing::HasSubstr("willProcessTask run didProcessTask"));
+  EXPECT_THAT(calls, testing::HasSubstr("willProcessTask run didProcessTask"));
 }
 
 TEST_F(WebThreadImplForWorkerSchedulerTest, TestShutdown) {

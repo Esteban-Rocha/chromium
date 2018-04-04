@@ -19,6 +19,7 @@
 #include "ash/accessibility/accessibility_focus_ring_controller.h"
 #include "ash/app_list/app_list_controller_impl.h"
 #include "ash/ash_constants.h"
+#include "ash/assistant/ash_assistant_controller.h"
 #include "ash/autoclick/autoclick_controller.h"
 #include "ash/cast_config_controller.h"
 #include "ash/detachable_base/detachable_base_handler.h"
@@ -39,7 +40,6 @@
 #include "ash/display/screen_position_controller.h"
 #include "ash/display/window_tree_host_manager.h"
 #include "ash/drag_drop/drag_drop_controller.h"
-#include "ash/first_run/first_run_helper_impl.h"
 #include "ash/focus_cycler.h"
 #include "ash/frame/custom_frame_view_ash.h"
 #include "ash/high_contrast/high_contrast_controller.h"
@@ -81,6 +81,7 @@
 #include "ash/system/bluetooth/tray_bluetooth_helper.h"
 #include "ash/system/brightness/brightness_controller_chromeos.h"
 #include "ash/system/brightness_control_delegate.h"
+#include "ash/system/caps_lock_notification_controller.h"
 #include "ash/system/keyboard_brightness/keyboard_brightness_controller.h"
 #include "ash/system/keyboard_brightness_control_delegate.h"
 #include "ash/system/locale/locale_notification_controller.h"
@@ -97,6 +98,7 @@
 #include "ash/system/power/power_status.h"
 #include "ash/system/power/video_activity_notifier.h"
 #include "ash/system/screen_layout_observer.h"
+#include "ash/system/screen_security/screen_security_notification_controller.h"
 #include "ash/system/session/logout_button_tray.h"
 #include "ash/system/session/logout_confirmation_controller.h"
 #include "ash/system/status_area_widget.h"
@@ -145,7 +147,8 @@
 #include "base/memory/ptr_util.h"
 #include "base/sys_info.h"
 #include "base/trace_event/trace_event.h"
-#include "chromeos/chromeos_switches.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/system/devicemode.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -393,7 +396,7 @@ void Shell::RegisterProfilePrefs(PrefRegistrySimple* registry, bool for_test) {
   PaletteWelcomeBubble::RegisterProfilePrefs(registry);
   ShelfController::RegisterProfilePrefs(registry);
   TouchDevicesController::RegisterProfilePrefs(registry, for_test);
-  TrayCapsLock::RegisterProfilePrefs(registry, for_test);
+  CapsLockNotificationController::RegisterProfilePrefs(registry, for_test);
 }
 
 views::NonClientFrameView* Shell::CreateDefaultNonClientFrameView(
@@ -483,10 +486,6 @@ void Shell::UpdateShelfVisibility() {
     Shelf::ForWindow(root)->UpdateVisibilityState();
 }
 
-PrefService* Shell::GetLocalStatePrefService() const {
-  return local_state_.get();
-}
-
 WebNotificationTray* Shell::GetWebNotificationTray() {
   return GetPrimaryRootWindowController()
       ->GetStatusAreaWidget()
@@ -499,10 +498,6 @@ bool Shell::HasPrimaryStatusArea() {
 
 SystemTray* Shell::GetPrimarySystemTray() {
   return GetPrimaryRootWindowController()->GetSystemTray();
-}
-
-FirstRunHelper* Shell::CreateFirstRunHelper() {
-  return new FirstRunHelperImpl;
 }
 
 void Shell::SetLargeCursorSizeInDip(int large_cursor_size_in_dip) {
@@ -789,7 +784,9 @@ Shell::~Shell() {
 
   screen_pinning_controller_.reset();
 
+  caps_lock_notification_controller_.reset();
   resolution_notification_controller_.reset();
+  screen_security_notification_controller_.reset();
   screenshot_controller_.reset();
   mouse_cursor_filter_.reset();
   modality_filter_.reset();
@@ -898,10 +895,14 @@ void Shell::Init(ui::ContextFactory* context_factory,
     night_light_controller_ = std::make_unique<NightLightController>();
   touch_devices_controller_ = std::make_unique<TouchDevicesController>();
   bluetooth_power_controller_ = std::make_unique<BluetoothPowerController>();
+  caps_lock_notification_controller_ =
+      std::make_unique<CapsLockNotificationController>();
   detachable_base_handler_ = std::make_unique<DetachableBaseHandler>(this);
   detachable_base_notification_controller_ =
       std::make_unique<DetachableBaseNotificationController>(
           detachable_base_handler_.get());
+  screen_security_notification_controller_ =
+      std::make_unique<ScreenSecurityNotificationController>();
 
   // Connector can be null in tests.
   if (shell_delegate_->GetShellConnector()) {
@@ -1009,6 +1010,10 @@ void Shell::Init(ui::ContextFactory* context_factory,
   tablet_mode_controller_ = std::make_unique<TabletModeController>();
   shelf_controller_ = std::make_unique<ShelfController>();
 
+  ash_assistant_controller_ = chromeos::switches::IsAssistantEnabled()
+                                  ? std::make_unique<AshAssistantController>()
+                                  : nullptr;
+
   magnifier_key_scroll_handler_ = MagnifierKeyScroller::CreateHandler();
   AddPreTargetHandler(magnifier_key_scroll_handler_.get());
   speech_feedback_handler_ = SpokenFeedbackToggler::CreateHandler();
@@ -1017,8 +1022,12 @@ void Shell::Init(ui::ContextFactory* context_factory,
   // The order in which event filters are added is significant.
 
   // ui::UserActivityDetector passes events to observers, so let them get
-  // rewritten first.
-  user_activity_detector_.reset(new ui::UserActivityDetector);
+  // rewritten first. The detector observses the platform event source directly
+  // in the Classic configuration, but in Mus and Mash configurations, the
+  // detector instead relies on reports of events from the Window Server.
+  const bool observe_event_source = config == Config::CLASSIC;
+  user_activity_detector_ =
+      std::make_unique<ui::UserActivityDetector>(observe_event_source);
 
   overlay_filter_.reset(new OverlayEventFilter);
   AddPreTargetHandler(overlay_filter_.get());
@@ -1077,7 +1086,8 @@ void Shell::Init(ui::ContextFactory* context_factory,
   screenshot_controller_ = std::make_unique<ScreenshotController>(
       shell_delegate_->CreateScreenshotDelegate());
   mouse_cursor_filter_ = std::make_unique<MouseCursorEventFilter>();
-  PrependPreTargetHandler(mouse_cursor_filter_.get());
+  AddPreTargetHandler(mouse_cursor_filter_.get(),
+                      ui::EventTarget::Priority::kAccessibility);
 
   // Create Controllers that may need root window.
   // TODO(oshima): Move as many controllers before creating
@@ -1187,6 +1197,17 @@ void Shell::Init(ui::ContextFactory* context_factory,
     observer.OnShellInitialized();
 
   user_metrics_recorder_->OnShellInitialized();
+
+  // By this point ash shell should have initialized its D-Bus signal
+  // listeners, so emit ash-initialized upstart signal to start Chrome OS tasks
+  // that expect that ash is listening to D-Bus signals they emit. For example,
+  // hammerd, which handles detachable base state, communicates the base state
+  // purely by emitting D-Bus signals, and thus has to be run whenever ash is
+  // started so ash (DetachableBaseHandler in particular) gets the proper view
+  // of the current detachable base state.
+  chromeos::DBusThreadManager::Get()
+      ->GetSessionManagerClient()
+      ->EmitAshInitialized();
 }
 
 void Shell::InitializeDisplayManager() {

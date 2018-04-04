@@ -123,6 +123,12 @@ void RendererWebMediaPlayerDelegate::DidPictureInPictureSourceChange(
       routing_id(), delegate_id));
 }
 
+void RendererWebMediaPlayerDelegate::DidPictureInPictureModeEnd(
+    int delegate_id) {
+  Send(new MediaPlayerDelegateHostMsg_OnPictureInPictureModeEnded(routing_id(),
+                                                                  delegate_id));
+}
+
 void RendererWebMediaPlayerDelegate::DidPause(int player_id) {
   DVLOG(2) << __func__ << "(" << player_id << ")";
   DCHECK(id_map_.Lookup(player_id));
@@ -249,7 +255,7 @@ bool RendererWebMediaPlayerDelegate::OnMessageReceived(
 void RendererWebMediaPlayerDelegate::SetIdleCleanupParamsForTesting(
     base::TimeDelta idle_timeout,
     base::TimeDelta idle_cleanup_interval,
-    base::TickClock* tick_clock,
+    const base::TickClock* tick_clock,
     bool is_jelly_bean) {
   idle_cleanup_interval_ = idle_cleanup_interval;
   idle_timeout_ = idle_timeout;

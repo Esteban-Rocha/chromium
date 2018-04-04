@@ -10,8 +10,8 @@
 
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 #include "ui/base/ui_features.h"
 
 // Don't add more switch files here. This is linked into some places like the
@@ -240,6 +240,7 @@ extern const char kForceShowUpdateMenuItem[];
 extern const char kForceShowUpdateMenuItemCustomSummary[];
 extern const char kMarketUrlForTesting[];
 extern const char kProgressBarAnimation[];
+extern const char kTrustedCDNBaseURLForTests[];
 extern const char kWebApkServerUrl[];
 #endif  // defined(OS_ANDROID)
 
@@ -248,7 +249,6 @@ extern const char kCroshCommand[];
 extern const char kDisableLoggingRedirect[];
 extern const char kDisableLoginScreenApps[];
 extern const char kMashServiceName[];
-extern const char kSkipExtraAshWindowPositioning[];
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)

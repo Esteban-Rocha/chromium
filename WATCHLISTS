@@ -1108,8 +1108,13 @@
       'filepath': 'mojo',
     },
     'multidevice': {
-      'filepath': 'components/multidevice/'\
-                  '|chromeos/components/multidevice_setup/',
+      'filepath': 'ash/multidevice_setup/'\
+                  '|chrome/browser/resources/chromeos/multidevice_setup/'\
+                  '|chromeos/components/proximity_auth/'\
+                  '|chromeos/services/device_sync/'\
+                  '|chromeos/services/multidevice_setup/'\
+                  '|chromeos/services/secure_channel/'\
+                  '|components/cryptauth/'
     },
     'mus': {
       'filepath': 'services/ui/'\
@@ -1475,9 +1480,11 @@
       'filepath': 'apitest|unittest|browsertest|uitest|chrome/test/',
     },
     'tether': {
-      'filepath': 'components/cryptauth/'\
+      'filepath': 'chrome/browser/chromeos/tether/'\
+                  '|chrome/browser/ui/ash/network/tether*'\
                   '|chromeos/components/tether/'\
-                  '|components/proximity_auth/',
+                  '|components/cryptauth/'\
+                  '|components/proximity_auth/logging'
     },
     'textinput': {
       'filepath': 'chrome/browser/ui/input_method'\
@@ -1502,6 +1509,10 @@
     },
     'tools_win_chromeexts': {
       'filepath': 'tools/win/chromeexts',
+    },
+    'touch_selection': {
+      'filepath': 'ui/touch_selection/'\
+                  '|content/public/android/java/src/org/chromium/content/browser/selection/'
     },
     'tracing': {
       'filepath': 'base/debug/trace_event.*'\
@@ -1963,6 +1974,7 @@
                      'eugenis+clang@chromium.org',
                      'glider+clang@chromium.org',
                      'hans@chromium.org',
+                     'pcc@chromium.org',
                      'rnk@chromium.org',
                      'thakis@chromium.org',
                      'thestig@chromium.org',
@@ -2303,6 +2315,8 @@
                            'yusukes+watch@chromium.org'],
     'timers': ['chirantan+watch@chromium.org'],
     'tools_win_chromeexts': ['robliao+watch@chromium.org'],
+    'touch_selection': ['ajith.v@samsung.com',
+                        'ajith.v@chromium.org'],
     'tracing': ['tracing+reviews@chromium.org',
                 'wfh+watch@chromium.org'],
     'ui_compositor': ['cc-bugs@chromium.org'],

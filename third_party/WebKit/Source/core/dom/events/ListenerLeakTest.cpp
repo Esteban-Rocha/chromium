@@ -84,13 +84,13 @@ int GetNumObjects(const char* constructor) {
   return count;
 }
 
-class ListenerLeakTest : public ::testing::Test {
+class ListenerLeakTest : public testing::Test {
  public:
   void RunTest(const std::string& filename) {
     std::string base_url("http://www.example.com/");
     std::string file_name(filename);
     URLTestHelpers::RegisterMockedURLLoadFromBase(
-        WebString::FromUTF8(base_url), blink::testing::CoreTestDataPath(),
+        WebString::FromUTF8(base_url), blink::test::CoreTestDataPath(),
         WebString::FromUTF8(file_name));
     web_view_helper.InitializeAndLoad(base_url + file_name);
   }

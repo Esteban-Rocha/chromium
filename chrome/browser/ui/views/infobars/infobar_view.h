@@ -35,7 +35,7 @@ class InfoBarView : public infobars::InfoBar,
   const infobars::InfoBarContainer::Delegate* container_delegate() const;
 
  protected:
-  typedef std::vector<views::Label*> Labels;
+  using Labels = std::vector<views::Label*>;
 
   ~InfoBarView() override;
 
@@ -57,6 +57,8 @@ class InfoBarView : public infobars::InfoBar,
   void Layout() override;
   void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) override;
+  void OnThemeChanged() override;
+  void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
   // views::ButtonListener:
   // NOTE: This must not be called if we're unowned.  (Subclasses should ignore
@@ -77,11 +79,6 @@ class InfoBarView : public infobars::InfoBar,
   // taking into account animation so the control "slides in" (or out) as we
   // animate open and closed.
   int OffsetY(views::View* view) const;
-
- protected:
-  // Adds |view| to the content area, i.e. |child_container_|. The |view| won't
-  // automatically get any layout, so should still be laid out manually.
-  void AddViewToContentArea(views::View* view);
 
  private:
   // Does the actual work for AssignWidths().  Assumes |labels| is sorted by
@@ -104,15 +101,19 @@ class InfoBarView : public infobars::InfoBar,
   bool DoesIntersectRect(const View* target,
                          const gfx::Rect& rect) const override;
 
-  // This container holds the children and clips their painting during
-  // animation.
-  views::View* child_container_;
+  // Returns the current color for the theme property |id|.  Will return the
+  // wrong value if no theme provider is available.
+  SkColor GetColor(int id) const;
+
+  // Sets various attributes on |label| that are common to all child links and
+  // labels.
+  void SetLabelDetails(views::Label* label) const;
 
   // The optional icon at the left edge of the InfoBar.
-  views::ImageView* icon_;
+  views::ImageView* icon_ = nullptr;
 
   // The close button at the right edge of the InfoBar.
-  views::ImageButton* close_button_;
+  views::ImageButton* close_button_ = nullptr;
 
   // Used to run the menu.
   std::unique_ptr<views::MenuRunner> menu_runner_;

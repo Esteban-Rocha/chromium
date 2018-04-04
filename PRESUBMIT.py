@@ -543,6 +543,24 @@ _BANNED_CPP_FUNCTIONS = (
         r'^third_party/sqlite/.*\.(c|cc|h)$',
       ),
     ),
+    (
+      'net::URLFetcher',
+      (
+        'net::URLFetcher should no longer be used in content embedders. ',
+        'Instead, use network::SimpleURLLoader instead, which supports ',
+        'an out-of-process network stack. ',
+        'net::URLFetcher may still be used in binaries that do not embed',
+        'content.',
+      ),
+      True,
+      (
+        r'^ios[\\\/].*\.(cc|h)$',
+        r'.*[\\\/]ios[\\\/].*\.(cc|h)$',
+        r'.*_ios\.(cc|h)$',
+        r'^net[\\\/].*\.(cc|h)$',
+        r'.*[\\\/]tools[\\\/].*\.(cc|h)$',
+      ),
+    ),
 )
 
 
@@ -649,6 +667,49 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
       if (inclusion_pattern.search(line) and
           not comment_pattern.search(line) and
           not exclusion_pattern.search(line)):
+        problems.append(
+          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
+
+  if problems:
+    return [output_api.PresubmitPromptOrNotify(_TEST_ONLY_WARNING, problems)]
+  else:
+    return []
+
+
+def _CheckNoProductionCodeUsingTestOnlyFunctionsJava(input_api, output_api):
+  """This is a simplified version of
+  _CheckNoProductionCodeUsingTestOnlyFunctions for Java files.
+  """
+  javadoc_start_re = input_api.re.compile(r'^\s*/\*\*')
+  javadoc_end_re = input_api.re.compile(r'^\s*\*/')
+  name_pattern = r'ForTest(s|ing)?'
+  # Describes an occurrence of "ForTest*" inside a // comment.
+  comment_re = input_api.re.compile(r'//.*%s' % name_pattern)
+  # Catch calls.
+  inclusion_re = input_api.re.compile(r'(%s)\s*\(' % name_pattern)
+  # Ignore definitions. (Comments are ignored separately.)
+  exclusion_re = input_api.re.compile(r'(%s)[^;]+\{' % name_pattern)
+
+  problems = []
+  sources = lambda x: input_api.FilterSourceFile(
+    x,
+    black_list=(('(?i).*test', r'.*\/junit\/')
+                + input_api.DEFAULT_BLACK_LIST),
+    white_list=(r'.*\.java$',)
+  )
+  for f in input_api.AffectedFiles(include_deletes=False, file_filter=sources):
+    local_path = f.LocalPath()
+    is_inside_javadoc = False
+    for line_number, line in f.ChangedContents():
+      if is_inside_javadoc and javadoc_end_re.search(line):
+        is_inside_javadoc = False
+      if not is_inside_javadoc and javadoc_start_re.search(line):
+        is_inside_javadoc = True
+      if is_inside_javadoc:
+        continue
+      if (inclusion_re.search(line) and
+          not comment_re.search(line) and
+          not exclusion_re.search(line)):
         problems.append(
           '%s:%d\n    %s' % (local_path, line_number, line.strip()))
 
@@ -1525,10 +1586,11 @@ def _CheckUniquePtr(input_api, output_api):
                   input_api.DEFAULT_BLACK_LIST),
       white_list=(file_inclusion_pattern,))
   return_construct_pattern = input_api.re.compile(
-      r'(=|\breturn)\s*std::unique_ptr<.*?(?<!])>\([^)]+\)')
+      r'(=|\breturn|^)\s*std::unique_ptr<.*?(?<!])>\(([^)]|$)')
   null_construct_pattern = input_api.re.compile(
-      r'\b(?<!<)std::unique_ptr<.*?>\(\)')
-  errors = []
+      r'\b(?<!<)std::unique_ptr<[^>]*>([^(<]*>)?\(\)')
+  problems_constructor = []
+  problems_nullptr = []
   for f in input_api.AffectedSourceFiles(sources):
     for line_number, line in f.ChangedContents():
       # Disallow:
@@ -1537,17 +1599,26 @@ def _CheckUniquePtr(input_api, output_api):
       # But allow:
       # return std::unique_ptr<T[]>(foo);
       # bar = std::unique_ptr<T[]>(foo);
+      local_path = f.LocalPath()
       if return_construct_pattern.search(line):
-        errors.append(output_api.PresubmitError(
-          ('%s:%d uses explicit std::unique_ptr constructor. ' +
-           'Use std::make_unique<T>() instead.') %
-          (f.LocalPath(), line_number)))
+        problems_constructor.append(
+          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
       # Disallow:
       # std::unique_ptr<T>()
       if null_construct_pattern.search(line):
-        errors.append(output_api.PresubmitError(
-          '%s:%d uses std::unique_ptr<T>(). Use nullptr instead.' %
-          (f.LocalPath(), line_number)))
+        problems_nullptr.append(
+          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
+
+  errors = []
+  if problems_constructor:
+    errors.append(output_api.PresubmitError(
+        'The following files use std::unique_ptr<T>(). Use nullptr instead.',
+        problems_constructor))
+  if problems_nullptr:
+    errors.append(output_api.PresubmitError(
+        'The following files use explicit std::unique_ptr constructor.'
+        'Use std::make_unique<T>() instead.',
+        problems_nullptr))
   return errors
 
 
@@ -2667,6 +2738,8 @@ def _CommonChecks(input_api, output_api):
 
   results.extend(
       _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api))
+  results.extend(
+      _CheckNoProductionCodeUsingTestOnlyFunctionsJava(input_api, output_api))
   results.extend(_CheckNoIOStreamInHeaders(input_api, output_api))
   results.extend(_CheckNoUNIT_TESTInSourceFiles(input_api, output_api))
   results.extend(_CheckDCHECK_IS_ONHasBraces(input_api, output_api))

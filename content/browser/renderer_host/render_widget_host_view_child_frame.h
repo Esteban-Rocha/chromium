@@ -101,7 +101,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   bool IsShowing() override;
   gfx::Rect GetViewBounds() const override;
   gfx::Size GetVisibleViewportSize() const override;
-  gfx::Vector2dF GetLastScrollOffset() const override;
+  void SetInsets(const gfx::Insets& insets) override;
   gfx::NativeView GetNativeView() const override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   void SetBackgroundColor(SkColor color) override;
@@ -160,6 +160,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       const gfx::PointF& point) override;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
+  void OnRenderFrameMetadataChanged() override;
 
   bool IsRenderWidgetHostViewChildFrame() override;
 
@@ -180,6 +181,9 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       BrowserAccessibilityDelegate* delegate,
       bool for_root_frame) override;
   void GetScreenInfo(ScreenInfo* screen_info) const override;
+  void EnableAutoResize(const gfx::Size& min_size,
+                        const gfx::Size& max_size) override;
+  void DisableAutoResize(const gfx::Size& new_size) override;
   viz::ScopedSurfaceIdAllocator ResizeDueToAutoResize(
       const gfx::Size& new_size,
       uint64_t sequence_number) override;
@@ -251,10 +255,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   void ProcessFrameSwappedCallbacks();
 
-  // The last scroll offset of the view.
-  gfx::Vector2dF last_scroll_offset_;
-
-
   // The ID for FrameSink associated with this view.
   viz::FrameSinkId frame_sink_id_;
 
@@ -309,6 +309,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   // The background color of the widget.
   SkColor background_color_;
+
+  gfx::Insets insets_;
 
   std::unique_ptr<TouchSelectionControllerClientChildFrame>
       selection_controller_client_;

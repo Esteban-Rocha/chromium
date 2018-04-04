@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -461,6 +461,10 @@ const char kEnableVtune[]                   = "enable-vtune-support";
 // Enable Vulkan support, must also have ENABLE_VULKAN defined.
 const char kEnableVulkan[] = "enable-vulkan";
 
+// Enable the Web Authentication Testing API.
+// https://w3c.github.io/webauthn
+const char kEnableWebAuthTestingAPI[] = "enable-web-authentication-testing-api";
+
 // Enables WebGL extensions not yet approved by the community.
 const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
 
@@ -574,9 +578,17 @@ const char kLogFile[] = "log-file";
 const char kMainFrameResizesAreOrientationChanges[] =
     "main-frame-resizes-are-orientation-changes";
 
-// Specifies the maximum disk cache size for the ApplicationCache. Default
+// Specifies the maximum cache size per an origin for the ApplicationCache.
+// The default value is 5MB.
+const char kMaxAppCacheOriginCacheSizeMb[] =
+    "max-appcache-origin-cache-size-mb";
+
+// Specifies the maximum disk cache size for the ApplicationCache. The default
 // value is 250MB.
 const char kMaxAppCacheDiskCacheSizeMb[] = "max-appcache-disk-cache-size-mb";
+
+// Sets the maximium decoded image size limitation.
+const char kMaxDecodedImageSizeMb[] = "max-decoded-image-size-mb";
 
 // Sets the width and height above which a composited layer will get tiled.
 const char kMaxUntiledLayerHeight[]         = "max-untiled-layer-height";
@@ -891,6 +903,11 @@ const char kWebRtcMaxCaptureFramerate[] = "max-gum-fps";
 // throttling of the capture.
 const char kWebRtcMaxCpuConsumptionPercentage[] =
     "webrtc-max-cpu-consumption-percentage";
+
+// Normally, remote-bound WebRTC event logs are uploaded only when no
+// peer connections are active. With this flag, the upload is never suppressed.
+const char kWebRtcRemoteEventLogUploadNoSuppression[] =
+    "webrtc-event-log-upload-no-suppression";
 
 // Renderer process parameter for WebRTC Stun probe trial to determine the
 // interval. Please see SetupStunProbeTrial in

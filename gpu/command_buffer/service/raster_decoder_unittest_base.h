@@ -41,6 +41,7 @@
 namespace gpu {
 
 namespace gles2 {
+class ImageManager;
 class MemoryTracker;
 }  // namespace gles2
 
@@ -153,6 +154,9 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
   }
 
   RasterDecoder* GetDecoder() const { return decoder_.get(); }
+  gles2::ImageManager* GetImageManagerForTest() {
+    return decoder_->GetImageManagerForTest();
+  }
 
   typedef gles2::TestHelper::AttribInfo AttribInfo;
   typedef gles2::TestHelper::UniformInfo UniformInfo;
@@ -176,6 +180,19 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
                       GLint levels,
                       GLsizei width,
                       GLsizei height);
+
+  void SetupClearTextureExpectations(GLuint service_id,
+                                     GLuint old_service_id,
+                                     GLenum bind_target,
+                                     GLenum target,
+                                     GLint level,
+                                     GLenum format,
+                                     GLenum type,
+                                     GLint xoffset,
+                                     GLint yoffset,
+                                     GLsizei width,
+                                     GLsizei height,
+                                     GLuint bound_pixel_unpack_buffer);
 
   GLvoid* BufferOffset(unsigned i) { return static_cast<int8_t*>(NULL) + (i); }
 

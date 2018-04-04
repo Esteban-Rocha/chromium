@@ -29,6 +29,7 @@
 #include "content/common/frame_message_structs.h"
 #include "content/common/frame_owner_properties.h"
 #include "content/common/frame_replication_state.h"
+#include "content/common/frame_resize_params.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/navigation_params.h"
 #include "content/common/resource_timing_info.h"
@@ -52,7 +53,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
 #include "mojo/public/cpp/system/message_pipe.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 #include "third_party/WebKit/public/common/frame/frame_policy.h"
 #include "third_party/WebKit/public/common/message_port/message_port_channel.h"
@@ -87,9 +88,6 @@ using FrameMsg_GetSerializedHtmlWithLocalLinks_UrlMap =
     std::map<GURL, base::FilePath>;
 using FrameMsg_GetSerializedHtmlWithLocalLinks_FrameRoutingIdMap =
     std::map<int, base::FilePath>;
-
-using FrameMsg_SerializeAsMHTML_FrameRoutingIdToContentIdMap =
-    std::map<int, std::string>;
 
 #endif  // INTERNAL_CONTENT_COMMON_FRAME_MESSAGES_H_
 
@@ -227,6 +225,16 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameOwnerProperties)
   IPC_STRUCT_TRAITS_MEMBER(allow_payment_request)
   IPC_STRUCT_TRAITS_MEMBER(is_display_none)
   IPC_STRUCT_TRAITS_MEMBER(required_csp)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::FrameResizeParams)
+  IPC_STRUCT_TRAITS_MEMBER(screen_info)
+  IPC_STRUCT_TRAITS_MEMBER(auto_resize_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(min_size_for_auto_resize)
+  IPC_STRUCT_TRAITS_MEMBER(max_size_for_auto_resize)
+  IPC_STRUCT_TRAITS_MEMBER(auto_resize_sequence_number)
+  IPC_STRUCT_TRAITS_MEMBER(screen_space_rect)
+  IPC_STRUCT_TRAITS_MEMBER(local_frame_size)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::FramePolicy)
@@ -606,12 +614,6 @@ IPC_STRUCT_BEGIN(FrameMsg_SerializeAsMHTML_Params)
   // Whether to detect problems while serializing.
   IPC_STRUCT_MEMBER(bool, mhtml_problem_detection)
 
-  // Frame to content-id map.
-  // Keys are routing ids of either RenderFrames or RenderFrameProxies.
-  // Values are MHTML content-ids - see WebFrameSerializer::generateMHTMLParts.
-  IPC_STRUCT_MEMBER(FrameMsg_SerializeAsMHTML_FrameRoutingIdToContentIdMap,
-                    frame_routing_id_to_content_id)
-
   // |digests_of_uris_to_skip| contains digests of uris of MHTML parts that
   // should be skipped.  This helps deduplicate mhtml parts across frames.
   // SECURITY NOTE: Sha256 digests (rather than uris) are used to prevent
@@ -974,6 +976,10 @@ IPC_MESSAGE_ROUTED0(FrameMsg_WillEnterFullscreen)
 IPC_MESSAGE_ROUTED1(FrameMsg_SetTextTrackSettings,
                     FrameMsg_TextTrackSettings_Params /* params */)
 
+// Sent to a frame when one of its remote children finishes loading, so that the
+// frame can update its loading state.
+IPC_MESSAGE_ROUTED0(FrameMsg_CheckCompleted)
+
 // Posts a message from a frame in another process to the current renderer.
 IPC_MESSAGE_ROUTED1(FrameMsg_PostMessageEvent, FrameMsg_PostMessage_Params)
 
@@ -984,6 +990,16 @@ IPC_MESSAGE_ROUTED0(FrameMsg_ClearFocusedElement)
 // viz::LocalSurfaceId in response to an auto-resize.
 IPC_MESSAGE_ROUTED1(FrameMsg_ResizeDueToAutoResize,
                     uint64_t /* sequence_number */)
+
+// Requests a viz::LocalSurfaceId to enable auto-resize mode from the parent
+// renderer.
+IPC_MESSAGE_ROUTED2(FrameMsg_EnableAutoResize,
+                    gfx::Size /* min_size */,
+                    gfx::Size /* max_size */)
+
+// Requests a viz::LocalSurfaceId to disable auto-resize-mode from the parent
+// renderer.
+IPC_MESSAGE_ROUTED0(FrameMsg_DisableAutoResize)
 
 #if defined(OS_ANDROID)
 // Request the distance to the nearest find result in a frame from the point at
@@ -1478,12 +1494,9 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_BeforeUnload_ACK,
 IPC_MESSAGE_ROUTED0(FrameHostMsg_SwapOut_ACK)
 
 // Tells the browser that a child's resize parameters have changed.
-IPC_MESSAGE_ROUTED5(FrameHostMsg_UpdateResizeParams,
-                    gfx::Rect /* screen_space_rect */,
-                    gfx::Size /* local_frame_size */,
-                    content::ScreenInfo /* screen_info */,
-                    uint64_t /* sequence_number */,
-                    viz::SurfaceId /* surface_id */)
+IPC_MESSAGE_ROUTED2(FrameHostMsg_UpdateResizeParams,
+                    viz::SurfaceId /* surface_id */,
+                    content::FrameResizeParams)
 
 // Sent by a parent frame to update its child's viewport intersection rect for
 // use by the IntersectionObserver API.
@@ -1621,6 +1634,10 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ForwardResourceTimingToParent,
 // Dispatch a load event for this frame in the iframe element of an
 // out-of-process parent frame.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DispatchLoad)
+
+// Sent by a frame proxy to the browser when a child frame finishes loading, so
+// that the corresponding RenderFrame can check whether its load has completed.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_CheckCompleted)
 
 // Sent to the browser from a frame proxy to post a message to the frame's
 // active renderer.

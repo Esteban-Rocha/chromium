@@ -543,6 +543,19 @@ void RenderWidgetHostImpl::SendScreenRects() {
   waiting_for_screen_rects_ack_ = true;
 }
 
+void RenderWidgetHostImpl::SetFrameDepth(unsigned int depth) {
+  if (frame_depth_ == depth)
+    return;
+
+  frame_depth_ = depth;
+  UpdatePriority();
+}
+
+void RenderWidgetHostImpl::UpdatePriority() {
+  if (!destroyed_)
+    process_->UpdateClientPriority(this);
+}
+
 void RenderWidgetHostImpl::Init() {
   DCHECK(process_->HasConnection());
 
@@ -747,6 +760,12 @@ bool RenderWidgetHostImpl::GetResizeParams(ResizeParams* resize_params) {
     resize_params->display_mode = blink::kWebDisplayModeBrowser;
   }
 
+  resize_params->auto_resize_enabled = auto_resize_enabled_;
+  resize_params->min_size_for_auto_resize = min_size_for_auto_resize_;
+  resize_params->max_size_for_auto_resize = max_size_for_auto_resize_;
+  resize_params->auto_resize_sequence_number =
+      last_auto_resize_response_number_;
+
   if (view_) {
     resize_params->new_size = view_->GetRequestedRendererSize();
     resize_params->compositor_viewport_pixel_size =
@@ -767,7 +786,8 @@ bool RenderWidgetHostImpl::GetResizeParams(ResizeParams* resize_params) {
     // a size. We should only propagate a LocalSurfaceId here if the
     // compositor's viewport has a non-empty size.
     viz::LocalSurfaceId local_surface_id =
-        resize_params->compositor_viewport_pixel_size.IsEmpty()
+        resize_params->compositor_viewport_pixel_size.IsEmpty() &&
+                !auto_resize_enabled_
             ? viz::LocalSurfaceId()
             : view_->GetLocalSurfaceId();
     if (local_surface_id.is_valid())
@@ -788,9 +808,19 @@ bool RenderWidgetHostImpl::GetResizeParams(ResizeParams* resize_params) {
 
   const bool size_changed =
       !old_resize_params_ ||
-      old_resize_params_->new_size != resize_params->new_size ||
-      (old_resize_params_->compositor_viewport_pixel_size.IsEmpty() &&
-       !resize_params->compositor_viewport_pixel_size.IsEmpty());
+      old_resize_params_->auto_resize_enabled !=
+          resize_params->auto_resize_enabled ||
+      (old_resize_params_->auto_resize_enabled &&
+       (old_resize_params_->min_size_for_auto_resize !=
+            resize_params->min_size_for_auto_resize ||
+        old_resize_params_->max_size_for_auto_resize !=
+            resize_params->max_size_for_auto_resize ||
+        old_resize_params_->auto_resize_sequence_number !=
+            resize_params->auto_resize_sequence_number)) ||
+      (!old_resize_params_->auto_resize_enabled &&
+       (old_resize_params_->new_size != resize_params->new_size ||
+        (old_resize_params_->compositor_viewport_pixel_size.IsEmpty() &&
+         !resize_params->compositor_viewport_pixel_size.IsEmpty())));
 
   bool dirty =
       size_changed ||
@@ -817,7 +847,8 @@ bool RenderWidgetHostImpl::GetResizeParams(ResizeParams* resize_params) {
   // We don't expect to receive an ACK when the requested size or the physical
   // backing size is empty, or when the main viewport size didn't change.
   resize_params->needs_resize_ack =
-      g_check_for_pending_resize_ack && !resize_params->new_size.IsEmpty() &&
+      !auto_resize_enabled_ && g_check_for_pending_resize_ack &&
+      !resize_params->new_size.IsEmpty() &&
       !resize_params->compositor_viewport_pixel_size.IsEmpty() &&
       (size_changed || next_resize_needs_resize_ack_) &&
       (!enable_surface_synchronization_ ||
@@ -842,8 +873,8 @@ void RenderWidgetHostImpl::WasResized(bool scroll_focused_node_into_view) {
   // Skip if the |delegate_| has already been detached because
   // it's web contents is being deleted.
   if (resize_ack_pending_ || !process_->HasConnection() || !view_ ||
-      !view_->HasSize() || !renderer_initialized_ || auto_resize_enabled_ ||
-      !delegate_) {
+      !view_->HasSize() || !renderer_initialized_ || !delegate_ ||
+      last_auto_resize_request_number_ != last_auto_resize_response_number_) {
     return;
   }
 
@@ -1083,16 +1114,13 @@ void RenderWidgetHostImpl::DidNavigate(uint32_t next_source_id) {
   current_content_source_id_ = next_source_id;
 
   if (enable_surface_synchronization_) {
-    if (view_)
-      view_->DidNavigate();
     // Resize messages before navigation are not acked, so reset
     // |resize_ack_pending_| and make sure the next resize will be acked if the
     // last resize before navigation was supposed to be acked.
     next_resize_needs_resize_ack_ = resize_ack_pending_;
     resize_ack_pending_ = false;
-    // If |view_| decides we need a new LocalSurfaceId, we should notify
-    // RenderWidget.
-    WasResized();
+    if (view_)
+      view_->DidNavigate();
   } else {
     // It is possible for a compositor frame to arrive before the browser is
     // notified about the page being committed, in which case no timer is
@@ -1256,8 +1284,7 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
       }
 
       is_in_touchpad_gesture_fling_ = true;
-    } else if (gesture_event.SourceDevice() ==
-               blink::WebGestureDevice::kWebGestureDeviceTouchscreen) {
+    } else {
       DCHECK(is_in_gesture_scroll_[gesture_event.SourceDevice()]);
 
       // The FlingController handles GFS with touchscreen source and sends GSU
@@ -1265,10 +1292,6 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
       // is_in_gesture_scroll must stay true till the fling progress is
       // finished. Then the FlingController will generate and send a GSE which
       // shows the end of a scroll sequence and resets is_in_gesture_scroll_.
-    } else {
-      // Autoscroll fling is still handled on renderer.
-      DCHECK(is_in_gesture_scroll_[gesture_event.SourceDevice()]);
-      is_in_gesture_scroll_[gesture_event.SourceDevice()] = false;
     }
   }
 
@@ -1620,12 +1643,22 @@ void RenderWidgetHostImpl::SetCursor(const CursorInfo& cursor_info) {
 }
 
 RenderProcessHost::Priority RenderWidgetHostImpl::GetPriority() {
-  return {
+  RenderProcessHost::Priority priority = {
     is_hidden_,
+    frame_depth_,
 #if defined(OS_ANDROID)
-        importance_,
+    importance_,
 #endif
   };
+  if (owner_delegate_ &&
+      !owner_delegate_->ShouldContributePriorityToProcess()) {
+    priority.is_hidden = true;
+    priority.frame_depth = RenderProcessHostImpl::kMaxFrameDepthForPriority;
+#if defined(OS_ANDROID)
+    priority.importance = ChildProcessImportance::NORMAL;
+#endif
+  }
+  return priority;
 }
 
 mojom::WidgetInputHandler* RenderWidgetHostImpl::GetWidgetInputHandler() {
@@ -2172,7 +2205,8 @@ void RenderWidgetHostImpl::OnAutoscrollStart(const gfx::PointF& position) {
       blink::kWebGestureDeviceSyntheticAutoscroll);
   scroll_begin.SetPositionInWidget(position);
 
-  input_router_->SendGestureEvent(GestureEventWithLatencyInfo(scroll_begin));
+  ForwardGestureEventWithLatencyInfo(
+      scroll_begin, ui::LatencyInfo(ui::SourceEventType::OTHER));
 }
 
 void RenderWidgetHostImpl::OnAutoscrollFling(const gfx::Vector2dF& velocity) {
@@ -2182,7 +2216,8 @@ void RenderWidgetHostImpl::OnAutoscrollFling(const gfx::Vector2dF& velocity) {
   event.data.fling_start.velocity_x = velocity.x();
   event.data.fling_start.velocity_y = velocity.y();
 
-  input_router_->SendGestureEvent(GestureEventWithLatencyInfo(event));
+  ForwardGestureEventWithLatencyInfo(
+      event, ui::LatencyInfo(ui::SourceEventType::OTHER));
 }
 
 void RenderWidgetHostImpl::OnAutoscrollEnd() {
@@ -2190,12 +2225,9 @@ void RenderWidgetHostImpl::OnAutoscrollEnd() {
       WebInputEvent::kGestureFlingCancel,
       blink::kWebGestureDeviceSyntheticAutoscroll);
   cancel_event.data.fling_cancel.prevent_boosting = true;
-  input_router_->SendGestureEvent(GestureEventWithLatencyInfo(cancel_event));
 
-  WebGestureEvent end_event = SyntheticWebGestureEventBuilder::Build(
-      WebInputEvent::kGestureScrollEnd,
-      blink::kWebGestureDeviceSyntheticAutoscroll);
-  input_router_->SendGestureEvent(GestureEventWithLatencyInfo(end_event));
+  ForwardGestureEventWithLatencyInfo(
+      cancel_event, ui::LatencyInfo(ui::SourceEventType::OTHER));
 }
 
 TouchEmulator* RenderWidgetHostImpl::GetTouchEmulator() {
@@ -2601,22 +2633,8 @@ void RenderWidgetHostImpl::DetachDelegate() {
 
 void RenderWidgetHostImpl::DidAllocateLocalSurfaceIdForAutoResize(
     uint64_t sequence_number) {
-  if (!view_ || !sequence_number ||
-      last_auto_resize_request_number_ != sequence_number) {
-    return;
-  }
-
-  DCHECK(!view_->IsLocalSurfaceIdAllocationSuppressed());
-
-  viz::LocalSurfaceId local_surface_id(view_->GetLocalSurfaceId());
-  if (local_surface_id.is_valid()) {
-    ScreenInfo screen_info;
-    view_->GetScreenInfo(&screen_info);
-    Send(new ViewMsg_SetLocalSurfaceIdForAutoResize(
-        routing_id_, sequence_number, min_size_for_auto_resize_,
-        max_size_for_auto_resize_, screen_info, current_content_source_id_,
-        local_surface_id));
-  }
+  last_auto_resize_response_number_ = sequence_number;
+  WasResized();
 }
 
 void RenderWidgetHostImpl::DidReceiveRendererFrame() {

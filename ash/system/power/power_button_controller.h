@@ -144,6 +144,7 @@ class ASH_EXPORT PowerButtonController
   void OnLockStateEvent(LockStateObserver::EventType event) override;
 
  private:
+  class ActiveWindowWidgetController;
   friend class PowerButtonControllerTestApi;
 
   // Returns true if the screen should be turned off in response to the power
@@ -157,9 +158,6 @@ class ASH_EXPORT PowerButtonController
   // Starts the power menu animation. Called when a clamshell device's power
   // button is pressed or when |power_button_menu_timer_| fires.
   void StartPowerMenuAnimation();
-
-  // Called by |shutdown_timer_| to turn the screen off and request shutdown.
-  void OnShutdownTimeout();
 
   // Updates |button_type_| and |force_clamshell_power_button_| based on the
   // current command line.
@@ -229,7 +227,7 @@ class ASH_EXPORT PowerButtonController
   LockStateController* lock_state_controller_;  // Not owned.
 
   // Time source for performed action times.
-  base::TickClock* tick_clock_;
+  const base::TickClock* tick_clock_;
 
   // Used to interact with the display.
   std::unique_ptr<PowerButtonDisplayController> display_controller_;
@@ -244,9 +242,10 @@ class ASH_EXPORT PowerButtonController
   // Saves the most recent timestamp that power button was released.
   base::TimeTicks last_button_up_time_;
 
-  // Started when the power button is pressed and stopped when it's released.
-  // Runs OnShutdownTimeout() to start shutdown.
-  base::OneShotTimer shutdown_timer_;
+  // Started when |show_menu_animation_done_| is set to true and stopped when
+  // power button is released. Runs OnPreShutdownTimeout() to start the
+  // cancellable pre-shutdown animation.
+  base::OneShotTimer pre_shutdown_timer_;
 
   // Started when the power button of convertible/slate/detachable devices is
   // pressed and stopped when it's released. Runs StartPowerMenuAnimation() to
@@ -267,6 +266,11 @@ class ASH_EXPORT PowerButtonController
 
   ScopedObserver<BacklightsForcedOffSetter, BacklightsForcedOffSetter::Observer>
       backlights_forced_off_observer_;
+
+  // Used to maintain active state of the active window that exists before
+  // showing menu.
+  std::unique_ptr<ActiveWindowWidgetController>
+      active_window_widget_controller_;
 
   base::WeakPtrFactory<PowerButtonController> weak_factory_;
 

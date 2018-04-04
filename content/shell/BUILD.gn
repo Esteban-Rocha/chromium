@@ -9,7 +9,7 @@ import("//build/config/win/console_app.gni")
 import("//build/config/win/manifest.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//services/service_manager/public/service_manifest.gni")
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
@@ -21,8 +21,6 @@ if (is_android) {
   import("//build/mac/tweak_info_plist.gni")
   import("//third_party/icu/config.gni")
   import("//v8/gni/v8.gni")
-} else if (is_win) {
-  import("//build/win/syzygy/syzygy.gni")
 }
 
 declare_args() {
@@ -273,7 +271,7 @@ static_library("content_shell_lib") {
     "//net",
     "//net:net_resources",
     "//net:test_support",
-    "//ppapi/features",
+    "//ppapi/buildflags",
     "//sandbox",
     "//services/device/public/mojom",
     "//services/network/public/cpp",
@@ -612,19 +610,6 @@ if (is_android) {
     fuchsia_executable_runner("content_shell_fuchsia") {
       testonly = true
       exe_target = ":content_shell"
-    }
-  }
-}
-
-if (is_win) {
-  if (is_syzyasan) {
-    syzygy_asan("content_shell_syzyasan") {
-      binary_name = "content_shell.exe"
-      dest_dir = "$root_out_dir/syzygy"
-      deps = [
-        "//content/shell:content_shell",
-      ]
-      testonly = true
     }
   }
 }

@@ -15,6 +15,7 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/alias.h"
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/feature_list.h"
 #include "base/location.h"
@@ -37,6 +38,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/system_monitor/system_monitor.h"
 #include "base/task_scheduler/initialization_util.h"
+#include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -54,6 +56,7 @@
 #include "components/viz/service/display_embedder/compositing_mode_reporter_impl.h"
 #include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
+#include "content/browser/browser_process_sub_thread.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/compositor/gpu_process_transport_factory.h"
@@ -119,7 +122,7 @@
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/ssl/ssl_config_service.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/audio/public/cpp/audio_system_factory.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/client_process_impl.h"
 #include "services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom.h"
@@ -164,6 +167,7 @@
 #endif
 
 #if defined(OS_MACOSX)
+#include "base/allocator/allocator_interception_mac.h"
 #include "base/memory/memory_pressure_monitor_mac.h"
 #include "content/browser/cocoa/system_hotkey_helper_mac.h"
 #include "content/browser/mach_broker_mac.h"
@@ -264,6 +268,7 @@ pid_t LaunchZygoteHelper(base::CommandLine* cmd_line,
   // to the zygote/renderers.
   static const char* const kForwardSwitches[] = {
       switches::kAndroidFontsPath, switches::kClearKeyCdmPathForTesting,
+      switches::kEnableHeapProfiling,
       switches::kEnableLogging,  // Support, e.g., --enable-logging=stderr.
       // Need to tell the zygote that it is headless so that we don't try to use
       // the wrong type of main delegate.
@@ -369,10 +374,11 @@ void OnStoppedStartupTracing(const base::FilePath& trace_file) {
 MSVC_DISABLE_OPTIMIZE()
 MSVC_PUSH_DISABLE_WARNING(4748)
 
-NOINLINE void ResetThread_IO(std::unique_ptr<BrowserProcessSubThread> thread) {
-  volatile int inhibit_comdat = __LINE__;
-  ALLOW_UNUSED_LOCAL(inhibit_comdat);
-  thread.reset();
+NOINLINE void ResetThread_IO(
+    std::unique_ptr<BrowserProcessSubThread> io_thread) {
+  const int line_number = __LINE__;
+  io_thread.reset();
+  base::debug::Alias(&line_number);
 }
 
 MSVC_POP_WARNING()
@@ -837,6 +843,14 @@ int BrowserMainLoop::PreCreateThreads() {
 
   InitializeMemoryManagementComponent();
 
+#if defined(OS_MACOSX)
+  if (base::CommandLine::InitializedForCurrentProcess() &&
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableHeapProfiling)) {
+    base::allocator::PeriodicallyShimNewMallocZones();
+  }
+#endif
+
 #if BUILDFLAG(ENABLE_PLUGINS)
   // Prior to any processing happening on the IO thread, we create the
   // plugin service as it is predominantly used from the IO thread,
@@ -994,11 +1008,13 @@ int BrowserMainLoop::CreateThreads() {
         *task_scheduler_init_params.get());
   }
 
-  // |io_thread_| is created by |PostMainMessageLoopStart()|, but its
-  // full initialization is deferred until this point because it requires
-  // several dependencies we don't want to depend on so early in startup.
+  // The thread used for BrowserThread::IO is created in
+  // |PostMainMessageLoopStart()|, but it's only tagged as BrowserThread::IO
+  // here in order to prevent any code from statically posting to it before
+  // CreateThreads() (as such maintaining the invariant that PreCreateThreads()
+  // et al. "happen-before" BrowserThread::IO is "brought up").
   DCHECK(io_thread_);
-  io_thread_->InitIOThreadDelegate();
+  io_thread_->RegisterAsBrowserThread();
 
   created_threads_ = true;
   return result_code_;
@@ -1236,9 +1252,12 @@ void BrowserMainLoop::InitializeMainThread() {
   TRACE_EVENT0("startup", "BrowserMainLoop::InitializeMainThread");
   base::PlatformThread::SetName("CrBrowserMain");
 
-  // Register the main thread by instantiating it, but don't call any methods.
-  main_thread_.reset(
-      new BrowserThreadImpl(BrowserThread::UI, base::MessageLoop::current()));
+  // Register the main thread. The main thread's task runner should already have
+  // been initialized in MainMessageLoopStart() (or before if
+  // MessageLoop::current() was externally provided).
+  DCHECK(base::ThreadTaskRunnerHandle::IsSet());
+  main_thread_.reset(new BrowserThreadImpl(
+      BrowserThread::UI, base::ThreadTaskRunnerHandle::Get()));
 }
 
 int BrowserMainLoop::BrowserThreadsStarted() {
@@ -1410,7 +1429,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
         "startup",
         "BrowserMainLoop::BrowserThreadsStarted::InitUserInputMonitor");
     user_input_monitor_ = media::UserInputMonitor::Create(
-        io_thread_->task_runner(), main_thread_->task_runner());
+        io_thread_->task_runner(), base::ThreadTaskRunnerHandle::Get());
   }
 
   {
@@ -1560,9 +1579,10 @@ void BrowserMainLoop::InitializeIOThread() {
   options.priority = base::ThreadPriority::DISPLAY;
 #endif
 
-  io_thread_.reset(new BrowserProcessSubThread(BrowserThread::IO));
+  io_thread_ = std::make_unique<BrowserProcessSubThread>(BrowserThread::IO);
+
   if (!io_thread_->StartWithOptions(options))
-    LOG(FATAL) << "Failed to start the browser thread: IO";
+    LOG(FATAL) << "Failed to start BrowserThread::IO";
 }
 
 void BrowserMainLoop::InitializeMojo() {

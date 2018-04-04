@@ -81,8 +81,17 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   // preferred height is used.
   void SetHeaderHeight(base::Optional<int> height);
 
+  // Overrides the default top border height with zero value.
+  void set_zero_top_border_height(bool zero_top_border_height) {
+    zero_top_border_height_ = zero_top_border_height;
+  }
+
   // Get the view of the header.
   views::View* GetHeaderView();
+
+  // Calculate the client bounds for given window bounds.
+  gfx::Rect GetClientBoundsForWindowBounds(
+      const gfx::Rect& window_bounds) const;
 
   // views::NonClientFrameView:
   gfx::Rect GetBoundsForClientView() const override;
@@ -129,6 +138,13 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   SkColor GetActiveFrameColorForTest() const;
   SkColor GetInactiveFrameColorForTest() const;
 
+ protected:
+  // Called when overview mode or split view state changed. If overview mode and
+  // split view mode are both active at the same time, the header of the window
+  // in split view should be visible, but the headers of other windows in
+  // overview are not.
+  void UpdateHeaderView();
+
  private:
   class AvatarObserver;
   class OverlayView;
@@ -147,12 +163,6 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   // Height from top of window to top of client area.
   int NonClientTopBorderHeight() const;
 
-  // Called when overview mode or split view state changed. If overview mode and
-  // split view mode are both active at the same time, the header of the window
-  // in split view should be visible, but the headers of other windows in
-  // overview are not.
-  void OnOverviewOrSplitViewModeChanged();
-
   // Not owned.
   views::Widget* frame_;
 
@@ -160,6 +170,8 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
   HeaderView* header_view_;
 
   OverlayView* overlay_view_;
+
+  bool zero_top_border_height_ = false;
 
   ImmersiveFullscreenControllerDelegate* immersive_delegate_;
 

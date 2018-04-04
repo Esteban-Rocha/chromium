@@ -8,7 +8,7 @@
 #include "build/build_config.h"
 #include "chrome/common/chrome_switches.h"
 #include "extensions/buildflags/buildflags.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 
 namespace features {
 
@@ -140,6 +140,13 @@ const base::Feature kTabStripKeyboardFocus{"TabStripKeyboardFocus",
 // Enables logging UKMs for background tab activity by TabActivityWatcher.
 const base::Feature kTabMetricsLogging{"TabMetricsLogging",
                                        base::FEATURE_ENABLED_BY_DEFAULT};
+#endif
+
+#if (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
+// Enables the dual certificate verification trial feature.
+// https://crbug.com/649026
+const base::Feature kCertDualVerificationTrialFeature{
+    "CertDualVerificationTrial", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
 
 // Enables change picture video mode.
@@ -294,6 +301,12 @@ const base::Feature kGrantNotificationsToDSE{"GrantNotificationsToDSE",
 const base::Feature kHappinessTrackingSystem {
     "HappinessTrackingSystem", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
+
+#if !defined(OS_ANDROID)
+// Replaces the WebUI Cast dialog with a Views toolkit one.
+const base::Feature kViewsCastDialog{"ViewsCastDialog",
+                                     base::FEATURE_DISABLED_BY_DEFAULT};
+#endif  // !defined(OS_ANDROID)
 
 const base::Feature kImportantSitesInCbd{"ImportantSitesInCBD",
                                          base::FEATURE_DISABLED_BY_DEFAULT};
@@ -513,11 +526,9 @@ const base::Feature kShowAllDialogsWithViewsToolkit{
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_ANDROID)
-// Enables separate notification channels in Android O for notifications from
-// different origins, instead of sending them all to a single 'Sites' channel.
-const base::Feature kSiteNotificationChannels{"SiteNotificationChannels",
-                                              base::FEATURE_ENABLED_BY_DEFAULT};
-#endif  // defined(OS_ANDROID)
+const base::Feature kShowTrustedPublisherURL{"ShowTrustedPublisherURL",
+                                             base::FEATURE_ENABLED_BY_DEFAULT};
+#endif
 
 // Alternative to switches::kSitePerProcess, for turning on full site isolation.
 // Launch bug: https://crbug.com/739418.  This is a //chrome-layer feature to
@@ -530,6 +541,13 @@ const base::Feature kSitePerProcess{"site-per-process",
 // lock states.
 const base::Feature kSimplifiedFullscreenUI{"ViewsSimplifiedFullscreenUI",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
+
+#if defined(OS_ANDROID)
+// Enables separate notification channels in Android O for notifications from
+// different origins, instead of sending them all to a single 'Sites' channel.
+const base::Feature kSiteNotificationChannels{"SiteNotificationChannels",
+                                              base::FEATURE_ENABLED_BY_DEFAULT};
+#endif  // defined(OS_ANDROID)
 
 #if defined(OS_CHROMEOS)
 // Enables or disables the ability to add a Samba Share to the Files app
@@ -557,21 +575,9 @@ const base::Feature kSysInternals{"SysInternals",
                                   base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
 
-#if defined(SYZYASAN)
-// Enable the deferred free mechanism in the syzyasan module, which helps the
-// performance by deferring some work on the critical path to a background
-// thread.
-const base::Feature kSyzyasanDeferredFree{"SyzyasanDeferredFree",
-                                          base::FEATURE_ENABLED_BY_DEFAULT};
-#endif
-
 // Enable TopSites to source and sort its site data using site engagement.
 const base::Feature kTopSitesFromSiteEngagement{
     "TopSitesFromSiteEngagement", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Improved and unified consent for privacy-related features.
-const base::Feature kUnifiedConsent{"UnifiedConsent",
-                                    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables using the local NTP if Google is the default search engine.
 const base::Feature kUseGoogleLocalNtp{"UseGoogleLocalNtp",

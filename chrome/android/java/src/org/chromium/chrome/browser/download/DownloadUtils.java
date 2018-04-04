@@ -49,6 +49,7 @@ import org.chromium.chrome.browser.util.IntentUtils;
 import org.chromium.components.download.DownloadState;
 import org.chromium.components.feature_engagement.EventConstants;
 import org.chromium.components.feature_engagement.Tracker;
+import org.chromium.components.offline_items_collection.FailState;
 import org.chromium.components.offline_items_collection.OfflineItem;
 import org.chromium.components.offline_items_collection.OfflineItem.Progress;
 import org.chromium.components.offline_items_collection.OfflineItemProgressUnit;
@@ -136,14 +137,19 @@ public class DownloadUtils {
             @Nullable Activity activity, @Nullable Tab tab, boolean showPrefetchedContent) {
         // Figure out what tab was last being viewed by the user.
         if (activity == null) activity = ApplicationStatus.getLastTrackedFocusedActivity();
+        Context appContext = ContextUtils.getApplicationContext();
+        boolean isTablet;
 
         if (tab == null && activity instanceof ChromeTabbedActivity) {
-            tab = ((ChromeTabbedActivity) activity).getActivityTab();
+            ChromeTabbedActivity chromeActivity = ((ChromeTabbedActivity) activity);
+            tab = chromeActivity.getActivityTab();
+            isTablet = chromeActivity.isTablet();
+        } else {
+            Context displayContext = activity != null ? activity : appContext;
+            isTablet = DeviceFormFactor.isNonMultiDisplayContextOnTablet(displayContext);
         }
 
-        Context appContext = ContextUtils.getApplicationContext();
-
-        if (DeviceFormFactor.isTablet()) {
+        if (isTablet) {
             // Download Home shows up as a tab on tablets.
             LoadUrlParams params = new LoadUrlParams(UrlConstants.DOWNLOADS_URL);
             if (tab == null || !tab.isInitialized()) {
@@ -668,6 +674,30 @@ public class DownloadUtils {
         } else {
             // Count down the time or number of files.
             return getTimeOrFilesLeftString(context, progress, info.getTimeRemainingInMillis());
+        }
+    }
+
+    /**
+     * Determine the status string for a failed download.
+     *
+     * @param failState Reason download failed.
+     * @return String representing the current download status.
+     */
+    public static String getFailStatusString(@FailState int failState) {
+        Context context = ContextUtils.getApplicationContext();
+        if (BrowserStartupController.get(LibraryProcessType.PROCESS_BROWSER)
+                        .isStartupSuccessfullyCompleted()
+                && ChromeFeatureList.isEnabled(
+                           ChromeFeatureList.OFFLINE_PAGES_DESCRIPTIVE_FAIL_STATUS)) {
+            switch (failState) {
+                // TODO(cmsy): Return correct status for failure reasons once strings are finalized.
+                case FailState.CANNOT_DOWNLOAD:
+                case FailState.NETWORK_INSTABILITY:
+                default:
+                    return context.getString(R.string.download_notification_failed);
+            }
+        } else {
+            return context.getString(R.string.download_notification_failed);
         }
     }
 

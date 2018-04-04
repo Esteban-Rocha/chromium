@@ -49,7 +49,7 @@
 #include "content/public/common/three_d_api_types.h"
 #include "net/base/load_states.h"
 #include "net/http/http_response_headers.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/device/public/mojom/geolocation_context.mojom.h"
 #include "services/device/public/mojom/wake_lock.mojom.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
@@ -206,8 +206,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                         uint64_t upload_position,
                         uint64_t upload_size);
 
-  // Notify observers that the visibility changed.
-  void NotifyVisibilityChanged(Visibility previous_visibility);
+  // Set the visibility to |visibility| and notifies observers.
+  void SetVisibility(Visibility visibility);
 
   // Notify observers that the web contents has been focused.
   void NotifyWebContentsFocused(RenderWidgetHost* render_widget_host);
@@ -222,8 +222,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   ScreenOrientationProvider* GetScreenOrientationProviderForTesting() const {
     return screen_orientation_provider_.get();
   }
-
-  bool should_normally_be_visible() { return should_normally_be_visible_; }
 
   // Broadcasts the mode change to all frames.
   void SetAccessibilityMode(ui::AXMode mode);
@@ -361,7 +359,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void WasShown() override;
   void WasHidden() override;
   void WasOccluded() override;
-  void WasUnOccluded() override;
   Visibility GetVisibility() const override;
   bool NeedToFireBeforeUnload() override;
   void DispatchBeforeUnload() override;
@@ -370,6 +367,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       RenderFrameHost* outer_contents_frame) override;
   WebContentsImpl* GetOuterWebContents() override;
   void DidChangeVisibleSecurityState() override;
+  void NotifyPreferencesChanged() override;
 
   void Stop() override;
   void FreezePage() override;
@@ -459,6 +457,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void ClearFocusedElement() override;
   bool IsShowingContextMenu() const override;
   void SetShowingContextMenu(bool showing) override;
+  void PausePageScheduledTasks(bool paused) override;
 
 #if defined(OS_ANDROID)
   base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() override;
@@ -575,8 +574,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 #endif
   void SubresourceResponseStarted(const GURL& url,
                                   net::CertStatus cert_status) override;
-  void SubresourceLoadComplete(
-      mojom::SubresourceLoadInfoPtr subresource_load_information) override;
+  void ResourceLoadComplete(
+      mojom::ResourceLoadInfoPtr resource_load_information) override;
   void UpdatePictureInPictureSurfaceId(viz::SurfaceId surface_id) override;
 
   // RenderViewHostDelegate ----------------------------------------------------
@@ -884,7 +883,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   }
 
   // Update the web contents visibility.
-  void UpdateWebContentsVisibility(bool visible);
+  void UpdateWebContentsVisibility(Visibility visibility);
 
   // Called by FindRequestManager when find replies come in from a renderer
   // process.
@@ -1075,9 +1074,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Traverses all the RenderFrameHosts in the FrameTree and creates a set
   // all the unique RenderWidgetHostViews.
   std::set<RenderWidgetHostView*> GetRenderWidgetHostViewsInTree();
-
-  // Calls WasUnOccluded() on all RenderWidgetHostViews in the frame tree.
-  void DoWasUnOccluded();
 
   // Called with the result of a DownloadImage() request.
   void OnDidDownloadImage(ImageDownloadCallback callback,
@@ -1330,10 +1326,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // certificate via --allow-insecure-localhost.
   void ShowInsecureLocalhostWarningIfNeeded();
 
-  // Notify this WebContents that the preferences have changed. This will send
-  // an IPC to all the renderer process associated with this WebContents.
-  void NotifyPreferencesChanged();
-
   // Format of |headers| is a new line separated list of key value pairs:
   // "<key1>: <value1>\r\n<key2>: <value2>".
   static download::DownloadUrlParameters::RequestHeadersType
@@ -1483,17 +1475,13 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // be told it is hidden.
   int capturer_count_;
 
-  // Tracks whether RWHV should be visible once capturer_count_ becomes zero.
-  bool should_normally_be_visible_;
+  // The visibility of the WebContents. Initialized from
+  // |CreateParams::initially_hidden|. Updated from
+  // UpdateWebContentsVisibility(), WasShown(), WasHidden(), WasOccluded().
+  Visibility visibility_ = Visibility::VISIBLE;
 
-  // Tracks whether RWHV should be occluded once |capturer_count_| becomes zero.
-  bool should_normally_be_occluded_;
-
-  // Tracks whether this WebContents was ever set to be visible. Used to
-  // facilitate WebContents being loaded in the background by setting
-  // |should_normally_be_visible_|. Ensures WasShown() will trigger when first
-  // becoming visible to the user, and prevents premature unloading.
-  bool did_first_set_visible_;
+  // Whether there has been a call to UpdateWebContentsVisibility(VISIBLE).
+  bool did_first_set_visible_ = false;
 
   // See getter above.
   bool is_being_destroyed_;

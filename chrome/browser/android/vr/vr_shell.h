@@ -15,10 +15,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string16.h"
+#include "chrome/browser/ui/page_info/page_info_ui.h"
 #include "chrome/browser/ui/toolbar/chrome_toolbar_model_delegate.h"
 #include "chrome/browser/vr/assets_load_status.h"
 #include "chrome/browser/vr/content_input_delegate.h"
 #include "chrome/browser/vr/exit_vr_prompt_choice.h"
+#include "chrome/browser/vr/metrics/session_metrics_helper.h"
 #include "chrome/browser/vr/model/capturing_state_model.h"
 #include "chrome/browser/vr/speech_recognizer.h"
 #include "chrome/browser/vr/ui.h"
@@ -64,7 +66,8 @@ struct AutocompleteRequest;
 class VrShell : device::GvrGamepadDataProvider,
                 device::CardboardGamepadDataProvider,
                 VoiceResultDelegate,
-                public ChromeToolbarModelDelegate {
+                public ChromeToolbarModelDelegate,
+                public PageInfoUI {
  public:
   VrShell(JNIEnv* env,
           const base::android::JavaParamRef<jobject>& obj,
@@ -99,8 +102,7 @@ class VrShell : device::GvrGamepadDataProvider,
                   const base::android::JavaParamRef<jobject>& surface);
   void SetWebVrMode(JNIEnv* env,
                     const base::android::JavaParamRef<jobject>& obj,
-                    bool enabled,
-                    bool show_toast);
+                    bool enabled);
   bool GetWebVrMode(JNIEnv* env,
                     const base::android::JavaParamRef<jobject>& obj);
   bool IsDisplayingUrlForTesting(
@@ -184,6 +186,7 @@ class VrShell : device::GvrGamepadDataProvider,
   void ExitPresent();
   void ExitFullscreen();
   void LogUnsupportedModeUserMetric(UiUnsupportedMode mode);
+  void RecordVrStartAction(PageSessionStartAction action);
   void OnUnsupportedMode(UiUnsupportedMode mode);
   void OnExitVrPromptResult(UiUnsupportedMode reason,
                             ExitVrPromptChoice choice);
@@ -191,6 +194,7 @@ class VrShell : device::GvrGamepadDataProvider,
   void SetVoiceSearchActive(bool active);
   void StartAutocomplete(const AutocompleteRequest& request);
   void StopAutocomplete();
+  void ShowPageInfo();
   bool HasAudioPermission();
 
   void ClearFocusedElement();
@@ -201,14 +205,30 @@ class VrShell : device::GvrGamepadDataProvider,
 
   void SetAlertDialog(JNIEnv* env,
                       const base::android::JavaParamRef<jobject>& obj,
-                      int width,
-                      int height);
+                      float width,
+                      float height);
   void CloseAlertDialog(JNIEnv* env,
                         const base::android::JavaParamRef<jobject>& obj);
+  void SetDialogBufferSize(JNIEnv* env,
+                           const base::android::JavaParamRef<jobject>& obj,
+                           float width,
+                           float height);
   void SetAlertDialogSize(JNIEnv* env,
                           const base::android::JavaParamRef<jobject>& obj,
-                          int width,
-                          int height);
+                          float width,
+                          float height);
+  void SetDialogLocation(JNIEnv* env,
+                         const base::android::JavaParamRef<jobject>& obj,
+                         float x,
+                         float y);
+  void SetDialogFloating(JNIEnv* env,
+                         const base::android::JavaParamRef<jobject>& obj);
+
+  void ShowToast(JNIEnv* env,
+                 const base::android::JavaParamRef<jobject>& obj,
+                 jstring text);
+  void CancelToast(JNIEnv* env,
+                   const base::android::JavaParamRef<jobject>& obj);
 
   void ConnectPresentingService(
       device::mojom::VRSubmitFrameClientPtr submit_client,
@@ -234,6 +254,12 @@ class VrShell : device::GvrGamepadDataProvider,
                       std::unique_ptr<Assets> assets,
                       const base::Version& component_version);
 
+  // PageInfoUI implementation.
+  void SetCookieInfo(const CookieInfoList& cookie_info_list) override;
+  void SetPermissionInfo(const PermissionInfoList& permission_info_list,
+                         ChosenObjectInfoList chosen_object_info_list) override;
+  void SetIdentityInfo(const IdentityInfo& identity_info) override;
+
   void AcceptDoffPromptForTesting(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
@@ -254,6 +280,9 @@ class VrShell : device::GvrGamepadDataProvider,
   void LoadAssets();
   void OnAssetsComponentReady();
   void OnAssetsComponentWaitTimeout();
+
+  void SetWebContents(content::WebContents* contents);
+  std::unique_ptr<PageInfo> CreatePageInfo();
 
   bool webvr_mode_ = false;
   bool web_vr_autopresentation_expected_ = false;

@@ -93,6 +93,21 @@ function overflowMenu(video)
   return element;
 }
 
+function overflowItem(video, controlID) {
+  var element = mediaControlsElement(overflowMenu(video).firstChild, controlID);
+  if (!element)
+    throw 'Failed to find overflow item: ' + controlID;
+  return element;
+}
+
+function fullscreenOverflowItem(video) {
+  return overflowItem(video, '-webkit-media-controls-fullscreen-button');
+}
+
+function muteOverflowItem(video) {
+  return overflowItem(video, '-webkit-media-controls-mute-button');
+}
+
 function mediaControlsElement(first, id)
 {
     for (var element = first; element; element = element.nextSibling) {
@@ -356,8 +371,7 @@ function checkPictureInPictureInterstitialDoesNotExist(videoElement) {
 }
 
 function doubleTapAtCoordinates(x, y, timeout, callback) {
-  if (timeout == undefined)
-    timeout = 100;
+  timeout = timeout == undefined ? 100 : timeout;
 
   chrome.gpuBenchmarking.pointerActionSequence([
     {
@@ -390,6 +404,8 @@ function singleTapOnControl(control, callback) {
   singleTapAtCoordinates(coordinates[0], coordinates[1], callback);
 }
 
+// This function does not work on Mac due to crbug.com/613672. When using this
+// function, add an entry into TestExpectations to skip on Mac.
 function singleTouchAtCoordinates(xPos, yPos, callback) {
   chrome.gpuBenchmarking.pointerActionSequence([
     {
@@ -402,15 +418,21 @@ function singleTouchAtCoordinates(xPos, yPos, callback) {
   ], callback);
 }
 
-function enableDoubleTapToJumpForTest(t) {
-  var doubleTapToJumpOnVideoEnabledValue =
-      internals.runtimeFlags.doubleTapToJumpOnVideoEnabled;
-  internals.runtimeFlags.doubleTapToJumpOnVideoEnabled = true;
+function doubleTouchAtCoordinates(x, y, timeout, callback) {
+  timeout = timeout == undefined ? 100 : timeout;
 
-  t.add_cleanup(() => {
-    internals.runtimeFlags.doubleTapToJumpOnVideoEnabled =
-        doubleTapToJumpOnVideoEnabledValue;
-  });
+  chrome.gpuBenchmarking.pointerActionSequence([
+    {
+      source: 'touch',
+      actions: [
+        { name: 'pointerDown', x: x, y: y },
+        { name: 'pointerUp' },
+        { name: 'pause', duration: timeout / 1000 },
+        { name: 'pointerDown', x: x, y: y },
+        { name: 'pointerUp' }
+      ]
+    }
+  ], callback);
 }
 
 function enablePictureInPictureForTest(t) {

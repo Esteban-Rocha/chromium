@@ -46,6 +46,10 @@ const base::Feature kBlockCredentialedSubresources{
 const base::Feature kBrotliEncoding{"brotli-encoding",
                                     base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Enables code caching for inline scripts.
+const base::Feature kCacheInlineScriptCode{"CacheInlineScriptCode",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
+
 // If Canvas2D Image Chromium is allowed, this feature controls whether it is
 // enabled.
 const base::Feature kCanvas2DImageChromium {
@@ -103,7 +107,7 @@ const base::Feature kExpensiveBackgroundTimerThrottling{
 
 // Enables exposing back/forward mouse buttons to the renderer and the web.
 const base::Feature kExtendedMouseButtons{"ExtendedMouseButtons",
-                                          base::FEATURE_DISABLED_BY_DEFAULT};
+                                          base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables a blink::FontCache optimization that reuses a font to serve different
 // size of font.
@@ -115,7 +119,7 @@ const base::Feature kFontCacheScaling{"FontCacheScaling",
 // same-origin to the top frame, or if a user gesture is being processed.
 const base::Feature kFramebustingNeedsSameOriginOrUserGesture{
     "FramebustingNeedsSameOriginOrUserGesture",
-    base::FEATURE_DISABLED_BY_DEFAULT};
+    base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables extended Gamepad API features like motion tracking and haptics.
 const base::Feature kGamepadExtensions{"GamepadExtensions",
@@ -213,7 +217,7 @@ const base::Feature kMojoVideoCapture {
 // NavigationMojoResponse feature replaces this mechanism by a Mojo DataPipe.
 // Design doc: https://goo.gl/Rrrc7n.
 const base::Feature kNavigationMojoResponse{"NavigationMojoResponse",
-                                            base::FEATURE_DISABLED_BY_DEFAULT};
+                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
 // If the network service is enabled, runs it in process.
 const base::Feature kNetworkServiceInProcess{"NetworkServiceInProcess",
@@ -226,6 +230,10 @@ const base::Feature kNotificationContentImage{"NotificationContentImage",
 // Use Mojo IPC for notifications.
 const base::Feature kNotificationsWithMojo{"NotificationsWithMojo",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Off-main-thread WebSocket. See https://crbug.com/825740
+const base::Feature kOffMainThreadWebSocket{"OffMainThreadWebSocket",
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Origin Manifest. See crbug.com/751996
 const base::Feature kOriginManifest{"OriginManifest",
@@ -275,7 +283,7 @@ const base::Feature kPurgeAndSuspend {
 
 // Generate V8 full code cache for PWAs.
 const base::Feature kPWAFullCodeCache{"PWAFullCodeCache",
-                                      base::FEATURE_DISABLED_BY_DEFAULT};
+                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enable raster-inducing scroll.
 const base::Feature kRasterInducingScroll{"RasterInducingScroll",
@@ -327,7 +335,7 @@ const base::Feature kServiceWorkerPaymentApps{
 
 // Generate V8 full code cache of service worker scripts.
 const base::Feature kServiceWorkerScriptFullCodeCache{
-    "ServiceWorkerScriptFullCodeCache", base::FEATURE_DISABLED_BY_DEFAULT};
+    "ServiceWorkerScriptFullCodeCache", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Establish direct connection from clients to the service worker.
 const base::Feature kServiceWorkerServicification{
@@ -451,8 +459,19 @@ const base::Feature kWebAssemblyTrapHandler{"WebAssemblyTrapHandler",
 
 // Controls whether the WebAuthentication API is enabled:
 // https://w3c.github.io/webauthn
-const base::Feature kWebAuth{"WebAuthentication",
-                             base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kWebAuth {
+  "WebAuthentication",
+#if defined(OS_ANDROID)
+      base::FEATURE_DISABLED_BY_DEFAULT
+#else
+      base::FEATURE_ENABLED_BY_DEFAULT
+#endif
+};
+
+// Controls whether BLE authenticators can be used via the WebAuthentication
+// API. https://w3c.github.io/webauthn
+const base::Feature kWebAuthBle{"WebAuthenticationBle",
+                                base::FEATURE_DISABLED_BY_DEFAULT};
 
 // If WebGL Image Chromium is allowed, this feature controls whether it is
 // enabled.
@@ -514,7 +533,7 @@ const base::Feature kWebRtcUseEchoCanceller3{"WebRtcUseEchoCanceller3",
 
 // Use GpuMemoryBuffer backed VideoFrames in media streams.
 const base::Feature kWebRtcUseGpuMemoryBufferVideoFrames{
-    "WebRTC-UseGpuMemoryBufferVideoFrames", base::FEATURE_DISABLED_BY_DEFAULT};
+    "WebRTC-UseGpuMemoryBufferVideoFrames", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Controls whether the WebUSB API is enabled:
 // https://wicg.github.io/webusb

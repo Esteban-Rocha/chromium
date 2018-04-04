@@ -167,6 +167,12 @@
     <message name="IDS_SETTINGS_OPTIONS_IN_MENU_LABEL" desc="Label for checkbox which enables showing accessibility options in the system menu.">
       Always show accessibility options in the system menu
     </message>
+    <message name="IDS_SETTINGS_MANAGE_TTS_SETTINGS" desc="Link to manage text-to-speech settings">
+      Text-to-Speech voice settings
+    </message>
+    <message name="IDS_SETTINGS_TTS_LINK_DESCRIPTION" desc="Description of link to manage text-to-speech settings">
+      Select and customize text-to-speech voices
+    </message>
     <message name="IDS_SETTINGS_LARGE_MOUSE_CURSOR_LABEL" desc="Label for checkbox which enables showing a larger mouse cursor than normal.">
       Show large mouse cursor
     </message>
@@ -321,10 +327,7 @@
       Enable select-to-speak
     </message>
     <message name="IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_DESCRIPTION" desc="In the settings tab, the description of an option to hold a key and click or drag a box with the mouse to speak any on-screen text out loud.">
-      Press and hold Search, then click or drag to select content to be read aloud
-    </message>
-    <message name="IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_DESCRIPTION_FLAGS" desc="In the settings tab, the description of an option to hold a key and click or drag a box with the mouse, or highlight a region and press a keystroke, to speak any on-screen text out loud.">
-      To read content aloud, press and hold Search, then click or drag to select content. Or highlight a region and use Search + S.
+      Highlight what you want to hear, then press Search + S. Or, press and hold Search, then click or drag to select content.
     </message>
     <message name="IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_OPTIONS_LABEL" desc="In the settings tab, the label for the button that opens the Options page for the Select-to-Speak feature.">
       Open select-to-speak settings
@@ -337,6 +340,24 @@
     </message>
     <message name="IDS_SETTINGS_ACCESSIBILITY_TEXT_TO_SPEECH_HEADING" desc="In the settings tab, the heading for accessibility features that enable the computer to speak text from the computer screen.">
       Text-to-Speech
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_VOICES" desc="Heading describing a collection of listboxes on the text-to-speech settings page. Each listbox is associated with a language, and contains all possible voices for that language">
+      Preferred Voices
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_PROPERTIES" desc="Heading describing a collection of input controls for a section of text-to-speech settings on speech properties, including speech pitch and rate">
+      Speech Properties
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_RATE" desc="The rate (speed) of speech in text-to-speech settings.">
+      Rate
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_PITCH" desc="The pitch of speech in text-to-speech settings.">
+      Pitch
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_ENGINES" desc="Heading for a section of text-to-speech settings to do per-engine settings">
+      Speech Engines
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_INSTALL_ENGINES" desc="A link to install additional text-to-speech engines">
+      Install additional speech engines
     </message>
   </if>
 
@@ -506,6 +527,9 @@
   </message>
   <message name="IDS_SETTINGS_NOT_VALID_WEB_ADDRESS" desc="Text indicating that the Web address entered by the user is invalid." >
     Not a valid web address
+  </message>
+  <message name="IDS_SETTINGS_RETRY" desc="The label text of the retry button because there is an error.">
+   Retry
   </message>
 
   <!-- Passwords and Autofill Page -->
@@ -1256,6 +1280,19 @@
   </message>
 
   <if expr="chromeos">
+    <message name="IDS_SETTINGS_DOWNLOADS_SMB_SHARES" desc="In Downloads Settings, the title of the SMB Shares setting section.">
+      Network File Shares
+    </message>
+    <message name="IDS_SETTINGS_DOWNLOADS_SMB_SHARES_LEARN_MORE_LABEL" desc="Label for the link that teaches users how to setup SMB shares.">
+      Set up or manage Network File Shares.
+    </message>
+    <message name="IDS_SETTINGS_DOWNLOADS_SMB_SHARES_ADD_SHARE" desc="In SMB Shares settings subpage, text for the link to add a new SMB Share.">
+      Add File Share
+    </message>
+    <message name="IDS_SETTINGS_DOWNLOADS_ADD_SHARE_URL" desc="Title for the input that lets users specify the name of an SMB Url.">
+      File Share Url
+    </message>
+
     <!-- Date/Time Page -->
     <message name="IDS_SETTINGS_DATE_TIME" desc="Name of the settings page which displays date and time preferences.">
       Date and time
@@ -1333,9 +1370,6 @@
     </message>
     <message name="IDS_SETTINGS_EASY_UNLOCK_TURN_OFF_ERROR_MESSAGE" desc="The text on the Easy unlock turn off dialog when Easy unlock could not be turned off because there is a server error.">
       Smart Lock is currently unavailable. Please try again later.
-    </message>
-    <message name="IDS_SETTINGS_EASY_UNLOCK_TURN_OFF_RETRY" desc="The label text of the retry button on the Easy unlock turn off dialog when Easy unlock could not be turned off because there is a server error.">
-      Retry
     </message>
     <message name="IDS_SETTINGS_EASY_UNLOCK_ALLOW_SIGN_IN_LABEL" desc="The label text on the Easy unlock settings page for the radio box to allow the EasyUnlock on the sign-in screen (in addition to the lock screen).">
       Use Smart Lock to sign in to your account
@@ -2172,6 +2206,12 @@
     <message name="IDS_SETTINGS_LANGUAGES_SPELL_CHECK_DISABLED" desc="Text that is shown when spell checking is disabled by policy.">
       Disabled
     </message>
+    <message name="IDS_SETTINGS_LANGUAGES_DICTIONARY_DOWNLOAD_FAILED" desc="Error message when spell dictionary download fails.">
+      Spell check dictionary download failed.
+    </message>
+    <message name="IDS_SETTINGS_LANGUAGES_DICTIONARY_DOWNLOAD_FAILED_HELP" desc="Error message when spell dictionary download fails more than once possibly due to a network policy or configuration.">
+      Please check with your network administrator to make sure that the firewall is not blocking downloads from Google servers.
+    </message>
   </if>
 
   <!-- Privacy Page -->
@@ -2262,11 +2302,11 @@
   <message name="IDS_SETTINGS_RESET" desc="Title for an item in the 'Reset and clean up' section of Chrome Settings. If the user clicks this option, browser settings will be returned to their default values, after a confirmation by the user." meaning="Chrome Cleanup feature. Try to use the same translation for 'Reset' in 'Reset and cleanup' string.">
     Reset settings
   </message>
+  <message name="IDS_SETTINGS_RESET_SETTINGS_TRIGGER" desc="The label describing the 'reset profile setting' feature">
+    Restore settings to their original defaults
+  </message>
   <message name="IDS_SETTINGS_RESET_AUTOMATED_DIALOG_TITLE" desc="The title of the dialog informing the user that automated resetting of some settings occurred.">
     Some settings were reset
-  </message>
-  <message name="IDS_SETTINGS_RESET_PROFILE_SETTINGS_DESCRIPTION" desc="The label describing the 'reset profile setting' feature">
-    Restore settings to their original defaults
   </message>
   <message name="IDS_SETTINGS_RESET_BANNER_TEXT" desc="The text to show in a banner at the top of the chrome://settings page. The banner is displayed when Chrome detects that some settings have been tampered with and were reset to factory defaults.">
     Chrome detected that some of your settings were corrupted by another program and reset them to their original defaults.
@@ -2946,11 +2986,17 @@
     <message name="IDS_SETTINGS_PEOPLE_ENABLE_SCREENLOCK" desc="The text on the checkbox to enable screenlocker for current user.">
       Show lock screen when waking from sleep
     </message>
-    <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_TITLE" desc="Text on the people page which opens up the quick unlock subpage and the title of the quick unlock subpage.">
+    <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_TITLE_LOCK" desc="Text on the people page which opens up the quick unlock subpage and the title of the quick unlock subpage.">
       Screen lock
     </message>
-    <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_OPTIONS" desc="Text on the lock screen which is the subheader for the screen locking options.">
+    <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_TITLE_LOGIN_LOCK" desc="Text on the people page which opens up the quick unlock subpage and the title of the quick unlock subpage.">
+      Screen lock and sign-in
+    </message>
+    <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_OPTIONS_LOCK" desc="Text on the lock screen which is the subheader for the screen locking options.">
       Screen lock options
+    </message>
+    <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_OPTIONS_LOGIN_LOCK" desc="Text on the lock screen which is the subheader for the screen locking options.">
+      Screen lock and sign-in options
     </message>
     <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PASSWORD_ONLY" desc="Only the account password can be used to unlock the device.">
       Password only
@@ -3036,8 +3082,11 @@
     <message name="IDS_SETTINGS_ADD_FINGERPRINT_DIALOG_ADD_ANOTHER_BUTTON" desc="Text on the button in the fingerprint setup dialog which allows users to add another fingerprint once a fingerprint has been setup.">
       Add another
     </message>
-    <message name="IDS_SETTINGS_PEOPLE_PASSWORD_PROMPT_ENTER_PASSWORD" desc="Text above a password input field that tells the user they need to submit their password to configure these settings.">
+    <message name="IDS_SETTINGS_PEOPLE_PASSWORD_PROMPT_ENTER_PASSWORD_LOCK" desc="Text above a password input field that tells the user they need to submit their password to configure these settings.">
       Enter your password to configure screen lock
+    </message>
+    <message name="IDS_SETTINGS_PEOPLE_PASSWORD_PROMPT_ENTER_PASSWORD_LOGIN_LOCK" desc="Text above a password input field that tells the user they need to submit their password to configure these settings.">
+      Enter your password to configure screen lock and sign-in
     </message>
     <message name="IDS_SETTINGS_PEOPLE_PASSWORD_PROMPT_PASSWORD_LABEL" desc="An input box label that tells the user to enter their password in that input box.">
       Password
@@ -3183,6 +3232,12 @@
     </message>
     <message name="IDS_SETTINGS_SYNC_SETTINGS_CANCEL_SYNC" desc="The label of button that allows user to cancel sync.">
       Cancel sync
+    </message>
+    <message name="IDS_SETTINGS_SYNC_SIGN_IN_PROMPT" desc="The text displayed to prompt users to sign in to chrome.">
+      Sync and personalize Chrome across your device
+    </message>
+    <message name="IDS_SETTINGS_SYNC_SIGN_IN_PROMPT_SECONDARY" desc="The secondary text displayed to prompt users to sign in to chrome.">
+      Turns on the features listed here. Uses your browser activity, content on some sites you visit, and other browser interactions for personalization.
     </message>
   </if>
   <message name="IDS_SETTINGS_SYNC_TIMEOUT" desc="Text explaining what to do if sync times out.">
@@ -3653,6 +3708,9 @@
     </message>
     <message name="IDS_SETTINGS_DISPLAY_ZOOM_TITLE" desc="In Device Settings > Displays, the title for the section for changing the display's zoom.">
       Display Size
+    </message>
+    <message name="IDS_SETTINGS_DISPLAY_ZOOM_SUBLABEL" desc="In Device Settings > Displays, the text describing the display's zoom.">
+      Make items on your screen smaller or larger
     </message>
     <message name="IDS_SETTINGS_DISPLAY_ZOOM_VALUE" desc="The currently selected display zoom percentage.">
       <ph name="DISPLAY_ZOOM">$1<ex>120</ex>%</ph>

@@ -1591,5 +1591,109 @@ class NoProductionCodeUsingTestOnlyFunctions(unittest.TestCase):
     self.assertEqual(0, len(results))
 
 
+class NoProductionJavaCodeUsingTestOnlyFunctions(unittest.TestCase):
+  def testTruePositives(self):
+    mock_input_api = MockInputApi()
+    mock_input_api.files = [
+      MockFile('dir/java/src/foo.java', ['FooForTesting();']),
+      MockFile('dir/java/src/bar.java', ['FooForTests(x);']),
+      MockFile('dir/java/src/baz.java', ['FooForTest(','y',');']),
+      MockFile('dir/java/src/mult.java', [
+        'int x = SomethingLongHere()',
+        '    * SomethingLongHereForTesting();'
+      ]),
+    ]
+
+    results = PRESUBMIT._CheckNoProductionCodeUsingTestOnlyFunctionsJava(
+        mock_input_api, MockOutputApi())
+    self.assertEqual(1, len(results))
+    self.assertEqual(4, len(results[0].items))
+    self.assertTrue('foo.java' in results[0].items[0])
+    self.assertTrue('bar.java' in results[0].items[1])
+    self.assertTrue('baz.java' in results[0].items[2])
+    self.assertTrue('mult.java' in results[0].items[3])
+
+  def testFalsePositives(self):
+    mock_input_api = MockInputApi()
+    mock_input_api.files = [
+      MockFile('dir/java/src/foo.xml', ['FooForTesting();']),
+      MockFile('dir/java/src/foo.java', ['FooForTests() {']),
+      MockFile('dir/java/src/bar.java', ['// FooForTest();']),
+      MockFile('dir/java/src/bar2.java', ['x = 1; // FooForTest();']),
+      MockFile('dir/javatests/src/baz.java', ['FooForTest(','y',');']),
+      MockFile('dir/junit/src/baz.java', ['FooForTest(','y',');']),
+      MockFile('dir/junit/src/javadoc.java', [
+        '/** Use FooForTest(); to obtain foo in tests.'
+        ' */'
+      ]),
+      MockFile('dir/junit/src/javadoc2.java', [
+        '/** ',
+        ' * Use FooForTest(); to obtain foo in tests.'
+        ' */'
+      ]),
+    ]
+
+    results = PRESUBMIT._CheckNoProductionCodeUsingTestOnlyFunctionsJava(
+        mock_input_api, MockOutputApi())
+    self.assertEqual(0, len(results))
+
+
+class CheckUniquePtr(unittest.TestCase):
+  def testTruePositivesNullptr(self):
+    mock_input_api = MockInputApi()
+    mock_input_api.files = [
+      MockFile('dir/java/src/baz.cc', ['std::unique_ptr<T>()']),
+      MockFile('dir/java/src/baz-p.cc', ['std::unique_ptr<T<P>>()']),
+    ]
+
+    results = PRESUBMIT._CheckUniquePtr(mock_input_api, MockOutputApi())
+    self.assertEqual(1, len(results))
+    self.assertEqual(2, len(results[0].items))
+    self.assertTrue('baz.cc' in results[0].items[0])
+    self.assertTrue('baz-p.cc' in results[0].items[1])
+
+  def testTruePositivesConstructor(self):
+    mock_input_api = MockInputApi()
+    mock_input_api.files = [
+      MockFile('dir/java/src/foo.cc', ['return std::unique_ptr<T>(foo);']),
+      MockFile('dir/java/src/bar.mm', ['bar = std::unique_ptr<T>(foo)']),
+      MockFile('dir/java/src/mult.cc', [
+        'return',
+        '    std::unique_ptr<T>(barVeryVeryLongFooSoThatItWouldNotFitAbove);'
+      ]),
+      MockFile('dir/java/src/mult2.cc', [
+        'barVeryVeryLongLongBaaaaaarSoThatTheLineLimitIsAlmostReached =',
+        '    std::unique_ptr<T>(foo);'
+      ]),
+      MockFile('dir/java/src/mult3.cc', [
+        'bar = std::unique_ptr<T>(',
+        '    fooVeryVeryVeryLongStillGoingWellThisWillTakeAWhileFinallyThere);'
+      ]),
+    ]
+
+    results = PRESUBMIT._CheckUniquePtr(mock_input_api, MockOutputApi())
+    self.assertEqual(1, len(results))
+    self.assertEqual(5, len(results[0].items))
+    self.assertTrue('foo.cc' in results[0].items[0])
+    self.assertTrue('bar.mm' in results[0].items[1])
+    self.assertTrue('mult.cc' in results[0].items[2])
+    self.assertTrue('mult2.cc' in results[0].items[3])
+    self.assertTrue('mult3.cc' in results[0].items[4])
+
+  def testFalsePositives(self):
+    mock_input_api = MockInputApi()
+    mock_input_api.files = [
+      MockFile('dir/java/src/foo.cc', ['return std::unique_ptr<T[]>(foo);']),
+      MockFile('dir/java/src/bar.mm', ['bar = std::unique_ptr<T[]>(foo)']),
+      MockFile('dir/java/src/file.cc', ['std::unique_ptr<T> p = Foo();']),
+      MockFile('dir/java/src/baz.cc', [
+        'std::unique_ptr<T> result = std::make_unique<T>();'
+      ]),
+    ]
+
+    results = PRESUBMIT._CheckUniquePtr(mock_input_api, MockOutputApi())
+    self.assertEqual(0, len(results))
+
+
 if __name__ == '__main__':
   unittest.main()

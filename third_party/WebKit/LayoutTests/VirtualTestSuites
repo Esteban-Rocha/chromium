@@ -293,6 +293,12 @@
     "args": ["--disable-blink-features=SlimmingPaintV175"]
   },
   {
+    "prefix": "disable-rls",
+    "base": "compositing/squashing",
+    "args": ["--disable-blink-features=RootLayerScrolling"]
+  },
+
+  {
     "prefix": "scalefactor200",
     "base": "fast/hidpi/static",
     "args": ["--force-device-scale-factor=2"]
@@ -604,11 +610,6 @@
     "args": ["--enable-features=NavigationMojoResponse"]
   },
   {
-    "prefix": "enable-webauthn",
-    "base": "http/tests/credentialmanager/",
-    "args": ["--enable-features=WebAuthentication"]
-  },
-  {
     "prefix": "picture-in-picture",
     "base": "external/wpt/picture-in-picture",
     "args": ["--enable-features=PictureInPicture,UseSurfaceLayerForVideo"]
@@ -622,5 +623,20 @@
     "prefix": "picture-in-picture",
     "base": "media/picture-in-picture",
     "args": ["--enable-features=PictureInPicture,UseSurfaceLayerForVideo"]
+  },
+  {
+    "prefix": "off-main-thread-websocket",
+    "base": "external/wpt/websockets",
+    "args": ["--enable-features=OffMainThreadWebSocket"]
+  },
+  {
+    "prefix": "off-main-thread-websocket",
+    "base": "http/tests/websocket",
+    "args": ["--enable-features=OffMainThreadWebSocket"]
+  },
+  {
+    "prefix": "off-main-thread-websocket",
+    "base": "http/tests/security/mixedContent/websocket",
+    "args": ["--enable-features=OffMainThreadWebSocket"]
   }
 ]

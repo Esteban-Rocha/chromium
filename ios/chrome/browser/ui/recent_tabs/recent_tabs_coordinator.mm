@@ -7,8 +7,9 @@
 #include "base/ios/block_types.h"
 #include "base/mac/foundation_util.h"
 #import "ios/chrome/browser/ui/ntp/recent_tabs/recent_tabs_handset_view_controller.h"
-#import "ios/chrome/browser/ui/ntp/recent_tabs/recent_tabs_table_view_controller.h"
 #import "ios/chrome/browser/ui/recent_tabs/recent_tabs_mediator.h"
+#import "ios/chrome/browser/ui/recent_tabs/recent_tabs_table_view_controller.h"
+#import "ios/chrome/browser/ui/recent_tabs/recent_tabs_transitioning_delegate.h"
 #import "ios/chrome/browser/ui/table_view/table_container_view_controller.h"
 #import "ios/chrome/browser/ui/util/form_sheet_navigation_controller.h"
 #include "ios/chrome/grit/ios_strings.h"
@@ -29,6 +30,8 @@
 // ViewController being managed by this Coordinator.
 @property(nonatomic, strong)
     TableContainerViewController* recentTabsContainerViewController;
+@property(nonatomic, strong)
+    RecentTabsTransitioningDelegate* recentTabsTransitioningDelegate;
 @end
 
 @implementation RecentTabsCoordinator
@@ -38,6 +41,7 @@
 @synthesize mediator = _mediator;
 @synthesize recentTabsContainerViewController =
     _recentTabsContainerViewController;
+@synthesize recentTabsTransitioningDelegate = _recentTabsTransitioningDelegate;
 
 - (void)start {
   // Initialize and configure RecentTabsTableViewController.
@@ -49,10 +53,22 @@
   recentTabsTableViewController.handsetCommandHandler = self;
 
   // Initialize and configure RecentTabsMediator.
-  self.mediator = [[RecentTabsMediator alloc] init];
-  self.mediator.browserState = self.browserState;
+
+  // TODO(crbug.com/825431): If BVC's clearPresentedState is ever called (such
+  // as in tearDown after a failed egtest), then this coordinator is left in a
+  // started state even though its corresponding VC is no longer on screen.
+  // That causes issues when the coordinator is started again and we destroy the
+  // old mediator without disconnecting it first.  Temporarily work around these
+  // issues by only creating the mediator if it doesn't already exist.  A
+  // longer-term solution will require finding a way to stop this coordinator so
+  // that the mediator is properly disconnected and destroyed and does not live
+  // longer than its associated VC.
+  if (!self.mediator) {
+    self.mediator = [[RecentTabsMediator alloc] init];
+    self.mediator.browserState = self.browserState;
+    [self.mediator initObservers];
+  }
   self.mediator.consumer = recentTabsTableViewController;
-  [self.mediator initObservers];
   [self.mediator reloadSessions];
 
   // Initialize and configure RecentTabsViewController.
@@ -72,7 +88,13 @@
   FormSheetNavigationController* navController =
       [[FormSheetNavigationController alloc]
           initWithRootViewController:self.recentTabsContainerViewController];
-  [navController setModalPresentationStyle:UIModalPresentationFormSheet];
+  self.recentTabsTransitioningDelegate =
+      [[RecentTabsTransitioningDelegate alloc] init];
+  [navController.navigationBar setBackgroundImage:[UIImage new]
+                                    forBarMetrics:UIBarMetricsDefault];
+  navController.navigationBar.translucent = NO;
+  navController.transitioningDelegate = self.recentTabsTransitioningDelegate;
+  [navController setModalPresentationStyle:UIModalPresentationCustom];
   [self.baseViewController presentViewController:navController
                                         animated:YES
                                       completion:nil];
@@ -89,7 +111,9 @@
       dismissViewControllerAnimated:YES
                          completion:self.completion];
   self.recentTabsContainerViewController = nil;
+  self.recentTabsTransitioningDelegate = nil;
   [self.mediator disconnect];
+  self.mediator = nil;
 }
 
 #pragma mark - RecentTabsHandsetViewControllerCommand

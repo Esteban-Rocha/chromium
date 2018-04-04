@@ -32,8 +32,8 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "media/media_buildflags.h"
-#include "ppapi/features/features.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "third_party/WebKit/public/platform/scheduler/web_main_thread_scheduler.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "ui/base/ui_base_switches.h"
 

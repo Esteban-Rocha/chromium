@@ -198,7 +198,7 @@ void ServiceWorkerNavigationLoader::CommitResponseHeaders() {
   DCHECK_EQ(Status::kStarted, status_);
   DCHECK(url_loader_client_.is_bound());
   status_ = Status::kSentHeader;
-  url_loader_client_->OnReceiveResponse(response_head_, ssl_info_,
+  url_loader_client_->OnReceiveResponse(response_head_,
                                         nullptr /* downloaded_file */);
 }
 
@@ -301,6 +301,7 @@ void ServiceWorkerNavigationLoader::StartResponse(
   response_head_.did_service_worker_navigation_preload =
       did_navigation_preload_;
   response_head_.load_timing.receive_headers_end = base::TimeTicks::Now();
+  response_head_.ssl_info = ssl_info_;
 
   // Handle a redirect response. ComputeRedirectInfo returns non-null redirect
   // info if the given response is a redirect.
@@ -319,6 +320,9 @@ void ServiceWorkerNavigationLoader::StartResponse(
 
   // We have a non-redirect response. Send the headers to the client.
   CommitResponseHeaders();
+
+  // S13nServiceWorker without NetworkService:
+  // TODO(shimazu): Wait to respond body until ProceedWithResponse().
 
   // Handle a stream response body.
   if (!body_as_stream.is_null() && body_as_stream->stream.is_valid()) {

@@ -19,9 +19,9 @@
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_metrics.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_screenlock_state_handler.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_types.h"
+#include "chromeos/components/proximity_auth/screenlock_state.h"
 #include "components/cryptauth/remote_device.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/proximity_auth/screenlock_state.h"
 
 class AccountId;
 
@@ -77,9 +77,6 @@ class EasyUnlockService : public KeyedService {
 
   // Removes the hardlock state for the given user.
   static void ResetLocalStateForUser(const AccountId& account_id);
-
-  // Returns the identifier for the device.
-  static std::string GetDeviceId();
 
   // Returns the ProximityAuthPrefManager, responsible for managing all
   // EasyUnlock preferences.
@@ -178,12 +175,6 @@ class EasyUnlockService : public KeyedService {
   // attempt type (unlock vs. signin) will depend on the service type.
   void AttemptAuth(const AccountId& account_id);
 
-  // Similar to above but a callback is invoked after the auth attempt is
-  // finalized instead of default unlock/sign-in.
-  typedef EasyUnlockAuthAttempt::FinalizedCallback AttemptAuthCallback;
-  void AttemptAuth(const AccountId& account_id,
-                   const AttemptAuthCallback& callback);
-
   // Finalizes the previously started auth attempt for easy unlock. If called on
   // signin profile service, it will cancel the current auth attempt if one
   // exists.
@@ -211,7 +202,7 @@ class EasyUnlockService : public KeyedService {
 
   // Called when the user reauths (e.g. in chrome://settings) so we can cache
   // the user context for the setup flow.
-  virtual void HandleUserReauth(const chromeos::UserContext& user_context);
+  virtual void HandleUserReauth(const UserContext& user_context);
 
   void AddObserver(EasyUnlockServiceObserver* observer);
   void RemoveObserver(EasyUnlockServiceObserver* observer);
@@ -320,7 +311,7 @@ class EasyUnlockService : public KeyedService {
       const AccountId& account_id,
       const std::set<std::string> paired_devices,
       bool success,
-      const chromeos::EasyUnlockDeviceKeyDataList& key_data_list);
+      const EasyUnlockDeviceKeyDataList& key_data_list);
 
   // Updates the service to state for handling system suspend.
   void PrepareForSuspend();

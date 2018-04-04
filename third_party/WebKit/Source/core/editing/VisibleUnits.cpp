@@ -559,46 +559,6 @@ PositionInFlatTree PreviousBoundary(
 
 // ---------
 
-VisiblePosition StartOfBlock(const VisiblePosition& visible_position,
-                             EditingBoundaryCrossingRule rule) {
-  DCHECK(visible_position.IsValid()) << visible_position;
-  Position position = visible_position.DeepEquivalent();
-  Element* start_block =
-      position.ComputeContainerNode()
-          ? EnclosingBlock(position.ComputeContainerNode(), rule)
-          : nullptr;
-  return start_block ? VisiblePosition::FirstPositionInNode(*start_block)
-                     : VisiblePosition();
-}
-
-VisiblePosition EndOfBlock(const VisiblePosition& visible_position,
-                           EditingBoundaryCrossingRule rule) {
-  DCHECK(visible_position.IsValid()) << visible_position;
-  Position position = visible_position.DeepEquivalent();
-  Element* end_block =
-      position.ComputeContainerNode()
-          ? EnclosingBlock(position.ComputeContainerNode(), rule)
-          : nullptr;
-  return end_block ? VisiblePosition::LastPositionInNode(*end_block)
-                   : VisiblePosition();
-}
-
-bool IsStartOfBlock(const VisiblePosition& pos) {
-  DCHECK(pos.IsValid()) << pos;
-  return pos.IsNotNull() &&
-         pos.DeepEquivalent() ==
-             StartOfBlock(pos, kCanCrossEditingBoundary).DeepEquivalent();
-}
-
-bool IsEndOfBlock(const VisiblePosition& pos) {
-  DCHECK(pos.IsValid()) << pos;
-  return pos.IsNotNull() &&
-         pos.DeepEquivalent() ==
-             EndOfBlock(pos, kCanCrossEditingBoundary).DeepEquivalent();
-}
-
-// ---------
-
 template <typename Strategy>
 static VisiblePositionTemplate<Strategy> StartOfDocumentAlgorithm(
     const VisiblePositionTemplate<Strategy>& visible_position) {
@@ -694,7 +654,7 @@ bool IsEndOfEditableOrNonEditableContent(
   // an inner editor is an only leaf node.
   if (!next_position.DeepEquivalent().IsAfterAnchor())
     return false;
-  return IsTextControlElement(next_position.DeepEquivalent().AnchorNode());
+  return IsTextControl(next_position.DeepEquivalent().AnchorNode());
 }
 
 static LayoutUnit BoundingBoxLogicalHeight(LayoutObject* o,
@@ -777,11 +737,6 @@ static bool InRenderedText(const PositionTemplate<Strategy>& position) {
          text_offset == NextGraphemeBoundaryOf(*anchor_node,
                                                PreviousGraphemeBoundaryOf(
                                                    *anchor_node, text_offset));
-}
-
-static FloatQuad LocalToAbsoluteQuadOf(const LocalCaretRect& caret_rect) {
-  return caret_rect.layout_object->LocalToAbsoluteQuad(
-      FloatRect(caret_rect.rect));
 }
 
 bool RendersInDifferentPosition(const Position& position1,
@@ -1198,59 +1153,6 @@ bool IsVisuallyEquivalentCandidate(const Position& position) {
 bool IsVisuallyEquivalentCandidate(const PositionInFlatTree& position) {
   return IsVisuallyEquivalentCandidateAlgorithm<EditingInFlatTreeStrategy>(
       position);
-}
-
-template <typename Strategy>
-static IntRect AbsoluteCaretBoundsOfAlgorithm(
-    const VisiblePositionTemplate<Strategy>& visible_position) {
-  DCHECK(visible_position.IsValid()) << visible_position;
-  const LocalCaretRect& caret_rect =
-      LocalCaretRectOfPosition(visible_position.ToPositionWithAffinity());
-  if (caret_rect.IsEmpty())
-    return IntRect();
-  return LocalToAbsoluteQuadOf(caret_rect).EnclosingBoundingBox();
-}
-
-IntRect AbsoluteCaretBoundsOf(const VisiblePosition& visible_position) {
-  return AbsoluteCaretBoundsOfAlgorithm<EditingStrategy>(visible_position);
-}
-
-// TODO(editing-dev): This function does pretty much the same thing as
-// |AbsoluteCaretBoundsOf()|. Consider merging them.
-IntRect AbsoluteCaretRectOfPosition(const PositionWithAffinity& position,
-                                    LayoutUnit* extra_width_to_end_of_line) {
-  const LocalCaretRect local_caret_rect =
-      LocalCaretRectOfPosition(position, extra_width_to_end_of_line);
-  if (!local_caret_rect.layout_object)
-    return IntRect();
-
-  const IntRect local_rect = PixelSnappedIntRect(local_caret_rect.rect);
-  return local_rect == IntRect()
-             ? IntRect()
-             : local_caret_rect.layout_object
-                   ->LocalToAbsoluteQuad(FloatRect(local_rect))
-                   .EnclosingBoundingBox();
-}
-
-template <typename Strategy>
-static IntRect AbsoluteSelectionBoundsOfAlgorithm(
-    const VisiblePositionTemplate<Strategy>& visible_position) {
-  DCHECK(visible_position.IsValid()) << visible_position;
-  const LocalCaretRect& caret_rect =
-      LocalSelectionRectOfPosition(visible_position.ToPositionWithAffinity());
-  if (caret_rect.IsEmpty())
-    return IntRect();
-  return LocalToAbsoluteQuadOf(caret_rect).EnclosingBoundingBox();
-}
-
-IntRect AbsoluteSelectionBoundsOf(const VisiblePosition& visible_position) {
-  return AbsoluteSelectionBoundsOfAlgorithm<EditingStrategy>(visible_position);
-}
-
-IntRect AbsoluteCaretBoundsOf(
-    const VisiblePositionInFlatTree& visible_position) {
-  return AbsoluteCaretBoundsOfAlgorithm<EditingInFlatTreeStrategy>(
-      visible_position);
 }
 
 template <typename Strategy>

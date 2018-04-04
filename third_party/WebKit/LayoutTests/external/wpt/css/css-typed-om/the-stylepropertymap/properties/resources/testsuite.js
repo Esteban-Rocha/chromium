@@ -102,7 +102,9 @@ const gTestSyntaxExamples = {
       },
       {
         description: "negative milliseconds",
-        input: new CSSUnitValue(-3.14, 'ms')
+        input: new CSSUnitValue(-3.14, 'ms'),
+        // Computed values use canonical units
+        defaultComputed: (_, result) => assert_style_value_equals(result, new CSSUnitValue(-0.00314, 's'))
       },
       {
         description: "positive seconds",
@@ -150,6 +152,13 @@ const gTestSyntaxExamples = {
         decription: "origin position",
         input: new CSSPositionValue(new CSSUnitValue(0, 'px'), new CSSUnitValue(0, 'px'))
       }
+    ],
+  },
+  '<url>': {
+    description: 'a URL',
+    examples: [
+      // TODO(https://github.com/w3c/css-houdini-drafts/issues/716):
+      // We can't test this until CSSURLValue is spec'd.
     ],
   },
   '<transform>': {
@@ -376,6 +385,12 @@ function runPropertyTests(propertyName, testCases) {
         syntaxExamples.description);
     }
   }
+}
+
+// Same as runPropertyTests but for list-valued properties.
+function runListValuedPropertyTests(propertyName, testCases) {
+  // TODO(https://crbug.com/545318): Run list-valued tests as well.
+  runPropertyTests(propertyName, testCases);
 }
 
 // Check that |propertyName| doesn't "support" examples in |testExamples|.

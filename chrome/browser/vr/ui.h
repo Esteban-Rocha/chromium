@@ -77,7 +77,7 @@ class Ui : public BrowserUiInterface, public KeyboardUiInterface {
   base::WeakPtr<BrowserUiInterface> GetBrowserUiWeakPtr();
 
   // BrowserUiInterface
-  void SetWebVrMode(bool enabled, bool show_toast) override;
+  void SetWebVrMode(bool enabled) override;
   void SetFullscreen(bool enabled) override;
   void SetToolbarState(const ToolbarState& state) override;
   void SetIncognito(bool enabled) override;
@@ -113,9 +113,13 @@ class Ui : public BrowserUiInterface, public KeyboardUiInterface {
 
   void SetAlertDialogEnabled(bool enabled,
                              ContentInputDelegate* delegate,
-                             int width,
-                             int height);
-  void SetAlertDialogSize(int width, int height);
+                             float width,
+                             float height);
+  void SetAlertDialogSize(float width, float height);
+  void SetDialogLocation(float x, float y);
+  void SetDialogFloating();
+  void ShowPlatformToast(const base::string16& text);
+  void CancelPlatformToast();
   bool ShouldRenderWebVr();
 
   void OnGlInitialized(

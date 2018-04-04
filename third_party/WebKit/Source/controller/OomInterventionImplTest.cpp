@@ -33,7 +33,7 @@ class MockOomInterventionHost : public mojom::blink::OomInterventionHost {
 
 }  // namespace
 
-class OomInterventionImplTest : public ::testing::Test {
+class OomInterventionImplTest : public testing::Test {
  public:
   size_t MockMemoryWorkloadCalculator() { return memory_workload_; }
 
@@ -57,7 +57,7 @@ TEST_F(OomInterventionImplTest, DetectedAndDeclined) {
   MockOomInterventionHost mock_host(mojo::MakeRequest(&host_ptr));
   intervention->StartDetection(std::move(host_ptr),
                                true /*trigger_intervention*/);
-  testing::RunDelayedTasks(TimeDelta::FromSeconds(1));
+  test::RunDelayedTasks(TimeDelta::FromSeconds(1));
   EXPECT_TRUE(page->Paused());
 
   intervention.reset();

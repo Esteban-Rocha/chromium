@@ -18,6 +18,7 @@
 #include "ui/display/display_observer.h"
 
 namespace ash {
+class CustomFrameViewAsh;
 namespace mojom {
 enum class WindowPinType;
 }
@@ -143,7 +144,6 @@ class ClientControlledShellSurface
                            ash::mojom::WindowStateType requested_state,
                            int64_t display_id,
                            const gfx::Rect& bounds,
-                           bool is_resize,
                            int drag_bounds_change);
 
   // Sends the window drag events to client.
@@ -212,7 +212,7 @@ class ClientControlledShellSurface
       aura::Window* window,
       int component) override;
   bool OnMouseDragged(const ui::MouseEvent& event) override;
-  gfx::Point GetWidgetOrigin() const override;
+  gfx::Rect GetWidgetBounds() const override;
   gfx::Point GetSurfaceOrigin() const override;
 
   void UpdateBackdrop();
@@ -226,6 +226,7 @@ class ClientControlledShellSurface
   void EnsureCompositorIsLockedForOrientationChange();
 
   ash::wm::WindowState* GetWindowState();
+  ash::CustomFrameViewAsh* GetFrameView();
 
   GeometryChangedCallback geometry_changed_callback_;
   int64_t primary_display_id_;

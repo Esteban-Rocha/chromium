@@ -34,11 +34,11 @@ ExtensionPopupViewsMac* ExtensionPopupViewsMac::ShowPopup(
 
   NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
   // ObjC id collides with views::View::id().
-  ::id token = [center addObserverForName:NSWindowDidBecomeKeyNotification
-                                   object:parent_window
+  ::id token = [center addObserverForName:NSWindowDidResignKeyNotification
+                                   object:popup->GetWidget()->GetNativeWindow()
                                     queue:nil
                                usingBlock:^(NSNotification* notification) {
-                                 popup->OnAnchorWindowActivation();
+                                 popup->CloseUnlessUnderInspection();
                                }];
   [popup->observer_tokens_ addObject:token];
   return popup;

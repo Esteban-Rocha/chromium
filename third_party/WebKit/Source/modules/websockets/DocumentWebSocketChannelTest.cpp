@@ -27,17 +27,17 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::_;
-using ::testing::InSequence;
-using ::testing::PrintToString;
-using ::testing::AnyNumber;
-using ::testing::SaveArg;
+using testing::_;
+using testing::InSequence;
+using testing::PrintToString;
+using testing::AnyNumber;
+using testing::SaveArg;
 
 namespace blink {
 
 namespace {
 
-typedef ::testing::StrictMock<::testing::MockFunction<void(int)>> Checkpoint;
+typedef testing::StrictMock<testing::MockFunction<void(int)>> Checkpoint;
 
 class MockWebSocketChannelClient
     : public GarbageCollectedFinalized<MockWebSocketChannelClient>,
@@ -46,7 +46,7 @@ class MockWebSocketChannelClient
 
  public:
   static MockWebSocketChannelClient* Create() {
-    return new ::testing::StrictMock<MockWebSocketChannelClient>();
+    return new testing::StrictMock<MockWebSocketChannelClient>();
   }
 
   MockWebSocketChannelClient() = default;
@@ -75,25 +75,28 @@ class MockWebSocketChannelClient
 class MockWebSocketHandle : public WebSocketHandle {
  public:
   static MockWebSocketHandle* Create() {
-    return new ::testing::StrictMock<MockWebSocketHandle>();
+    return new testing::StrictMock<MockWebSocketHandle>();
   }
 
   MockWebSocketHandle() = default;
 
   ~MockWebSocketHandle() override = default;
 
-  MOCK_METHOD1(DoInitialize, void(network::mojom::blink::WebSocketPtr*));
-  void Initialize(network::mojom::blink::WebSocketPtr websocket) override {
-    DoInitialize(&websocket);
+  void Connect(network::mojom::blink::WebSocketPtr websocket,
+               const KURL& url,
+               const Vector<String>& protocols,
+               const KURL& site_for_cookies,
+               const String& user_agent_override,
+               WebSocketHandleClient* client,
+               base::SingleThreadTaskRunner*) {
+    Connect(url, protocols, site_for_cookies, user_agent_override, client);
   }
-
-  MOCK_METHOD6(Connect,
+  MOCK_METHOD5(Connect,
                void(const KURL&,
                     const Vector<String>&,
                     const KURL&,
                     const String&,
-                    WebSocketHandleClient*,
-                    base::SingleThreadTaskRunner*));
+                    WebSocketHandleClient*));
   MOCK_METHOD4(Send,
                void(bool, WebSocketHandle::MessageType, const char*, size_t));
   MOCK_METHOD1(FlowControl, void(int64_t));
@@ -103,7 +106,7 @@ class MockWebSocketHandle : public WebSocketHandle {
 class MockWebSocketHandshakeThrottle : public WebSocketHandshakeThrottle {
  public:
   static MockWebSocketHandshakeThrottle* Create() {
-    return new ::testing::StrictMock<MockWebSocketHandshakeThrottle>();
+    return new testing::StrictMock<MockWebSocketHandshakeThrottle>();
   }
   MockWebSocketHandshakeThrottle() = default;
   ~MockWebSocketHandshakeThrottle() override { Destructor(); }
@@ -162,15 +165,14 @@ class DocumentWebSocketChannelTest : public PageTestBase {
   void Connect() {
     {
       InSequence s;
-      EXPECT_CALL(*Handle(), DoInitialize(_));
       EXPECT_CALL(*Handle(),
-                  Connect(KURL("ws://localhost/"), _, _, _, HandleClient(), _));
+                  Connect(KURL("ws://localhost/"), _, _, _, HandleClient()));
       EXPECT_CALL(*Handle(), FlowControl(65536));
       EXPECT_CALL(*ChannelClient(), DidConnect(String("a"), String("b")));
     }
     EXPECT_TRUE(Channel()->Connect(KURL("ws://localhost/"), "x"));
     HandleClient()->DidConnect(Handle(), String("a"), String("b"));
-    ::testing::Mock::VerifyAndClearExpectations(this);
+    testing::Mock::VerifyAndClearExpectations(this);
   }
 
   Persistent<MockWebSocketChannelClient> channel_client_;
@@ -210,10 +212,9 @@ TEST_F(DocumentWebSocketChannelTest, connectSuccess) {
   Checkpoint checkpoint;
   {
     InSequence s;
-    EXPECT_CALL(*Handle(), DoInitialize(_));
     EXPECT_CALL(*Handle(),
                 Connect(KURLEq("ws://localhost/"), _,
-                        KURLEq("http://example.com/"), _, HandleClient(), _))
+                        KURLEq("http://example.com/"), _, HandleClient()))
         .WillOnce(SaveArg<1>(&protocols));
     EXPECT_CALL(checkpoint, Call(1));
     EXPECT_CALL(*Handle(), FlowControl(65536));
@@ -819,8 +820,7 @@ class DocumentWebSocketChannelHandshakeThrottleTest
   // Expectations for the normal result of calling Channel()->Connect() with a
   // non-null throttle.
   void NormalHandshakeExpectations() {
-    EXPECT_CALL(*Handle(), DoInitialize(_));
-    EXPECT_CALL(*Handle(), Connect(_, _, _, _, _, _));
+    EXPECT_CALL(*Handle(), Connect(_, _, _, _, _));
     EXPECT_CALL(*handshake_throttle_, ThrottleHandshake(_, _, _));
   }
 
@@ -828,8 +828,7 @@ class DocumentWebSocketChannelHandshakeThrottleTest
 };
 
 TEST_F(DocumentWebSocketChannelHandshakeThrottleTest, ThrottleArguments) {
-  EXPECT_CALL(*Handle(), DoInitialize(_));
-  EXPECT_CALL(*Handle(), Connect(_, _, _, _, _, _));
+  EXPECT_CALL(*Handle(), Connect(_, _, _, _, _));
   EXPECT_CALL(*handshake_throttle_,
               ThrottleHandshake(WebURL(url()), _, GetWebCallbacks()));
   EXPECT_CALL(*handshake_throttle_, Destructor());

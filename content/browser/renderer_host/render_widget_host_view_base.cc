@@ -97,7 +97,11 @@ bool RenderWidgetHostViewBase::OnMessageReceived(const IPC::Message& msg){
   return false;
 }
 
-void RenderWidgetHostViewBase::OnRenderFrameMetadataChanged() {}
+void RenderWidgetHostViewBase::OnRenderFrameMetadataChanged() {
+  is_scroll_offset_at_top_ = host_->render_frame_metadata_provider()
+                                 ->LastRenderFrameMetadata()
+                                 .is_scroll_offset_at_top;
+}
 
 void RenderWidgetHostViewBase::OnRenderFrameSubmission() {}
 
@@ -301,6 +305,27 @@ void RenderWidgetHostViewBase::DidUnregisterFromTextInputManager(
   DCHECK(text_input_manager && text_input_manager_ == text_input_manager);
 
   text_input_manager_ = nullptr;
+}
+
+void RenderWidgetHostViewBase::EnableAutoResize(const gfx::Size& min_size,
+                                                const gfx::Size& max_size) {
+  host()->SetAutoResize(true, min_size, max_size);
+  host()->WasResized();
+}
+
+void RenderWidgetHostViewBase::DisableAutoResize(const gfx::Size& new_size) {
+  if (!new_size.IsEmpty())
+    SetSize(new_size);
+  // This clears the cached value in the WebContents, so that OOPIFs will
+  // stop using it.
+  if (host()->delegate())
+    host()->delegate()->ResetAutoResizeSize();
+  host()->SetAutoResize(false, gfx::Size(), gfx::Size());
+  host()->WasResized();
+}
+
+bool RenderWidgetHostViewBase::IsScrollOffsetAtTop() const {
+  return is_scroll_offset_at_top_;
 }
 
 viz::ScopedSurfaceIdAllocator RenderWidgetHostViewBase::ResizeDueToAutoResize(
@@ -622,5 +647,10 @@ bool RenderWidgetHostViewBase::ShouldContinueToPauseForFrame() {
   return false;
 }
 #endif
+
+void RenderWidgetHostViewBase::DidNavigate() {
+  if (host())
+    host()->WasResized();
+}
 
 }  // namespace content

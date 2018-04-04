@@ -8,9 +8,9 @@
             ],
             "experiments": [
                 {
-                    "name": "DiceFixAuthErrors",
+                    "name": "DicePrepareMigration",
                     "params": {
-                        "method": "dice_fix_auth_errors"
+                        "method": "dice_prepare_migration_new_endpoint"
                     },
                     "enable_features": [
                         "AccountConsistency"
@@ -127,7 +127,7 @@
                 {
                     "name": "PromotePanelOpeningExperiment",
                     "params": {
-                        "availability": ">=30",
+                        "availability": ">=14",
                         "event_1": "name:contextual_search_promote_panel_open_iph_trigger;comparator:<2;window:680;storage:680",
                         "event_2": "name:contextual_search_panel_opened;comparator:<3;window:90;storage:90",
                         "event_trigger": "name:contextual_search_promote_panel_open_iph_trigger;comparator:==0;window:90;storage:680",
@@ -150,7 +150,7 @@
                 {
                     "name": "PromoteTapExperiment",
                     "params": {
-                        "availability": ">=30",
+                        "availability": ">=14",
                         "event_1": "name:contextual_search_panel_opened;comparator:>=2;window:90;storage:90",
                         "event_2": "name:contextual_search_promote_tap_iph_trigger;comparator:<2;window:680;storage:680",
                         "event_trigger": "name:contextual_search_promote_tap_iph_trigger;comparator:==0;window:90;storage:680",
@@ -173,7 +173,7 @@
                 {
                     "name": "WebSearchExperiment",
                     "params": {
-                        "availability": ">=30",
+                        "availability": ">=14",
                         "event_1": "name:web_search_performed;comparator:>=1;window:90;storage:90",
                         "event_2": "name:contextual_search_web_search_iph_trigger;comparator:<2;window:680;storage:680",
                         "event_3": "name:contextual_search_panel_opened;comparator:>0;window:680;storage:680",
@@ -704,6 +704,24 @@
                         "cssExternalScannerNoPreload": "false",
                         "cssExternalScannerPreload": "true"
                     }
+                }
+            ]
+        }
+    ],
+    "CertificateTransparencyLogAuditing": [
+        {
+            "platforms": [
+                "chromeos",
+                "linux",
+                "mac",
+                "win"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "CertificateTransparencyLogAuditing"
+                    ]
                 }
             ]
         }
@@ -1401,6 +1419,25 @@
             ]
         }
     ],
+    "GCMTokenInvalidAfterDays": [
+        {
+            "platforms": [
+                "linux",
+                "mac",
+                "win",
+                "chromeos",
+                "ios"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "GCMTokenInvalidAfterDays"
+                    ]
+                }
+            ]
+        }
+    ],
     "GaiaPasswordReuse": [
         {
             "platforms": [
@@ -1881,6 +1918,21 @@
                     "name": "Enabled",
                     "enable_features": [
                         "MojoInputMessages"
+                    ]
+                }
+            ]
+        }
+    ],
+    "NTPArticleSuggestionsExpandableHeader": [
+        {
+            "platforms": [
+                "android"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "NTPArticleSuggestionsExpandableHeader"
                     ]
                 }
             ]
@@ -3945,6 +3997,24 @@
             ]
         }
     ],
+    "UsePdfCompositorServiceForPrint": [
+        {
+            "platforms": [
+                "chromeos",
+                "linux",
+                "mac",
+                "win"
+            ],
+            "experiments": [
+                {
+                    "name": "UsePdfCompositorServiceForPrint",
+                    "enable_features": [
+                        "UsePdfCompositorServiceForPrint"
+                    ]
+                }
+            ]
+        }
+    ],
     "UserActivityEventLogging": [
         {
             "platforms": [
@@ -4047,6 +4117,26 @@
                     "name": "WasmTrapHandlerActive",
                     "enable_features": [
                         "WebAssemblyTrapHandler"
+                    ]
+                }
+            ]
+        }
+    ],
+    "VariationsHttpDisabled": [
+        {
+            "platforms": [
+                "win",
+                "mac",
+                "chromeos",
+                "linux",
+                "ios",
+                "android"
+            ],
+            "experiments": [
+                {
+                    "name": "VariationsHttpDisabled",
+                    "disable_features": [
+                        "VariationsHTTPRetry"
                     ]
                 }
             ]

@@ -5,7 +5,7 @@
 #include "modules/media_controls/elements/MediaControlLoadingPanelElement.h"
 
 #include "core/css/CSSStyleDeclaration.h"
-#include "core/dom/ElementShadow.h"
+#include "core/dom/ShadowRoot.h"
 #include "core/dom/events/Event.h"
 #include "core/event_type_names.h"
 #include "core/html/media/HTMLMediaElement.h"
@@ -114,13 +114,8 @@ class MediaControlLoadingPanelElementTest : public PageTestBase {
     ExpectAnimationIterationInfinite();
 
     // Transition the media controls to a playing state and expect the loading
-    // panel to start cooling down.
+    // panel to hide immediately.
     SimulatePlaying();
-    ExpectStateIsCoolingDown();
-    ExpectAnimationIterationCount("4");
-
-    // Simulate the animations ending.
-    SimulateAnimationEnd();
 
     // Make sure the loading panel is hidden now.
     ExpectStateIsHidden();
@@ -217,7 +212,6 @@ TEST_F(MediaControlLoadingPanelElementTest, Reset_DuringCycle) {
 
   // Now move to playing.
   SimulatePlaying();
-  SimulateAnimationEnd();
   ExpectStateIsHidden();
 }
 

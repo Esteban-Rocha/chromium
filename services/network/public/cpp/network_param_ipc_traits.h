@@ -261,19 +261,19 @@ IPC_STRUCT_TRAITS_BEGIN(net::SignedCertificateTimestampAndStatus)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::CORSError,
-                          network::mojom::CORSError::kLast)
+                          network::mojom::CORSError::kMaxValue)
 
 IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::FetchCredentialsMode,
-                          network::mojom::FetchCredentialsMode::kLast)
+                          network::mojom::FetchCredentialsMode::kMaxValue)
 
 IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::FetchRedirectMode,
-                          network::mojom::FetchRedirectMode::kLast)
+                          network::mojom::FetchRedirectMode::kMaxValue)
 
 IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::FetchRequestMode,
-                          network::mojom::FetchRequestMode::kLast)
+                          network::mojom::FetchRequestMode::kMaxValue)
 
 IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::RequestContextFrameType,
-                          network::mojom::RequestContextFrameType::kLast)
+                          network::mojom::RequestContextFrameType::kMaxValue)
 
 IPC_STRUCT_TRAITS_BEGIN(network::CORSErrorStatus)
   IPC_STRUCT_TRAITS_MEMBER(cors_error)
@@ -360,10 +360,12 @@ IPC_STRUCT_TRAITS_BEGIN(network::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(ct_policy_compliance)
   IPC_STRUCT_TRAITS_MEMBER(is_legacy_symantec_cert)
   IPC_STRUCT_TRAITS_MEMBER(content_length)
+  IPC_STRUCT_TRAITS_MEMBER(network_accessed)
   IPC_STRUCT_TRAITS_MEMBER(encoded_data_length)
   IPC_STRUCT_TRAITS_MEMBER(encoded_body_length)
   IPC_STRUCT_TRAITS_MEMBER(appcache_id)
   IPC_STRUCT_TRAITS_MEMBER(appcache_manifest_url)
+  IPC_STRUCT_TRAITS_MEMBER(priority)
   IPC_STRUCT_TRAITS_MEMBER(load_timing)
   IPC_STRUCT_TRAITS_MEMBER(raw_request_response_info)
   IPC_STRUCT_TRAITS_MEMBER(download_file_path)
@@ -384,11 +386,8 @@ IPC_STRUCT_TRAITS_BEGIN(network::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(did_service_worker_navigation_preload)
   IPC_STRUCT_TRAITS_MEMBER(previews_state)
   IPC_STRUCT_TRAITS_MEMBER(effective_connection_type)
-  IPC_STRUCT_TRAITS_MEMBER(certificate)
   IPC_STRUCT_TRAITS_MEMBER(cert_status)
-  IPC_STRUCT_TRAITS_MEMBER(ssl_connection_status)
-  IPC_STRUCT_TRAITS_MEMBER(ssl_key_exchange_group)
-  IPC_STRUCT_TRAITS_MEMBER(signed_certificate_timestamps)
+  IPC_STRUCT_TRAITS_MEMBER(ssl_info)
   IPC_STRUCT_TRAITS_MEMBER(cors_exposed_header_names)
 IPC_STRUCT_TRAITS_END()
 
@@ -396,7 +395,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(net::HttpResponseInfo::ConnectionInfo,
                           net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS - 1)
 
 IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::FetchResponseType,
-                          network::mojom::FetchResponseType::kLast)
+                          network::mojom::FetchResponseType::kMaxValue)
 
 IPC_ENUM_TRAITS_MAX_VALUE(net::EffectiveConnectionType,
                           net::EFFECTIVE_CONNECTION_TYPE_LAST - 1)

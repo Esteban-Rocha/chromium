@@ -23,6 +23,7 @@
 <translation id="1484102317210609525"><ph name="DEVICE_NAME" /> (HDMI/DP)</translation>
 <translation id="1510238584712386396">Selector</translation>
 <translation id="1525508553941733066">IGNORAR</translation>
+<translation id="1537254971476575106">Lupa de pantalla completa</translation>
 <translation id="15373452373711364">Cursor del mouse grande</translation>
 <translation id="1550523713251050646">Haz clic para obtener más opciones</translation>
 <translation id="1567387640189251553">Se conectó otro teclado desde la última vez que ingresaste tu contraseña. Es posible que alguien esté intentando determinar qué teclas presionaste.</translation>
@@ -51,10 +52,11 @@
 <translation id="2049639323467105390"><ph name="DOMAIN" /> administra esta cuenta.</translation>
 <translation id="2050339315714019657">Vertical</translation>
 <translation id="2067602449040652523">Brillo del teclado</translation>
+<translation id="2081529251031312395">$1 podrá acceder más tarde.</translation>
 <translation id="2122028596993374965">Detener la transmisión de <ph name="TAB_NAME" /> a <ph name="RECEIVER_NAME" /></translation>
 <translation id="2127372758936585790">Carga lenta</translation>
+<translation id="2135456203358955318">Lupa con vista acoplada</translation>
 <translation id="2144487987174258011">Reinicia para actualizar Adobe Flash Player</translation>
-<translation id="2191905770366256395">Tu teclado desmontable necesita una actualización crítica</translation>
 <translation id="2208323208084708176">Modo de escritorio unificado</translation>
 <translation id="2220572644011485463">PIN o contraseña</translation>
 <translation id="225680501294068881">Buscando dispositivos...</translation>
@@ -247,6 +249,7 @@ Usa esta función solo con cuentas de confianza.</translation>
 <translation id="6650933572246256093">El dispositivo Bluetooth "<ph name="DEVICE_NAME" />" solicita permiso para sincronizarse. Ingresa la siguiente clave de contraseña en el dispositivo: <ph name="PASSKEY" />.</translation>
 <translation id="6657585470893396449">Contraseña</translation>
 <translation id="6691659475504239918">Buscar+mayúscula+H</translation>
+<translation id="6696025732084565524">Tu teclado desmontable necesita una actualización crítica</translation>
 <translation id="6700713906295497288">Botón de menú IME</translation>
 <translation id="6713285437468012787">El dispositivo Bluetooth "<ph name="DEVICE_NAME" />" se sincronizó y ahora está disponible para todos los usuarios. Puedes ir a Configuración para eliminar esta sincronización.</translation>
 <translation id="6715542151869432661">No se encontraron dispositivos móviles.</translation>

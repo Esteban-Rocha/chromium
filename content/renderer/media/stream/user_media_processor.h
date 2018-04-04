@@ -23,6 +23,10 @@
 #include "third_party/WebKit/public/platform/modules/mediastream/media_devices.mojom.h"
 #include "third_party/WebKit/public/web/WebUserMediaRequest.h"
 
+namespace gfx {
+class Size;
+}
+
 namespace blink {
 class WebMediaStream;
 class WebMediaStreamSource;
@@ -38,7 +42,7 @@ class MediaStreamDeviceObserver;
 class MediaStreamVideoSource;
 class PeerConnectionDependencyFactory;
 class VideoCaptureSettings;
-class RenderFrame;
+class RenderFrameImpl;
 
 // TODO(guidou): Add |request_id| and |is_processing_user_gesture| to
 // blink::WebUserMediaRequest and remove this struct.
@@ -65,7 +69,7 @@ class CONTENT_EXPORT UserMediaProcessor
       const blink::mojom::MediaDevicesDispatcherHostPtr&()>;
   // |render_frame| and |dependency_factory| must outlive this instance.
   UserMediaProcessor(
-      RenderFrame* render_frame,
+      RenderFrameImpl* render_frame,
       PeerConnectionDependencyFactory* dependency_factory,
       std::unique_ptr<MediaStreamDeviceObserver> media_stream_device_observer,
       MediaDevicesDispatcherCallback media_devices_dispatcher_cb);
@@ -127,8 +131,7 @@ class CONTENT_EXPORT UserMediaProcessor
   // http://crbug.com/764293
   virtual MediaStreamAudioSource* CreateAudioSource(
       const MediaStreamDevice& device,
-      const MediaStreamSource::ConstraintsCallback& source_ready,
-      bool* has_sw_echo_cancellation);
+      const MediaStreamSource::ConstraintsCallback& source_ready);
   virtual MediaStreamVideoSource* CreateVideoSource(
       const MediaStreamDevice& device,
       const MediaStreamSource::SourceStoppedCallback& stop_callback);
@@ -152,6 +155,8 @@ class CONTENT_EXPORT UserMediaProcessor
       const std::string& label,
       const std::string& device_id,
       const media::VideoCaptureFormats& formats);
+
+  gfx::Size GetScreenSize();
 
   void OnStreamGenerationFailed(int request_id,
                                 MediaStreamRequestResult result);
@@ -293,7 +298,7 @@ class CONTENT_EXPORT UserMediaProcessor
   MediaDevicesDispatcherCallback media_devices_dispatcher_cb_;
   base::OnceClosure request_completed_cb_;
 
-  RenderFrame* const render_frame_;
+  RenderFrameImpl* const render_frame_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 

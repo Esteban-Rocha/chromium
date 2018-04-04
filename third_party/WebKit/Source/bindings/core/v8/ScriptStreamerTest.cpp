@@ -33,7 +33,7 @@ namespace blink {
 
 namespace {
 
-class ScriptStreamingTest : public ::testing::Test {
+class ScriptStreamingTest : public testing::Test {
  public:
   ScriptStreamingTest()
       : loading_task_runner_(scheduler::GetSingleThreadTaskRunnerForTesting()),
@@ -43,11 +43,10 @@ class ScriptStreamingTest : public ::testing::Test {
     // Basically we are not interested in ScriptElementBase* calls, just making
     // the method(s) to return default values.
     EXPECT_CALL(*element, IntegrityAttributeValue())
-        .WillRepeatedly(::testing::Return(String()));
+        .WillRepeatedly(testing::Return(String()));
     EXPECT_CALL(*element, GetDocument())
-        .WillRepeatedly(
-            ::testing::ReturnRef(dummy_page_holder_->GetDocument()));
-    EXPECT_CALL(*element, Loader()).WillRepeatedly(::testing::Return(nullptr));
+        .WillRepeatedly(testing::ReturnRef(dummy_page_holder_->GetDocument()));
+    EXPECT_CALL(*element, Loader()).WillRepeatedly(testing::Return(nullptr));
 
     KURL url("http://www.streaming-test.com/");
     Platform::Current()->GetURLLoaderMockFactory()->RegisterURL(
@@ -88,7 +87,7 @@ class ScriptStreamingTest : public ::testing::Test {
     // cannot fully control in what kind of chunks the data is passed to V8
     // (if V8 is not requesting more data between two appendData calls, it
     // will get both chunks together).
-    testing::YieldCurrentThread();
+    test::YieldCurrentThread();
   }
 
   void AppendPadding() {
@@ -107,11 +106,11 @@ class ScriptStreamingTest : public ::testing::Test {
 
   void ProcessTasksUntilStreamingComplete() {
     while (ScriptStreamerThread::Shared()->IsRunningTask()) {
-      testing::RunPendingTasks();
+      test::RunPendingTasks();
     }
     // Once more, because the "streaming complete" notification might only
     // now be in the task queue.
-    testing::RunPendingTasks();
+    test::RunPendingTasks();
   }
 
   scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;

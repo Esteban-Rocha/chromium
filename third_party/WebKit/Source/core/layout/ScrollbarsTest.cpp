@@ -30,7 +30,7 @@ namespace blink {
 
 namespace {
 
-class ScrollbarsTest : public ::testing::WithParamInterface<bool>,
+class ScrollbarsTest : public testing::WithParamInterface<bool>,
                        private ScopedRootLayerScrollingForTest,
                        public SimTest {
  public:
@@ -113,7 +113,7 @@ class ScrollbarsTestWithVirtualTimer : public ScrollbarsTest {
   void StopVirtualTimeAndExitRunLoop() {
     WebView().Scheduler()->SetVirtualTimePolicy(
         PageScheduler::VirtualTimePolicy::kPause);
-    testing::ExitRunLoop();
+    test::ExitRunLoop();
   }
 
   // Some task queues may have repeating v8 tasks that run forever so we impose
@@ -126,12 +126,12 @@ class ScrollbarsTestWithVirtualTimer : public ScrollbarsTest {
             &ScrollbarsTestWithVirtualTimer::StopVirtualTimeAndExitRunLoop,
             WTF::Unretained(this)),
         TimeDelta::FromMillisecondsD(delay_ms));
-    testing::EnterRunLoop();
+    test::EnterRunLoop();
   }
 };
 
-INSTANTIATE_TEST_CASE_P(All, ScrollbarsTest, ::testing::Bool());
-INSTANTIATE_TEST_CASE_P(All, ScrollbarsTestWithVirtualTimer, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, ScrollbarsTest, testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, ScrollbarsTestWithVirtualTimer, testing::Bool());
 
 TEST_P(ScrollbarsTest, DocumentStyleRecalcPreservesScrollbars) {
   v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
@@ -1265,7 +1265,7 @@ TEST_P(ScrollbarsTestWithVirtualTimer, TestNonCompositedOverlayScrollbarsFade) {
 typedef bool TestParamOverlayScrollbar;
 class ScrollbarAppearanceTest
     : public SimTest,
-      public ::testing::WithParamInterface<TestParamOverlayScrollbar> {
+      public testing::WithParamInterface<TestParamOverlayScrollbar> {
  public:
   // Use real scrollbars to ensure we're testing the real ScrollbarThemes.
   ScrollbarAppearanceTest() : mock_scrollbars_(false, GetParam()) {}
@@ -1309,7 +1309,7 @@ class ScrollbarTestingPlatformSupport : public TestingPlatformSupport {
 };
 
 // Test both overlay and non-overlay scrollbars.
-INSTANTIATE_TEST_CASE_P(All, ScrollbarAppearanceTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, ScrollbarAppearanceTest, testing::Bool());
 
 // Make sure native scrollbar can change by Emulator.
 // Disable on Android since Android always enable OverlayScrollbar.
@@ -1784,7 +1784,7 @@ TEST_P(ScrollbarsTest, AutosizeTest) {
 
   // Needs to dispatch the load event so FramViewAutoSizeInfo doesn't prevent
   // down-sizing.
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   LocalFrameView* frame_view = WebView().MainFrameImpl()->GetFrameView();
   ScrollableArea* layout_viewport = frame_view->LayoutViewportScrollableArea();
@@ -1879,7 +1879,7 @@ class ScrollbarTrackMarginsTest : public ScrollbarsTest {
   LayoutScrollbarPart* vertical_track_ = nullptr;
 };
 
-INSTANTIATE_TEST_CASE_P(All, ScrollbarTrackMarginsTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, ScrollbarTrackMarginsTest, testing::Bool());
 
 TEST_P(ScrollbarTrackMarginsTest,
        CustomScrollbarFractionalMarginsWillNotCauseDCHECKFailure) {

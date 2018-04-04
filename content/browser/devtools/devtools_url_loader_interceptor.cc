@@ -11,8 +11,8 @@
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/public/browser/browser_thread.h"
-#include "mojo/common/data_pipe_drainer.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
+#include "mojo/public/cpp/system/data_pipe_drainer.h"
 #include "net/base/mime_sniffer.h"
 #include "net/http/http_util.h"
 #include "net/url_request/url_request.h"
@@ -54,7 +54,7 @@ struct CreateLoaderParameters {
   const net::MutableNetworkTrafficAnnotationTag traffic_annotation;
 };
 
-class BodyReader : public mojo::common::DataPipeDrainer::Client {
+class BodyReader : public mojo::DataPipeDrainer::Client {
  public:
   explicit BodyReader(base::OnceClosure download_complete_callback)
       : download_complete_callback_(std::move(download_complete_callback)) {}
@@ -98,7 +98,7 @@ class BodyReader : public mojo::common::DataPipeDrainer::Client {
 
   void OnDataComplete() override;
 
-  std::unique_ptr<mojo::common::DataPipeDrainer> body_pipe_drainer_;
+  std::unique_ptr<mojo::DataPipeDrainer> body_pipe_drainer_;
   CallbackVector callbacks_;
   base::OnceClosure download_complete_callback_;
   std::string body_;
@@ -111,8 +111,7 @@ void BodyReader::StartReading(mojo::ScopedDataPipeConsumerHandle body) {
   DCHECK(!body_pipe_drainer_);
   DCHECK(!data_complete_);
 
-  body_pipe_drainer_.reset(
-      new mojo::common::DataPipeDrainer(this, std::move(body)));
+  body_pipe_drainer_.reset(new mojo::DataPipeDrainer(this, std::move(body)));
 }
 
 void BodyReader::OnDataComplete() {
@@ -148,7 +147,6 @@ struct ResponseMetadata {
 
   network::ResourceResponseHead head;
   std::unique_ptr<net::RedirectInfo> redirect_info;
-  base::Optional<net::SSLInfo> ssl_info;
   network::mojom::DownloadedTempFilePtr downloaded_file;
   std::vector<uint8_t> cached_metadata;
   size_t encoded_length = 0;
@@ -233,7 +231,6 @@ class InterceptionJob : public network::mojom::URLLoaderClient,
   // network::mojom::URLLoaderClient methods
   void OnReceiveResponse(
       const network::ResourceResponseHead& head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const network::ResourceResponseHead& head) override;
@@ -744,7 +741,6 @@ Response InterceptionJob::InnerContinueRequest(
     DCHECK_EQ(State::kResponseReceived, state_);
     DCHECK(!body_reader_);
     client_->OnReceiveResponse(response_metadata_->head,
-                               response_metadata_->ssl_info,
                                std::move(response_metadata_->downloaded_file));
     response_metadata_.reset();
     loader_->ResumeReadingBodyFromNet();
@@ -897,7 +893,6 @@ Response InterceptionJob::ProcessRedirectByClient(const std::string& location) {
 
 void InterceptionJob::SendResponse(const base::StringPiece& body) {
   client_->OnReceiveResponse(response_metadata_->head,
-                             response_metadata_->ssl_info,
                              std::move(response_metadata_->downloaded_file));
 
   // We shouldn't be able to transfer a string that big over the protocol,
@@ -1062,19 +1057,17 @@ void InterceptionJob::ResumeReadingBodyFromNet() {
 // URLLoaderClient methods
 void InterceptionJob::OnReceiveResponse(
     const network::ResourceResponseHead& head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
   state_ = State::kResponseReceived;
   DCHECK(!response_metadata_);
   if (!(stage_ & InterceptionStage::RESPONSE)) {
-    client_->OnReceiveResponse(head, ssl_info, std::move(downloaded_file));
+    client_->OnReceiveResponse(head, std::move(downloaded_file));
     return;
   }
   loader_->PauseReadingBodyFromNet();
   client_binding_.PauseIncomingMethodCallProcessing();
 
   response_metadata_ = std::make_unique<ResponseMetadata>(head);
-  response_metadata_->ssl_info = ssl_info;
   response_metadata_->downloaded_file = std::move(downloaded_file);
 
   NotifyClient(BuildRequestInfo(&head));

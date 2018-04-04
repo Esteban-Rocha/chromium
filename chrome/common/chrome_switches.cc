@@ -5,8 +5,8 @@
 #include "chrome/common/chrome_switches.h"
 
 #include "build/build_config.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 
 namespace switches {
 
@@ -782,6 +782,9 @@ const char kMarketUrlForTesting[] = "market-url-for-testing";
 // Specifies Android phone page loading progress bar animation.
 const char kProgressBarAnimation[]          = "progress-bar-animation";
 
+// Specifies a base URL for the trusted CDN for tests.
+const char kTrustedCDNBaseURLForTests[] = "trusted-cdn-base-url-for-tests";
+
 // Custom WebAPK server URL for the sake of testing.
 const char kWebApkServerUrl[] = "webapk-server-url";
 #endif  // defined(OS_ANDROID)
@@ -801,10 +804,6 @@ const char kDisableLoginScreenApps[] = "disable-login-screen-apps";
 // NOTE: Used by the Chrome OS crash_reporter to identify mash processes. If you
 // change or remove the flag please update platform2/crash_reporter.
 const char kMashServiceName[] = "mash-service-name";
-
-// Disables extra Ash-specific rules for positioning new browser windows.
-const char kSkipExtraAshWindowPositioning[] =
-    "skip-extra-ash-window-positioning";
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)

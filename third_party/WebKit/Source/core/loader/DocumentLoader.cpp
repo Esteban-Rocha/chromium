@@ -32,6 +32,7 @@
 #include <memory>
 #include "core/dom/Document.h"
 #include "core/dom/DocumentParser.h"
+#include "core/dom/ScriptableDocumentParser.h"
 #include "core/dom/UserGestureIndicator.h"
 #include "core/dom/WeakIdentifierMap.h"
 #include "core/dom/events/Event.h"
@@ -68,7 +69,6 @@
 #include "core/probe/CoreProbes.h"
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/WindowPerformance.h"
-#include "platform/FrameScheduler.h"
 #include "platform/feature_policy/FeaturePolicy.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/FetchUtils.h"
@@ -85,6 +85,7 @@
 #include "platform/network/http_names.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
 #include "platform/plugins/PluginData.h"
+#include "platform/scheduler/public/frame_scheduler.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "platform/wtf/Assertions.h"
@@ -472,7 +473,7 @@ void DocumentLoader::FinishedLoading(TimeTicks finish_time) {
 
   application_cache_host_->FinishedLoadingMainResource();
   if (parser_) {
-    if (is_parser_blocked_) {
+    if (parser_blocked_count_) {
       finished_loading_ = true;
     } else {
       parser_->Finish();
@@ -726,7 +727,7 @@ void DocumentLoader::CommitData(const char* bytes, size_t length) {
   if (length)
     data_received_ = true;
 
-  if (is_parser_blocked_) {
+  if (parser_blocked_count_) {
     if (!committed_data_buffer_)
       committed_data_buffer_ = SharedBuffer::Create();
     committed_data_buffer_->Append(bytes, length);
@@ -1104,6 +1105,15 @@ void DocumentLoader::InstallNewDocument(
 
   parser_ = document->OpenForNavigation(parsing_policy, mime_type, encoding);
 
+  // If this is a scriptable parser and there is a resource, register the
+  // resource's cache handler with the parser.
+  ScriptableDocumentParser* scriptable_parser =
+      parser_->AsScriptableDocumentParser();
+  if (scriptable_parser && GetResource()) {
+    scriptable_parser->SetInlineScriptCacheHandler(
+        ToRawResource(GetResource())->CacheHandler());
+  }
+
   // FeaturePolicy is reset in the browser process on commit, so this needs to
   // be initialized and replicated to the browser process after commit messages
   // are sent in didCommitNavigation().
@@ -1142,11 +1152,15 @@ void DocumentLoader::ReplaceDocumentWhileExecutingJavaScriptURL(
 }
 
 void DocumentLoader::BlockParser() {
-  is_parser_blocked_ = true;
+  parser_blocked_count_++;
 }
 
 void DocumentLoader::ResumeParser() {
-  is_parser_blocked_ = false;
+  parser_blocked_count_--;
+  DCHECK_GE(parser_blocked_count_, 0);
+
+  if (parser_blocked_count_ != 0)
+    return;
 
   if (committed_data_buffer_ && !committed_data_buffer_->IsEmpty()) {
     // Don't recursively process data.

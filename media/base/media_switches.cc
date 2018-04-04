@@ -12,6 +12,10 @@ namespace switches {
 // Allow users to specify a custom buffer size for debugging purpose.
 const char kAudioBufferSize[] = "audio-buffer-size";
 
+// Set a timeout (in milliseconds) for the audio service to quit if there are no
+// client connections to it. If the value is zero the service never quits.
+const char kAudioServiceQuitTimeoutMs[] = "audio-service-quit-timeout-ms";
+
 // Command line flag name to set the autoplay policy.
 const char kAutoplayPolicy[] = "autoplay-policy";
 
@@ -225,9 +229,6 @@ const base::Feature kBackgroundVideoTrackOptimization{
 const base::Feature kBackgroundVideoPauseOptimization{
     "BackgroundVideoPauseOptimization", base::FEATURE_ENABLED_BY_DEFAULT};
 
-const base::Feature kComplexityBasedVideoBuffering{
-    "ComplexityBasedVideoBuffering", base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Make MSE garbage collection algorithm more aggressive when we are under
 // moderate or critical memory pressure. This will relieve memory pressure by
 // releasing stale data from MSE buffers.
@@ -314,6 +315,10 @@ const base::Feature kVideoRotateToFullscreen{"VideoRotateToFullscreen",
 // TODO(xhwang): Remove this after feature launch. See http://crbug.com/493521
 const base::Feature kMediaDrmPersistentLicense{
     "MediaDrmPersistentLicense", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enables the Android MediaRouter implementation using CAF (Cast v3).
+const base::Feature kCafMediaRouterImpl{"CafMediaRouterImpl",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
 #endif
 

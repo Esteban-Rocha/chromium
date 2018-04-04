@@ -192,6 +192,7 @@ component("core") {
     "//third_party/WebKit/Source/core/dom",
     "//third_party/WebKit/Source/core/editing",
     "//third_party/WebKit/Source/core/events",
+    "//third_party/WebKit/Source/core/execution_context",
     "//third_party/WebKit/Source/core/exported",
     "//third_party/WebKit/Source/core/fetch",
     "//third_party/WebKit/Source/core/fileapi",
@@ -2055,6 +2056,7 @@ jumbo_source_set("unit_tests") {
     "paint/compositing/CompositedLayerMappingTest.cpp",
     "paint/compositing/CompositingInputsUpdaterTest.cpp",
     "paint/compositing/CompositingLayerAssignerTest.cpp",
+    "paint/compositing/CompositingLayerPropertyUpdaterTest.cpp",
     "paint/compositing/CompositingReasonFinderTest.cpp",
     "paint/compositing/PaintLayerCompositorTest.cpp",
     "paint/ng/ng_paint_fragment_test.cc",
@@ -2129,7 +2131,7 @@ jumbo_source_set("unit_tests") {
 
   deps = [
     ":core",
-    "//mojo/common:common_base",
+    "//mojo/public/cpp/system",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/WebKit/Source/core/editing:unit_tests",

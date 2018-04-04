@@ -25,6 +25,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/task_scheduler/task_traits.h"
+#include "base/test/bind_test_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -98,8 +99,10 @@ namespace content {
 
 namespace {
 
-// V8ScriptRunner::setCacheTimeStamp() stores 12 byte data (tag + timestamp).
-const int kV8CacheTimeStampDataSize = sizeof(unsigned) + sizeof(double);
+// V8ScriptRunner::setCacheTimeStamp() stores 16 byte data (marker + tag +
+// timestamp).
+const int kV8CacheTimeStampDataSize =
+    sizeof(uint32_t) + sizeof(uint32_t) + sizeof(double);
 
 struct FetchResult {
   ServiceWorkerStatusCode status;
@@ -108,26 +111,25 @@ struct FetchResult {
   std::unique_ptr<storage::BlobDataHandle> blob_data_handle;
 };
 
-void RunAndQuit(const base::Closure& closure,
-                const base::Closure& quit,
+void RunAndQuit(base::OnceClosure closure,
+                base::OnceClosure quit,
                 base::SingleThreadTaskRunner* original_message_loop) {
-  closure.Run();
-  original_message_loop->PostTask(FROM_HERE, quit);
+  std::move(closure).Run();
+  original_message_loop->PostTask(FROM_HERE, std::move(quit));
 }
 
-void RunOnIOThreadWithDelay(const base::Closure& closure,
-                            base::TimeDelta delay) {
+void RunOnIOThreadWithDelay(base::OnceClosure closure, base::TimeDelta delay) {
   base::RunLoop run_loop;
   BrowserThread::PostDelayedTask(
       BrowserThread::IO, FROM_HERE,
-      base::BindOnce(&RunAndQuit, closure, run_loop.QuitClosure(),
+      base::BindOnce(&RunAndQuit, std::move(closure), run_loop.QuitClosure(),
                      base::RetainedRef(base::ThreadTaskRunnerHandle::Get())),
       delay);
   run_loop.Run();
 }
 
-void RunOnIOThread(const base::Closure& closure) {
-  RunOnIOThreadWithDelay(closure, base::TimeDelta());
+void RunOnIOThread(base::OnceClosure closure) {
+  RunOnIOThreadWithDelay(std::move(closure), base::TimeDelta());
 }
 
 void RunOnIOThread(
@@ -182,7 +184,7 @@ void ReadResponseBody(std::string* body,
 }
 
 void ExpectResultAndRun(bool expected,
-                        const base::Closure& continuation,
+                        base::RepeatingClosure continuation,
                         bool actual) {
   EXPECT_EQ(expected, actual);
   continuation.Run();
@@ -359,10 +361,10 @@ void CountScriptResources(
 }
 
 void StoreString(std::string* result,
-                 const base::Closure& callback,
+                 base::OnceClosure callback,
                  const base::Value* value) {
   value->GetAsString(result);
-  callback.Run();
+  std::move(callback).Run();
 }
 
 int GetInt(const base::DictionaryValue& dict, base::StringPiece path) {
@@ -2630,6 +2632,10 @@ class ServiceWorkerVersionBrowserV8CacheTest
       public ServiceWorkerVersion::Listener {
  public:
   using self = ServiceWorkerVersionBrowserV8CacheTest;
+  ServiceWorkerVersionBrowserV8CacheTest() {
+    scoped_feature_list_.InitAndDisableFeature(
+        features::kServiceWorkerScriptFullCodeCache);
+  }
   ~ServiceWorkerVersionBrowserV8CacheTest() override {
     if (version_)
       version_->RemoveListener(this);
@@ -2653,6 +2659,9 @@ class ServiceWorkerVersionBrowserV8CacheTest
 
   base::Closure cache_updated_closure_;
   size_t metadata_size_ = 0;
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserV8CacheTest, Restart) {
@@ -2819,46 +2828,17 @@ class CacheStorageSideDataSizeChecker
       const base::Closure& continuation,
       CacheStorageCacheHandle cache_handle,
       CacheStorageError error,
-      std::unique_ptr<ServiceWorkerResponse> response,
-      std::unique_ptr<storage::BlobDataHandle> blob_data_handle) {
+      std::unique_ptr<ServiceWorkerResponse> response) {
     ASSERT_EQ(CacheStorageError::kSuccess, error);
-    blob_data_handle_ = std::move(blob_data_handle);
-    blob_reader_ = blob_data_handle_->CreateReader();
-    const storage::BlobReader::Status status = blob_reader_->CalculateSize(
-        base::BindOnce(&self::OnBlobReaderCalculateSizeCallback, this, result,
-                       continuation));
-
-    ASSERT_NE(storage::BlobReader::Status::NET_ERROR, status);
-    if (status == storage::BlobReader::Status::DONE)
-      OnBlobReaderCalculateSizeCallback(result, continuation, net::OK);
-  }
-
-  void OnBlobReaderCalculateSizeCallback(int* result,
-                                         const base::Closure& continuation,
-                                         int size_result) {
-    ASSERT_EQ(net::OK, size_result);
-    if (!blob_reader_->has_side_data()) {
-      blob_reader_ = nullptr;
-      continuation.Run();
-      return;
-    }
-    const storage::BlobReader::Status status = blob_reader_->ReadSideData(
-        base::Bind(&self::OnBlobReaderReadSideDataCallback, this, result,
-                   continuation));
-    ASSERT_NE(storage::BlobReader::Status::NET_ERROR, status);
-    if (status == storage::BlobReader::Status::DONE) {
-      OnBlobReaderReadSideDataCallback(result, continuation,
-                                       storage::BlobReader::Status::DONE);
-    }
-  }
-
-  void OnBlobReaderReadSideDataCallback(int* result,
-                                        const base::Closure& continuation,
-                                        storage::BlobReader::Status status) {
-    ASSERT_NE(storage::BlobReader::Status::NET_ERROR, status);
-    *result = blob_reader_->side_data()->size();
-    blob_reader_ = nullptr;
-    continuation.Run();
+    ASSERT_TRUE(response->blob);
+    auto blob = response->blob;
+    response->blob->get()->ReadSideData(base::BindLambdaForTesting(
+        [blob, result,
+         continuation](const base::Optional<std::vector<uint8_t>>& data) {
+          if (data)
+            *result = data->size();
+          continuation.Run();
+        }));
   }
 
   CacheStorageContextImpl* cache_storage_context_;
@@ -2866,8 +2846,6 @@ class CacheStorageSideDataSizeChecker
   const GURL origin_;
   const std::string cache_name_;
   const GURL url_;
-  std::unique_ptr<storage::BlobDataHandle> blob_data_handle_;
-  std::unique_ptr<storage::BlobReader> blob_reader_;
   DISALLOW_COPY_AND_ASSIGN(CacheStorageSideDataSizeChecker);
 };
 

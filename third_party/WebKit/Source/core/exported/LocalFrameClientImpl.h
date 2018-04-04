@@ -122,7 +122,8 @@ class LocalFrameClientImpl final : public LocalFrameClient {
       bool is_client_redirect,
       WebTriggeringEventInfo,
       HTMLFormElement*,
-      ContentSecurityPolicyDisposition should_bypass_main_world_csp) override;
+      ContentSecurityPolicyDisposition should_bypass_main_world_csp,
+      mojom::blink::BlobURLTokenPtr) override;
   void DispatchWillSendSubmitEvent(HTMLFormElement*) override;
   void DispatchWillSubmitForm(HTMLFormElement*) override;
   void DidStartLoading(LoadStartType) override;
@@ -145,6 +146,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   void DidChangePerformanceTiming() override;
   void DidObserveLoadingBehavior(WebLoadingBehaviorFlag) override;
   void DidObserveNewFeatureUsage(mojom::WebFeature) override;
+  void DidObserveNewCssPropertyUsage(int, bool) override;
   bool ShouldTrackUseCounter(const KURL&) override;
   void SelectorMatchChanged(const Vector<String>& added_selectors,
                             const Vector<String>& removed_selectors) override;
@@ -233,7 +235,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
 
   KURL OverrideFlashEmbedWithHTML(const KURL&) override;
 
-  void SetHasReceivedUserGesture(bool received_previously) override;
+  void SetHasReceivedUserGesture() override;
 
   void SetHasReceivedUserGestureBeforeNavigation(bool value) override;
 

@@ -296,6 +296,40 @@ void ExtractUnderlines(NSAttributedString* string,
   closeOnDeactivate_ = b;
 }
 
+- (void)setClientWasDestroyed {
+  clientWasDestroyed_ = YES;
+}
+
+- (void)setShowingContextMenu:(BOOL)showing {
+  showingContextMenu_ = showing;
+
+  // Create a fake mouse event to inform the render widget that the mouse
+  // left or entered.
+  NSWindow* window = [self window];
+  int window_number = window ? [window windowNumber] : -1;
+
+  // TODO(asvitkine): If the location outside of the event stream doesn't
+  // correspond to the current event (due to delayed event processing), then
+  // this may result in a cursor flicker if there are later mouse move events
+  // in the pipeline. Find a way to use the mouse location from the event that
+  // dismissed the context menu.
+  NSPoint location = [window mouseLocationOutsideOfEventStream];
+  NSTimeInterval event_time = [[NSApp currentEvent] timestamp];
+  NSEvent* event = [NSEvent mouseEventWithType:NSMouseMoved
+                                      location:location
+                                 modifierFlags:0
+                                     timestamp:event_time
+                                  windowNumber:window_number
+                                       context:nil
+                                   eventNumber:0
+                                    clickCount:0
+                                      pressure:0];
+  WebMouseEvent web_event = WebMouseEventBuilder::Build(event, self);
+  web_event.SetModifiers(web_event.GetModifiers() |
+                         WebInputEvent::kRelativeMotionEvent);
+  client_->OnNSViewForwardMouseEvent(web_event);
+}
+
 - (BOOL)shouldIgnoreMouseEvent:(NSEvent*)theEvent {
   NSWindow* window = [self window];
   // If this is a background window, don't handle mouse movement events. This
@@ -366,12 +400,12 @@ void ExtractUnderlines(NSAttributedString* string,
 
   if ([self shouldIgnoreMouseEvent:theEvent]) {
     // If this is the first such event, send a mouse exit to the host view.
-    if (!mouseEventWasIgnored_ && renderWidgetHostView_->host()) {
+    if (!mouseEventWasIgnored_ && !clientWasDestroyed_) {
       WebMouseEvent exitEvent =
           WebMouseEventBuilder::Build(theEvent, self, pointerType_);
       exitEvent.SetType(WebInputEvent::kMouseLeave);
       exitEvent.button = WebMouseEvent::Button::kNoButton;
-      renderWidgetHostView_->ForwardMouseEvent(exitEvent);
+      client_->OnNSViewForwardMouseEvent(exitEvent);
     }
     mouseEventWasIgnored_ = YES;
     return;
@@ -380,21 +414,12 @@ void ExtractUnderlines(NSAttributedString* string,
   if (mouseEventWasIgnored_) {
     // If this is the first mouse event after a previous event that was ignored
     // due to the hitTest, send a mouse enter event to the host view.
-    if (renderWidgetHostView_->host()) {
+    if (!clientWasDestroyed_) {
       WebMouseEvent enterEvent =
           WebMouseEventBuilder::Build(theEvent, self, pointerType_);
       enterEvent.SetType(WebInputEvent::kMouseMove);
       enterEvent.button = WebMouseEvent::Button::kNoButton;
-      ui::LatencyInfo latency_info(ui::SourceEventType::OTHER);
-      latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
-      if (renderWidgetHostView_->ShouldRouteEvent(enterEvent)) {
-        renderWidgetHostView_->host()
-            ->delegate()
-            ->GetInputEventRouter()
-            ->RouteMouseEvent(renderWidgetHostView_, &enterEvent, latency_info);
-      } else {
-        renderWidgetHostView_->ProcessMouseEvent(enterEvent, latency_info);
-      }
+      client_->OnNSViewRouteOrProcessMouseEvent(enterEvent);
     }
   }
   mouseEventWasIgnored_ = NO;
@@ -425,16 +450,7 @@ void ExtractUnderlines(NSAttributedString* string,
 
   WebMouseEvent event =
       WebMouseEventBuilder::Build(theEvent, self, pointerType_);
-  ui::LatencyInfo latency_info(ui::SourceEventType::OTHER);
-  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
-  if (renderWidgetHostView_->ShouldRouteEvent(event)) {
-    renderWidgetHostView_->host()
-        ->delegate()
-        ->GetInputEventRouter()
-        ->RouteMouseEvent(renderWidgetHostView_, &event, latency_info);
-  } else {
-    renderWidgetHostView_->ProcessMouseEvent(event, latency_info);
-  }
+  client_->OnNSViewRouteOrProcessMouseEvent(event);
 }
 
 - (void)tabletEvent:(NSEvent*)theEvent {
@@ -551,15 +567,6 @@ void ExtractUnderlines(NSAttributedString* string,
   }
 
   latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
-
-  // Force fullscreen windows to close on Escape so they won't keep the keyboard
-  // grabbed or be stuck onscreen if the renderer is hanging.
-  if (event.GetType() == NativeWebKeyboardEvent::kRawKeyDown &&
-      event.windows_key_code == ui::VKEY_ESCAPE &&
-      renderWidgetHostView_->pepper_fullscreen_window()) {
-    widgetHost->ShutdownAndDestroyWidget(true);
-    return;
-  }
 
   // If there are multiple widgets on the page (such as when there are
   // out-of-process iframes), pick the one that should process this event.
@@ -782,19 +789,11 @@ void ExtractUnderlines(NSAttributedString* string,
     return;
   }
 
-  if (renderWidgetHostView_->host()) {
+  if (!clientWasDestroyed_) {
     // History-swiping is not possible if the logic reaches this point.
     WebMouseWheelEvent webEvent = WebMouseWheelEventBuilder::Build(event, self);
     webEvent.rails_mode = mouseWheelFilter_.UpdateRailsMode(webEvent);
-    if (renderWidgetHostView_->wheel_scroll_latching_enabled()) {
-      renderWidgetHostView_->mouse_wheel_phase_handler_
-          .AddPhaseIfNeededAndScheduleEndEvent(webEvent, false);
-    } else {
-      ui::LatencyInfo latency_info(ui::SourceEventType::WHEEL);
-      latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
-      renderWidgetHostView_->host()->ForwardWheelEventWithLatencyInfo(
-          webEvent, latency_info);
-    }
+    client_->OnNSViewForwardWheelEvent(webEvent);
   }
 
   if (endWheelMonitor_) {
@@ -1071,32 +1070,10 @@ void ExtractUnderlines(NSAttributedString* string,
   }
 
   // This is responsible for content scrolling!
-  if (renderWidgetHostView_->host()) {
+  if (!clientWasDestroyed_) {
     WebMouseWheelEvent webEvent = WebMouseWheelEventBuilder::Build(event, self);
     webEvent.rails_mode = mouseWheelFilter_.UpdateRailsMode(webEvent);
-    ui::LatencyInfo latency_info(ui::SourceEventType::WHEEL);
-    latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
-    if (renderWidgetHostView_->wheel_scroll_latching_enabled()) {
-      renderWidgetHostView_->mouse_wheel_phase_handler_
-          .AddPhaseIfNeededAndScheduleEndEvent(
-              webEvent, renderWidgetHostView_->ShouldRouteEvent(webEvent));
-      if (webEvent.phase == blink::WebMouseWheelEvent::kPhaseEnded) {
-        // A wheel end event is scheduled and will get dispatched if momentum
-        // phase doesn't start in 100ms. Don't sent the wheel end event
-        // immediately.
-        return;
-      }
-    }
-
-    if (renderWidgetHostView_->ShouldRouteEvent(webEvent)) {
-      renderWidgetHostView_->host()
-          ->delegate()
-          ->GetInputEventRouter()
-          ->RouteMouseWheelEvent(renderWidgetHostView_, &webEvent,
-                                 latency_info);
-    } else {
-      renderWidgetHostView_->ProcessMouseWheelEvent(webEvent, latency_info);
-    }
+    client_->OnNSViewRouteOrProcessWheelEvent(webEvent);
   }
 }
 
@@ -1277,7 +1254,7 @@ void ExtractUnderlines(NSAttributedString* string,
 }
 
 - (BOOL)acceptsFirstResponder {
-  if (!renderWidgetHostView_->host())
+  if (clientWasDestroyed_)
     return NO;
 
   return canBeKeyView_;
@@ -1289,7 +1266,7 @@ void ExtractUnderlines(NSAttributedString* string,
   if ([responderDelegate_ respondsToSelector:@selector(windowDidBecomeKey)])
     [responderDelegate_ windowDidBecomeKey];
   if ([self window].isKeyWindow && [[self window] firstResponder] == self)
-    renderWidgetHostView_->SetActive(true);
+    client_->OnNSViewWindowIsKeyChanged(true);
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification {
@@ -1304,17 +1281,16 @@ void ExtractUnderlines(NSAttributedString* string,
     return;
 
   if ([[self window] firstResponder] == self)
-    renderWidgetHostView_->SetActive(false);
+    client_->OnNSViewWindowIsKeyChanged(false);
 }
 
 - (BOOL)becomeFirstResponder {
-  if (!renderWidgetHostView_->host())
+  if (clientWasDestroyed_)
     return NO;
   if ([responderDelegate_ respondsToSelector:@selector(becomeFirstResponder)])
     [responderDelegate_ becomeFirstResponder];
 
-  renderWidgetHostView_->host()->GotFocus();
-  renderWidgetHostView_->SetTextInputActive(true);
+  client_->OnNSViewIsFirstResponderChanged(true);
 
   // Cancel any onging composition text which was left before we lost focus.
   // TODO(suzhe): We should do it in -resignFirstResponder: method, but
@@ -1337,14 +1313,15 @@ void ExtractUnderlines(NSAttributedString* string,
 - (BOOL)resignFirstResponder {
   if ([responderDelegate_ respondsToSelector:@selector(resignFirstResponder)])
     [responderDelegate_ resignFirstResponder];
-  renderWidgetHostView_->SetTextInputActive(false);
-  if (!renderWidgetHostView_->host())
+
+  if (clientWasDestroyed_)
     return YES;
 
-  if (closeOnDeactivate_)
-    renderWidgetHostView_->KillSelf();
-
-  renderWidgetHostView_->host()->LostFocus();
+  client_->OnNSViewIsFirstResponderChanged(false);
+  if (closeOnDeactivate_) {
+    [self setHidden:YES];
+    client_->OnNSViewRequestShutdown();
+  }
 
   // We should cancel any onging composition whenever RWH's Blur() method gets
   // called, because in this case, webkit will confirm the ongoing composition
@@ -1869,11 +1846,15 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   if (!renderWidgetHostView_->browser_compositor_)
     return;
 
-  // Update the window's frame, the view's bounds, and the display info, as they
-  // have not been updated while unattached to a window.
+  // Update the window's frame, the view's bounds, focus, and the display info,
+  // as they have not been updated while unattached to a window.
   [self sendWindowFrameInScreenToClient];
   [self sendViewBoundsInWindowToClient];
   [self updateScreenProperties];
+  if (!clientWasDestroyed_) {
+    client_->OnNSViewIsFirstResponderChanged([[self window] firstResponder] ==
+                                             self);
+  }
 
   // If we switch windows (or are removed from the view hierarchy), cancel any
   // open mouse-downs.
@@ -1881,8 +1862,7 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
     WebMouseEvent event(WebInputEvent::kMouseUp, WebInputEvent::kNoModifiers,
                         ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
     event.button = WebMouseEvent::Button::kLeft;
-    renderWidgetHostView_->ForwardMouseEvent(event);
-
+    client_->OnNSViewForwardMouseEvent(event);
     hasOpenMouseDown_ = NO;
   }
 }
@@ -2013,13 +1993,13 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   // NSWindow's invalidateCursorRectsForView: resets cursor rects but does not
   // update the cursor instantly. The cursor is updated when the mouse moves.
   // Update the cursor by setting the current cursor if not hidden.
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (!cursorHidden_ && web_contents && !web_contents->IsShowingContextMenu())
+  if (!cursorHidden_ && !showingContextMenu_)
     [currentCursor_ set];
 }
 
 - (void)popupWindowWillClose:(NSNotification*)notification {
-  renderWidgetHostView_->KillSelf();
+  [self setHidden:YES];
+  client_->OnNSViewRequestShutdown();
 }
 
 @end

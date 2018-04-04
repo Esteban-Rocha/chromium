@@ -25,6 +25,8 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/file_util.h"
+#include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/content_scripts_handler.h"
 
 namespace extensions {
 
@@ -55,6 +57,46 @@ base::FilePath NormalizeRelativePath(const base::FilePath& path) {
   // should work for all platforms.
   return base::FilePath(
       base::JoinString(parts, base::FilePath::StringType(1, '/')));
+}
+
+bool IsBackgroundPage(const Extension* extension,
+                      const base::FilePath& relative_path) {
+  return BackgroundInfo::HasBackgroundPage(extension) &&
+         extensions::file_util::ExtensionURLToRelativeFilePath(
+             BackgroundInfo::GetBackgroundURL(extension)) == relative_path;
+}
+
+bool IsBackgroundScript(const Extension* extension,
+                        const base::FilePath& relative_path) {
+  for (const std::string& script :
+       BackgroundInfo::GetBackgroundScripts(extension)) {
+    if (extension->GetResource(script).relative_path() == relative_path)
+      return true;
+  }
+  return false;
+}
+
+bool IsContentScript(const Extension* extension,
+                     const base::FilePath& relative_path) {
+  for (const std::unique_ptr<UserScript>& script :
+       ContentScriptsInfo::GetContentScripts(extension)) {
+    for (const std::unique_ptr<UserScript::File>& js_file :
+         script->js_scripts()) {
+      if (js_file->relative_path() == relative_path)
+        return true;
+    }
+  }
+  return false;
+}
+
+bool HasScriptFileExt(const base::FilePath& requested_path) {
+  return requested_path.Extension() == FILE_PATH_LITERAL(".js");
+}
+
+bool HasPageFileExt(const base::FilePath& requested_path) {
+  base::FilePath::StringType file_extension = requested_path.Extension();
+  return file_extension == FILE_PATH_LITERAL(".html") ||
+         file_extension == FILE_PATH_LITERAL(".htm");
 }
 
 }  // namespace
@@ -123,7 +165,7 @@ class ContentVerifier::HashHelper {
             &HashHelper::ReadHashOnFileTaskRunner, extension_key, fetch_params,
             base::BindRepeating(&IsCancelledChecker::IsCancelled, checker),
             base::BindOnce(&HashHelper::DidReadHash, weak_factory_.GetWeakPtr(),
-                           callback_key)));
+                           callback_key, checker)));
   }
 
  private:
@@ -218,8 +260,19 @@ class ContentVerifier::HashHelper {
   }
 
   void DidReadHash(const CallbackKey& key,
+                   const scoped_refptr<IsCancelledChecker>& checker,
                    const scoped_refptr<ContentHash>& content_hash,
                    bool was_cancelled) {
+    DCHECK(checker);
+    if (was_cancelled ||
+        // The request might have been cancelled on IO after |content_hash| was
+        // built.
+        // TODO(lazyboy): Add a specific test case for this. See
+        // https://crbug.com/825470 for a likely example of this.
+        checker->IsCancelled()) {
+      return;
+    }
+
     auto iter = callback_infos_.find(key);
     DCHECK(iter != callback_infos_.end());
     auto& callback_info = iter->second;
@@ -237,18 +290,27 @@ class ContentVerifier::HashHelper {
                          base::BindRepeating(&IsCancelledChecker::IsCancelled,
                                              callback_info.cancelled_checker),
                          base::BindOnce(&HashHelper::CompleteDidReadHash,
-                                        weak_factory_.GetWeakPtr(), key)));
+                                        weak_factory_.GetWeakPtr(), key,
+                                        callback_info.cancelled_checker)));
       return;
     }
 
-    CompleteDidReadHash(key, std::move(content_hash), was_cancelled);
+    CompleteDidReadHash(key, callback_info.cancelled_checker,
+                        std::move(content_hash), was_cancelled);
   }
 
   void CompleteDidReadHash(const CallbackKey& key,
+                           const scoped_refptr<IsCancelledChecker>& checker,
                            const scoped_refptr<ContentHash>& content_hash,
                            bool was_cancelled) {
     DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
-    DCHECK(!was_cancelled);
+    DCHECK(checker);
+    if (was_cancelled ||
+        // The request might have been cancelled on IO after |content_hash| was
+        // built.
+        checker->IsCancelled()) {
+      return;
+    }
 
     auto iter = callback_infos_.find(key);
     DCHECK(iter != callback_infos_.end());
@@ -290,8 +352,7 @@ void ContentVerifier::SetObserverForTests(TestObserver* observer) {
 ContentVerifier::ContentVerifier(
     content::BrowserContext* context,
     std::unique_ptr<ContentVerifierDelegate> delegate)
-    : shutdown_(false),
-      context_(context),
+    : context_(context),
       delegate_(std::move(delegate)),
       request_context_getter_(
           content::BrowserContext::GetDefaultStoragePartition(context)
@@ -308,13 +369,18 @@ void ContentVerifier::Start() {
 }
 
 void ContentVerifier::Shutdown() {
-  shutdown_ = true;
+  shutdown_on_ui_ = true;
   delegate_->Shutdown();
   content::BrowserThread::PostTask(
-      content::BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&ContentVerifierIOData::Clear, io_data_));
+      content::BrowserThread::IO, FROM_HERE,
+      base::BindOnce(&ContentVerifier::ShutdownOnIO, this));
   observer_.RemoveAll();
+}
+
+void ContentVerifier::ShutdownOnIO() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+  shutdown_on_io_ = true;
+  io_data_->Clear();
   hash_helper_.reset();
 }
 
@@ -326,6 +392,15 @@ ContentVerifyJob* ContentVerifier::CreateJobFor(
 
   const ContentVerifierIOData::ExtensionData* data =
       io_data_->GetData(extension_id);
+  // The absence of |data| generally means that we don't have to verify the
+  // extension resource. However, it could also mean that
+  // OnExtensionLoadedOnIO didn't get a chance to fire yet.
+  // See https://crbug.com/826584 for an example of how this can happen from
+  // ExtensionUserScriptLoader. Currently, ExtensionUserScriptLoader performs a
+  // thread hopping to work around this problem.
+  // TODO(lazyboy): Prefer queueing up jobs in these case instead of the thread
+  // hopping solution, but that requires a substantial change in
+  // ContnetVerifier/ContentVerifyJob.
   if (!data)
     return NULL;
 
@@ -350,7 +425,7 @@ void ContentVerifier::GetContentHash(
     bool force_missing_computed_hashes_creation,
     ContentHashCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
-  if (shutdown_) {
+  if (shutdown_on_io_) {
     // NOTE: Release |callback| asynchronously, so that we don't release ref of
     // ContentVerifyJob and possibly destroy it synchronously here while
     // ContentVerifyJob is holding a lock. The lock destroyer would fail DCHECK
@@ -370,8 +445,8 @@ void ContentVerifier::GetContentHash(
                                           delegate_->GetPublicKey());
   ContentHash::FetchParams fetch_params =
       GetFetchParams(extension_id, extension_version);
-  // Since |shutdown_| = false, GetOrCreateHashHelper() must return non-nullptr
-  // instance of HashHelper.
+  // Since |shutdown_on_io_| = false, GetOrCreateHashHelper() must return
+  // non-nullptr instance of HashHelper.
   GetOrCreateHashHelper()->GetContentHash(
       extension_key, fetch_params, force_missing_computed_hashes_creation,
       std::move(callback));
@@ -386,7 +461,7 @@ void ContentVerifier::VerifyFailed(const ExtensionId& extension_id,
                        reason));
     return;
   }
-  if (shutdown_)
+  if (shutdown_on_ui_)
     return;
 
   VLOG(1) << "VerifyFailed " << extension_id << " reason:" << reason;
@@ -413,7 +488,7 @@ void ContentVerifier::VerifyFailed(const ExtensionId& extension_id,
 void ContentVerifier::OnExtensionLoaded(
     content::BrowserContext* browser_context,
     const Extension* extension) {
-  if (shutdown_)
+  if (shutdown_on_ui_)
     return;
 
   ContentVerifierDelegate::Mode mode = delegate_->ShouldBeVerified(*extension);
@@ -447,6 +522,9 @@ void ContentVerifier::OnExtensionLoadedOnIO(
     const base::FilePath& extension_root,
     const base::Version& extension_version,
     std::unique_ptr<ContentVerifierIOData::ExtensionData> data) {
+  if (shutdown_on_io_)
+    return;
+
   io_data_->AddData(extension_id, std::move(data));
   GetContentHash(extension_id, extension_root, extension_version,
                  false /* force_missing_computed_hashes_creation */,
@@ -458,7 +536,7 @@ void ContentVerifier::OnExtensionUnloaded(
     content::BrowserContext* browser_context,
     const Extension* extension,
     UnloadedExtensionReason reason) {
-  if (shutdown_)
+  if (shutdown_on_ui_)
     return;
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
@@ -475,6 +553,8 @@ GURL ContentVerifier::GetSignatureFetchUrlForTest(
 void ContentVerifier::OnExtensionUnloadedOnIO(
     const ExtensionId& extension_id,
     const base::Version& extension_version) {
+  if (shutdown_on_io_)
+    return;
   io_data_->RemoveData(extension_id);
   HashHelper* hash_helper = GetOrCreateHashHelper();
   if (hash_helper)
@@ -522,6 +602,10 @@ bool ContentVerifier::ShouldVerifyAnyPaths(
 
   const std::set<base::FilePath>& browser_images = *(data->browser_image_paths);
 
+  ExtensionRegistry* registry = ExtensionRegistry::Get(context_);
+  const Extension* extension =
+      registry->GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
+
   base::FilePath locales_dir = extension_root.Append(kLocaleFolder);
   std::unique_ptr<std::set<std::string>> all_locales;
 
@@ -533,6 +617,20 @@ bool ContentVerifier::ShouldVerifyAnyPaths(
 
     if (relative_unix_path == manifest_file)
       continue;
+
+    // JavaScript and HTML files should always be verified.
+    if (HasScriptFileExt(relative_unix_path) ||
+        HasPageFileExt(relative_unix_path)) {
+      return true;
+    }
+
+    // Background pages, scripts and content scripts should always be verified
+    // regardless of their file type.
+    if (extension && (IsBackgroundPage(extension, relative_unix_path) ||
+                      IsBackgroundScript(extension, relative_unix_path) ||
+                      IsContentScript(extension, relative_unix_path))) {
+      return true;
+    }
 
     if (base::ContainsKey(browser_images, relative_unix_path))
       continue;
@@ -569,6 +667,8 @@ bool ContentVerifier::ShouldVerifyAnyPaths(
 }
 
 ContentVerifier::HashHelper* ContentVerifier::GetOrCreateHashHelper() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+  DCHECK(!shutdown_on_io_) << "Creating HashHelper after IO shutdown";
   // Just checking |hash_helper_| against nullptr isn't enough because we reset
   // hash_helper_ in Shutdown(), and we shouldn't be re-creating it in that
   // case.
@@ -580,6 +680,20 @@ ContentVerifier::HashHelper* ContentVerifier::GetOrCreateHashHelper() {
     hash_helper_created_ = true;
   }
   return hash_helper_.get();
+}
+
+void ContentVerifier::ResetIODataForTesting(const Extension* extension) {
+  std::set<base::FilePath> original_image_paths =
+      delegate_->GetBrowserImagePaths(extension);
+
+  auto image_paths = std::make_unique<std::set<base::FilePath>>();
+  for (const auto& path : original_image_paths) {
+    image_paths->insert(NormalizeRelativePath(path));
+  }
+
+  auto data = std::make_unique<ContentVerifierIOData::ExtensionData>(
+      std::move(image_paths), extension->version());
+  io_data_->AddData(extension->id(), std::move(data));
 }
 
 }  // namespace extensions

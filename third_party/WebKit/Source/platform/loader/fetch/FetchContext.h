@@ -31,7 +31,6 @@
 #ifndef FetchContext_h
 #define FetchContext_h
 
-#include "platform/FrameScheduler.h"
 #include "platform/PlatformExport.h"
 #include "platform/heap/Handle.h"
 #include "platform/loader/fetch/FetchInitiatorInfo.h"
@@ -41,6 +40,7 @@
 #include "platform/loader/fetch/ResourceLoadScheduler.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
+#include "platform/scheduler/public/frame_scheduler.h"
 #include "platform/weborigin/SecurityViolationReportingPolicy.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/Noncopyable.h"
@@ -148,6 +148,8 @@ class PLATFORM_EXPORT FetchContext
   virtual void DispatchDidDownloadData(unsigned long identifier,
                                        int data_length,
                                        int encoded_data_length);
+  virtual void DispatchDidDownloadToBlob(unsigned long identifier,
+                                         BlobDataHandle*);
   virtual void DispatchDidFinishLoading(unsigned long identifier,
                                         double finish_time,
                                         int64_t encoded_data_length,

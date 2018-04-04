@@ -22,6 +22,7 @@ import org.chromium.base.Callback;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisabledTest;
+import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.offlinepages.OfflinePageBridge.OfflinePageModelObserver;
@@ -41,6 +42,7 @@ import org.chromium.net.test.EmbeddedTestServer;
 
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Instrumentation tests for {@link OfflinePageUtils}. */
 @RunWith(ChromeJUnit4ClassRunner.class)
@@ -320,10 +322,18 @@ public class OfflinePageUtilsTest {
                 boolean shared =
                         OfflinePageUtils.maybeShareOfflinePage(mActivityTestRule.getActivity(),
                                 mActivityTestRule.getActivity().getActivityTab(), shareCallback);
-                // The attempt to share a page from our private internal directory should fail.
-                Assert.assertFalse(shared);
+                // The attempt to share a page from our private internal directory should succeed.
+                Assert.assertTrue(shared);
             }
         });
+
+        // Wait for share callback to get called.
+        Assert.assertTrue(semaphore.tryAcquire(TIMEOUT_MS, TimeUnit.MILLISECONDS));
+        // Assert that URI is what we expected.
+        String foundUri = shareCallback.getSharedUri();
+        Uri uri = Uri.parse(foundUri);
+        String uriPath = uri.getPath();
+        Assert.assertEquals(TEST_PAGE, uriPath);
     }
 
     // Checks on the UI thread if an offline path corresponds to a sharable file.
@@ -353,9 +363,10 @@ public class OfflinePageUtilsTest {
         final String privatePath = activity().getApplicationContext().getCacheDir().getPath();
         final String publicPath = Environment.getExternalStorageDirectory().getPath();
 
-        // Check that an offline page item in the private directory is not sharable.
+        // Check that an offline page item in the private directory is sharable, since we can
+        // upgrade it.
         final String fullPrivatePath = privatePath + CACHE_SUBDIR + NEW_FILE;
-        checkIfOfflinePageIsSharable(fullPrivatePath, SHARED_URI, false);
+        checkIfOfflinePageIsSharable(fullPrivatePath, SHARED_URI, true);
 
         // Check that an offline page item with no file path is not sharable.
         checkIfOfflinePageIsSharable(EMPTY_PATH, SHARED_URI, false);
@@ -375,6 +386,23 @@ public class OfflinePageUtilsTest {
 
         // Check that an empty URL is not sharable.
         checkIfOfflinePageIsSharable(fullPublicPath, EMPTY_URI, false);
+    }
+
+    @Test
+    @SmallTest
+    public void testMhtmlPropertiesFromRenderer() throws Exception {
+        // This gets a file:// URL which should result in an untrusted offline page.
+        String testUrl = UrlUtils.getTestFileUrl("offline_pages/hello.mhtml");
+        mActivityTestRule.loadUrl(testUrl);
+
+        final AtomicReference<OfflinePageItem> offlinePageItem = new AtomicReference<>();
+        ThreadUtils.runOnUiThreadBlocking(() -> {
+            offlinePageItem.set(OfflinePageUtils.getOfflinePage(
+                    mActivityTestRule.getActivity().getActivityTab()));
+        });
+
+        Assert.assertEquals("http://www.example.com/", offlinePageItem.get().getUrl());
+        Assert.assertEquals(1321901946000L, offlinePageItem.get().getCreationTimeMs());
     }
 
     private void loadPageAndSave(ClientId clientId) throws Exception {

@@ -128,6 +128,7 @@ class WebMediaPlayer {
   virtual void SetRate(double) = 0;
   virtual void SetVolume(double) = 0;
   virtual void EnterPictureInPicture() = 0;
+  virtual void ExitPictureInPicture() = 0;
 
   virtual void RequestRemotePlayback() {}
   virtual void RequestRemotePlaybackControl() {}
@@ -328,7 +329,7 @@ class WebMediaPlayer {
   virtual void OnDisplayTypeChanged(DisplayType) {}
 
   // Test helper methods for exercising media suspension.
-  virtual void ForceStaleStateForTesting() {}
+  virtual void ForceStaleStateForTesting(ReadyState target_state) {}
   virtual bool IsSuspendedForTesting() { return false; }
 };
 

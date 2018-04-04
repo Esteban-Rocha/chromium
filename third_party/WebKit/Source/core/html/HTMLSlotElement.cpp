@@ -33,11 +33,10 @@
 #include <array>
 #include "core/css/StyleChangeReason.h"
 #include "core/css/StyleEngine.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/NodeComputedStyle.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/dom/ShadowRoot.h"
 #include "core/dom/SlotAssignment.h"
-#include "core/dom/V0InsertionPoint.h"
 #include "core/dom/WhitespaceAttacher.h"
 #include "core/dom/events/Event.h"
 #include "core/frame/UseCounter.h"
@@ -104,7 +103,7 @@ const HeapVector<Member<Node>>& HTMLSlotElement::AssignedNodes() const {
     return assigned_nodes_;
   }
   if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()) {
-    ContainingShadowRoot()->GetSlotAssignment().RecalcAssignmentNg();
+    ContainingShadowRoot()->GetSlotAssignment().RecalcAssignment();
     return assigned_nodes_;
   }
 
@@ -202,6 +201,7 @@ void HTMLSlotElement::AppendAssignedNode(Node& host_child) {
 }
 
 void HTMLSlotElement::RecalcDistributedNodes() {
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
   for (auto& node : assigned_nodes_) {
     DCHECK(node->IsSlotable());
     if (HTMLSlotElement* slot =
@@ -212,17 +212,19 @@ void HTMLSlotElement::RecalcDistributedNodes() {
     }
 
     if (IsChildOfV1ShadowHost())
-      ParentElementShadow()->SetNeedsDistributionRecalc();
+      ParentElementShadowRoot()->SetNeedsDistributionRecalc();
   }
 }
 
 void HTMLSlotElement::AppendDistributedNode(Node& node) {
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
   size_t size = distributed_nodes_.size();
   distributed_nodes_.push_back(&node);
   distributed_indices_.Set(&node, size);
 }
 
 void HTMLSlotElement::AppendDistributedNodesFrom(const HTMLSlotElement& other) {
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
   size_t index = distributed_nodes_.size();
   distributed_nodes_.AppendVector(other.distributed_nodes_);
   for (const auto& node : other.distributed_nodes_)
@@ -234,13 +236,39 @@ void HTMLSlotElement::ClearAssignedNodes() {
   assigned_nodes_.clear();
 }
 
+void HTMLSlotElement::ClearAssignedNodesAndFlatTreeChildren() {
+  DCHECK(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
+  assigned_nodes_.clear();
+  flat_tree_children_.clear();
+}
+
+void HTMLSlotElement::RecalcFlatTreeChildren() {
+  DCHECK(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
+  DCHECK(SupportsAssignment());
+
+  HeapVector<Member<Node>> old_flat_tree_children;
+  old_flat_tree_children.swap(flat_tree_children_);
+
+  if (assigned_nodes_.IsEmpty()) {
+    // Use children as fallback
+    for (auto& child : NodeTraversal::ChildrenOf(*this))
+      flat_tree_children_.push_back(child);
+  } else {
+    flat_tree_children_ = assigned_nodes_;
+  }
+
+  LazyReattachNodesIfNeeded(old_flat_tree_children, flat_tree_children_);
+}
+
 void HTMLSlotElement::ClearDistribution() {
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
   assigned_nodes_.clear();
   distributed_nodes_.clear();
   distributed_indices_.clear();
 }
 
 void HTMLSlotElement::SaveAndClearDistribution() {
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
   old_distributed_nodes_.swap(distributed_nodes_);
   ClearDistribution();
 }
@@ -255,7 +283,7 @@ void HTMLSlotElement::DispatchSlotChangeEvent() {
 Node* HTMLSlotElement::AssignedNodeNextTo(const Node& node) const {
   DCHECK(SupportsAssignment());
   if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
-    ContainingShadowRoot()->GetSlotAssignment().RecalcAssignmentNg();
+    ContainingShadowRoot()->GetSlotAssignment().RecalcAssignment();
   else
     DCHECK(!NeedsDistributionRecalc());
   // TODO(crbug.com/776656): Use {node -> index} map to avoid O(N) lookup
@@ -269,7 +297,7 @@ Node* HTMLSlotElement::AssignedNodeNextTo(const Node& node) const {
 Node* HTMLSlotElement::AssignedNodePreviousTo(const Node& node) const {
   DCHECK(SupportsAssignment());
   if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
-    ContainingShadowRoot()->GetSlotAssignment().RecalcAssignmentNg();
+    ContainingShadowRoot()->GetSlotAssignment().RecalcAssignment();
   else
     DCHECK(!NeedsDistributionRecalc());
   // TODO(crbug.com/776656): Use {node -> index} map to avoid O(N) lookup
@@ -395,7 +423,6 @@ Node::InsertionNotificationRequest HTMLSlotElement::InsertedInto(
     ShadowRoot* root = ContainingShadowRoot();
     DCHECK(root);
     DCHECK(root->IsV1());
-    DCHECK(root->Owner());
     if (root == insertion_point->ContainingShadowRoot()) {
       // This slot is inserted into the same tree of |insertion_point|
       root->DidAddSlot(*this);
@@ -433,7 +460,11 @@ void HTMLSlotElement::RemovedFrom(ContainerNode* insertion_point) {
     // This slot was in a shadow tree and got disconnected from the shadow tree
     insertion_point->ContainingShadowRoot()->GetSlotAssignment().DidRemoveSlot(
         *this);
-    ClearDistribution();
+    if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()) {
+      ClearAssignedNodesAndFlatTreeChildren();
+    } else {
+      ClearDistribution();
+    }
   }
 
   HTMLElement::RemovedFrom(insertion_point);
@@ -468,6 +499,7 @@ void HTMLSlotElement::DidRecalcStyle(StyleRecalcChange change) {
 }
 
 void HTMLSlotElement::UpdateDistributedNodesWithFallback() {
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
   if (!distributed_nodes_.IsEmpty())
     return;
   for (auto& child : NodeTraversal::ChildrenOf(*this)) {
@@ -480,7 +512,7 @@ void HTMLSlotElement::UpdateDistributedNodesWithFallback() {
   }
 }
 
-void HTMLSlotElement::LazyReattachDistributedNodesByDynamicProgramming(
+void HTMLSlotElement::LazyReattachNodesByDynamicProgramming(
     const HeapVector<Member<Node>>& nodes1,
     const HeapVector<Member<Node>>& nodes2) {
   // Use dynamic programming to minimize the number of nodes being reattached.
@@ -520,20 +552,28 @@ void HTMLSlotElement::LazyReattachDistributedNodesByDynamicProgramming(
 }
 
 void HTMLSlotElement::LazyReattachDistributedNodesIfNeeded() {
-  if (old_distributed_nodes_ == distributed_nodes_)
-    return;
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
+  // TODO(hayato): Move this probe to a better place.
   probe::didPerformSlotDistribution(this);
 
-  if (old_distributed_nodes_.size() + 1 > kLCSTableSizeLimit ||
-      distributed_nodes_.size() + 1 > kLCSTableSizeLimit) {
+  LazyReattachNodesIfNeeded(old_distributed_nodes_, distributed_nodes_);
+  old_distributed_nodes_.clear();
+}
+
+void HTMLSlotElement::LazyReattachNodesIfNeeded(
+    const HeapVector<Member<Node>>& nodes1,
+    const HeapVector<Member<Node>>& nodes2) {
+  if (nodes1 == nodes2)
+    return;
+
+  if (nodes1.size() + 1 > kLCSTableSizeLimit ||
+      nodes2.size() + 1 > kLCSTableSizeLimit) {
     // Since DP takes O(N^2), we don't use DP if the size is larger than the
     // pre-defined limit.
-    LazyReattachDistributedNodesNaive();
+    LazyReattachNodesNaive(nodes1, nodes2);
   } else {
-    LazyReattachDistributedNodesByDynamicProgramming(old_distributed_nodes_,
-                                                     distributed_nodes_);
+    LazyReattachNodesByDynamicProgramming(nodes1, nodes2);
   }
-  old_distributed_nodes_.clear();
 }
 
 void HTMLSlotElement::DidSlotChangeAfterRemovedFromShadowTree() {
@@ -549,11 +589,13 @@ void HTMLSlotElement::DidSlotChangeAfterRenaming() {
   CheckSlotChange(SlotChangeType::kSuppressSlotChangeEvent);
 }
 
-void HTMLSlotElement::LazyReattachDistributedNodesNaive() {
+void HTMLSlotElement::LazyReattachNodesNaive(
+    const HeapVector<Member<Node>>& nodes1,
+    const HeapVector<Member<Node>>& nodes2) {
   // TODO(hayato): Use some heuristic to avoid reattaching all nodes
-  for (auto& node : old_distributed_nodes_)
+  for (auto& node : nodes1)
     node->LazyReattachIfAttached();
-  for (auto& node : distributed_nodes_)
+  for (auto& node : nodes2)
     node->LazyReattachIfAttached();
 }
 
@@ -562,7 +604,7 @@ void HTMLSlotElement::
   if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
     ContainingShadowRoot()->GetSlotAssignment().SetNeedsAssignmentRecalc();
   else
-    ContainingShadowRoot()->Owner()->SetNeedsDistributionRecalc();
+    ContainingShadowRoot()->SetNeedsDistributionRecalc();
 }
 
 void HTMLSlotElement::DidSlotChange(SlotChangeType slot_change_type) {
@@ -640,6 +682,7 @@ int HTMLSlotElement::tabIndex() const {
 
 void HTMLSlotElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(assigned_nodes_);
+  visitor->Trace(flat_tree_children_);
   visitor->Trace(distributed_nodes_);
   visitor->Trace(old_distributed_nodes_);
   visitor->Trace(distributed_indices_);

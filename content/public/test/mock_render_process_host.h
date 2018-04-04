@@ -75,6 +75,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   void ShutdownForBadMessage(CrashReportMode crash_report_mode) override;
   void UpdateClientPriority(PriorityClient* client) override;
   int VisibleClientCount() const override;
+  unsigned int GetFrameDepthForTesting() const override;
   bool IsForGuestsOnly() const override;
   RendererAudioOutputStreamFactoryContext*
   GetRendererAudioOutputStreamFactoryContext() override;
@@ -129,8 +130,8 @@ class MockRenderProcessHost : public RenderProcessHost {
   const base::TimeTicks& GetInitTimeForNavigationMetrics() const override;
   bool IsProcessBackgrounded() const override;
   size_t GetKeepAliveRefCount() const;
-  void IncrementKeepAliveRefCount() override;
-  void DecrementKeepAliveRefCount() override;
+  void IncrementKeepAliveRefCount(KeepAliveClientType) override;
+  void DecrementKeepAliveRefCount(KeepAliveClientType) override;
   void DisableKeepAliveRefCount() override;
   bool IsKeepAliveRefCountDisabled() override;
   void PurgeAndSuspend() override;

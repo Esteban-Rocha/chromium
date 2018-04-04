@@ -34,7 +34,7 @@
 #include "bindings/core/v8/V8Initializer.h"
 #include "build/build_config.h"
 #include "core/dom/Document.h"
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorTraceEvents.h"
@@ -173,7 +173,8 @@ uint32_t CacheTag(CacheTagKind kind, const String& encoding) {
   // about encodings, but the cached data is specific to one encoding. If we
   // later load the script from the cache and interpret it with a different
   // encoding, the cached data is not valid for that encoding.
-  return (v8_cache_data_version | kind) + StringHash::GetHash(encoding);
+  return (v8_cache_data_version | kind) +
+         (encoding.IsNull() ? 0 : StringHash::GetHash(encoding));
 }
 
 // Check previously stored timestamp.
@@ -806,5 +807,9 @@ scoped_refptr<CachedMetadata> V8ScriptRunner::GenerateFullCodeCache(
 STATIC_ASSERT_ENUM(WebSettings::kV8CacheOptionsDefault, kV8CacheOptionsDefault);
 STATIC_ASSERT_ENUM(WebSettings::kV8CacheOptionsNone, kV8CacheOptionsNone);
 STATIC_ASSERT_ENUM(WebSettings::kV8CacheOptionsCode, kV8CacheOptionsCode);
+STATIC_ASSERT_ENUM(WebSettings::kV8CacheOptionsCodeWithoutHeatCheck,
+                   kV8CacheOptionsCodeWithoutHeatCheck);
+STATIC_ASSERT_ENUM(WebSettings::kV8CacheOptionsFullCodeWithoutHeatCheck,
+                   kV8CacheOptionsFullCodeWithoutHeatCheck);
 
 }  // namespace blink

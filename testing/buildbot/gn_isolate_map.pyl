@@ -811,8 +811,21 @@
     "label": "//chrome/installer/mini_installer:mini_installer",
     "type": "additional_compile_target",
   },
+  "mini_installer_tests": {
+    "label": "//chrome/test/mini_installer:mini_installer_tests",
+    "type": "script",
+    "script": "//testing/scripts/run_isolated_script_test.py",
+    "args": [
+      "--isolated-script-test-output=${ISOLATED_OUTDIR}/results.json",
+      "../../chrome/test/mini_installer/test_installer.py",
+    ],
+  },
   "mojo_common_unittests": {
     "label": "//mojo/common:mojo_common_unittests",
+    "type": "console_test_launcher",
+  },
+  "mojo_core_unittests": {
+    "label": "//mojo/edk:mojo_core_unittests",
     "type": "console_test_launcher",
   },
   "mojo_unittests": {
@@ -1063,6 +1076,9 @@
       "../../tools/perf/run_benchmark",
     ],
   },
+  # Perf is in the middle of refactoring their recipe.  crbug.com/757933
+  # These isolates are the new targets for the refactor and will replace
+  # the old ones when migration is complete.
   "performance_test_suite": {
     "label": "//chrome/test:performance_test_suite",
     "type": "script",
@@ -1131,6 +1147,15 @@
     "label": "//chrome/test:load_library_perf_tests",
     "type": "script",
     "script": "//testing/scripts/run_gtest_perf_test.py",
+    "args": [
+      "load_library_perf_tests",
+      "--test-launcher-print-test-stdio=always"
+    ],
+  },
+  "load_library_perf_tests_v2": {
+    "label": "//chrome/test:load_library_perf_tests_v2",
+    "type": "script",
+    "script": "//testing/scripts/run_performance_tests.py",
     "args": [
       "load_library_perf_tests",
       "--test-launcher-print-test-stdio=always"

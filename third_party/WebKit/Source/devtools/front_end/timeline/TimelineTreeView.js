@@ -11,6 +11,8 @@ Timeline.TimelineTreeView = class extends UI.VBox {
     super();
     /** @type {?Timeline.PerformanceModel} */
     this._model = null;
+    /** @type {?TimelineModel.TimelineModel.Track} */
+    this._track = null;
     /** @type {?TimelineModel.TimelineProfileTree.Node} */
     this._tree = null;
     this.element.classList.add('timeline-tree-view');
@@ -37,10 +39,11 @@ Timeline.TimelineTreeView = class extends UI.VBox {
 
   /**
    * @param {?Timeline.PerformanceModel} model
+   * @param {?TimelineModel.TimelineModel.Track} track
    */
-  setModel(model) {
+  setModel(model, track) {
     this._model = model;
-    this._populateThreadSelector();
+    this._track = track;
     this.refreshTree();
   }
 
@@ -130,11 +133,6 @@ Timeline.TimelineTreeView = class extends UI.VBox {
    * @param {!UI.Toolbar} toolbar
    */
   populateToolbar(toolbar) {
-    this._threadSelector = new UI.ToolbarSettingComboBox([], this._currentThreadSetting);
-    this._threadSelector.setVisible(false);
-    this._threadSelector.setMaxWidth(230);
-    toolbar.appendToolbarItem(this._threadSelector);
-
     this._textFilterUI = new UI.ToolbarInput(Common.UIString('Filter'));
     this._textFilterUI.addEventListener(UI.ToolbarInput.Event.TextChanged, textFilterChanged, this);
     toolbar.appendToolbarItem(this._textFilterUI);
@@ -153,28 +151,7 @@ Timeline.TimelineTreeView = class extends UI.VBox {
    * @return {!Array<!SDK.TracingModel.Event>}
    */
   _modelEvents() {
-    if (!this._model || this._threadSelector.size() === 0)
-      return [];
-    return this._threadEvents[Number(this._threadSelector.selectedOption().value)];
-  }
-
-  _populateThreadSelector() {
-    if (!this._model)
-      return;
-    const options = [];
-    this._threadEvents = [this._model.timelineModel().mainThreadEvents()];
-    options.push({value: '0', label: ls`Main`, title: ls`Main`});
-    for (const thread of this._model.timelineModel().virtualThreads()) {
-      if (!thread.name)
-        continue;
-      if (!thread.events.some(e => SDK.TracingModel.isTopLevelEvent(e)))
-        continue;
-      options.push({value: String(this._threadEvents.length), label: thread.name, title: thread.name});
-      this._threadEvents.push(thread.events);
-    }
-
-    this._threadSelector.setOptions(options);
-    this._threadSelector.setVisible(this._threadEvents.length > 1);
+    return this._track ? this._track.syncEvents() : [];
   }
 
   /**
@@ -652,10 +629,11 @@ Timeline.AggregatedTimelineTreeView = class extends Timeline.TimelineTreeView {
   /**
    * @override
    * @param {?Timeline.PerformanceModel} model
+   * @param {?TimelineModel.TimelineModel.Track} track
    */
-  setModel(model) {
+  setModel(model, track) {
     this._badgePool.reset();
-    super.setModel(model);
+    super.setModel(model, track);
   }
 
   /**

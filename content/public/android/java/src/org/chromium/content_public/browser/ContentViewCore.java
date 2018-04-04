@@ -80,11 +80,6 @@ public interface ContentViewCore {
          * @see View#onScrollChanged(int, int, int, int)
          */
         void onScrollChanged(int lPix, int tPix, int oldlPix, int oldtPix);
-
-        /**
-         * @see View#awakenScrollBars(int, boolean)
-         */
-        boolean super_awakenScrollBars(int startDelay, boolean invalidate);
     }
 
     /**
@@ -148,16 +143,6 @@ public interface ContentViewCore {
      * It is illegal to call any other method after destroy().
      */
     boolean isAlive();
-
-    /**
-     * To be called when the ContentView is shown.
-     */
-    void onShow();
-
-    /**
-     * To be called when the ContentView is hidden.
-     */
-    void onHide();
 
     /**
      * @see View#onAttachedToWindow()
@@ -258,11 +243,6 @@ public interface ContentViewCore {
      * @see View#computeVerticalScrollExtent()
      */
     int computeVerticalScrollExtent();
-
-    /**
-     * @see View#awakenScrollBars(int, boolean)
-     */
-    boolean awakenScrollBars(int startDelay, boolean invalidate);
 
     /**
      * Enable or disable multi-touch zoom support.

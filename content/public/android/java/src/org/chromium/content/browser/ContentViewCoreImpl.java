@@ -13,7 +13,6 @@ import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
-import android.view.View;
 import android.view.ViewGroup;
 
 import org.chromium.base.ObserverList;
@@ -33,7 +32,6 @@ import org.chromium.content_public.browser.ActionModeCallbackHelper;
 import org.chromium.content_public.browser.ContentViewCore;
 import org.chromium.content_public.browser.ContentViewCore.InternalAccessDelegate;
 import org.chromium.content_public.browser.WebContents;
-import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.device.gamepad.GamepadList;
 import org.chromium.ui.base.EventForwarder;
 import org.chromium.ui.base.ViewAndroidDelegate;
@@ -42,8 +40,6 @@ import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.display.DisplayAndroid;
 import org.chromium.ui.display.DisplayAndroid.DisplayAndroidObserver;
 
-import java.lang.ref.WeakReference;
-
 /**
  * Implementation of the interface {@ContentViewCore}.
  */
@@ -51,51 +47,12 @@ import java.lang.ref.WeakReference;
 public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObserver {
     private static final String TAG = "cr_ContentViewCore";
 
-    /**
-     * A {@link WebContentsObserver} that listens to frame navigation events.
-     */
-    private static class ContentViewWebContentsObserver extends WebContentsObserver {
-        // Using a weak reference avoids cycles that might prevent GC of WebView's WebContents.
-        private final WeakReference<ContentViewCoreImpl> mWeakContentViewCore;
-
-        ContentViewWebContentsObserver(ContentViewCoreImpl contentViewCore) {
-            super(contentViewCore.getWebContents());
-            mWeakContentViewCore = new WeakReference<ContentViewCoreImpl>(contentViewCore);
-        }
-
-        @Override
-        public void didFinishNavigation(String url, boolean isInMainFrame, boolean isErrorPage,
-                boolean hasCommitted, boolean isSameDocument, boolean isFragmentNavigation,
-                Integer pageTransition, int errorCode, String errorDescription,
-                int httpStatusCode) {
-            if (hasCommitted && isInMainFrame && !isSameDocument) {
-                resetPopupsAndInput();
-            }
-        }
-
-        @Override
-        public void renderProcessGone(boolean wasOomProtected) {
-            resetPopupsAndInput();
-            ContentViewCoreImpl contentViewCore = mWeakContentViewCore.get();
-            if (contentViewCore == null) return;
-            contentViewCore.getImeAdapter().resetAndHideKeyboard();
-        }
-
-        private void resetPopupsAndInput() {
-            ContentViewCoreImpl contentViewCore = mWeakContentViewCore.get();
-            if (contentViewCore == null) return;
-            contentViewCore.hidePopupsAndClearSelection();
-            contentViewCore.getGestureListenerManager().resetScrollInProgress();
-        }
-    }
-
     private Context mContext;
     private final ObserverList<WindowEventObserver> mWindowEventObservers = new ObserverList<>();
 
     private ViewGroup mContainerView;
     private InternalAccessDelegate mContainerViewInternals;
     private WebContentsImpl mWebContents;
-    private WebContentsObserver mWebContentsObserver;
     private WindowAndroid mWindowAndroid;
 
     // Native pointer to C++ ContentViewCore object which will be set by nativeInit().
@@ -116,7 +73,14 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
     // A ViewAndroidDelegate that delegates to the current container view.
     private ViewAndroidDelegate mViewAndroidDelegate;
 
+    // TODO(mthiesse): Clean up the focus code here, this boolean doesn't actually reflect view
+    // focus. It reflects a combination of both view focus and resumed state.
     private Boolean mHasViewFocus;
+
+    // This is used in place of window focus, as we can't actually use window focus due to issues
+    // where content expects to be focused while a popup steals window focus.
+    // See https://crbug.com/686232 for more context.
+    private boolean mPaused;
 
     // The list of observers that are notified when ContentViewCore changes its WindowAndroid.
     private final ObserverList<WindowAndroidChangedObserver> mWindowAndroidChangedObservers =
@@ -226,7 +190,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         addWindowAndroidChangedObserver(textSuggestionHost);
 
         SelectPopup.create(mContext, mWebContents, containerView);
-        mWebContentsObserver = new ContentViewWebContentsObserver(this);
 
         mWindowEventObservers.addObserver(controller);
         mWindowEventObservers.addObserver(getGestureListenerManager());
@@ -346,8 +309,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         if (mNativeContentViewCore != 0) {
             nativeOnJavaContentViewCoreDestroyed(mNativeContentViewCore);
         }
-        mWebContentsObserver.destroy();
-        mWebContentsObserver = null;
         ImeAdapterImpl imeAdapter = getImeAdapter();
         imeAdapter.resetAndHideKeyboard();
         imeAdapter.removeEventObserver(getSelectionPopupController());
@@ -375,21 +336,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         //                  the test-only method in content layer.
         if (mNativeContentViewCore == 0) return 0;
         return nativeGetTopControlsShrinkBlinkHeightPixForTesting(mNativeContentViewCore);
-    }
-
-    @Override
-    public void onShow() {
-        assert mWebContents != null;
-        mWebContents.onShow();
-        getWebContentsAccessibility().refreshState();
-        getSelectionPopupController().restoreSelectionPopupsIfNecessary();
-    }
-
-    @Override
-    public void onHide() {
-        assert mWebContents != null;
-        hidePopupsAndPreserveSelection();
-        mWebContents.onHide();
     }
 
     private void hidePopupsAndClearSelection() {
@@ -443,11 +389,13 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
 
     @Override
     public void onPause() {
+        mPaused = true;
         onFocusChanged(false, true);
     }
 
     @Override
     public void onResume() {
+        mPaused = false;
         onFocusChanged(ViewUtils.hasFocus(getContainerView()), true);
     }
 
@@ -462,6 +410,9 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
     @Override
     public void onFocusChanged(boolean gainFocus, boolean hideKeyboardOnBlur) {
         if (mHasViewFocus != null && mHasViewFocus == gainFocus) return;
+        // TODO(mthiesse): Clean this up. mHasViewFocus isn't view focus really, it's a combination
+        // of view focus and resumed state.
+        if (gainFocus && mPaused) return;
         mHasViewFocus = gainFocus;
 
         if (mWebContents == null) {
@@ -627,19 +578,6 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
 
     // End FrameLayout overrides.
 
-    @SuppressWarnings("javadoc")
-    @Override
-    public boolean awakenScrollBars(int startDelay, boolean invalidate) {
-        // For the default implementation of ContentView which draws the scrollBars on the native
-        // side, calling this function may get us into a bad state where we keep drawing the
-        // scrollBars, so disable it by always returning false.
-        if (mContainerView.getScrollBarStyle() == View.SCROLLBARS_INSIDE_OVERLAY) {
-            return false;
-        } else {
-            return mContainerViewInternals.super_awakenScrollBars(startDelay, invalidate);
-        }
-    }
-
     @Override
     public void updateMultiTouchZoomSupport(boolean supportsMultiTouchZoom) {
         if (mNativeContentViewCore == 0) return;
@@ -679,12 +617,14 @@ public class ContentViewCoreImpl implements ContentViewCore, DisplayAndroidObser
         // action mode menu items according to the new rotation. So Chrome
         // has to re-create the action mode.
         if (mWebContents != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                    && getSelectionPopupController().isActionModeValid()) {
+            SelectionPopupControllerImpl controller = getSelectionPopupController();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && controller != null
+                    && controller.isActionModeValid()) {
                 hidePopupsAndPreserveSelection();
-                getSelectionPopupController().showActionModeOrClearOnFailure();
+                controller.showActionModeOrClearOnFailure();
             }
-            getTextSuggestionHost().hidePopups();
+            TextSuggestionHost host = getTextSuggestionHost();
+            if (host != null) host.hidePopups();
         }
 
         int rotationDegrees = 0;

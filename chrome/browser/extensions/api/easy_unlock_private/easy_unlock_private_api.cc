@@ -20,6 +20,7 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "chrome/browser/chromeos/cryptauth/cryptauth_device_id_provider_impl.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_screenlock_state_handler.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service_regular.h"
@@ -31,19 +32,19 @@
 #include "chrome/browser/ui/proximity_auth/proximity_auth_error_bubble.h"
 #include "chrome/common/extensions/api/easy_unlock_private.h"
 #include "chrome/grit/generated_resources.h"
+#include "chromeos/components/proximity_auth/bluetooth_low_energy_setup_connection_finder.h"
+#include "chromeos/components/proximity_auth/bluetooth_util.h"
+#include "chromeos/components/proximity_auth/logging/logging.h"
+#include "chromeos/components/proximity_auth/proximity_auth_client.h"
+#include "chromeos/components/proximity_auth/screenlock_bridge.h"
+#include "chromeos/components/proximity_auth/screenlock_state.h"
+#include "chromeos/components/proximity_auth/switches.h"
 #include "components/cryptauth/cryptauth_device_manager.h"
 #include "components/cryptauth/cryptauth_enrollment_manager.h"
 #include "components/cryptauth/cryptauth_enrollment_utils.h"
 #include "components/cryptauth/proto/cryptauth_api.pb.h"
 #include "components/cryptauth/remote_device.h"
-#include "components/cryptauth/secure_message_delegate.h"
-#include "components/proximity_auth/bluetooth_low_energy_setup_connection_finder.h"
-#include "components/proximity_auth/bluetooth_util.h"
-#include "components/proximity_auth/logging/logging.h"
-#include "components/proximity_auth/proximity_auth_client.h"
-#include "components/proximity_auth/screenlock_bridge.h"
-#include "components/proximity_auth/screenlock_state.h"
-#include "components/proximity_auth/switches.h"
+#include "components/cryptauth/secure_message_delegate_impl.h"
 #include "components/signin/core/account_id/account_id.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/user_manager/user_manager.h"
@@ -125,6 +126,11 @@ EasyUnlockPrivateCryptoDelegate* EasyUnlockPrivateAPI::GetCryptoDelegate() {
   if (!crypto_delegate_)
     crypto_delegate_ = EasyUnlockPrivateCryptoDelegate::Create();
   return crypto_delegate_.get();
+}
+
+void EasyUnlockPrivateAPI::Shutdown() {
+  // Any dependency which references BrowserContext must be cleaned up here.
+  connection_manager_.reset();
 }
 
 EasyUnlockPrivateGetStringsFunction::EasyUnlockPrivateGetStringsFunction() {
@@ -667,7 +673,8 @@ bool EasyUnlockPrivateGetRemoteDevicesFunction::RunAsync() {
       easy_unlock_service->proximity_auth_client();
 
   permit_id_ = "permit://google.com/easyunlock/v1/" + client->GetAccountId();
-  secure_message_delegate_ = client->CreateSecureMessageDelegate();
+  secure_message_delegate_ =
+      cryptauth::SecureMessageDelegateImpl::Factory::NewInstance();
   std::vector<cryptauth::ExternalDeviceInfo> unlock_keys = GetUnlockKeys();
   expected_devices_count_ = unlock_keys.size();
 
@@ -777,8 +784,8 @@ bool EasyUnlockPrivateGetSignInChallengeFunction::RunAsync() {
   const std::string challenge =
       chromeos::EasyUnlockService::Get(profile)->GetChallenge();
   if (!challenge.empty() && !params->nonce.empty()) {
-    EasyUnlockTpmKeyManager* key_manager =
-        EasyUnlockTpmKeyManagerFactory::GetInstance()->Get(profile);
+    chromeos::EasyUnlockTpmKeyManager* key_manager =
+        chromeos::EasyUnlockTpmKeyManagerFactory::GetInstance()->Get(profile);
     if (!key_manager) {
       SetError("No EasyUnlockTpmKeyManager.");
       return false;
@@ -842,7 +849,8 @@ ExtensionFunction::ResponseAction EasyUnlockPrivateGetUserInfoFunction::Run() {
     user.data_ready = user.logged_in || service->GetRemoteDevices() != NULL;
 
     user.device_user_id = cryptauth::CalculateDeviceUserId(
-        chromeos::EasyUnlockService::GetDeviceId(), account_id.GetUserEmail());
+        cryptauth::CryptAuthDeviceIdProviderImpl::GetInstance()->GetDeviceId(),
+        account_id.GetUserEmail());
 
     user.ble_discovery_enabled = true;
     users.push_back(std::move(user));

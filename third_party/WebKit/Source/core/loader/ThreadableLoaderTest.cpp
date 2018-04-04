@@ -46,12 +46,12 @@ namespace blink {
 
 namespace {
 
-using ::testing::_;
-using ::testing::InSequence;
-using ::testing::InvokeWithoutArgs;
-using ::testing::StrEq;
-using ::testing::Truly;
-using Checkpoint = ::testing::StrictMock<::testing::MockFunction<void(int)>>;
+using testing::_;
+using testing::InSequence;
+using testing::InvokeWithoutArgs;
+using testing::StrEq;
+using testing::Truly;
+using Checkpoint = testing::StrictMock<testing::MockFunction<void(int)>>;
 
 constexpr char kFileName[] = "fox-null-terminated.html";
 
@@ -59,7 +59,7 @@ class MockThreadableLoaderClient : public ThreadableLoaderClient {
  public:
   static std::unique_ptr<MockThreadableLoaderClient> Create() {
     return base::WrapUnique(
-        new ::testing::StrictMock<MockThreadableLoaderClient>);
+        new testing::StrictMock<MockThreadableLoaderClient>);
   }
   MOCK_METHOD2(DidSendData, void(unsigned long long, unsigned long long));
   MOCK_METHOD3(DidReceiveResponseMock,
@@ -116,7 +116,7 @@ void UnregisterAllURLsAndClearMemoryCache() {
 
 void SetUpSuccessURL() {
   URLTestHelpers::RegisterMockedURLLoad(
-      SuccessURL(), testing::CoreTestDataPath(kFileName), "text/html");
+      SuccessURL(), test::CoreTestDataPath(kFileName), "text/html");
 }
 
 void SetUpErrorURL() {
@@ -137,7 +137,7 @@ void SetUpRedirectURL() {
   response.AddHTTPHeaderField("Access-Control-Allow-Origin", "null");
 
   URLTestHelpers::RegisterMockedURLLoadWithCustomResponse(
-      url, testing::CoreTestDataPath(kFileName), response);
+      url, test::CoreTestDataPath(kFileName), response);
 }
 
 void SetUpRedirectLoopURL() {
@@ -154,7 +154,7 @@ void SetUpRedirectLoopURL() {
   response.AddHTTPHeaderField("Access-Control-Allow-Origin", "null");
 
   URLTestHelpers::RegisterMockedURLLoadWithCustomResponse(
-      url, testing::CoreTestDataPath(kFileName), response);
+      url, test::CoreTestDataPath(kFileName), response);
 }
 
 void SetUpMockURLs() {
@@ -235,7 +235,7 @@ class WebWorkerFetchContextForTest : public WebWorkerFetchContext {
  public:
   WebWorkerFetchContextForTest(KURL site_for_cookies)
       : site_for_cookies_(site_for_cookies.Copy()) {}
-  base::WaitableEvent* GetTerminateSyncLoadEvent() override { return nullptr; }
+  void SetTerminateSyncLoadEvent(base::WaitableEvent*) override {}
   void InitializeOnWorkerThread() override {}
 
   std::unique_ptr<WebURLLoaderFactory> CreateURLLoaderFactory() override {
@@ -311,7 +311,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
   Checkpoint& GetCheckpoint() override { return checkpoint_; }
 
   void CallCheckpoint(int n) override {
-    testing::RunPendingTasks();
+    test::RunPendingTasks();
 
     std::unique_ptr<WaitableEvent> completion_event =
         std::make_unique<WaitableEvent>();
@@ -348,7 +348,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
   }
 
   void OnServeRequests() override {
-    testing::RunPendingTasks();
+    test::RunPendingTasks();
     PostCrossThreadTask(*worker_loading_task_runner_, FROM_HERE,
                         CrossThreadBind(&ServeAsynchronousRequests));
     WaitForWorkerThreadSignal();
@@ -369,7 +369,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
 
     // Needed to clean up the things on the main thread side and
     // avoid Resource leaks.
-    testing::RunPendingTasks();
+    test::RunPendingTasks();
   }
 
  private:
@@ -437,7 +437,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
 };
 
 class ThreadableLoaderTest
-    : public ::testing::TestWithParam<ThreadableLoaderToTest> {
+    : public testing::TestWithParam<ThreadableLoaderToTest> {
  public:
   ThreadableLoaderTest() {
     switch (GetParam()) {
@@ -491,11 +491,11 @@ class ThreadableLoaderTest
 
 INSTANTIATE_TEST_CASE_P(Document,
                         ThreadableLoaderTest,
-                        ::testing::Values(kDocumentThreadableLoaderTest));
+                        testing::Values(kDocumentThreadableLoaderTest));
 
 INSTANTIATE_TEST_CASE_P(Worker,
                         ThreadableLoaderTest,
-                        ::testing::Values(kWorkerThreadableLoaderTest));
+                        testing::Values(kWorkerThreadableLoaderTest));
 
 TEST_P(ThreadableLoaderTest, StartAndStop) {}
 

@@ -16,7 +16,7 @@
 #include "bindings/core/v8/V8ScriptRunner.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/fetch/BodyStreamBuffer.h"
 #include "core/fetch/FetchDataLoader.h"
 #include "core/fetch/Request.h"
@@ -175,12 +175,8 @@ class CacheWithRequestsCallbacks
 };
 
 void RecordResponseTypeForAdd(const Member<Response>& response) {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      EnumerationHistogram, response_type_histogram,
-      ("ServiceWorkerCache.Cache.AddResponseType",
-       static_cast<int>(network::mojom::FetchResponseType::kLast) + 1));
-  response_type_histogram.Count(
-      static_cast<int>(response->GetResponse()->GetType()));
+  UMA_HISTOGRAM_ENUMERATION("ServiceWorkerCache.Cache.AddResponseType",
+                            response->GetResponse()->GetType());
 }
 
 bool VaryHeaderContainsAsterisk(const Response* response) {

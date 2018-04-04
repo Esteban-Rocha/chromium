@@ -315,11 +315,22 @@ gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSize() const {
     if (parent_view)
       return parent_view->GetVisibleViewportSize();
   }
-  return GetViewBounds().size();
+
+  gfx::Rect bounds = GetViewBounds();
+
+  // It doesn't make sense to set insets on an OOP iframe. The only time this
+  // should happen is when the virtual keyboard comes up on a <webview>.
+  if (is_guest)
+    bounds.Inset(insets_);
+
+  return bounds.size();
 }
 
-gfx::Vector2dF RenderWidgetHostViewChildFrame::GetLastScrollOffset() const {
-  return last_scroll_offset_;
+void RenderWidgetHostViewChildFrame::SetInsets(const gfx::Insets& insets) {
+  // Insets are used only for <webview> and are used to let the UI know it's
+  // being obscured (for e.g. by the virtual keyboard).
+  insets_ = insets;
+  host()->WasResized(!insets_.IsEmpty());
 }
 
 gfx::NativeView RenderWidgetHostViewChildFrame::GetNativeView() const {
@@ -605,7 +616,6 @@ void RenderWidgetHostViewChildFrame::SubmitCompositorFrame(
   DCHECK(!enable_viz_);
   TRACE_EVENT0("content",
                "RenderWidgetHostViewChildFrame::OnSwapCompositorFrame");
-  last_scroll_offset_ = frame.metadata.root_scroll_offset;
   current_surface_size_ = frame.size_in_pixels();
   current_surface_scale_factor_ = frame.device_scale_factor();
 
@@ -617,11 +627,6 @@ void RenderWidgetHostViewChildFrame::SubmitCompositorFrame(
       HasEmbedderChanged()) {
     last_received_local_surface_id_ = local_surface_id;
     SendSurfaceInfoToEmbedder();
-  }
-
-  if (selection_controller_client_) {
-    selection_controller_client_->UpdateSelectionBoundsIfNeeded(
-        frame.metadata.selection, current_device_scale_factor_);
   }
 
   ProcessFrameSwappedCallbacks();
@@ -863,8 +868,9 @@ void RenderWidgetHostViewChildFrame::CopyFromSurface(
         gfx::Vector2d(output_size.width(), output_size.height()));
   }
 
-  GetHostFrameSinkManager()->RequestCopyOfOutput(frame_sink_id_,
-                                                 std::move(request));
+  GetHostFrameSinkManager()->RequestCopyOfOutput(
+      viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_),
+      std::move(request));
 }
 
 void RenderWidgetHostViewChildFrame::ReclaimResources(
@@ -908,6 +914,16 @@ RenderWidgetHostViewChildFrame::GetTouchSelectionControllerClientManager() {
 
   // There is only ever one manager, and it's owned by the root view.
   return root_view->GetTouchSelectionControllerClientManager();
+}
+
+void RenderWidgetHostViewChildFrame::OnRenderFrameMetadataChanged() {
+  RenderWidgetHostViewBase::OnRenderFrameMetadataChanged();
+  if (selection_controller_client_) {
+    const cc::RenderFrameMetadata& metadata =
+        host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
+    selection_controller_client_->UpdateSelectionBoundsIfNeeded(
+        metadata.selection, current_device_scale_factor_);
+  }
 }
 
 void RenderWidgetHostViewChildFrame::SetWantsAnimateOnlyBeginFrames() {
@@ -994,6 +1010,21 @@ void RenderWidgetHostViewChildFrame::GetScreenInfo(
     *screen_info = frame_connector_->screen_info();
   else
     DisplayUtil::GetDefaultScreenInfo(screen_info);
+}
+
+void RenderWidgetHostViewChildFrame::EnableAutoResize(
+    const gfx::Size& min_size,
+    const gfx::Size& max_size) {
+  if (frame_connector_)
+    frame_connector_->EnableAutoResize(min_size, max_size);
+}
+
+void RenderWidgetHostViewChildFrame::DisableAutoResize(
+    const gfx::Size& new_size) {
+  // For child frames, the size comes from the parent when auto-resize is
+  // disabled so we ignore |new_size| here.
+  if (frame_connector_)
+    frame_connector_->DisableAutoResize();
 }
 
 viz::ScopedSurfaceIdAllocator
@@ -1097,6 +1128,7 @@ void RenderWidgetHostViewChildFrame::OnResizeDueToAutoResizeComplete(
 }
 
 void RenderWidgetHostViewChildFrame::DidNavigate() {
+  host()->WasResized();
   if (host()->auto_resize_enabled()) {
     host()->DidAllocateLocalSurfaceIdForAutoResize(
         host()->last_auto_resize_request_number());

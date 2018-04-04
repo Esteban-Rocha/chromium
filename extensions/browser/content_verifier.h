@@ -101,12 +101,17 @@ class ContentVerifier : public base::RefCountedThreadSafe<ContentVerifier>,
   GURL GetSignatureFetchUrlForTest(const ExtensionId& extension_id,
                                    const base::Version& extension_version);
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(ContentVerifier);
+  // Test helper to recompute |io_data_| for |extension| without having to
+  // call |OnExtensionLoaded|.
+  void ResetIODataForTesting(const Extension* extension);
 
+ private:
+  friend class ContentVerifierTest;
   friend class base::RefCountedThreadSafe<ContentVerifier>;
   friend class HashHelper;
   ~ContentVerifier() override;
+
+  void ShutdownOnIO();
 
   class HashHelper;
 
@@ -135,12 +140,18 @@ class ContentVerifier : public base::RefCountedThreadSafe<ContentVerifier>,
       const std::set<base::FilePath>& relative_unix_paths);
 
   // Returns the HashHelper instance, making sure we create it at most once.
+  // Must *not* be called after |shutdown_on_io_| is set to true.
   HashHelper* GetOrCreateHashHelper();
 
-  // Set to true once we've begun shutting down.
-  bool shutdown_;
+  // Set to true once we've begun shutting down on UI thread.
+  // Updated and accessed only on UI thread.
+  bool shutdown_on_ui_ = false;
 
-  content::BrowserContext* context_;
+  // Set to true once we've begun shutting down on IO thread.
+  // Updated and accessed only on IO thread.
+  bool shutdown_on_io_ = false;
+
+  content::BrowserContext* const context_;
 
   // Guards creation of |hash_helper_|, limiting number of creation to <= 1.
   // Accessed only on IO thread.
@@ -160,6 +171,8 @@ class ContentVerifier : public base::RefCountedThreadSafe<ContentVerifier>,
 
   // Data that should only be used on the IO thread.
   scoped_refptr<ContentVerifierIOData> io_data_;
+
+  DISALLOW_COPY_AND_ASSIGN(ContentVerifier);
 };
 
 }  // namespace extensions

@@ -107,7 +107,7 @@ QuicEncryptedPacket* ConstructEncryptedPacket(
     QuicPacketNumberLength packet_number_length);
 
 // This form assumes |connection_id_length| == PACKET_8BYTE_CONNECTION_ID,
-// |packet_number_length| == PACKET_6BYTE_PACKET_NUMBER and
+// |packet_number_length| == PACKET_4BYTE_PACKET_NUMBER and
 // |versions| == nullptr.
 QuicEncryptedPacket* ConstructEncryptedPacket(QuicConnectionId connection_id,
                                               bool version_flag,
@@ -507,11 +507,15 @@ class PacketSavingConnection : public MockQuicConnection {
 class MockQuicSession : public QuicSession {
  public:
   // Takes ownership of |connection|.
+  MockQuicSession(QuicConnection* connection, bool create_mock_crypto_stream);
+
+  // Takes ownership of |connection|.
   explicit MockQuicSession(QuicConnection* connection);
   ~MockQuicSession() override;
 
   QuicCryptoStream* GetMutableCryptoStream() override;
   const QuicCryptoStream* GetCryptoStream() const override;
+  void SetCryptoStream(QuicCryptoStream* crypto_stream);
 
   MOCK_METHOD3(OnConnectionClosed,
                void(QuicErrorCode error,
@@ -578,10 +582,14 @@ class MockQuicSpdySession : public QuicSpdySession {
  public:
   // Takes ownership of |connection|.
   explicit MockQuicSpdySession(QuicConnection* connection);
+  // Takes ownership of |connection|.
+  MockQuicSpdySession(QuicConnection* connection,
+                      bool create_mock_crypto_stream);
   ~MockQuicSpdySession() override;
 
   QuicCryptoStream* GetMutableCryptoStream() override;
   const QuicCryptoStream* GetCryptoStream() const override;
+  void SetCryptoStream(QuicCryptoStream* crypto_stream);
   const SpdyHeaderBlock& GetWriteHeaders() { return write_headers_; }
 
   // From QuicSession.
@@ -854,7 +862,7 @@ class MockNetworkChangeVisitor
   ~MockNetworkChangeVisitor() override;
 
   MOCK_METHOD0(OnCongestionChange, void());
-  // TODO(wangyix): remove OnPathDegrading() once
+  // TODO(b/76462509): remove OnPathDegrading() once
   // FLAGS_quic_reloadable_flag_quic_path_degrading_alarm is deprecated.
   MOCK_METHOD0(OnPathDegrading, void());
   MOCK_METHOD1(OnPathMtuIncreased, void(QuicPacketLength));

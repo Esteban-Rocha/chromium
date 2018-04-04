@@ -8,6 +8,7 @@
 #include "core/testing/CoreUnitTestHelper.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/testing/runtime_enabled_features_test_helpers.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
@@ -37,7 +38,7 @@ class LayoutTextTest : public RenderingTest {
 const char kTacoText[] = "Los Compadres Taco Truck";
 
 // Helper class to run the same test code with and without LayoutNG
-class ParameterizedLayoutTextTest : public ::testing::WithParamInterface<bool>,
+class ParameterizedLayoutTextTest : public testing::WithParamInterface<bool>,
                                     private ScopedLayoutNGForTest,
                                     public LayoutTextTest {
  public:
@@ -47,7 +48,7 @@ class ParameterizedLayoutTextTest : public ::testing::WithParamInterface<bool>,
   bool LayoutNGEnabled() const { return GetParam(); }
 };
 
-INSTANTIATE_TEST_CASE_P(All, ParameterizedLayoutTextTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, ParameterizedLayoutTextTest, testing::Bool());
 
 }  // namespace
 
@@ -143,6 +144,61 @@ TEST_F(LayoutTextTest, ContainsOnlyWhitespaceOrNbsp) {
   GetBasicText()->Width(0u, 8u, LayoutUnit(), TextDirection::kLtr, false);
   EXPECT_EQ(OnlyWhitespaceOrNbsp::kNo,
             GetBasicText()->ContainsOnlyWhitespaceOrNbsp());
+}
+
+struct NGOffsetMappingTestData {
+  const char* text;
+  unsigned dom_start;
+  unsigned dom_end;
+  bool success;
+  unsigned text_start;
+  unsigned text_end;
+} offset_mapping_test_data[] = {
+    {"<div id=target> a  b  </div>", 0, 1, true, 0, 0},
+    {"<div id=target> a  b  </div>", 1, 2, true, 0, 1},
+    {"<div id=target> a  b  </div>", 2, 3, true, 1, 2},
+    {"<div id=target> a  b  </div>", 2, 4, true, 1, 2},
+    {"<div id=target> a  b  </div>", 2, 5, true, 1, 3},
+    {"<div id=target> a  b  </div>", 3, 4, true, 2, 2},
+    {"<div id=target> a  b  </div>", 3, 5, true, 2, 3},
+    {"<div id=target> a  b  </div>", 5, 6, true, 3, 3},
+    {"<div id=target> a  b  </div>", 5, 7, true, 3, 3},
+    {"<div id=target> a  b  </div>", 6, 7, true, 3, 3},
+    {"<div>a <span id=target> </span>b</div>", 0, 1, false, 0, 1}};
+
+std::ostream& operator<<(std::ostream& out, NGOffsetMappingTestData data) {
+  return out << "\"" << data.text << "\" " << data.dom_start << ","
+             << data.dom_end << " => " << (data.success ? "true " : "false ")
+             << data.text_start << "," << data.text_end;
+}
+
+class MapDOMOffsetToTextContentOffset
+    : public LayoutTextTest,
+      private ScopedLayoutNGForTest,
+      public testing::WithParamInterface<NGOffsetMappingTestData> {
+ public:
+  MapDOMOffsetToTextContentOffset() : ScopedLayoutNGForTest(true) {}
+};
+
+INSTANTIATE_TEST_CASE_P(LayoutTextTest,
+                        MapDOMOffsetToTextContentOffset,
+                        testing::ValuesIn(offset_mapping_test_data));
+
+TEST_P(MapDOMOffsetToTextContentOffset, Basic) {
+  const auto data = GetParam();
+  SetBodyInnerHTML(data.text);
+  LayoutText* layout_text = GetBasicText();
+  const NGOffsetMapping* mapping = layout_text->GetNGOffsetMapping();
+  ASSERT_TRUE(mapping);
+  unsigned start = data.dom_start;
+  unsigned end = data.dom_end;
+  bool success =
+      layout_text->MapDOMOffsetToTextContentOffset(*mapping, &start, &end);
+  EXPECT_EQ(data.success, success);
+  if (success) {
+    EXPECT_EQ(data.text_start, start);
+    EXPECT_EQ(data.text_end, end);
+  }
 }
 
 TEST_P(ParameterizedLayoutTextTest, CaretMinMaxOffset) {
@@ -336,6 +392,79 @@ TEST_P(ParameterizedLayoutTextTest, IsBeforeAfterNonCollapsedCharacterBR) {
   EXPECT_FALSE(GetBasicText()->IsBeforeNonCollapsedCharacter(1));
   EXPECT_FALSE(GetBasicText()->IsAfterNonCollapsedCharacter(0));
   EXPECT_TRUE(GetBasicText()->IsAfterNonCollapsedCharacter(1));
+}
+
+TEST_P(ParameterizedLayoutTextTest, GetUpperLeftCorner) {
+  LoadAhem();
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    div {
+      font: 10px/1 Ahem;
+      width: 5em;
+    }
+    </style>
+    <div>12345 123<span id="target">45</span></div>
+  )HTML");
+  LayoutText* layout_text = GetLayoutTextById("target");
+  Optional<FloatPoint> upper_left = layout_text->GetUpperLeftCorner();
+  EXPECT_TRUE(upper_left.has_value());
+  EXPECT_EQ(FloatPoint(30, 10), upper_left.value());
+}
+
+TEST_P(ParameterizedLayoutTextTest, GetUpperLeftCornerVLR) {
+  LoadAhem();
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    div {
+      font: 10px/1 Ahem;
+      height: 5em;
+      writing-mode: vertical-lr;
+    }
+    </style>
+    <div>12345 123<span id="target">45</span></div>
+  )HTML");
+  LayoutText* layout_text = GetLayoutTextById("target");
+  Optional<FloatPoint> upper_left = layout_text->GetUpperLeftCorner();
+  EXPECT_TRUE(upper_left.has_value());
+  EXPECT_EQ(FloatPoint(10, 30), upper_left.value());
+}
+
+TEST_P(ParameterizedLayoutTextTest, AbsoluteRects) {
+  LoadAhem();
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    div {
+      font: 10px/1 Ahem;
+      width: 5em;
+    }
+    </style>
+    <div>012<span id=target>345 67</span></div>
+  )HTML");
+  LayoutText* layout_text = GetLayoutTextById("target");
+  Vector<IntRect> rects;
+  layout_text->AbsoluteRects(rects, {LayoutUnit(100), LayoutUnit(200)});
+  EXPECT_THAT(rects, testing::ElementsAre(IntRect(130, 200, 30, 10),
+                                          IntRect(100, 210, 20, 10)));
+}
+
+TEST_P(ParameterizedLayoutTextTest, AbsoluteRectsVRL) {
+  LoadAhem();
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    div {
+      font: 10px/1 Ahem;
+      width: 10em;
+      height: 5em;
+      writing-mode: vertical-rl;
+    }
+    </style>
+    <div>012<span id=target>345 67</span></div>
+  )HTML");
+  LayoutText* layout_text = GetLayoutTextById("target");
+  Vector<IntRect> rects;
+  layout_text->AbsoluteRects(rects, {LayoutUnit(100), LayoutUnit(200)});
+  EXPECT_THAT(rects, testing::ElementsAre(IntRect(100, 230, 10, 30),
+                                          IntRect(110, 200, 10, 20)));
 }
 
 TEST_P(ParameterizedLayoutTextTest, LinesBoundingBox) {

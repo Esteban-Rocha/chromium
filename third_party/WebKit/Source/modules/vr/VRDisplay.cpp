@@ -38,7 +38,7 @@
 #include "services/metrics/public/cpp/ukm_builders.h"
 
 #include <array>
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 
 namespace blink {
 
@@ -489,6 +489,7 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
     display_->RequestPresent(
         frame_transport_->GetSubmitFrameClient(),
         mojo::MakeRequest(&vr_presentation_provider_), std::move(options),
+        in_display_activate_,
         WTF::Bind(&VRDisplay::OnPresentComplete, WrapPersistent(this)));
     vr_presentation_provider_.set_connection_error_handler(
         WTF::Bind(&VRDisplay::OnPresentationProviderConnectionError,
@@ -837,6 +838,8 @@ void VRDisplay::OnActivate(device::mojom::blink::VRDisplayEventReason reason,
   std::unique_ptr<UserGestureIndicator> gesture_indicator;
   if (reason == device::mojom::blink::VRDisplayEventReason::MOUNTED)
     gesture_indicator = Frame::NotifyUserActivation(doc->GetFrame());
+
+  AutoReset<bool> in_activate(&in_display_activate_, true);
 
   navigator_vr_->DispatchVREvent(
       VRDisplayEvent::Create(EventTypeNames::vrdisplayactivate, this, reason));

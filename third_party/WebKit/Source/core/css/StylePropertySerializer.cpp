@@ -26,6 +26,7 @@
 #include <bitset>
 #include "core/css/CSSCustomPropertyDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
+#include "core/css/CSSMarkup.h"
 #include "core/css/CSSPendingSubstitutionValue.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/properties/css_property.h"
@@ -179,7 +180,7 @@ String StylePropertySerializer::GetCustomPropertyText(
     result.Append(' ');
   const CSSCustomPropertyDeclaration* value =
       ToCSSCustomPropertyDeclaration(property.Value());
-  result.Append(value->GetName());
+  SerializeIdentifier(value->GetName(), result, is_not_first_decl);
   result.Append(':');
   if (!value->Value())
     result.Append(' ');
@@ -257,11 +258,6 @@ String StylePropertySerializer::AsText() const {
 
       CSSPropertyID shorthand_property = shorthand.id();
       int shorthand_property_index = shorthand_property - firstCSSProperty;
-      // TODO(timloh): Do we actually need this check? A previous comment
-      // said "old UAs can't recognize them but are important for editing"
-      // but Firefox doesn't do this.
-      if (shorthand_property == CSSPropertyFont)
-        continue;
       // We already tried serializing as this shorthand
       if (shorthand_appeared.test(shorthand_property_index))
         continue;
@@ -380,10 +376,13 @@ String StylePropertySerializer::CommonShorthandChecks(
       }
     }
     if (success) {
-      if (longhands[0]->IsPendingSubstitutionValue())
-        return ToCSSPendingSubstitutionValue(longhands[0])
-            ->ShorthandValue()
-            ->CssText();
+      if (longhands[0]->IsPendingSubstitutionValue()) {
+        const CSSPendingSubstitutionValue* substitution_value =
+            ToCSSPendingSubstitutionValue(longhands[0]);
+        if (substitution_value->ShorthandPropertyId() != shorthand.id())
+          return g_empty_string;
+        return substitution_value->ShorthandValue()->CssText();
+      }
       return longhands[0]->CssText();
     }
   }

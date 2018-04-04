@@ -606,6 +606,11 @@
       "sync_integration_tests"
     ]
   },
+  "Linux Builder Jumbo": {
+    "additional_compile_targets": [
+      "all"
+    ]
+  },
   "Linux Tests": {
     "gtest_tests": [
       {
@@ -683,8 +688,7 @@
       },
       {
         "args": [
-          "--site-per-process",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/site-per-process.browser_tests.filter"
+          "--site-per-process"
         ],
         "name": "site_per_process_browser_tests",
         "swarming": {
@@ -1061,6 +1065,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "mojo_common_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "mojo_core_unittests"
       },
       {
         "swarming": {
@@ -1476,8 +1486,7 @@
       },
       {
         "args": [
-          "--site-per-process",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/site-per-process.browser_tests.filter"
+          "--site-per-process"
         ],
         "name": "site_per_process_browser_tests",
         "swarming": {
@@ -1855,6 +1864,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "mojo_common_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "mojo_core_unittests"
       },
       {
         "swarming": {
@@ -2428,6 +2443,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "mojo_common_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "mojo_core_unittests"
       },
       {
         "swarming": {

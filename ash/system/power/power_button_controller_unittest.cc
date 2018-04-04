@@ -15,6 +15,7 @@
 #include "ash/session/session_controller.h"
 #include "ash/shell.h"
 #include "ash/system/power/power_button_controller_test_api.h"
+#include "ash/system/power/power_button_menu_item_view.h"
 #include "ash/system/power/power_button_menu_view.h"
 #include "ash/system/power/power_button_test_base.h"
 #include "ash/test_media_client.h"
@@ -107,7 +108,7 @@ class PowerButtonControllerTest : public PowerButtonTestBase {
 
   bool GetGlobalTouchscreenEnabled() const {
     return Shell::Get()->touch_devices_controller()->GetTouchscreenEnabled(
-        TouchscreenEnabledSource::GLOBAL);
+        TouchDeviceEnabledSource::GLOBAL);
   }
 
   // Tapping power button when screen is off will turn the screen on but not
@@ -129,6 +130,10 @@ class PowerButtonControllerTest : public PowerButtonTestBase {
     ASSERT_TRUE(power_button_test_api_->TriggerPowerButtonMenuTimeout());
     ReleasePowerButton();
     ASSERT_TRUE(power_button_test_api_->IsMenuOpened());
+    // "Power off" item has focus after menu is opened.
+    EXPECT_TRUE(power_button_test_api_->GetPowerButtonMenuView()
+                    ->power_off_item()
+                    ->HasFocus());
   }
 
   // Tap outside of the menu view to dismiss the menu.
@@ -290,46 +295,18 @@ TEST_F(PowerButtonControllerTest, ModeSpecificPowerButton) {
 
 // Tests that release power button after menu is opened but before trigger
 // shutdown will not turn screen off.
-TEST_F(PowerButtonControllerTest, ReleasePowerButtonAfterShowPowerButtonMenu) {
+TEST_F(PowerButtonControllerTest, ReleasePowerButtonBeforeTriggerShutdown) {
   PressPowerButton();
   EXPECT_TRUE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
-  EXPECT_TRUE(power_button_test_api_->ShutdownTimerIsRunning());
   EXPECT_FALSE(power_manager_client_->backlights_forced_off());
-  EXPECT_TRUE(power_button_test_api_->TriggerPowerButtonMenuTimeout());
+  ASSERT_TRUE(power_button_test_api_->TriggerPowerButtonMenuTimeout());
+  ASSERT_TRUE(power_button_test_api_->TriggerPreShutdownTimeout());
+  EXPECT_TRUE(lock_state_test_api_->shutdown_timer_is_running());
   ReleasePowerButton();
   EXPECT_TRUE(power_button_test_api_->IsMenuOpened());
-  EXPECT_FALSE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_FALSE(lock_state_test_api_->shutdown_timer_is_running());
+  EXPECT_FALSE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   EXPECT_FALSE(power_manager_client_->backlights_forced_off());
-}
-
-// Tests that the real shutdown is started if the power button is released
-// after the timer fires when screen is on.
-TEST_F(PowerButtonControllerTest, RealShutdownIfScreenIsOn) {
-  PressPowerButton();
-  EXPECT_TRUE(power_button_test_api_->TriggerShutdownTimeout());
-  ShutdownSoundPlayed();
-  EXPECT_TRUE(lock_state_test_api_->real_shutdown_timer_is_running());
-  ReleasePowerButton();
-  EXPECT_TRUE(power_manager_client_->backlights_forced_off());
-  // Release power button if real shutdown started will not cancel the shutdown.
-  EXPECT_TRUE(lock_state_test_api_->real_shutdown_timer_is_running());
-}
-
-// Tests that the real shutdown is started if the power button is released
-// after the timer fires when screen is off.
-TEST_F(PowerButtonControllerTest, RealShutdownIfScreenIsOff) {
-  // Press power button to turn screen off.
-  PressPowerButton();
-  ReleaseLockButton();
-
-  PressPowerButton();
-  EXPECT_TRUE(power_button_test_api_->TriggerShutdownTimeout());
-  ShutdownSoundPlayed();
-  EXPECT_TRUE(lock_state_test_api_->real_shutdown_timer_is_running());
-  ReleasePowerButton();
-  EXPECT_TRUE(power_manager_client_->backlights_forced_off());
-  // Release power button if real shutdown started will not cancel the shutdown.
-  EXPECT_TRUE(lock_state_test_api_->real_shutdown_timer_is_running());
 }
 
 // Should dismiss the menu if locking screen when menu is opened.
@@ -407,19 +384,19 @@ TEST_F(PowerButtonControllerTest,
   // are not forced off.
   tick_clock_.Advance(base::TimeDelta::FromMilliseconds(500));
   PressPowerButton();
-  EXPECT_TRUE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_TRUE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   ReleasePowerButton();
-  EXPECT_FALSE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_FALSE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   EXPECT_FALSE(power_manager_client_->backlights_forced_off());
 
   // Send the power button event after a longer delay and check that backlights
   // are forced off.
   tick_clock_.Advance(base::TimeDelta::FromMilliseconds(1600));
   PressPowerButton();
-  EXPECT_TRUE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_TRUE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   ReleasePowerButton();
   SendBrightnessChange(0, kUserCause);
-  EXPECT_FALSE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_FALSE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   EXPECT_TRUE(power_manager_client_->backlights_forced_off());
 }
 
@@ -443,19 +420,19 @@ TEST_F(PowerButtonControllerTest,
   tick_clock_.Advance(base::TimeDelta::FromMilliseconds(500));
   PressPowerButton();
   SendBrightnessChange(kNonZeroBrightness, kUserCause);
-  EXPECT_TRUE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_TRUE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   ReleasePowerButton();
-  EXPECT_FALSE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_FALSE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   EXPECT_FALSE(power_manager_client_->backlights_forced_off());
 
   // Send the power button event after a longer delay and check that backlights
   // are forced off.
   tick_clock_.Advance(base::TimeDelta::FromMilliseconds(1600));
   PressPowerButton();
-  EXPECT_TRUE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_TRUE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   ReleasePowerButton();
   SendBrightnessChange(0, kUserCause);
-  EXPECT_FALSE(power_button_test_api_->ShutdownTimerIsRunning());
+  EXPECT_FALSE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   EXPECT_TRUE(power_manager_client_->backlights_forced_off());
 }
 
@@ -598,10 +575,8 @@ TEST_F(PowerButtonControllerTest, DisableTouchscreenForInactivity) {
 TEST_F(PowerButtonControllerTest,
        EnterOrLeaveTabletModeWhilePressingPowerButton) {
   PressPowerButton();
-  EXPECT_TRUE(power_button_test_api_->ShutdownTimerIsRunning());
   EXPECT_TRUE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   power_button_controller_->OnTabletModeStarted();
-  EXPECT_FALSE(power_button_test_api_->ShutdownTimerIsRunning());
   EXPECT_FALSE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   tick_clock_.Advance(base::TimeDelta::FromMilliseconds(1500));
   ReleasePowerButton();
@@ -609,10 +584,8 @@ TEST_F(PowerButtonControllerTest,
   EXPECT_FALSE(power_button_test_api_->IsMenuOpened());
 
   PressPowerButton();
-  EXPECT_TRUE(power_button_test_api_->ShutdownTimerIsRunning());
   EXPECT_TRUE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   power_button_controller_->OnTabletModeEnded();
-  EXPECT_FALSE(power_button_test_api_->ShutdownTimerIsRunning());
   EXPECT_FALSE(power_button_test_api_->PowerButtonMenuTimerIsRunning());
   tick_clock_.Advance(base::TimeDelta::FromMilliseconds(2500));
   ReleasePowerButton();
@@ -699,7 +672,7 @@ TEST_F(PowerButtonControllerTest, TabletModeEventsStopForcingOff) {
 // be synced with new backlights forced off state from powerd.
 TEST_F(PowerButtonControllerTest, SyncTouchscreenEnabled) {
   Shell::Get()->touch_devices_controller()->SetTouchscreenEnabled(
-      false, TouchscreenEnabledSource::GLOBAL);
+      false, TouchDeviceEnabledSource::GLOBAL);
   ASSERT_FALSE(GetGlobalTouchscreenEnabled());
 
   // Simulate system reboot by resetting backlights forced off state in powerd
@@ -919,21 +892,43 @@ TEST_F(PowerButtonControllerTest, SuspendWithMenuOn) {
   EXPECT_FALSE(power_button_test_api_->IsMenuOpened());
 }
 
-// Tests that the menu is inactive by default.
-TEST_F(PowerButtonControllerTest, InactivePowerMenuByDefault) {
-  aura::Window* window = CreateTestWindowInShellWithId(0);
-  wm::ActivateWindow(window);
-  ASSERT_EQ(window, wm::GetActiveWindow());
+// Tests the formerly-active window state in showing power menu.
+TEST_F(PowerButtonControllerTest, FormerlyActiveWindowInShowingMenu) {
+  std::unique_ptr<views::Widget> widget = CreateTestWidget();
+  ASSERT_TRUE(widget->IsActive());
 
-  PressPowerButton();
-  EXPECT_TRUE(power_button_test_api_->TriggerPowerButtonMenuTimeout());
-  ReleasePowerButton();
-  EXPECT_TRUE(power_button_test_api_->IsMenuOpened());
-  EXPECT_EQ(window, wm::GetActiveWindow());
-  EXPECT_FALSE(
+  OpenPowerButtonMenu();
+  // The active window becomes inactive after menu is shown but it is still
+  // painted as active to avoid frame color change.
+  EXPECT_FALSE(widget->IsActive());
+  EXPECT_TRUE(widget->IsAlwaysRenderAsActive());
+  EXPECT_TRUE(widget->non_client_view()->frame_view()->ShouldPaintAsActive());
+  EXPECT_TRUE(
       wm::IsActiveWindow(power_button_test_api_->GetPowerButtonMenuView()
                              ->GetWidget()
                              ->GetNativeWindow()));
+  // Should reset the previous painting as active setting of the active window
+  // if dismissing the menu.
+  TapToDismissPowerButtonMenu();
+  EXPECT_FALSE(widget->IsAlwaysRenderAsActive());
+  EXPECT_TRUE(widget->IsActive());
+
+  // Showing or dismissing menu should not change the original setting of the
+  // formerly-active window.
+  widget->SetAlwaysRenderAsActive(true);
+  OpenPowerButtonMenu();
+  TapToDismissPowerButtonMenu();
+  EXPECT_TRUE(widget->IsAlwaysRenderAsActive());
+  widget->SetAlwaysRenderAsActive(false);
+
+  // Dismiss menu should work well after the active window is closed between
+  // showing and dismissing menu.
+  EXPECT_TRUE(widget->IsActive());
+  EXPECT_FALSE(widget->IsAlwaysRenderAsActive());
+  OpenPowerButtonMenu();
+  EXPECT_TRUE(widget->IsAlwaysRenderAsActive());
+  widget->Close();
+  TapToDismissPowerButtonMenu();
 }
 
 // Tests that cursor is hidden after show the menu and should reappear if mouse

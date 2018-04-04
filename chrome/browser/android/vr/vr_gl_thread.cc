@@ -309,6 +309,12 @@ void VrGLThread::StopAutocomplete() {
       FROM_HERE, base::BindOnce(&VrShell::StopAutocomplete, weak_vr_shell_));
 }
 
+void VrGLThread::ShowPageInfo() {
+  DCHECK(OnGlThread());
+  main_thread_task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&VrShell::ShowPageInfo, weak_vr_shell_));
+}
+
 void VrGLThread::SetFullscreen(bool enabled) {
   DCHECK(OnMainThread());
   task_runner()->PostTask(FROM_HERE,
@@ -352,11 +358,11 @@ void VrGLThread::SetToolbarState(const ToolbarState& state) {
                                          weak_browser_ui_, state));
 }
 
-void VrGLThread::SetWebVrMode(bool enabled, bool show_toast) {
+void VrGLThread::SetWebVrMode(bool enabled) {
   DCHECK(OnMainThread());
-  task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&BrowserUiInterface::SetWebVrMode,
-                                weak_browser_ui_, enabled, show_toast));
+  task_runner()->PostTask(FROM_HERE,
+                          base::BindOnce(&BrowserUiInterface::SetWebVrMode,
+                                         weak_browser_ui_, enabled));
 }
 
 void VrGLThread::SetCapturingState(const CapturingStateModel& state) {

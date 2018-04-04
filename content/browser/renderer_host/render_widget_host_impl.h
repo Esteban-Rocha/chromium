@@ -167,7 +167,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   RenderWidgetHostOwnerDelegate* owner_delegate() { return owner_delegate_; }
 
-  void set_clock_for_testing(base::TickClock* clock) { clock_ = clock; }
+  void set_clock_for_testing(const base::TickClock* clock) { clock_ = clock; }
 
   // Returns the viz::FrameSinkId that this object uses to put things on screen.
   // This value is constant throughout the lifetime of this object. Note that
@@ -279,6 +279,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool owned_by_render_frame_host() const {
     return owned_by_render_frame_host_;
   }
+
+  void SetFrameDepth(unsigned int depth);
+  void UpdatePriority();
 
   // Tells the renderer to die and optionally delete |this|.
   void ShutdownAndDestroyWidget(bool also_delete);
@@ -901,7 +904,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   const int routing_id_;
 
   // The clock used; overridable for tests.
-  base::TickClock* clock_;
+  const base::TickClock* clock_;
 
   // Indicates whether a page is loading or not.
   bool is_loading_;
@@ -909,6 +912,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Indicates whether a page is hidden or not. Need to call
   // process_->UpdateClientPriority when this value changes.
   bool is_hidden_;
+
+  // For a widget that does not have an associated RenderFrame/View, assume it
+  // is depth 1, ie just below the root widget.
+  unsigned int frame_depth_ = 1u;
 
 #if defined(OS_ANDROID)
   // Tracks the current importance of widget.
@@ -941,6 +948,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   gfx::Size max_size_for_auto_resize_;
 
   uint64_t last_auto_resize_request_number_ = 0ul;
+  uint64_t last_auto_resize_response_number_ = 0ul;
 
   bool waiting_for_screen_rects_ack_;
   gfx::Rect last_view_screen_rect_;

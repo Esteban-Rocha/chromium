@@ -43,8 +43,7 @@
 #import "ios/web/navigation/navigation_item_impl.h"
 #import "ios/web/navigation/navigation_manager_impl.h"
 #include "ios/web/navigation/navigation_manager_util.h"
-#include "ios/web/navigation/placeholder_navigation_util.h"
-#include "ios/web/navigation/wk_based_restore_session_util.h"
+#import "ios/web/navigation/wk_navigation_util.h"
 #include "ios/web/net/cert_host_pair.h"
 #import "ios/web/net/crw_cert_verification_controller.h"
 #import "ios/web/net/crw_ssl_status_updater.h"
@@ -121,9 +120,11 @@ using web::WebStateImpl;
 
 namespace {
 
-using web::placeholder_navigation_util::IsPlaceholderUrl;
-using web::placeholder_navigation_util::CreatePlaceholderUrlForUrl;
-using web::placeholder_navigation_util::ExtractUrlFromPlaceholderUrl;
+using web::wk_navigation_util::IsPlaceholderUrl;
+using web::wk_navigation_util::CreatePlaceholderUrlForUrl;
+using web::wk_navigation_util::ExtractUrlFromPlaceholderUrl;
+using web::wk_navigation_util::IsRestoreSessionUrl;
+using web::wk_navigation_util::IsWKInternalUrl;
 
 // Struct to capture data about a user interaction. Records the time of the
 // interaction and the main document URL at that time.
@@ -1031,25 +1032,14 @@ GURL URLEscapedForHistory(const GURL& url) {
 }
 
 - (NSDictionary*)WKWebViewObservers {
-  NSMutableDictionary* result = [NSMutableDictionary dictionary];
-  if (@available(iOS 10, *)) {
-    result[@"serverTrust"] = @"webViewSecurityFeaturesDidChange";
-  }
-#if !defined(__IPHONE_10_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_10_0
-  else {
-    result[@"certificateChain"] = @"webViewSecurityFeaturesDidChange";
-  }
-#endif
-
-  [result addEntriesFromDictionary:@{
+  return @{
+    @"serverTrust" : @"webViewSecurityFeaturesDidChange",
     @"estimatedProgress" : @"webViewEstimatedProgressDidChange",
     @"hasOnlySecureContent" : @"webViewSecurityFeaturesDidChange",
     @"title" : @"webViewTitleDidChange",
     @"loading" : @"webViewLoadingStateDidChange",
     @"URL" : @"webViewURLDidChange",
-  }];
-
-  return result;
+  };
 }
 
 // NativeControllerDelegate method, called to inform that title has changed.
@@ -1195,8 +1185,7 @@ GURL URLEscapedForHistory(const GURL& url) {
   // it can be implemented using NavigationManager API after removal of legacy
   // navigation stack.
   GURL webViewURL = net::GURLWithNSURL(_webView.URL);
-  if (_webView && !IsPlaceholderUrl(webViewURL) &&
-      !web::IsRestoreSessionUrl(webViewURL)) {
+  if (_webView && !IsWKInternalUrl(webViewURL)) {
     return [self webURLWithTrustLevel:trustLevel];
   }
   // Any non-web URL source is trusted.
@@ -2079,9 +2068,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
   [self restoreStateFromHistory];
   // Placeholder and restore session URLs are implementation details so should
   // not notify WebStateObservers.
-  bool isInternalURL = context && (IsPlaceholderUrl(context->GetUrl()) ||
-                                   web::IsRestoreSessionUrl(context->GetUrl()));
-  if (!isInternalURL) {
+  if (!context || !IsWKInternalUrl(context->GetUrl())) {
     _webStateImpl->SetIsLoading(false);
     _webStateImpl->OnPageLoaded(currentURL, loadSuccess);
   }
@@ -2184,9 +2171,17 @@ registerLoadRequestForURL:(const GURL&)requestURL
   return _webViewProxy;
 }
 
-- (CGFloat)headerHeightForContainerView:
-        (CRWWebControllerContainerView*)containerView {
+- (CGFloat)nativeContentHeaderHeightForContainerView:
+    (CRWWebControllerContainerView*)containerView {
   return [self headerHeight];
+}
+
+- (CGFloat)nativeContentFooterHeightForContainerView:
+    (CRWWebControllerContainerView*)containerView {
+  if (![_delegate respondsToSelector:@selector
+                  (nativeContentFooterHeightForWebController:)])
+    return 0.0f;
+  return [_delegate nativeContentFooterHeightForWebController:self];
 }
 
 #pragma mark -
@@ -3645,9 +3640,10 @@ registerLoadRequestForURL:(const GURL&)requestURL
 }
 
 - (CGFloat)headerHeight {
-  if (![_delegate respondsToSelector:@selector(headerHeightForWebController:)])
+  if (![_delegate respondsToSelector:@selector
+                  (nativeContentHeaderHeightForWebController:)])
     return 0.0f;
-  return [_delegate headerHeightForWebController:self];
+  return [_delegate nativeContentHeaderHeightForWebController:self];
 }
 
 - (void)updateSSLStatusForCurrentNavigationItem {
@@ -3671,14 +3667,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
   NSString* host = base::SysUTF8ToNSString(_documentURL.host());
   BOOL hasOnlySecureContent = [_webView hasOnlySecureContent];
   base::ScopedCFTypeRef<SecTrustRef> trust;
-  if (@available(iOS 10, *)) {
-    trust.reset([_webView serverTrust], base::scoped_policy::RETAIN);
-  }
-#if !defined(__IPHONE_10_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_10_0
-  else {
-    trust = web::CreateServerTrustFromChain([_webView certificateChain], host);
-  }
-#endif
+  trust.reset([_webView serverTrust], base::scoped_policy::RETAIN);
 
   [_SSLStatusUpdater updateSSLStatusForNavigationItem:currentNavItem
                                          withCertHost:host
@@ -3924,10 +3913,12 @@ registerLoadRequestForURL:(const GURL&)requestURL
 }
 
 - (void)webViewWebProcessDidCrash {
-  if (@available(iOS 11, *)) {
+  if (@available(iOS 11.3, *)) {
     // On iOS 11 WKWebView does not repaint after crash and reload. Recreating
-    // web view fixes the issue. TODO(crbug.com/770914): Remove this workaround
-    // once rdar://35063950 is fixed.
+    // web view addresses the issue. This bug is fixed on iOS 11.3
+    // (rdar://35063950). TODO(crbug.com/770914): Remove this workaround
+    // once iOS 11 support is dropped.
+  } else if (@available(iOS 11, *)) {
     [self removeWebView];
   }
   _webProcessCrashed = YES;
@@ -4363,6 +4354,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
         item->SetVirtualURL(webViewURL);
         item->SetURL(webViewURL);
       }
+      context->SetUrl(webViewURL);
     }
     _webStateImpl->OnNavigationStarted(context);
     return;
@@ -4484,21 +4476,38 @@ registerLoadRequestForURL:(const GURL&)requestURL
 
   [self didReceiveWebViewNavigationDelegateCallback];
 
+  // For reasons not yet fully understood, sometimes WKWebView triggers
+  // |webView:didFinishNavigation| before |webView:didCommitNavigation|. If a
+  // navigation is already finished, stop processing
+  // (https://crbug.com/818796#c2).
+  if ([_navigationStates stateForNavigation:navigation] ==
+      web::WKNavigationState::FINISHED)
+    return;
+
+  GURL webViewURL = net::GURLWithNSURL(webView.URL);
+  GURL currentWKItemURL =
+      net::GURLWithNSURL(webView.backForwardList.currentItem.URL);
+  UMA_HISTOGRAM_BOOLEAN("IOS.CommittedURLMatchesCurrentItem",
+                        webViewURL == currentWKItemURL);
+
+  web::NavigationContextImpl* context =
+      [_navigationStates contextForNavigation:navigation];
+
   // TODO(crbug.com/787497): Always use webView.backForwardList.currentItem.URL
   // to obtain lastCommittedURL once loadHTML: is no longer user for WebUI.
-  GURL webViewURL = net::GURLWithNSURL(webView.URL);
-
   if (webViewURL.is_empty()) {
     // It is possible for |webView.URL| to be nil, in which case
     // webView.backForwardList.currentItem.URL will return the right committed
     // URL (crbug.com/784480).
     webViewURL = net::GURLWithNSURL(webView.backForwardList.currentItem.URL);
+  } else if (context->GetUrl() == currentWKItemURL) {
+    // If webView.backForwardList.currentItem.URL matches |context|, then this
+    // is a known edge case where |webView.URL| is wrong.
+    // TODO(crbug.com/826013): Remove this workaround.
+    webViewURL = currentWKItemURL;
   }
 
   [self displayWebView];
-
-  bool navigationFinished = [_navigationStates stateForNavigation:navigation] ==
-                            web::WKNavigationState::FINISHED;
 
   // Record the navigation state.
   [_navigationStates setState:web::WKNavigationState::COMMITTED
@@ -4513,8 +4522,6 @@ registerLoadRequestForURL:(const GURL&)requestURL
 
   // Update HTTP response headers.
   _webStateImpl->UpdateHttpResponseHeaders(_documentURL);
-  web::NavigationContextImpl* context =
-      [_navigationStates contextForNavigation:navigation];
 
   if (@available(iOS 11.3, *)) {
     // On iOS 11.3 didReceiveServerRedirectForProvisionalNavigation: is not
@@ -4616,24 +4623,9 @@ registerLoadRequestForURL:(const GURL&)requestURL
   // Report cases where SSL cert is missing for a secure connection.
   if (_documentURL.SchemeIsCryptographic()) {
     scoped_refptr<net::X509Certificate> cert;
-    if (@available(iOS 10, *)) {
-      cert = web::CreateCertFromTrust([_webView serverTrust]);
-    }
-#if !defined(__IPHONE_10_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_10_0
-    else {
-      cert = web::CreateCertFromChain([_webView certificateChain]);
-    }
-#endif
+    cert = web::CreateCertFromTrust([_webView serverTrust]);
     UMA_HISTOGRAM_BOOLEAN("WebController.WKWebViewHasCertForSecureConnection",
                           static_cast<bool>(cert));
-  }
-
-  if (navigationFinished) {
-    // webView:didFinishNavigation: was called before
-    // webView:didCommitNavigation:, so forget null navigation now and signal
-    // that navigation was finished.
-    [self forgetNullWKNavigation:navigation];
-    [self didFinishNavigation:navigation];
   }
 }
 
@@ -4657,7 +4649,33 @@ registerLoadRequestForURL:(const GURL&)requestURL
     didFinishNavigation:(WKNavigation*)navigation {
   [self didReceiveWebViewNavigationDelegateCallback];
 
+  // Sometimes |webView:didFinishNavigation| arrives before
+  // |webView:didCommitNavigation|. Explicitly trigger post-commit processing.
+  bool navigationCommitted =
+      [_navigationStates stateForNavigation:navigation] ==
+      web::WKNavigationState::COMMITTED;
+  UMA_HISTOGRAM_BOOLEAN("IOS.WKWebViewFinishBeforeCommit",
+                        !navigationCommitted);
+  if (!navigationCommitted) {
+    [self webView:webView didCommitNavigation:navigation];
+    DCHECK_EQ(web::WKNavigationState::COMMITTED,
+              [_navigationStates stateForNavigation:navigation]);
+  }
+
   GURL webViewURL = net::GURLWithNSURL(webView.URL);
+  GURL currentWKItemURL =
+      net::GURLWithNSURL(webView.backForwardList.currentItem.URL);
+  UMA_HISTOGRAM_BOOLEAN("IOS.FinishedURLMatchesCurrentItem",
+                        webViewURL == currentWKItemURL);
+
+  web::NavigationContextImpl* context =
+      [_navigationStates contextForNavigation:navigation];
+  if (context->GetUrl() == currentWKItemURL) {
+    // If webView.backForwardList.currentItem.URL matches |context|, then this
+    // is a known edge case where |webView.URL| is wrong.
+    // TODO(crbug.com/826013): Remove this workaround.
+    webViewURL = currentWKItemURL;
+  }
 
   // If this is a placeholder navigation for an app-specific URL, finish
   // loading by running the completion handler.
@@ -4669,8 +4687,6 @@ registerLoadRequestForURL:(const GURL&)requestURL
       return;
     }
 
-    web::NavigationContextImpl* context =
-        [_navigationStates contextForNavigation:navigation];
     web::NavigationItemImpl* item = self.currentNavItem;
     web::ErrorRetryState errorRetryState = item->GetErrorRetryState();
 
@@ -4741,9 +4757,6 @@ registerLoadRequestForURL:(const GURL&)requestURL
     }
   }
 
-  bool navigationCommitted =
-      [_navigationStates stateForNavigation:navigation] ==
-      web::WKNavigationState::COMMITTED;
   [_navigationStates setState:web::WKNavigationState::FINISHED
                 forNavigation:navigation];
 
@@ -4754,12 +4767,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
   // appropriate time rather than invoking here.
   web::ExecuteJavaScript(webView, @"__gCrWeb.didFinishNavigation()", nil);
   [self didFinishNavigation:navigation];
-
-  // Forget null navigation only if it has been committed. Otherwise it will be
-  // forgotten in webView:didCommitNavigation: callback.
-  if (navigationCommitted) {
-    [self forgetNullWKNavigation:navigation];
-  }
+  [self forgetNullWKNavigation:navigation];
 }
 
 - (void)webView:(WKWebView*)webView
@@ -4948,7 +4956,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
       IsPlaceholderUrl(_documentURL) ||
       web::GetWebClient()->IsAppSpecificURL(_documentURL);
   if (web::GetWebClient()->IsSlimNavigationManagerEnabled() &&
-      web::IsRestoreSessionUrl(webViewURL) && previousURLIsAppSpecific) {
+      IsRestoreSessionUrl(webViewURL) && previousURLIsAppSpecific) {
     [_webView reload];
     return;
   }
@@ -5024,7 +5032,8 @@ registerLoadRequestForURL:(const GURL&)requestURL
       lastNavigationState == web::WKNavigationState::STARTED ||
       lastNavigationState == web::WKNavigationState::REDIRECTED;
 
-  if (!hasPendingNavigation) {
+  if (!hasPendingNavigation &&
+      !IsPlaceholderUrl(net::GURLWithNSURL(_webView.URL))) {
     // Do not update the title if there is a navigation in progress because
     // there is no way to tell if KVO change fired for new or previous page.
     [self setNavigationItemTitle:[_webView title]];

@@ -5,13 +5,13 @@
 #include "platform/scheduler/renderer/render_widget_signals.h"
 
 #include "base/macros.h"
-#include "public/platform/scheduler/renderer/render_widget_scheduling_state.h"
+#include "public/platform/scheduler/render_widget_scheduling_state.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::AnyNumber;
-using ::testing::Mock;
-using ::testing::_;
+using testing::AnyNumber;
+using testing::Mock;
+using testing::_;
 
 namespace blink {
 namespace scheduler {
@@ -31,7 +31,7 @@ class MockObserver : public RenderWidgetSignals::Observer {
   DISALLOW_COPY_AND_ASSIGN(MockObserver);
 };
 
-class RenderWidgetSignalsTest : public ::testing::Test {
+class RenderWidgetSignalsTest : public testing::Test {
  public:
   RenderWidgetSignalsTest() = default;
   ~RenderWidgetSignalsTest() override = default;

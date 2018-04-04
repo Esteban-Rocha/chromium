@@ -153,7 +153,7 @@ InlineBoxPosition AdjustInlineBoxPositionForPrimaryDirection(
   return InlineBoxPosition(result_box, result_box->CaretLeftmostOffset());
 }
 
-InlineBoxPosition AdjustInlineBoxPositionForTextDirection(
+InlineBoxPosition AdjustInlineBoxPositionForTextDirectionInternal(
     InlineBox* inline_box,
     int caret_offset,
     UnicodeBidi unicode_bidi) {
@@ -161,6 +161,9 @@ InlineBoxPosition AdjustInlineBoxPositionForTextDirection(
       inline_box->Root().Block().Style()->Direction();
   if (inline_box->Direction() == primary_direction)
     return AdjustInlineBoxPositionForPrimaryDirection(inline_box, caret_offset);
+
+  if (unicode_bidi == UnicodeBidi::kPlaintext)
+    return InlineBoxPosition(inline_box, caret_offset);
 
   const unsigned char level = inline_box->BidiLevel();
   if (caret_offset == inline_box->CaretLeftmostOffset()) {
@@ -181,12 +184,6 @@ InlineBoxPosition AdjustInlineBoxPositionForTextDirection(
         InlineBoxTraversal::FindLeftBoundaryOfBidiRunIgnoringLineBreak(
             *inline_box, level);
     return InlineBoxPosition(result_box, result_box->CaretLeftmostOffset());
-  }
-
-  if (unicode_bidi == UnicodeBidi::kPlaintext) {
-    if (inline_box->BidiLevel() < level)
-      return InlineBoxPosition(inline_box, inline_box->CaretLeftmostOffset());
-    return InlineBoxPosition(inline_box, inline_box->CaretRightmostOffset());
   }
 
   InlineBox* const next_box = inline_box->NextLeafChildIgnoringLineBreak();
@@ -412,6 +409,14 @@ InlineBoxPosition ComputeInlineBoxPositionForInlineAdjustedPosition(
 InlineBoxPosition ComputeInlineBoxPositionForInlineAdjustedPosition(
     const PositionInFlatTreeWithAffinity& position) {
   return ComputeInlineBoxPositionForInlineAdjustedPositionAlgorithm(position);
+}
+
+InlineBoxPosition AdjustInlineBoxPositionForTextDirection(
+    InlineBox* inline_box,
+    int caret_offset,
+    UnicodeBidi unicode_bidi) {
+  return AdjustInlineBoxPositionForTextDirectionInternal(
+      inline_box, caret_offset, unicode_bidi);
 }
 
 }  // namespace blink

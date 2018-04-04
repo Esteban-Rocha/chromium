@@ -31,6 +31,7 @@
 #include "net/log/net_log.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source_type.h"
+#include "net/socket/next_proto.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/redirect_util.h"
@@ -701,7 +702,7 @@ void URLRequest::CancelWithSSLError(int error, const SSLInfo& ssl_info) {
 }
 
 int URLRequest::DoCancel(int error, const SSLInfo& ssl_info) {
-  DCHECK(error < 0);
+  DCHECK_LT(error, 0);
   // If cancelled while calling a delegate, clear delegate info.
   if (calling_delegate_) {
     LogUnblocked();
@@ -1196,9 +1197,12 @@ void URLRequest::MaybeGenerateNetworkErrorLoggingReport() {
       base::TimeTicks::Now() - load_timing_info_.request_start;
   details.type = status().ToNetError();
 
-  details.is_reporting_upload =
-      context()->reporting_service() &&
-      context()->reporting_service()->RequestIsUpload(*this);
+  if (context()->reporting_service()) {
+    details.reporting_upload_depth =
+        context()->reporting_service()->GetUploadDepth(*this);
+  } else {
+    details.reporting_upload_depth = 0;
+  }
 
   service->OnRequest(details);
 }

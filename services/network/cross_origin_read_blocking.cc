@@ -31,8 +31,10 @@ const char kAppXml[] = "application/xml";
 const char kAppJson[] = "application/json";
 const char kImageSvg[] = "image/svg+xml";
 const char kTextJson[] = "text/json";
-const char kTextXjson[] = "text/x-json";
 const char kTextPlain[] = "text/plain";
+// TODO(lukasza): Remove kJsonProtobuf once this MIME type is not used in
+// practice.  See also https://crbug.com/826756#c3
+const char kJsonProtobuf[] = "application/json+protobuf";
 
 // MIME type suffixes
 const char kJsonSuffix[] = "+json";
@@ -53,7 +55,7 @@ void AdvancePastWhitespace(StringPiece* data) {
 // |signatures|, and kNo otherwise.
 //
 // When kYes is returned, the matching prefix is erased from |data|.
-CrossOriginReadBlocking::Result MatchesSignature(
+CrossOriginReadBlocking::SniffingResult MatchesSignature(
     StringPiece* data,
     const StringPiece signatures[],
     size_t arr_size,
@@ -77,39 +79,6 @@ CrossOriginReadBlocking::Result MatchesSignature(
   return CrossOriginReadBlocking::kNo;
 }
 
-// Returns true if |mime_type == prefix| or if |mime_type| starts with
-// |prefix + '+'|.  Returns false otherwise.
-//
-// For example:
-// - MatchesMimeTypePrefix("application/json", "application/json") -> true
-// - MatchesMimeTypePrefix("application/json+foo", "application/json") -> true
-// - MatchesMimeTypePrefix("application/jsonp", "application/json") -> false
-// - MatchesMimeTypePrefix("application/foo", "application/json") -> false
-bool MatchesMimeTypePrefix(base::StringPiece mime_type,
-                           base::StringPiece prefix) {
-  constexpr auto kCaseInsensitive = base::CompareCase::INSENSITIVE_ASCII;
-  if (!base::StartsWith(mime_type, prefix, kCaseInsensitive))
-    return false;
-  DCHECK_GE(mime_type.length(), prefix.length());
-
-  if (mime_type.length() == prefix.length()) {
-    // Given StartsWith results above, the above condition is our O(1) check if
-    // |base::LowerCaseEqualsASCII(mime_type, prefix)|.
-    DCHECK(base::LowerCaseEqualsASCII(mime_type, prefix));
-    return true;
-  }
-
-  if (mime_type[prefix.length()] == '+') {
-    // Given StartsWith results above, the above condition is our O(1) check if
-    // |base::StartsWith(mime_type, prefix + '+', kCaseInsensitive)|.
-    DCHECK(base::StartsWith(mime_type, prefix.as_string() + '+',
-                            kCaseInsensitive));
-    return true;
-  }
-
-  return false;
-}
-
 }  // namespace
 
 CrossOriginReadBlocking::MimeType CrossOriginReadBlocking::GetCanonicalMimeType(
@@ -120,28 +89,28 @@ CrossOriginReadBlocking::MimeType CrossOriginReadBlocking::GetCanonicalMimeType(
   if (base::LowerCaseEqualsASCII(mime_type, kImageSvg))
     return CrossOriginReadBlocking::MimeType::kOthers;
 
+  // See also https://mimesniff.spec.whatwg.org/#html-mime-type
   if (base::LowerCaseEqualsASCII(mime_type, kTextHtml))
     return CrossOriginReadBlocking::MimeType::kHtml;
 
-  if (base::LowerCaseEqualsASCII(mime_type, kTextPlain))
-    return CrossOriginReadBlocking::MimeType::kPlain;
-
-  // StartsWith rather than LowerCaseEqualsASCII is used to account both for
-  // mime types similar to 1) application/json and to 2)
-  // application/json+protobuf.
+  // See also https://mimesniff.spec.whatwg.org/#json-mime-type
   constexpr auto kCaseInsensitive = base::CompareCase::INSENSITIVE_ASCII;
-  if (MatchesMimeTypePrefix(mime_type, kAppJson) ||
-      MatchesMimeTypePrefix(mime_type, kTextJson) ||
-      MatchesMimeTypePrefix(mime_type, kTextXjson) ||
+  if (base::LowerCaseEqualsASCII(mime_type, kAppJson) ||
+      base::LowerCaseEqualsASCII(mime_type, kTextJson) ||
+      base::LowerCaseEqualsASCII(mime_type, kJsonProtobuf) ||
       base::EndsWith(mime_type, kJsonSuffix, kCaseInsensitive)) {
     return CrossOriginReadBlocking::MimeType::kJson;
   }
 
-  if (MatchesMimeTypePrefix(mime_type, kAppXml) ||
-      MatchesMimeTypePrefix(mime_type, kTextXml) ||
+  // See also https://mimesniff.spec.whatwg.org/#xml-mime-type
+  if (base::LowerCaseEqualsASCII(mime_type, kAppXml) ||
+      base::LowerCaseEqualsASCII(mime_type, kTextXml) ||
       base::EndsWith(mime_type, kXmlSuffix, kCaseInsensitive)) {
     return CrossOriginReadBlocking::MimeType::kXml;
   }
+
+  if (base::LowerCaseEqualsASCII(mime_type, kTextPlain))
+    return CrossOriginReadBlocking::MimeType::kPlain;
 
   return CrossOriginReadBlocking::MimeType::kOthers;
 }
@@ -177,7 +146,7 @@ bool CrossOriginReadBlocking::IsValidCorsHeaderSet(
 }
 
 // This function is a slight modification of |net::SniffForHTML|.
-CrossOriginReadBlocking::Result CrossOriginReadBlocking::SniffForHTML(
+CrossOriginReadBlocking::SniffingResult CrossOriginReadBlocking::SniffForHTML(
     StringPiece data) {
   // The content sniffers used by Chrome and Firefox are using "<!--" as one of
   // the HTML signatures, but it also appears in valid JavaScript, considered as
@@ -213,7 +182,7 @@ CrossOriginReadBlocking::Result CrossOriginReadBlocking::SniffForHTML(
   while (data.length() > 0) {
     AdvancePastWhitespace(&data);
 
-    Result signature_match =
+    SniffingResult signature_match =
         MatchesSignature(&data, kHtmlSignatures, arraysize(kHtmlSignatures),
                          base::CompareCase::INSENSITIVE_ASCII);
     if (signature_match != kNo)
@@ -222,9 +191,9 @@ CrossOriginReadBlocking::Result CrossOriginReadBlocking::SniffForHTML(
     // "<!--" (the HTML comment syntax) is a special case, since it's valid JS
     // as well. Skip over them.
     static const StringPiece kBeginCommentSignature[] = {"<!--"};
-    Result comment_match = MatchesSignature(&data, kBeginCommentSignature,
-                                            arraysize(kBeginCommentSignature),
-                                            base::CompareCase::SENSITIVE);
+    SniffingResult comment_match = MatchesSignature(
+        &data, kBeginCommentSignature, arraysize(kBeginCommentSignature),
+        base::CompareCase::SENSITIVE);
     if (comment_match != kYes)
       return comment_match;
 
@@ -240,7 +209,7 @@ CrossOriginReadBlocking::Result CrossOriginReadBlocking::SniffForHTML(
   return kMaybe;
 }
 
-CrossOriginReadBlocking::Result CrossOriginReadBlocking::SniffForXML(
+CrossOriginReadBlocking::SniffingResult CrossOriginReadBlocking::SniffForXML(
     base::StringPiece data) {
   // TODO(dsjang): Once CrossOriginReadBlocking is moved into the browser
   // process, we should do single-thread checking here for the static
@@ -251,7 +220,7 @@ CrossOriginReadBlocking::Result CrossOriginReadBlocking::SniffForXML(
                           base::CompareCase::SENSITIVE);
 }
 
-CrossOriginReadBlocking::Result CrossOriginReadBlocking::SniffForJSON(
+CrossOriginReadBlocking::SniffingResult CrossOriginReadBlocking::SniffForJSON(
     base::StringPiece data) {
   // Currently this function looks for an opening brace ('{'), followed by a
   // double-quoted string literal, followed by a colon. Importantly, such a
@@ -316,7 +285,7 @@ CrossOriginReadBlocking::Result CrossOriginReadBlocking::SniffForJSON(
   return kMaybe;
 }
 
-CrossOriginReadBlocking::Result
+CrossOriginReadBlocking::SniffingResult
 CrossOriginReadBlocking::SniffForFetchOnlyResource(base::StringPiece data) {
   // kScriptBreakingPrefixes contains prefixes that are conventionally used to
   // prevent a JSON response from becoming a valid Javascript program (an attack
@@ -352,7 +321,7 @@ CrossOriginReadBlocking::SniffForFetchOnlyResource(base::StringPiece data) {
       StringPiece("while(1);"), StringPiece("for (;;);"),
       StringPiece("while (1);"),
   };
-  Result has_parser_breaker = MatchesSignature(
+  SniffingResult has_parser_breaker = MatchesSignature(
       &data, kScriptBreakingPrefixes, arraysize(kScriptBreakingPrefixes),
       base::CompareCase::SENSITIVE);
   if (has_parser_breaker != kNo)

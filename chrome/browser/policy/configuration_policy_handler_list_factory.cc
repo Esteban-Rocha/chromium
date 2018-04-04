@@ -61,7 +61,7 @@
 #include "components/variations/pref_names.h"
 #include "extensions/buildflags/buildflags.h"
 #include "media/media_buildflags.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/search/contextual_search_policy_handler_android.h"
@@ -637,6 +637,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kNativePrintersBulkWhitelist,
     prefs::kRecommendedNativePrintersWhitelist,
     base::Value::Type::LIST },
+  { key::kUserNativePrintersAllowed,
+    prefs::kUserNativePrintersAllowed,
+    base::Value::Type::BOOLEAN },
 #endif  // defined(OS_CHROMEOS)
 
 // Metrics reporting is controlled by a platform specific policy for ChromeOS
@@ -788,6 +791,10 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kAutoplayWhitelist,
     base::Value::Type::LIST },
 #endif  // !defined(OS_ANDROID)
+
+  { key::kDefaultWebUsbGuardSetting,
+    prefs::kManagedDefaultWebUsbGuardSetting,
+    base::Value::Type::INTEGER },
 };
 // clang-format on
 

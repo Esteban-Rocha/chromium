@@ -50,12 +50,6 @@ public class TestContentViewCore implements ContentViewCore {
     }
 
     @Override
-    public void onShow() {}
-
-    @Override
-    public void onHide() {}
-
-    @Override
     public void onAttachedToWindow() {}
 
     @Override
@@ -125,11 +119,6 @@ public class TestContentViewCore implements ContentViewCore {
     @Override
     public int computeVerticalScrollExtent() {
         return 0;
-    }
-
-    @Override
-    public boolean awakenScrollBars(int startDelay, boolean invalidate) {
-        return false;
     }
 
     @Override

@@ -7,12 +7,72 @@
 #include "core/dom/Node.h"
 #include "core/editing/PositionWithAffinity.h"
 #include "core/layout/LayoutTextFragment.h"
+#include "core/layout/ng/geometry/ng_logical_rect.h"
 #include "core/layout/ng/geometry/ng_physical_offset_rect.h"
 #include "core/layout/ng/inline/ng_line_height_metrics.h"
 #include "core/layout/ng/inline/ng_offset_mapping.h"
 #include "core/style/ComputedStyle.h"
 
 namespace blink {
+
+// Compute the inline position from text offset, in logical coordinate relative
+// to this fragment.
+LayoutUnit NGPhysicalTextFragment::InlinePositionForOffset(
+    unsigned offset,
+    LayoutUnit (*round)(float),
+    AdjustMidCluster adjust_mid_cluster) const {
+  DCHECK_GE(offset, start_offset_);
+  DCHECK_LE(offset, end_offset_);
+
+  offset -= start_offset_;
+  if (shape_result_) {
+    return round(shape_result_->PositionForOffset(offset, adjust_mid_cluster));
+  }
+
+  // This fragment is a flow control because otherwise ShapeResult exists.
+  DCHECK(IsFlowControl());
+  DCHECK_EQ(1u, Length());
+  if (!offset || UNLIKELY(IsRtl(Style().Direction())))
+    return LayoutUnit();
+  return IsHorizontal() ? Size().width : Size().height;
+}
+
+LayoutUnit NGPhysicalTextFragment::InlinePositionForOffset(
+    unsigned offset) const {
+  return InlinePositionForOffset(offset, LayoutUnit::FromFloatRound,
+                                 AdjustMidCluster::kToEnd);
+}
+
+NGPhysicalOffsetRect NGPhysicalTextFragment::LocalRect(
+    unsigned start_offset,
+    unsigned end_offset) const {
+  DCHECK_LE(start_offset, end_offset);
+  DCHECK_GE(start_offset, start_offset_);
+  DCHECK_LE(end_offset, end_offset_);
+
+  LayoutUnit start_position = InlinePositionForOffset(
+      start_offset, LayoutUnit::FromFloatFloor, AdjustMidCluster::kToStart);
+  LayoutUnit end_position = InlinePositionForOffset(
+      end_offset, LayoutUnit::FromFloatCeil, AdjustMidCluster::kToEnd);
+
+  // Swap positions if RTL.
+  if (UNLIKELY(start_position > end_position))
+    std::swap(start_position, end_position);
+
+  LayoutUnit inline_size = end_position - start_position;
+
+  switch (LineOrientation()) {
+    case NGLineOrientation::kHorizontal:
+      return {{start_position, LayoutUnit()}, {inline_size, Size().height}};
+    case NGLineOrientation::kClockWiseVertical:
+      return {{LayoutUnit(), start_position}, {Size().width, inline_size}};
+    case NGLineOrientation::kCounterClockWiseVertical:
+      return {{LayoutUnit(), Size().height - end_position},
+              {Size().width, inline_size}};
+  }
+  NOTREACHED();
+  return {};
+}
 
 NGPhysicalOffsetRect NGPhysicalTextFragment::SelfVisualRect() const {
   if (!shape_result_)

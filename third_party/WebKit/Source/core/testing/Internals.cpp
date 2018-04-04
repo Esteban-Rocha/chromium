@@ -45,8 +45,6 @@
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/ElementShadow.h"
-#include "core/dom/ElementShadowV0.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/FlatTreeTraversal.h"
 #include "core/dom/Iterator.h"
@@ -54,6 +52,7 @@
 #include "core/dom/PseudoElement.h"
 #include "core/dom/Range.h"
 #include "core/dom/ShadowRoot.h"
+#include "core/dom/ShadowRootV0.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/TreeScope.h"
 #include "core/dom/ViewportDescription.h"
@@ -420,8 +419,8 @@ void Internals::clearHitTestCache(Document* doc,
 
 Element* Internals::innerEditorElement(Element* container,
                                        ExceptionState& exception_state) const {
-  if (IsTextControlElement(container))
-    return ToTextControlElement(container)->InnerEditorElement();
+  if (auto* control = ToTextControlOrNull(container))
+    return control->InnerEditorElement();
 
   exception_state.ThrowDOMException(kNotSupportedError,
                                     "Not a text control element.");
@@ -596,7 +595,7 @@ bool Internals::hasShadowInsertionPoint(const Node* root,
         kInvalidAccessError, "The node argument is not a shadow root.");
     return false;
   }
-  return ToShadowRoot(root)->ContainsShadowElements();
+  return ToShadowRoot(root)->V0().ContainsShadowElements();
 }
 
 bool Internals::hasContentElement(const Node* root,
@@ -607,7 +606,7 @@ bool Internals::hasContentElement(const Node* root,
         kInvalidAccessError, "The node argument is not a shadow root.");
     return false;
   }
-  return ToShadowRoot(root)->ContainsContentElements();
+  return ToShadowRoot(root)->V0().ContainsContentElements();
 }
 
 size_t Internals::countElementShadow(const Node* root,
@@ -761,13 +760,11 @@ const AtomicString& Internals::shadowPseudoId(Element* element) {
 }
 
 String Internals::visiblePlaceholder(Element* element) {
-  if (element && IsTextControlElement(*element)) {
-    const TextControlElement& text_control_element =
-        ToTextControlElement(*element);
-    if (!text_control_element.IsPlaceholderVisible())
+  if (auto* text_control_element = ToTextControlOrNull(element)) {
+    if (!text_control_element->IsPlaceholderVisible())
       return String();
     if (HTMLElement* placeholder_element =
-            text_control_element.PlaceholderElement())
+            text_control_element->PlaceholderElement())
       return placeholder_element->textContent();
   }
 
@@ -2497,11 +2494,21 @@ void Internals::setPersistent(HTMLVideoElement* video_element,
   video_element->OnBecamePersistentVideo(persistent);
 }
 
-void Internals::forceStaleStateForMediaElement(
-    HTMLMediaElement* media_element) {
+void Internals::forceStaleStateForMediaElement(HTMLMediaElement* media_element,
+                                               int target_state) {
   DCHECK(media_element);
-  if (auto wmp = media_element->GetWebMediaPlayer())
-    wmp->ForceStaleStateForTesting();
+  // Even though this is an internals method, the checks are necessary to
+  // prevent fuzzers from taking this path and generating useless noise.
+  if (target_state < static_cast<int>(WebMediaPlayer::kReadyStateHaveNothing) ||
+      target_state >
+          static_cast<int>(WebMediaPlayer::kReadyStateHaveEnoughData)) {
+    return;
+  }
+
+  if (auto wmp = media_element->GetWebMediaPlayer()) {
+    wmp->ForceStaleStateForTesting(
+        static_cast<WebMediaPlayer::ReadyState>(target_state));
+  }
 }
 
 bool Internals::isMediaElementSuspended(HTMLMediaElement* media_element) {
@@ -2813,9 +2820,9 @@ DOMArrayBuffer* Internals::serializeObject(
     scoped_refptr<SerializedScriptValue> value) const {
   base::span<const uint8_t> span = value->GetWireData();
   DOMArrayBuffer* buffer =
-      DOMArrayBuffer::CreateUninitializedOrNull(span.length(), sizeof(uint8_t));
+      DOMArrayBuffer::CreateUninitializedOrNull(span.size(), sizeof(uint8_t));
   if (buffer)
-    memcpy(buffer->Data(), span.data(), span.length());
+    memcpy(buffer->Data(), span.data(), span.size());
   return buffer;
 }
 

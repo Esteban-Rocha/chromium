@@ -19,6 +19,7 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "chromeos/chromeos_switches.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/aura/window.h"
 #include "ui/display/screen.h"
@@ -78,6 +79,7 @@ class AcceleratorController;
 class AccessibilityController;
 class AccessibilityDelegate;
 class AccessibilityFocusRingController;
+class AshAssistantController;
 class AshDisplayController;
 class AppListControllerImpl;
 class NativeCursorManagerAsh;
@@ -87,6 +89,7 @@ class BacklightsForcedOffSetter;
 class BluetoothNotificationController;
 class BluetoothPowerController;
 class BrightnessControlDelegate;
+class CapsLockNotificationController;
 class CastConfigController;
 class DetachableBaseHandler;
 class DetachableBaseNotificationController;
@@ -98,7 +101,6 @@ class DockedMagnifierController;
 class DragDropController;
 class EventClientImpl;
 class EventTransformationHandler;
-class FirstRunHelper;
 class FocusCycler;
 class HighContrastController;
 class HighlighterController;
@@ -137,6 +139,7 @@ class ScreenOrientationController;
 class ScreenshotController;
 class ScreenPinningController;
 class ScreenPositionController;
+class ScreenSecurityNotificationController;
 class SessionController;
 class ShelfController;
 class ShelfModel;
@@ -314,6 +317,10 @@ class ASH_EXPORT Shell : public SessionObserver,
   ::wm::ActivationClient* activation_client();
   AppListControllerImpl* app_list_controller() {
     return app_list_controller_.get();
+  }
+  AshAssistantController* ash_assistant_controller() {
+    DCHECK(chromeos::switches::IsAssistantEnabled());
+    return ash_assistant_controller_.get();
   }
   AshDisplayController* ash_display_controller() {
     return ash_display_controller_.get();
@@ -502,10 +509,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   // TODO(jamescook): Move to Shelf.
   void UpdateShelfVisibility();
 
-  // Gets the local state pref service. It can be null in mash if connecting to
-  // local state pref service has not completed successfully.
-  PrefService* GetLocalStatePrefService() const;
-
   // Returns WebNotificationTray on the primary root window.
   WebNotificationTray* GetWebNotificationTray();
 
@@ -522,10 +525,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   void set_root_window_for_new_windows(aura::Window* root) {
     root_window_for_new_windows_ = root;
   }
-
-  // Creates instance of FirstRunHelper. Caller is responsible for deleting
-  // returned object.
-  ash::FirstRunHelper* CreateFirstRunHelper();
 
   void SetLargeCursorSizeInDip(int large_cursor_size_in_dip);
 
@@ -666,9 +665,12 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<AccessibilityFocusRingController>
       accessibility_focus_ring_controller_;
   std::unique_ptr<AppListControllerImpl> app_list_controller_;
+  std::unique_ptr<AshAssistantController> ash_assistant_controller_;
   std::unique_ptr<AshDisplayController> ash_display_controller_;
   std::unique_ptr<BacklightsForcedOffSetter> backlights_forced_off_setter_;
   std::unique_ptr<BrightnessControlDelegate> brightness_control_delegate_;
+  std::unique_ptr<CapsLockNotificationController>
+      caps_lock_notification_controller_;
   std::unique_ptr<CastConfigController> cast_config_;
   std::unique_ptr<DetachableBaseHandler> detachable_base_handler_;
   std::unique_ptr<DetachableBaseNotificationController>
@@ -691,6 +693,8 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<SessionController> session_controller_;
   std::unique_ptr<NightLightController> night_light_controller_;
   std::unique_ptr<NoteTakingController> note_taking_controller_;
+  std::unique_ptr<ScreenSecurityNotificationController>
+      screen_security_notification_controller_;
   std::unique_ptr<ShelfController> shelf_controller_;
   std::unique_ptr<ShelfWindowWatcher> shelf_window_watcher_;
   std::unique_ptr<ShellDelegate> shell_delegate_;

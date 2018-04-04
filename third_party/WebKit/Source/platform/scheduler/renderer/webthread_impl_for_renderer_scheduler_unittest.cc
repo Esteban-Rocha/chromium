@@ -13,7 +13,7 @@
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/test/simple_test_tick_clock.h"
-#include "platform/scheduler/renderer/renderer_scheduler_impl.h"
+#include "platform/scheduler/main_thread/main_thread_scheduler.h"
 #include "platform/scheduler/test/task_queue_manager_for_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,7 +36,7 @@ class MockTaskObserver : public blink::WebThread::TaskObserver {
   MOCK_METHOD0(DidProcessTask, void());
 };
 
-class WebThreadImplForRendererSchedulerTest : public ::testing::Test {
+class WebThreadImplForRendererSchedulerTest : public testing::Test {
  public:
   WebThreadImplForRendererSchedulerTest() = default;
 
@@ -75,7 +75,7 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestTaskObserver) {
   MockTask task;
 
   {
-    ::testing::InSequence sequence;
+    testing::InSequence sequence;
     EXPECT_CALL(observer, WillProcessTask());
     EXPECT_CALL(task, Run());
     EXPECT_CALL(observer, DidProcessTask());
@@ -94,7 +94,7 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestWorkBatchWithOneTask) {
 
   SetWorkBatchSizeForTesting(kWorkBatchSize);
   {
-    ::testing::InSequence sequence;
+    testing::InSequence sequence;
     EXPECT_CALL(observer, WillProcessTask());
     EXPECT_CALL(task, Run());
     EXPECT_CALL(observer, DidProcessTask());
@@ -114,7 +114,7 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestWorkBatchWithTwoTasks) {
 
   SetWorkBatchSizeForTesting(kWorkBatchSize);
   {
-    ::testing::InSequence sequence;
+    testing::InSequence sequence;
     EXPECT_CALL(observer, WillProcessTask());
     EXPECT_CALL(task1, Run());
     EXPECT_CALL(observer, DidProcessTask());
@@ -141,7 +141,7 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestWorkBatchWithThreeTasks) {
 
   SetWorkBatchSizeForTesting(kWorkBatchSize);
   {
-    ::testing::InSequence sequence;
+    testing::InSequence sequence;
     EXPECT_CALL(observer, WillProcessTask());
     EXPECT_CALL(task1, Run());
     EXPECT_CALL(observer, DidProcessTask());
@@ -180,7 +180,7 @@ TEST_F(WebThreadImplForRendererSchedulerTest, TestNestedRunLoop) {
   thread_->AddTaskObserver(&observer);
 
   {
-    ::testing::InSequence sequence;
+    testing::InSequence sequence;
 
     // One callback for EnterRunLoop.
     EXPECT_CALL(observer, WillProcessTask());

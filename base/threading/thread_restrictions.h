@@ -38,6 +38,7 @@ namespace content {
 class BrowserGpuChannelHostFactory;
 class BrowserGpuMemoryBufferManager;
 class BrowserMainLoop;
+class BrowserProcessSubThread;
 class BrowserShutdownProfileDumper;
 class BrowserSurfaceViewManager;
 class BrowserTestBase;
@@ -79,6 +80,7 @@ namespace midi {
 class TaskService;  // https://crbug.com/796830
 }
 namespace mojo {
+class CoreLibraryInitializer;
 class SyncCallRestrictions;
 namespace edk {
 class ScopedIPCSupport;
@@ -91,6 +93,7 @@ namespace ui {
 class CommandBufferClientImpl;
 class CommandBufferLocal;
 class GpuState;
+class MaterialDesignController;
 }
 namespace net {
 class MultiThreadedCertVerifierScopedAllowBaseSyncPrimitives;
@@ -211,9 +214,12 @@ class BASE_EXPORT ScopedAllowBlocking {
   // in unit tests to avoid the friend requirement.
   FRIEND_TEST_ALL_PREFIXES(ThreadRestrictionsTest, ScopedAllowBlocking);
   friend class android_webview::ScopedAllowInitGLBindings;
+  friend class content::BrowserProcessSubThread;
   friend class cronet::CronetPrefsManager;
   friend class cronet::CronetURLRequestContext;
+  friend class mojo::CoreLibraryInitializer;
   friend class resource_coordinator::TabManagerDelegate;  // crbug.com/778703
+  friend class ui::MaterialDesignController;
   friend class ScopedAllowBlockingForTesting;
   friend class StackSamplingProfiler;
 

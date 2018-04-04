@@ -33,7 +33,7 @@
 #include "base/macros.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/ElementShadow.h"
+#include "core/dom/ShadowRoot.h"
 #include "core/exported/WebRemoteFrameImpl.h"
 #include "core/frame/Frame.h"
 #include "core/frame/FrameSerializer.h"
@@ -67,6 +67,7 @@
 #include "platform/wtf/Deque.h"
 #include "platform/wtf/HashMap.h"
 #include "platform/wtf/HashSet.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/StringConcatenate.h"
 #include "public/platform/WebString.h"
@@ -85,6 +86,15 @@ namespace {
 const int kPopupOverlayZIndexThreshold = 50;
 const char kShadowModeAttributeName[] = "shadowmode";
 const char kShadowDelegatesFocusAttributeName[] = "shadowdelegatesfocus";
+
+// Returns a Content-ID to be used for the given frame.
+// See rfc2557 - section 8.3 - "Use of the Content-ID header and CID URLs".
+// Format note - the returned string should be of the form "<foo@bar.com>"
+// (i.e. the strings should include the angle brackets).
+String GetContentID(Frame* frame) {
+  String frame_id = String(ToTraceValue(frame).data());
+  return "<frame-" + frame_id + "@mhtml.blink>";
+}
 
 class MHTMLFrameSerializerDelegate final : public FrameSerializer::Delegate {
   STACK_ALLOCATED();
@@ -263,10 +273,7 @@ bool MHTMLFrameSerializerDelegate::RewriteLink(const Element& element,
   if (!frame)
     return false;
 
-  WebString content_id = web_delegate_.GetContentID(WebFrame::FromFrame(frame));
-  if (content_id.IsNull())
-    return false;
-
+  WebString content_id = GetContentID(frame);
   KURL cid_uri = MHTMLParser::ConvertContentIDToURI(content_id);
   DCHECK(cid_uri.IsValid());
 
@@ -451,7 +458,7 @@ WebThreadSafeData WebFrameSerializer::GenerateMHTMLHeader(
   scoped_refptr<RawData> buffer = RawData::Create();
   MHTMLArchive::GenerateMHTMLHeader(
       boundary, document->Url(), document->title(),
-      document->SuggestedMIMEType(), *buffer->MutableData());
+      document->SuggestedMIMEType(), WTF::Time::Now(), *buffer->MutableData());
   return WebThreadSafeData(buffer);
 }
 
@@ -504,9 +511,9 @@ WebThreadSafeData WebFrameSerializer::GenerateMHTMLParts(
         "PageSerialization.MhtmlGeneration.EncodingTime.SingleFrame");
     // Frame is the 1st resource (see FrameSerializer::serializeFrame doc
     // comment). Frames get a Content-ID header.
-    MHTMLArchive::GenerateMHTMLPart(
-        boundary, web_delegate->GetContentID(web_frame), encoding_policy,
-        resources.TakeFirst(), *output->MutableData());
+    MHTMLArchive::GenerateMHTMLPart(boundary, GetContentID(frame),
+                                    encoding_policy, resources.TakeFirst(),
+                                    *output->MutableData());
     while (!resources.IsEmpty()) {
       TRACE_EVENT0("page-serialization",
                    "WebFrameSerializer::generateMHTMLParts encoding");

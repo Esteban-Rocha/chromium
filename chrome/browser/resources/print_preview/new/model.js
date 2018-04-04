@@ -16,10 +16,7 @@ cr.exportPath('print_preview_new');
  *                 custom_display_name: (string | undefined),
  *                 is_default: (boolean | undefined)} | undefined),
  *    marginsType: (print_preview.ticket_items.MarginsTypeValue | undefined),
- *    customMargins: ({marginTop: number,
- *                     marginBottom: number,
- *                     marginLeft: number,
- *                     marginRight: number} | undefined),
+ *    customMargins: (print_preview.MarginsSetting | undefined),
  *    isColorEnabled: (boolean | undefined),
  *    isDuplexEnabled: (boolean | undefined),
  *    isHeaderFooterEnabled: (boolean | undefined),
@@ -58,6 +55,7 @@ const STICKY_SETTING_NAMES = [
   'collate',
   'color',
   'cssBackground',
+  'customMargins',
   'dpi',
   'duplex',
   'headerFooter',
@@ -68,6 +66,14 @@ const STICKY_SETTING_NAMES = [
   'fitToPage',
   'vendorItems',
 ];
+
+/**
+ * Minimum height of page in microns to allow headers and footers. Should
+ * match the value for min_size_printer_units in printing/print_settings.cc
+ * so that we do not request header/footer for margins that will be zero.
+ * @type {number}
+ */
+const MINIMUM_HEIGHT_MICRONS = 25400;
 
 Polymer({
   is: 'print-preview-model',
@@ -135,6 +141,18 @@ Polymer({
           valid: true,
           available: true,
           key: 'marginsType',
+        },
+        customMargins: {
+          value: {
+            marginTop: 0,
+            marginRight: 0,
+            marginBottom: 0,
+            marginLeft: 0,
+          },
+          unavailableValue: {},
+          valid: true,
+          available: true,
+          key: 'customMargins',
         },
         dpi: {
           value: {},
@@ -244,14 +262,18 @@ Polymer({
         'destination.id, destination.capabilities, ' +
         'documentInfo.isModifiable, documentInfo.hasCssMediaStyles,' +
         'documentInfo.hasSelection)',
+    'updateHeaderFooterAvailable_(' +
+        'documentInfo.isModifiable, documentInfo.margins, ' +
+        'settings.margins.value, settings.customMargins.value, ' +
+        'settings.mediaSize.value)',
     'updateRecentDestinations_(destination, destination.capabilities)',
     'stickySettingsChanged_(' +
         'settings.collate.value, settings.layout.value, settings.color.value,' +
         'settings.mediaSize.value, settings.margins.value, ' +
-        'settings.dpi.value, settings.fitToPage.value, ' +
-        'settings.scaling.value, settings.duplex.value, ' +
-        'settings.headerFooter.value, settings.cssBackground.value, ' +
-        'settings.vendorItems.value)',
+        'settings.customMargins.value, settings.dpi.value, ' +
+        'settings.fitToPage.value, settings.scaling.value, ' +
+        'settings.duplex.value, settings.headerFooter.value, ' +
+        'settings.cssBackground.value, settings.vendorItems.value)',
   ],
 
   /** @private {boolean} */
@@ -300,6 +322,8 @@ Polymer({
     this.set('settings.color.available', this.destination.hasColorCapability);
     this.set('settings.margins.available', this.documentInfo.isModifiable);
     this.set(
+        'settings.customMargins.available', this.documentInfo.isModifiable);
+    this.set(
         'settings.mediaSize.available',
         !!caps && !!caps.media_size && !knownSizeToSaveAsPdf);
     this.set(
@@ -316,7 +340,8 @@ Polymer({
     this.set(
         'settings.selectionOnly.available',
         this.documentInfo.isModifiable && this.documentInfo.hasSelection);
-    this.set('settings.headerFooter.available', this.documentInfo.isModifiable);
+    this.set(
+        'settings.headerFooter.available', this.isHeaderFooterAvailable_());
     this.set(
         'settings.rasterize.available',
         !this.documentInfo.isModifiable && !cr.isWindows && !cr.isMac);
@@ -329,6 +354,56 @@ Polymer({
             this.settings.rasterize.available);
     this.set(
         'settings.vendorItems.available', !!caps && !!caps.vendor_capability);
+  },
+
+  /** @private */
+  updateHeaderFooterAvailable_: function() {
+    this.set(
+        'settings.headerFooter.available', this.isHeaderFooterAvailable_());
+  },
+
+  /**
+   * @return {boolean} Whether the header/footer setting should be available.
+   * @private
+   */
+  isHeaderFooterAvailable_: function() {
+    // Always unavailable for PDFs.
+    if (!this.documentInfo.isModifiable)
+      return false;
+
+    // Always unavailable for small paper sizes.
+    const microns = this.getSettingValue('layout') ?
+        this.getSettingValue('mediaSize').width_microns :
+        this.getSettingValue('mediaSize').height_microns;
+    if (microns < MINIMUM_HEIGHT_MICRONS)
+      return false;
+
+    // Otherwise, availability depends on the margins.
+    let available = false;
+    const marginsType =
+        /** @type {!print_preview.ticket_items.MarginsTypeValue} */ (
+            this.getSettingValue('margins'));
+    switch (marginsType) {
+      case print_preview.ticket_items.MarginsTypeValue.DEFAULT:
+        available = !this.documentInfo.margins ||
+            this.documentInfo.margins.get(
+                print_preview.ticket_items.CustomMarginsOrientation.TOP) > 0 ||
+            this.documentInfo.margins.get(
+                print_preview.ticket_items.CustomMarginsOrientation.BOTTOM) > 0;
+        break;
+      case print_preview.ticket_items.MarginsTypeValue.NO_MARGINS:
+        break;
+      case print_preview.ticket_items.MarginsTypeValue.MINIMUM:
+        available = true;
+        break;
+      case print_preview.ticket_items.MarginsTypeValue.CUSTOM:
+        const margins = this.getSettingValue('customMargins');
+        available = margins.marginTop > 0 || margins.marginBottom > 0;
+        break;
+      default:
+        break;
+    }
+    return available;
   },
 
   /**
@@ -499,9 +574,13 @@ Polymer({
   /**
    * Creates a string that represents a print ticket.
    * @param {!print_preview.Destination} destination Destination to print to.
+   * @param {boolean} openPdfInPreview Whether this print request is to open
+   *     the PDF in Preview app (Mac only).
+   * @param {boolean} showSystemDialog Whether this print request is to show
+   *     the system dialog.
    * @return {string} Serialized print ticket.
    */
-  createPrintTicket: function(destination) {
+  createPrintTicket: function(destination, openPdfInPreview, showSystemDialog) {
     const dpi = /** @type {{horizontal_dpi: (number | undefined),
                             vertical_dpi: (number | undefined),
                             vendor_id: (number | undefined)}} */ (
@@ -536,7 +615,7 @@ Polymer({
       fitToPageEnabled: this.getSettingValue('fitToPage'),
       pageWidth: this.documentInfo.pageSize.width,
       pageHeight: this.documentInfo.pageSize.height,
-      showSystemDialog: false,
+      showSystemDialog: showSystemDialog,
     };
 
     // Set 'cloudPrintID' only if the destination is not local.
@@ -545,14 +624,7 @@ Polymer({
 
     if (this.getSettingValue('margins') ==
         print_preview.ticket_items.MarginsTypeValue.CUSTOM) {
-      // TODO (rbpotter): Replace this with real values when custom margins are
-      // implemented.
-      ticket.marginsCustom = {
-        marginTop: 70,
-        marginRight: 70,
-        marginBottom: 70,
-        marginLeft: 70,
-      };
+      ticket.marginsCustom = this.getSettingValue('customMargins');
     }
 
     if (destination.isPrivet || destination.isExtension) {
@@ -561,6 +633,10 @@ Polymer({
       ticket.ticket = this.createCloudJobTicket(destination);
       ticket.capabilities = JSON.stringify(destination.capabilities);
     }
+
+    if (openPdfInPreview)
+      ticket.OpenPDFInPreview = true;
+
     return JSON.stringify(ticket);
   },
 

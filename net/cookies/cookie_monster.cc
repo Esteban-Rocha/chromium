@@ -49,17 +49,21 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/timer/elapsed_timer.h"
+#include "base/trace_event/process_memory_dump.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_monster_change_dispatcher.h"
@@ -120,6 +124,22 @@ void MaybeRunCookieCallback(base::OnceCallback<void(T)> callback,
                             const T& result) {
   if (callback)
     std::move(callback).Run(result);
+}
+
+// Wraps a OnceClosure -- specifically one used by
+// |GetCookieListWithOptionsAsync()| -- with additional bound state to track the
+// duration between when its creation and destruction time.
+// See https://crbug.com/824024 for context.
+base::OnceClosure InstrumentGetCookieListClosure(base::OnceClosure closure) {
+  return base::BindOnce(
+      [](std::unique_ptr<base::ElapsedTimer> timer, base::OnceClosure closure) {
+        UMA_HISTOGRAM_CUSTOM_TIMES("Cookie.GetCookieListCompletionTime",
+                                   timer->Elapsed(),
+                                   base::TimeDelta::FromMilliseconds(10),
+                                   base::TimeDelta::FromSeconds(60), 50);
+        std::move(closure).Run();
+      },
+      std::make_unique<base::ElapsedTimer>(), std::move(closure));
 }
 
 }  // namespace
@@ -446,12 +466,12 @@ void CookieMonster::GetCookieListWithOptionsAsync(
     const CookieOptions& options,
     GetCookieListCallback callback) {
   DoCookieCallbackForURL(
-      base::BindOnce(
+      InstrumentGetCookieListClosure(base::BindOnce(
           // base::Unretained is safe as DoCookieCallbackForURL stores
           // the callback on |*this|, so the callback will not outlive
           // the object.
           &CookieMonster::GetCookieListWithOptions, base::Unretained(this), url,
-          options, std::move(callback)),
+          options, std::move(callback))),
       url);
 }
 
@@ -563,6 +583,32 @@ CookieChangeDispatcher& CookieMonster::GetChangeDispatcher() {
 
 bool CookieMonster::IsEphemeral() {
   return store_.get() == nullptr;
+}
+
+void CookieMonster::DumpMemoryStats(
+    base::trace_event::ProcessMemoryDump* pmd,
+    const std::string& parent_absolute_name) const {
+  const char kRelPath[] = "/cookie_monster";
+
+  pmd->CreateAllocatorDump(parent_absolute_name + kRelPath + "/cookies")
+      ->AddScalar(base::trace_event::MemoryAllocatorDump::kNameObjectCount,
+                  base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+                  cookies_.size());
+
+  pmd->CreateAllocatorDump(parent_absolute_name + kRelPath +
+                           "/tasks_pending_global")
+      ->AddScalar(base::trace_event::MemoryAllocatorDump::kNameObjectCount,
+                  base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+                  tasks_pending_.size());
+
+  size_t total_pending_for_key = 0;
+  for (const auto& kv : tasks_pending_for_key_)
+    total_pending_for_key += kv.second.size();
+  pmd->CreateAllocatorDump(parent_absolute_name + kRelPath +
+                           "/tasks_pending_for_key")
+      ->AddScalar(base::trace_event::MemoryAllocatorDump::kNameObjectCount,
+                  base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+                  total_pending_for_key);
 }
 
 CookieMonster::~CookieMonster() {

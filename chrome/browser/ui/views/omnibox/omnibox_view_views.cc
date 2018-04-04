@@ -214,6 +214,20 @@ void OmniboxViewViews::ResetTabState(content::WebContents* web_contents) {
   web_contents->SetUserData(OmniboxState::kKey, nullptr);
 }
 
+void OmniboxViewViews::EmphasizeURLComponents() {
+  if (!location_bar_view_)
+    return;
+
+  // If the current contents is a URL, turn on special URL rendering mode in
+  // RenderText.
+  bool text_is_url = model()->CurrentTextIsURL();
+  GetRenderText()->SetDirectionalityMode(
+      text_is_url ? gfx::DIRECTIONALITY_AS_URL : gfx::DIRECTIONALITY_FROM_TEXT);
+  SetStyle(gfx::STRIKE, false);
+  UpdateTextStyle(text(), text_is_url,
+                  model()->client()->GetSchemeClassifier());
+}
+
 void OmniboxViewViews::Update() {
   const security_state::SecurityLevel old_security_level = security_level_;
   UpdateSecurityLevel();
@@ -295,15 +309,6 @@ gfx::Size OmniboxViewViews::GetMinimumSize() const {
   return gfx::Size(
       GetFontList().GetExpectedTextWidth(kMinCharacters) + GetInsets().width(),
       GetPreferredSize().height());
-}
-
-void OmniboxViewViews::OnNativeThemeChanged(const ui::NativeTheme* theme) {
-  views::Textfield::OnNativeThemeChanged(theme);
-  if (location_bar_view_) {
-    SetBackgroundColor(
-        location_bar_view_->GetColor(OmniboxPart::LOCATION_BAR_BACKGROUND));
-  }
-  EmphasizeURLComponents();
 }
 
 void OmniboxViewViews::OnPaint(gfx::Canvas* canvas) {
@@ -659,20 +664,6 @@ void OmniboxViewViews::UpdateSchemeStyle(const gfx::Range& range) {
     ApplyStyle(gfx::STRIKE, true, range);
 }
 
-void OmniboxViewViews::EmphasizeURLComponents() {
-  if (!location_bar_view_)
-    return;
-
-  // If the current contents is a URL, turn on special URL rendering mode in
-  // RenderText.
-  bool text_is_url = model()->CurrentTextIsURL();
-  GetRenderText()->SetDirectionalityMode(
-      text_is_url ? gfx::DIRECTIONALITY_AS_URL : gfx::DIRECTIONALITY_FROM_TEXT);
-  SetStyle(gfx::STRIKE, false);
-  UpdateTextStyle(text(), text_is_url,
-                  model()->client()->GetSchemeClassifier());
-}
-
 bool OmniboxViewViews::IsItemForCommandIdDynamic(int command_id) const {
   return command_id == IDS_PASTE_AND_GO;
 }
@@ -922,11 +913,21 @@ void OmniboxViewViews::OnFocus() {
         ->OnOmniboxFocused();
   }
 #endif
+
+  if (location_bar_view_)
+    location_bar_view_->OnOmniboxFocused();
 }
 
 void OmniboxViewViews::OnBlur() {
   // Save the user's existing selection to restore it later.
   saved_selection_for_focus_change_ = GetSelectedRange();
+
+  // Revert the URL if the user has not made any changes. If steady-state
+  // elisions is on, this will also re-elide the URL.
+  if (model()->user_input_in_progress() &&
+      text() == model()->GetCurrentPermanentUrlText()) {
+    RevertAll();
+  }
 
   views::Textfield::OnBlur();
   model()->OnWillKillFocus();
@@ -973,6 +974,8 @@ void OmniboxViewViews::OnBlur() {
   if (location_bar_view_) {
     if (model()->is_keyword_hint())
       location_bar_view_->Layout();
+
+    location_bar_view_->OnOmniboxBlurred();
 
     // The location bar needs to repaint without a focus ring.
     location_bar_view_->SchedulePaint();
@@ -1079,9 +1082,15 @@ bool OmniboxViewViews::HandleKeyEvent(views::Textfield* textfield,
   const bool shift = event.IsShiftDown();
   const bool control = event.IsControlDown();
   const bool alt = event.IsAltDown() || event.IsAltGrDown();
+#if defined(OS_MACOSX)
+  const bool command = event.IsCommandDown();
+#else
+  const bool command = false;
+#endif
   switch (event.key_code()) {
     case ui::VKEY_RETURN:
-      model()->AcceptInput(alt ? WindowOpenDisposition::NEW_FOREGROUND_TAB
+      model()->AcceptInput(alt || command
+                               ? WindowOpenDisposition::NEW_FOREGROUND_TAB
                                : WindowOpenDisposition::CURRENT_TAB,
                            false);
       return true;

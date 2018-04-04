@@ -5,7 +5,7 @@
 #include "modules/media_controls/elements/MediaControlLoadingPanelElement.h"
 
 #include "core/css/CSSStyleDeclaration.h"
-#include "core/dom/ElementShadow.h"
+#include "core/dom/ShadowRoot.h"
 #include "core/dom/events/Event.h"
 #include "core/dom/events/EventListener.h"
 #include "core/html/HTMLDivElement.h"
@@ -127,13 +127,15 @@ void MediaControlLoadingPanelElement::CleanupShadowDOM() {
   // Clear the shadow DOM children and all references to it.
   ShadowRoot* shadow_root = GetShadowRoot();
   DCHECK(shadow_root->HasChildren());
-  event_listener_->Detach();
+  if (event_listener_) {
+    event_listener_->Detach();
+    event_listener_.Clear();
+  }
   shadow_root->RemoveChildren();
 
   spinner_.Clear();
   mask1_background_.Clear();
   mask2_background_.Clear();
-  event_listener_.Clear();
 }
 
 void MediaControlLoadingPanelElement::SetAnimationIterationCount(
@@ -147,6 +149,14 @@ void MediaControlLoadingPanelElement::SetAnimationIterationCount(
 }
 
 void MediaControlLoadingPanelElement::UpdateDisplayState() {
+  // If the media consols are playing then we should hide the element as
+  // soon as possible since we are obscuring the video.
+  if (GetMediaControls().State() == MediaControlsImpl::kPlaying &&
+      state_ != State::kHidden) {
+    HideAnimation();
+    return;
+  }
+
   switch (state_) {
     case State::kHidden:
       // If the media controls are loading metadata then we should show the
@@ -160,9 +170,8 @@ void MediaControlLoadingPanelElement::UpdateDisplayState() {
       }
       break;
     case State::kPlaying:
-      // If the media controls are either stopped or playing then we should
-      // hide the loading panel, but not until the current cycle of animations
-      // is complete.
+      // If the media controls are stopped then we should hide the loading
+      // panel, but not until the current cycle of animations is complete.
       if (GetMediaControls().State() != MediaControlsImpl::kLoadingMetadata) {
         SetAnimationIterationCount(WTF::String::Number(animation_count_ + 1));
         state_ = State::kCoolingDown;

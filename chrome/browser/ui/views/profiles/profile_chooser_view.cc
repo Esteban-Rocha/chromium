@@ -307,7 +307,7 @@ void ProfileChooserView::ShowBubble(
     profiles::BubbleViewMode view_mode,
     const signin::ManageAccountsParams& manage_accounts_params,
     signin_metrics::AccessPoint access_point,
-    views::View* anchor_view,
+    views::Button* anchor_button,
     gfx::NativeView parent_window,
     const gfx::Rect& anchor_rect,
     Browser* browser,
@@ -316,13 +316,17 @@ void ProfileChooserView::ShowBubble(
     return;
 
   profile_bubble_ =
-      new ProfileChooserView(anchor_view, browser, view_mode,
+      new ProfileChooserView(anchor_button, browser, view_mode,
                              manage_accounts_params.service_type, access_point);
-  if (!anchor_view) {
+  if (!anchor_button) {
     DCHECK(parent_window);
     profile_bubble_->SetAnchorRect(anchor_rect);
     profile_bubble_->set_parent_window(parent_window);
   }
+
+  if (anchor_button && ui::MaterialDesignController::IsNewerMaterialUi())
+    anchor_button->AnimateInkDrop(views::InkDropState::ACTIVATED, nullptr);
+
   views::Widget* widget =
       views::BubbleDialogDelegateView::CreateBubble(profile_bubble_);
   profile_bubble_->SetAlignment(views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE);
@@ -348,13 +352,14 @@ void ProfileChooserView::Hide() {
     profile_bubble_->GetWidget()->Close();
 }
 
-ProfileChooserView::ProfileChooserView(views::View* anchor_view,
+ProfileChooserView::ProfileChooserView(views::Button* anchor_button,
                                        Browser* browser,
                                        profiles::BubbleViewMode view_mode,
                                        signin::GAIAServiceType service_type,
                                        signin_metrics::AccessPoint access_point)
-    : BubbleDialogDelegateView(anchor_view, views::BubbleBorder::TOP_RIGHT),
+    : BubbleDialogDelegateView(anchor_button, views::BubbleBorder::TOP_RIGHT),
       browser_(browser),
+      anchor_button_(anchor_button),
       view_mode_(view_mode),
       gaia_service_type_(service_type),
       access_point_(access_point),
@@ -548,6 +553,8 @@ void ProfileChooserView::FocusFirstProfileButton() {
 
 void ProfileChooserView::WindowClosing() {
   DCHECK_EQ(profile_bubble_, this);
+  if (anchor_button_ && ui::MaterialDesignController::IsNewerMaterialUi())
+    anchor_button_->AnimateInkDrop(views::InkDropState::DEACTIVATED, nullptr);
   profile_bubble_ = NULL;
 }
 
@@ -1126,12 +1133,20 @@ views::View* ProfileChooserView::CreateDiceSigninView() {
   // The accounts submenu is only needed when there are additional accounts to
   // list, i.e. when there is more than 1 account (the first account has it's
   // own button).
-  const bool show_submenu_arrow = dice_sync_promo_accounts_.size() > 1;
-  sync_to_another_account_button_ =
-      new HoverButton(this, std::move(switch_account_icon_view),
-                      l10n_util::GetStringUTF16(
-                          IDS_PROFILES_DICE_SIGNIN_WITH_ANOTHER_ACCOUNT_BUTTON),
-                      base::string16() /* subtitle */, show_submenu_arrow);
+  std::unique_ptr<views::ImageView> submenu_arrow_icon_view;
+  if (dice_sync_promo_accounts_.size() > 1) {
+    constexpr int kSubmenuArrowSize = 12;
+    submenu_arrow_icon_view = std::make_unique<views::ImageView>();
+    submenu_arrow_icon_view->SetImage(gfx::CreateVectorIcon(
+        kUserMenuRightArrowIcon, kSubmenuArrowSize, gfx::kChromeIconGrey));
+    // Make sure that the arrow is flipped in RTL mode.
+    submenu_arrow_icon_view->EnableCanvasFlippingForRTLUI(true);
+  }
+  sync_to_another_account_button_ = new HoverButton(
+      this, std::move(switch_account_icon_view),
+      l10n_util::GetStringUTF16(
+          IDS_PROFILES_DICE_SIGNIN_WITH_ANOTHER_ACCOUNT_BUTTON),
+      base::string16() /* subtitle */, std::move(submenu_arrow_icon_view));
   view->AddChildView(sync_to_another_account_button_);
   return view;
 }

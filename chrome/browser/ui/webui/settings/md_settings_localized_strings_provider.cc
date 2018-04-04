@@ -129,6 +129,7 @@ void AddCommonStrings(content::WebUIDataSource* html_source, Profile* profile) {
     {"moreActions", IDS_SETTINGS_MORE_ACTIONS},
     {"ok", IDS_OK},
     {"restart", IDS_SETTINGS_RESTART},
+    {"retry", IDS_SETTINGS_RETRY},
     {"save", IDS_SAVE},
     {"settings", IDS_SETTINGS_SETTINGS},
     {"toggleOn", IDS_SETTINGS_TOGGLE_ON},
@@ -152,18 +153,6 @@ void AddCommonStrings(content::WebUIDataSource* html_source, Profile* profile) {
 }
 
 void AddA11yStrings(content::WebUIDataSource* html_source) {
-#if defined(OS_CHROMEOS)
-  // The content description for select to speak is dependent on a flag
-  // until a feature launch.
-  // TODO(katie): When the feature is approved, remove this variable and
-  // callback. The feature will be always enabled.
-  int selectToSpeakDescription =
-      (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kEnableExperimentalAccessibilityFeatures))
-          ? IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_DESCRIPTION_FLAGS
-          : IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_DESCRIPTION;
-#endif
-
   LocalizedString localized_strings[] = {
     {"a11yPageTitle", IDS_SETTINGS_ACCESSIBILITY},
     {"a11yWebStore", IDS_SETTINGS_ACCESSIBILITY_WEB_STORE},
@@ -215,7 +204,8 @@ void AddA11yStrings(content::WebUIDataSource* html_source) {
     {"focusHighlightLabel",
      IDS_SETTINGS_ACCESSIBILITY_FOCUS_HIGHLIGHT_DESCRIPTION},
     {"selectToSpeakTitle", IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_TITLE},
-    {"selectToSpeakDescription", selectToSpeakDescription},
+    {"selectToSpeakDescription",
+     IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_DESCRIPTION},
     {"selectToSpeakOptionsLabel",
      IDS_SETTINGS_ACCESSIBILITY_SELECT_TO_SPEAK_OPTIONS_LABEL},
     {"switchAccessLabel", IDS_SETTINGS_ACCESSIBILITY_SWITCH_ACCESS_DESCRIPTION},
@@ -245,6 +235,14 @@ void AddA11yStrings(content::WebUIDataSource* html_source) {
     {"audioHeading", IDS_SETTINGS_ACCESSIBILITY_AUDIO_HEADING},
     {"additionalFeaturesTitle",
      IDS_SETTINGS_ACCESSIBILITY_ADDITIONAL_FEATURES_TITLE},
+    {"manageTtsSettings", IDS_SETTINGS_MANAGE_TTS_SETTINGS},
+    {"ttsSettingsLinkDescription", IDS_SETTINGS_TTS_LINK_DESCRIPTION},
+    {"textToSpeechVoices", IDS_SETTINGS_TEXT_TO_SPEECH_VOICES},
+    {"textToSpeechProperties", IDS_SETTINGS_TEXT_TO_SPEECH_PROPERTIES},
+    {"textToSpeechRate", IDS_SETTINGS_TEXT_TO_SPEECH_RATE},
+    {"textToSpeechPitch", IDS_SETTINGS_TEXT_TO_SPEECH_PITCH},
+    {"textToSpeechEngines", IDS_SETTINGS_TEXT_TO_SPEECH_ENGINES},
+    {"textToSpeechInstallEngines", IDS_SETTINGS_TEXT_TO_SPEECH_INSTALL_ENGINES},
 #endif
   };
   AddLocalizedStringsBulk(html_source, localized_strings,
@@ -675,6 +673,7 @@ void AddDeviceStrings(content::WebUIDataSource* html_source) {
       {"displayResolutionSublabel", IDS_SETTINGS_DISPLAY_RESOLUTION_SUBLABEL},
       {"displayResolutionMenuItem", IDS_SETTINGS_DISPLAY_RESOLUTION_MENU_ITEM},
       {"displayZoomTitle", IDS_SETTINGS_DISPLAY_ZOOM_TITLE},
+      {"displayZoomSublabel", IDS_SETTINGS_DISPLAY_ZOOM_SUBLABEL},
       {"displayZoomValue", IDS_SETTINGS_DISPLAY_ZOOM_VALUE},
       {"displaySizeSliderMinLabel", IDS_SETTINGS_DISPLAY_ZOOM_SLIDER_MINIMUM},
       {"displaySizeSliderMaxLabel", IDS_SETTINGS_DISPLAY_ZOOM_SLIDER_MAXIMUM},
@@ -776,15 +775,27 @@ void AddDeviceStrings(content::WebUIDataSource* html_source) {
 
 void AddDownloadsStrings(content::WebUIDataSource* html_source) {
   LocalizedString localized_strings[] = {
-      {"downloadsPageTitle", IDS_SETTINGS_DOWNLOADS},
-      {"downloadLocation", IDS_SETTINGS_DOWNLOAD_LOCATION},
-      {"changeDownloadLocation", IDS_SETTINGS_CHANGE_DOWNLOAD_LOCATION},
-      {"promptForDownload", IDS_SETTINGS_PROMPT_FOR_DOWNLOAD},
-      {"disconnectGoogleDriveAccount", IDS_SETTINGS_DISCONNECT_GOOGLE_DRIVE},
-      {"openFileTypesAutomatically",
-       IDS_SETTINGS_OPEN_FILE_TYPES_AUTOMATICALLY}};
+    {"downloadsPageTitle", IDS_SETTINGS_DOWNLOADS},
+    {"downloadLocation", IDS_SETTINGS_DOWNLOAD_LOCATION},
+    {"changeDownloadLocation", IDS_SETTINGS_CHANGE_DOWNLOAD_LOCATION},
+    {"promptForDownload", IDS_SETTINGS_PROMPT_FOR_DOWNLOAD},
+    {"disconnectGoogleDriveAccount", IDS_SETTINGS_DISCONNECT_GOOGLE_DRIVE},
+    {"openFileTypesAutomatically", IDS_SETTINGS_OPEN_FILE_TYPES_AUTOMATICALLY},
+#if defined(OS_CHROMEOS)
+    {"smbSharesTitle", IDS_SETTINGS_DOWNLOADS_SMB_SHARES},
+    {"smbSharesLearnMoreLabel",
+     IDS_SETTINGS_DOWNLOADS_SMB_SHARES_LEARN_MORE_LABEL},
+    {"addSmbShare", IDS_SETTINGS_DOWNLOADS_SMB_SHARES_ADD_SHARE},
+    {"smbShareUrl", IDS_SETTINGS_DOWNLOADS_ADD_SHARE_URL},
+#endif
+  };
   AddLocalizedStringsBulk(html_source, localized_strings,
                           arraysize(localized_strings));
+
+#if defined(OS_CHROMEOS)
+  html_source->AddBoolean("enableNativeSmbSetting",
+                          base::FeatureList::IsEnabled(features::kNativeSmb));
+#endif
 }
 
 #if defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)
@@ -913,14 +924,12 @@ void AddResetStrings(content::WebUIDataSource* html_source) {
 #else
     {"resetPageTitle", IDS_SETTINGS_RESET},
 #endif
-    {"resetTrigger", IDS_SETTINGS_RESET},
-    {"resetTriggerDescription",
-     IDS_SETTINGS_RESET_PROFILE_SETTINGS_DESCRIPTION},
+    {"resetTrigger", IDS_SETTINGS_RESET_SETTINGS_TRIGGER},
     {"resetPageExplanation", IDS_RESET_PROFILE_SETTINGS_EXPLANATION},
     {"triggeredResetPageExplanation",
      IDS_TRIGGERED_RESET_PROFILE_SETTINGS_EXPLANATION},
     {"triggeredResetPageTitle", IDS_TRIGGERED_RESET_PROFILE_SETTINGS_TITLE},
-    {"resetPageCommit", IDS_RESET_PROFILE_SETTINGS_COMMIT_BUTTON},
+    {"resetDialogCommit", IDS_SETTINGS_RESET},
     {"resetPageFeedback", IDS_SETTINGS_RESET_PROFILE_FEEDBACK},
 #if defined(OS_CHROMEOS)
     {"powerwashTitle", IDS_SETTINGS_FACTORY_RESET},
@@ -1023,7 +1032,6 @@ void AddEasyUnlockStrings(content::WebUIDataSource* html_source) {
        IDS_SETTINGS_EASY_UNLOCK_TURN_OFF_ERROR_TITLE},
       {"easyUnlockTurnOffErrorMessage",
        IDS_SETTINGS_EASY_UNLOCK_TURN_OFF_ERROR_MESSAGE},
-      {"easyUnlockTurnOffRetryButton", IDS_SETTINGS_EASY_UNLOCK_TURN_OFF_RETRY},
       {"easyUnlockAllowSignInLabel",
        IDS_SETTINGS_EASY_UNLOCK_ALLOW_SIGN_IN_LABEL},
       {"easyUnlockProximityThresholdLabel",
@@ -1252,6 +1260,10 @@ void AddLanguagesStrings(content::WebUIDataSource* html_source) {
     {"noCustomDictionaryWordsFound",
      IDS_SETTINGS_LANGUAGES_DICTIONARY_WORDS_NONE},
     {"spellCheckDisabled", IDS_SETTINGS_LANGUAGES_SPELL_CHECK_DISABLED},
+    {"languagesDictionaryDownloadError",
+     IDS_SETTINGS_LANGUAGES_DICTIONARY_DOWNLOAD_FAILED},
+    {"languagesDictionaryDownloadErrorHelp",
+     IDS_SETTINGS_LANGUAGES_DICTIONARY_DOWNLOAD_FAILED_HELP},
 #endif
   };
   AddLocalizedStringsBulk(html_source, localized_strings,
@@ -1460,7 +1472,7 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
      IDS_SETTINGS_PEOPLE_LOCK_SCREEN_FINGERPRINT_SUBPAGE_TITLE},
     {"lockScreenFingerprintWarning",
      IDS_SETTINGS_PEOPLE_LOCK_SCREEN_FINGERPRINT_LESS_SECURE},
-    {"lockScreenOptions", IDS_SETTINGS_PEOPLE_LOCK_SCREEN_OPTIONS},
+    {"lockScreenOptions", IDS_SETTINGS_PEOPLE_LOCK_SCREEN_OPTIONS_LOCK},
     {"lockScreenPasswordOnly", IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PASSWORD_ONLY},
     {"lockScreenPinOrPassword",
      IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PIN_OR_PASSWORD},
@@ -1468,9 +1480,9 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
      IDS_SETTINGS_PEOPLE_LOCK_SCREEN_REGISTERED_FINGERPRINTS_LABEL},
     {"lockScreenSetupPinButton",
      IDS_SETTINGS_PEOPLE_LOCK_SCREEN_SETUP_PIN_BUTTON},
-    {"lockScreenTitle", IDS_SETTINGS_PEOPLE_LOCK_SCREEN_TITLE},
+    {"lockScreenTitle", IDS_SETTINGS_PEOPLE_LOCK_SCREEN_TITLE_LOCK},
     {"passwordPromptEnterPassword",
-     IDS_SETTINGS_PEOPLE_PASSWORD_PROMPT_ENTER_PASSWORD},
+     IDS_SETTINGS_PEOPLE_PASSWORD_PROMPT_ENTER_PASSWORD_LOCK},
     {"passwordPromptInvalidPassword",
      IDS_SETTINGS_PEOPLE_PASSWORD_PROMPT_INVALID_PASSWORD},
     {"passwordPromptPasswordLabel",
@@ -1516,6 +1528,8 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
     {"syncedToName", IDS_SETTINGS_PEOPLE_SYNCED_AS_NAME},
     {"turnOffSync", IDS_SETTINGS_PEOPLE_SYNC_TURN_OFF},
     {"syncNotWorking", IDS_SETTINGS_PEOPLE_SYNC_NOT_WORKING},
+    {"syncSignInPrompt", IDS_SETTINGS_SYNC_SIGN_IN_PROMPT},
+    {"syncSignInPromptSecondary", IDS_SETTINGS_SYNC_SIGN_IN_PROMPT_SECONDARY},
 #endif
     {"syncOverview", IDS_SETTINGS_SYNC_OVERVIEW},
     {"syncDisabledByAdministrator",
@@ -2331,6 +2345,11 @@ void AddMultideviceStrings(content::WebUIDataSource* html_source) {
 }
 #endif
 
+void AddExtensionsStrings(content::WebUIDataSource* html_source) {
+  html_source->AddLocalizedString("extensionsPageTitle",
+                                  IDS_SETTINGS_EXTENSIONS_CHECKBOX_LABEL);
+}
+
 }  // namespace
 
 void AddLocalizedStrings(content::WebUIDataSource* html_source,
@@ -2379,6 +2398,7 @@ void AddLocalizedStrings(content::WebUIDataSource* html_source,
   AddImportDataStrings(html_source);
   AddSystemStrings(html_source);
 #endif
+  AddExtensionsStrings(html_source);
 
 #if defined(USE_NSS_CERTS)
   certificate_manager::AddLocalizedStrings(html_source);

@@ -18,6 +18,7 @@
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/views/controls/button/button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/view.h"
 
@@ -31,11 +32,14 @@ class Image;
 }
 
 class OmniboxImageView;
+class OmniboxSeparatedLineView;
+class OmniboxSuggestionView;
 class OmniboxTabSwitchButton;
 class OmniboxTextView;
 
 class OmniboxResultView : public views::View,
-                          private gfx::AnimationDelegate {
+                          private gfx::AnimationDelegate,
+                          public views::ButtonListener {
  public:
   OmniboxResultView(OmniboxPopupContentsView* model,
                     int model_index,
@@ -66,8 +70,10 @@ class OmniboxResultView : public views::View,
   // Stores the image in a local data member and schedules a repaint.
   void SetAnswerImage(const gfx::ImageSkia& image);
 
-  // Allow other classes to trigger navigation.
-  void OpenMatch(WindowOpenDisposition disposition);
+  // views::ButtonListener:
+
+  // Called when tab switch button pressed, due to being a listener.
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::View:
   bool OnMousePressed(const ui::MouseEvent& event) override;
@@ -101,6 +107,9 @@ class OmniboxResultView : public views::View,
   // Whether |this| matches the model's selected index.
   bool IsSelected() const;
 
+  // Call model's OpenMatch() with the selected index and provided disposition.
+  void OpenMatch(WindowOpenDisposition disposition);
+
   // views::View:
   void Layout() override;
   const char* GetClassName() const override;
@@ -126,15 +135,9 @@ class OmniboxResultView : public views::View,
   std::unique_ptr<gfx::SlideAnimation> animation_;
 
   // Weak pointers for easy reference.
-  views::ImageView* icon_view_;          // Small icon. e.g. favicon.
-  views::ImageView* image_view_;         // Larger image for rich suggestions.
-  views::ImageView* keyword_icon_view_;  // An icon resembling a '>'.
-  std::unique_ptr<OmniboxTabSwitchButton> tab_switch_button_;
-  OmniboxTextView* content_view_;
-  OmniboxTextView* description_view_;
-  OmniboxTextView* keyword_content_view_;
-  OmniboxTextView* keyword_description_view_;
-  OmniboxTextView* separator_view_;  // e.g. A hyphen.
+  OmniboxSuggestionView* suggestion_view_;  // The leading (or left) view.
+  OmniboxSeparatedLineView* keyword_view_;  // The trailing (or right) view.
+  std::unique_ptr<OmniboxTabSwitchButton> suggestion_tab_switch_button_;
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxResultView);
 };

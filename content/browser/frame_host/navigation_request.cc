@@ -313,7 +313,8 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateRendererInitiated(
     mojom::BeginNavigationParamsPtr begin_params,
     int current_history_list_offset,
     int current_history_list_length,
-    bool override_user_agent) {
+    bool override_user_agent,
+    scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory) {
   // Only normal navigations to a different document or reloads are expected.
   // - Renderer-initiated fragment-navigations never take place in the browser,
   //   even with PlzNavigate.
@@ -348,6 +349,8 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateRendererInitiated(
       true,   // from_begin_navigation
       nullptr, entry,
       nullptr));  // navigation_ui_data
+  navigation_request->blob_url_loader_factory_ =
+      std::move(blob_url_loader_factory);
   return navigation_request;
 }
 
@@ -483,12 +486,19 @@ void NavigationRequest::BeginNavigation() {
 
 #if defined(OS_ANDROID)
   base::WeakPtr<NavigationRequest> this_ptr(weak_factory_.GetWeakPtr());
-  bool should_override_url_loading =
-      GetContentClient()->browser()->ShouldOverrideUrlLoading(
+  bool should_override_url_loading = false;
+
+  if (!GetContentClient()->browser()->ShouldOverrideUrlLoading(
           frame_tree_node_->frame_tree_node_id(), browser_initiated_,
           request_params_.original_url, request_params_.original_method,
           common_params_.has_user_gesture, false,
-          frame_tree_node_->IsMainFrame(), common_params_.transition);
+          frame_tree_node_->IsMainFrame(), common_params_.transition,
+          &should_override_url_loading)) {
+    // A Java exception was thrown by the embedding application; we
+    // need to return from this task. Specifically, it's not safe from
+    // this point on to make any JNI calls.
+    return;
+  }
 
   // The content/ embedder might cause |this| to be deleted while
   // |ShouldOverrideUrlLoading| is called.
@@ -668,13 +678,18 @@ void NavigationRequest::OnRequestRedirected(
 #if defined(OS_ANDROID)
   base::WeakPtr<NavigationRequest> this_ptr(weak_factory_.GetWeakPtr());
 
-  bool should_override_url_loading =
-      GetContentClient()->browser()->ShouldOverrideUrlLoading(
+  bool should_override_url_loading = false;
+  if (!GetContentClient()->browser()->ShouldOverrideUrlLoading(
           frame_tree_node_->frame_tree_node_id(), browser_initiated_,
           redirect_info.new_url, redirect_info.new_method,
           // Redirects are always not counted as from user gesture.
           false, true, frame_tree_node_->IsMainFrame(),
-          common_params_.transition);
+          common_params_.transition, &should_override_url_loading)) {
+    // A Java exception was thrown by the embedding application; we
+    // need to return from this task. Specifically, it's not safe from
+    // this point on to make any JNI calls.
+    return;
+  }
 
   // The content/ embedder might cause |this| to be deleted while
   // |ShouldOverrideUrlLoading| is called.
@@ -810,7 +825,6 @@ void NavigationRequest::OnResponseStarted(
     const scoped_refptr<network::ResourceResponse>& response,
     network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
     std::unique_ptr<StreamHandle> body,
-    const net::SSLInfo& ssl_info,
     std::unique_ptr<NavigationData> navigation_data,
     const GlobalRequestID& request_id,
     bool is_download,
@@ -918,7 +932,8 @@ void NavigationRequest::OnResponseStarted(
   response_ = response;
   body_ = std::move(body);
   url_loader_client_endpoints_ = std::move(url_loader_client_endpoints);
-  ssl_info_ = ssl_info;
+  ssl_info_ = response->head.ssl_info.has_value() ? *response->head.ssl_info
+                                                  : net::SSLInfo();
   is_download_ = is_download;
 
   subresource_loader_params_ = std::move(subresource_loader_params);
@@ -1204,7 +1219,9 @@ void NavigationRequest::OnStartChecksComplete(
           frame_tree_node_->frame_tree_node_id(), is_for_guests_only,
           report_raw_headers,
           navigating_frame_host->GetVisibilityState() ==
-              blink::mojom::PageVisibilityState::kPrerender),
+              blink::mojom::PageVisibilityState::kPrerender,
+          blob_url_loader_factory_ ? blob_url_loader_factory_->Clone()
+                                   : nullptr),
       std::move(navigation_ui_data),
       navigation_handle_->service_worker_handle(),
       navigation_handle_->appcache_handle(), this);

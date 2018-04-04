@@ -25,7 +25,7 @@
 
 namespace blink {
 
-class ProgrammaticScrollTest : public ::testing::Test {
+class ProgrammaticScrollTest : public testing::Test {
  public:
   ProgrammaticScrollTest() : base_url_("http://www.test.com/") {}
 
@@ -38,7 +38,7 @@ class ProgrammaticScrollTest : public ::testing::Test {
  protected:
   void RegisterMockedHttpURLLoad(const std::string& file_name) {
     URLTestHelpers::RegisterMockedURLLoadFromBase(
-        WebString::FromUTF8(base_url_), testing::CoreTestDataPath(),
+        WebString::FromUTF8(base_url_), test::CoreTestDataPath(),
         WebString::FromUTF8(file_name));
   }
 
@@ -106,14 +106,14 @@ TEST_F(ProgrammaticScrollTest, RestoreScrollPositionAndViewStateWithoutScale) {
   EXPECT_EQ(400, web_view->MainFrameImpl()->GetScrollOffset().height);
 }
 
-class ProgrammaticScrollSimTest : public ::testing::WithParamInterface<bool>,
+class ProgrammaticScrollSimTest : public testing::WithParamInterface<bool>,
                                   private ScopedRootLayerScrollingForTest,
                                   public SimTest {
  public:
   ProgrammaticScrollSimTest() : ScopedRootLayerScrollingForTest(GetParam()) {}
 };
 
-INSTANTIATE_TEST_CASE_P(All, ProgrammaticScrollSimTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, ProgrammaticScrollSimTest, testing::Bool());
 
 TEST_P(ProgrammaticScrollSimTest, NavigateToHash) {
   WebView().Resize(WebSize(800, 600));
@@ -147,7 +147,7 @@ TEST_P(ProgrammaticScrollSimTest, NavigateToHash) {
 
   // Run pending tasks to fire the load event and close the document. This
   // should cause the document to scroll to the hash.
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   ScrollableArea* layout_viewport =
       GetDocument().View()->LayoutViewportScrollableArea();

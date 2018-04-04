@@ -167,10 +167,10 @@
 
 using blink::URLTestHelpers::ToKURL;
 using blink::mojom::SelectionMenuBehavior;
-using blink::testing::RunPendingTasks;
-using ::testing::ElementsAre;
-using ::testing::Mock;
-using ::testing::_;
+using blink::test::RunPendingTasks;
+using testing::ElementsAre;
+using testing::Mock;
+using testing::_;
 
 namespace blink {
 
@@ -184,7 +184,7 @@ namespace blink {
 
 const int kTouchPointPadding = 32;
 
-class WebFrameTest : public ::testing::Test {
+class WebFrameTest : public testing::Test {
  protected:
   WebFrameTest()
       : base_url_("http://internal.test/"),
@@ -220,7 +220,7 @@ class WebFrameTest : public ::testing::Test {
   void RegisterMockedURLLoadFromBase(const std::string& base_url,
                                      const std::string& file_name) {
     URLTestHelpers::RegisterMockedURLLoadFromBase(
-        WebString::FromUTF8(base_url), testing::CoreTestDataPath(),
+        WebString::FromUTF8(base_url), test::CoreTestDataPath(),
         WebString::FromUTF8(file_name));
   }
 
@@ -236,13 +236,13 @@ class WebFrameTest : public ::testing::Test {
     std::string full_string = base_url_ + file_name;
     URLTestHelpers::RegisterMockedURLLoadWithCustomResponse(
         ToKURL(full_string),
-        testing::CoreTestDataPath(WebString::FromUTF8(file_name)), response);
+        test::CoreTestDataPath(WebString::FromUTF8(file_name)), response);
   }
 
   void RegisterMockedHttpURLLoadWithMimeType(const std::string& file_name,
                                              const std::string& mime_type) {
     URLTestHelpers::RegisterMockedURLLoadFromBase(
-        WebString::FromUTF8(base_url_), testing::CoreTestDataPath(),
+        WebString::FromUTF8(base_url_), test::CoreTestDataPath(),
         WebString::FromUTF8(file_name), WebString::FromUTF8(mime_type));
   }
 
@@ -350,14 +350,14 @@ class WebFrameTest : public ::testing::Test {
 
 typedef bool TestParamRootLayerScrolling;
 class ParameterizedWebFrameTest
-    : public ::testing::WithParamInterface<TestParamRootLayerScrolling>,
+    : public testing::WithParamInterface<TestParamRootLayerScrolling>,
       private ScopedRootLayerScrollingForTest,
       public WebFrameTest {
  public:
   ParameterizedWebFrameTest() : ScopedRootLayerScrollingForTest(GetParam()) {}
 };
 
-INSTANTIATE_TEST_CASE_P(All, ParameterizedWebFrameTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, ParameterizedWebFrameTest, testing::Bool());
 
 TEST_P(ParameterizedWebFrameTest, ContentText) {
   RegisterMockedHttpURLLoad("iframes_test.html");
@@ -898,7 +898,7 @@ void CSSCallbackWebFrameClient::DidMatchCSS(
   }
 }
 
-class WebFrameCSSCallbackTest : public ::testing::Test {
+class WebFrameCSSCallbackTest : public testing::Test {
  protected:
   WebFrameCSSCallbackTest() {
     frame_ = helper_.InitializeAndLoad("about:blank", &client_)
@@ -3279,7 +3279,7 @@ class WebFrameResizeTest : public ParameterizedWebFrameTest {
   }
 };
 
-INSTANTIATE_TEST_CASE_P(All, WebFrameResizeTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, WebFrameResizeTest, testing::Bool());
 
 TEST_P(WebFrameResizeTest,
        ResizeYieldsCorrectScrollAndScaleForWidthEqualsDeviceWidth) {
@@ -4986,29 +4986,6 @@ TEST_P(ParameterizedWebFrameTest, GetContentAsPlainText) {
   EXPECT_EQ("Hello world", text.Utf8());
 }
 
-// Verifies that ChromeRenderFrameObserver::CapturePageText can get page text
-// with WebFrameContentDumper::DeprecatedDumpFrameTreeAsText() in dirty layout.
-TEST_P(ParameterizedWebFrameTest, CapturePageTextWithDirtyLayout) {
-  FrameTestHelpers::WebViewHelper web_view_helper;
-  web_view_helper.InitializeAndLoad("about:blank");
-
-  WebLocalFrame* frame = web_view_helper.LocalMainFrame();
-  Document* document = frame->GetDocument();
-  Element* body = document->body();
-
-  // Change the document innerHTML, which dirties layout.
-  const char* new_html = "<div>Foo bar</div><div></div>baz";
-  body->SetInnerHTMLFromString(new_html);
-
-  // Verifies that text capturing works on dirty layout.
-  // Note that we must call the deprecated function here to simulate the
-  // behavior of ChromeRenderFrameObserver::CapturePageText().
-  EXPECT_TRUE(document->NeedsLayoutTreeUpdate());
-  EXPECT_EQ(
-      "Foo barbaz",
-      WebFrameContentDumper::DeprecatedDumpFrameTreeAsText(frame, 12).Utf8());
-}
-
 TEST_P(ParameterizedWebFrameTest, GetFullHtmlOfPage) {
   FrameTestHelpers::WebViewHelper web_view_helper;
   web_view_helper.InitializeAndLoad("about:blank");
@@ -6417,7 +6394,7 @@ class CompositedSelectionBoundsTest
   FrameTestHelpers::WebViewHelper web_view_helper_;
 };
 
-INSTANTIATE_TEST_CASE_P(All, CompositedSelectionBoundsTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, CompositedSelectionBoundsTest, testing::Bool());
 
 TEST_P(CompositedSelectionBoundsTest, None) {
   RunTestWithNoSelection("composited_selection_bounds_none.html");
@@ -7481,7 +7458,7 @@ TEST_P(ParameterizedWebFrameTest, CompositorScrollIsUserScrollLongPage) {
 }
 
 TEST_P(ParameterizedWebFrameTest, SiteForCookiesForRedirect) {
-  String file_path = testing::CoreTestDataPath("first_party.html");
+  String file_path = test::CoreTestDataPath("first_party.html");
 
   WebURL test_url(ToKURL("http://internal.test/first_party_redirect.html"));
   char redirect[] = "http://internal.test/first_party.html";
@@ -9267,7 +9244,7 @@ class WebFrameSwapTest : public ParameterizedWebFrameTest {
   FrameTestHelpers::WebViewHelper web_view_helper_;
 };
 
-INSTANTIATE_TEST_CASE_P(All, WebFrameSwapTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, WebFrameSwapTest, testing::Bool());
 
 TEST_P(WebFrameSwapTest, SwapMainFrame) {
   WebRemoteFrame* remote_frame = FrameTestHelpers::CreateRemote();
@@ -10292,7 +10269,7 @@ class DeviceEmulationTest : public ParameterizedWebFrameTest {
   FrameTestHelpers::WebViewHelper web_view_helper_;
 };
 
-INSTANTIATE_TEST_CASE_P(All, DeviceEmulationTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, DeviceEmulationTest, testing::Bool());
 
 TEST_P(DeviceEmulationTest, DeviceSizeInvalidatedOnResize) {
   WebDeviceEmulationParams params;
@@ -10458,7 +10435,7 @@ class OverscrollWebViewClient : public FrameTestHelpers::TestWebViewClient {
 typedef std::pair<bool, blink::WebGestureDevice> WebFrameOverscrollTestParam;
 class WebFrameOverscrollTest
     : public WebFrameTest,
-      public ::testing::WithParamInterface<WebFrameOverscrollTestParam>,
+      public testing::WithParamInterface<WebFrameOverscrollTestParam>,
       private ScopedRootLayerScrollingForTest {
  public:
   WebFrameOverscrollTest()
@@ -10508,7 +10485,7 @@ class WebFrameOverscrollTest
 INSTANTIATE_TEST_CASE_P(
     All,
     WebFrameOverscrollTest,
-    ::testing::Values(
+    testing::Values(
         WebFrameOverscrollTestParam(false, kWebGestureDeviceTouchpad),
         WebFrameOverscrollTestParam(false, kWebGestureDeviceTouchscreen),
         WebFrameOverscrollTestParam(true, kWebGestureDeviceTouchpad),
@@ -11031,7 +11008,7 @@ class WebFrameVisibilityChangeTest : public ParameterizedWebFrameTest {
   Persistent<WebRemoteFrameImpl> web_remote_frame_;
 };
 
-INSTANTIATE_TEST_CASE_P(All, WebFrameVisibilityChangeTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, WebFrameVisibilityChangeTest, testing::Bool());
 
 TEST_P(WebFrameVisibilityChangeTest, RemoteFrameVisibilityChange) {
   SwapLocalFrameToRemoteFrame();
@@ -11156,7 +11133,7 @@ TEST_P(ParameterizedWebFrameTest, SaveImageAt) {
   std::string url = base_url_ + "image-with-data-url.html";
   RegisterMockedURLLoadFromBase(base_url_, "image-with-data-url.html");
   URLTestHelpers::RegisterMockedURLLoad(
-      ToKURL("http://test"), testing::CoreTestDataPath("white-1x1.png"));
+      ToKURL("http://test"), test::CoreTestDataPath("white-1x1.png"));
 
   FrameTestHelpers::WebViewHelper helper;
   SaveImageFromDataURLWebFrameClient client;
@@ -11314,7 +11291,7 @@ TEST_P(ParameterizedWebFrameTest, LoadJavascriptURLInNewFrame) {
   std::string redirect_url = base_url_ + "foo.html";
   KURL javascript_url = ToKURL("javascript:location='" + redirect_url + "'");
   URLTestHelpers::RegisterMockedURLLoad(ToKURL(redirect_url),
-                                        testing::CoreTestDataPath("foo.html"));
+                                        test::CoreTestDataPath("foo.html"));
   helper.LocalMainFrame()->LoadJavaScriptURL(javascript_url);
 
   // Normally, the result of the JS url replaces the existing contents on the
@@ -11453,8 +11430,7 @@ class MultipleDataChunkDelegate : public WebURLLoaderTestDelegate {
 TEST_P(ParameterizedWebFrameTest, ImageDocumentDecodeError) {
   std::string url = base_url_ + "not_an_image.ico";
   URLTestHelpers::RegisterMockedURLLoad(
-      ToKURL(url), testing::CoreTestDataPath("not_an_image.ico"),
-      "image/x-icon");
+      ToKURL(url), test::CoreTestDataPath("not_an_image.ico"), "image/x-icon");
   MultipleDataChunkDelegate delegate;
   Platform::Current()->GetURLLoaderMockFactory()->SetLoaderDelegate(&delegate);
   FrameTestHelpers::WebViewHelper helper;
@@ -11659,14 +11635,65 @@ TEST_P(ParameterizedWebFrameTest, MouseOverDifferntNodeClearsTooltip) {
       document->GetFrame()->GetChromeClient().LastSetTooltipNodeForTesting());
 }
 
-class WebFrameSimTest : public ::testing::WithParamInterface<bool>,
+class WebFrameSimTest : public testing::WithParamInterface<bool>,
                         private ScopedRootLayerScrollingForTest,
                         public SimTest {
  public:
   WebFrameSimTest() : ScopedRootLayerScrollingForTest(GetParam()) {}
 };
 
-INSTANTIATE_TEST_CASE_P(All, WebFrameSimTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(All, WebFrameSimTest, testing::Bool());
+
+TEST_P(WebFrameSimTest, TickmarksDocumentRelative) {
+  WebView().Resize(WebSize(500, 300));
+  WebView().GetPage()->GetSettings().SetTextAutosizingEnabled(false);
+
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+      <!DOCTYPE html>
+      <style>
+        body, html {
+          width: 4000px;
+          height: 4000px;
+          margin: 0;
+        }
+        div {
+          position: absolute;
+          left: 800px;
+          top: 2000px;
+        }
+      </style>
+      <div>test</div>
+  )HTML");
+
+  Compositor().BeginFrame();
+
+  WebLocalFrameImpl* frame = ToWebLocalFrameImpl(WebView().MainFrame());
+  LocalFrameView* frame_view =
+      ToLocalFrame(WebView().GetPage()->MainFrame())->View();
+
+  frame_view->GetScrollableArea()->SetScrollOffset(ScrollOffset(3000, 1000),
+                                                   kProgrammaticScroll);
+  WebFindOptions options;
+  WebString search_text = WebString::FromUTF8("test");
+  const int kFindIdentifier = 12345;
+  EXPECT_TRUE(frame->Find(kFindIdentifier, search_text, options, false));
+
+  frame->EnsureTextFinder().ResetMatchCount();
+  frame->EnsureTextFinder().StartScopingStringMatches(kFindIdentifier,
+                                                      search_text, options);
+
+  RunPendingTasks();
+
+  // Get the tickmarks for the original find request.
+  Scrollbar* scrollbar = frame_view->CreateScrollbar(kVerticalScrollbar);
+  Vector<IntRect> original_tickmarks;
+  scrollbar->GetTickmarks(original_tickmarks);
+  EXPECT_EQ(1u, original_tickmarks.size());
+
+  EXPECT_EQ(IntPoint(800, 2000), original_tickmarks[0].Location());
+}
 
 TEST_P(WebFrameSimTest, TestScrollFocusedEditableElementIntoView) {
   WebView().Resize(WebSize(500, 300));
@@ -12133,7 +12160,7 @@ TEST_P(ParameterizedWebFrameTest, NoLoadingCompletionCallbacksInDetach) {
   RegisterMockedHttpURLLoad("single_iframe.html");
   URLTestHelpers::RegisterMockedURLLoad(
       ToKURL(base_url_ + "visible_iframe.html"),
-      testing::CoreTestDataPath("frame_with_frame.html"));
+      test::CoreTestDataPath("frame_with_frame.html"));
   RegisterMockedHttpURLLoad("parent_detaching_frame.html");
 
   FrameTestHelpers::WebViewHelper web_view_helper;
@@ -12623,10 +12650,9 @@ class SlimmingPaintWebFrameTest : public PaintTestConfigurations,
   std::unique_ptr<FrameTestHelpers::WebViewHelper> web_view_helper_;
 };
 
-INSTANTIATE_TEST_CASE_P(
-    All,
-    SlimmingPaintWebFrameTest,
-    ::testing::ValuesIn(kSlimmingPaintV2TestConfigurations));
+INSTANTIATE_TEST_CASE_P(All,
+                        SlimmingPaintWebFrameTest,
+                        testing::ValuesIn(kSlimmingPaintV2TestConfigurations));
 
 TEST_P(SlimmingPaintWebFrameTest, DidScrollCallbackAfterScrollableAreaChanges) {
   DCHECK(RuntimeEnabledFeatures::SlimmingPaintV2Enabled());

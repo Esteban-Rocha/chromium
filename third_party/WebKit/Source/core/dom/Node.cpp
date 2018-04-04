@@ -42,7 +42,6 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementRareData.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/FlatTreeTraversal.h"
@@ -91,6 +90,7 @@
 #include "core/html/custom/CustomElement.h"
 #include "core/html_names.h"
 #include "core/input/EventHandler.h"
+#include "core/input/InputDeviceCapabilities.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutEmbeddedContent.h"
 #include "core/mathml_names.h"
@@ -791,10 +791,8 @@ void Node::UpdateDistribution() {
 void Node::RecalcDistribution() {
   DCHECK(ChildNeedsDistributionRecalc());
 
-  if (IsElementNode()) {
-    if (ElementShadow* shadow = ToElement(this)->Shadow())
-      shadow->DistributeIfNeeded();
-  }
+  if (GetShadowRoot())
+    GetShadowRoot()->DistributeIfNeeded();
 
   DCHECK(ScriptForbiddenScope::IsScriptForbidden());
   for (Node* child = firstChild(); child; child = child->nextSibling()) {
@@ -860,7 +858,7 @@ static ContainerNode* GetReattachParent(Node& node) {
       return slot;
   }
   if (node.IsInV0ShadowTree() || node.IsChildOfV0ShadowHost()) {
-    if (ShadowWhereNodeCanBeDistributedForV0(node)) {
+    if (ShadowRootWhereNodeCanBeDistributedForV0(node)) {
       if (V0InsertionPoint* insertion_point =
               const_cast<V0InsertionPoint*>(ResolveReprojection(&node))) {
         return insertion_point;
@@ -1125,11 +1123,6 @@ const ComputedStyle* Node::VirtualEnsureComputedStyle(
              : nullptr;
 }
 
-int Node::MaxCharacterOffset() const {
-  NOTREACHED();
-  return 0;
-}
-
 // FIXME: Shouldn't these functions be in the editing code?  Code that asks
 // questions about HTML in the core DOM class is obviously misplaced.
 bool Node::CanStartSelection() const {
@@ -1198,19 +1191,19 @@ bool Node::IsInV0ShadowTree() const {
   return shadow_root && !shadow_root->IsV1();
 }
 
-ElementShadow* Node::ParentElementShadow() const {
+ShadowRoot* Node::ParentElementShadowRoot() const {
   Element* parent = parentElement();
-  return parent ? parent->Shadow() : nullptr;
+  return parent ? parent->GetShadowRoot() : nullptr;
 }
 
 bool Node::IsChildOfV1ShadowHost() const {
-  ElementShadow* parent_shadow = ParentElementShadow();
-  return parent_shadow && parent_shadow->IsV1();
+  ShadowRoot* parent_shadow_root = ParentElementShadowRoot();
+  return parent_shadow_root && parent_shadow_root->IsV1();
 }
 
 bool Node::IsChildOfV0ShadowHost() const {
-  ElementShadow* parent_shadow = ParentElementShadow();
-  return parent_shadow && !parent_shadow->IsV1();
+  ShadowRoot* parent_shadow_root = ParentElementShadowRoot();
+  return parent_shadow_root && !parent_shadow_root->IsV1();
 }
 
 ShadowRoot* Node::V1ShadowRootOfParent() const {
@@ -2351,16 +2344,47 @@ void Node::CreateAndDispatchPointerEvent(const AtomicString& mouse_event_name,
   DispatchEvent(PointerEvent::Create(pointer_event_name, pointer_event_init));
 }
 
-void Node::DispatchMouseEvent(const WebMouseEvent& native_event,
+// TODO(crbug.com/665924): This function bypasses all Blink event path.
+// It should be using that flow instead of creating/sending events directly.
+void Node::DispatchMouseEvent(const WebMouseEvent& event,
                               const AtomicString& mouse_event_type,
                               int detail,
                               const String& canvas_region_id,
                               Node* related_target) {
-  CreateAndDispatchPointerEvent(mouse_event_type, native_event,
+  CreateAndDispatchPointerEvent(mouse_event_type, event,
                                 GetDocument().domWindow());
-  DispatchEvent(MouseEvent::Create(mouse_event_type, GetDocument().domWindow(),
-                                   native_event, detail, canvas_region_id,
-                                   related_target));
+
+  bool is_mouse_enter_or_leave =
+      mouse_event_type == EventTypeNames::mouseenter ||
+      mouse_event_type == EventTypeNames::mouseleave;
+  MouseEventInit initializer;
+  initializer.setBubbles(!is_mouse_enter_or_leave);
+  initializer.setCancelable(!is_mouse_enter_or_leave);
+  MouseEvent::SetCoordinatesFromWebPointerProperties(
+      event.FlattenTransform(), GetDocument().domWindow(), initializer);
+  initializer.setButton(static_cast<short>(event.button));
+  initializer.setButtons(
+      MouseEvent::WebInputEventModifiersToButtons(event.GetModifiers()));
+  initializer.setView(GetDocument().domWindow());
+  initializer.setDetail(detail);
+  initializer.setComposed(true);
+  initializer.setRegion(canvas_region_id);
+  initializer.setRelatedTarget(related_target);
+  UIEventWithKeyState::SetFromWebInputEventModifiers(
+      initializer, static_cast<WebInputEvent::Modifiers>(event.GetModifiers()));
+  initializer.setSourceCapabilities(
+      GetDocument().domWindow() ? GetDocument()
+                                      .domWindow()
+                                      ->GetInputDeviceCapabilities()
+                                      ->FiresTouchEvents(event.FromTouch())
+                                : nullptr);
+
+  DispatchEvent(MouseEvent::Create(
+      mouse_event_type, initializer,
+      TimeTicksFromSeconds(event.TimeStampSeconds()),
+      event.FromTouch() ? MouseEvent::kFromTouch
+                        : MouseEvent::kRealOrIndistinguishable,
+      event.menu_source_type));
 }
 
 void Node::DispatchSimulatedClick(Event* underlying_event,

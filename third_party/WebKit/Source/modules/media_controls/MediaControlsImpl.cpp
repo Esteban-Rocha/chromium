@@ -155,6 +155,12 @@ bool ShouldShowFullscreenButton(const HTMLMediaElement& media_element) {
   return true;
 }
 
+void MaybeAppendChild(Element* parent, Element* child) {
+  DCHECK(parent);
+  if (child)
+    parent->AppendChild(child);
+}
+
 bool ShouldShowPictureInPictureButton(HTMLMediaElement& media_element) {
   return media_element.SupportsPictureInPicture();
 }
@@ -163,11 +169,14 @@ bool ShouldShowCastButton(HTMLMediaElement& media_element) {
   if (media_element.FastHasAttribute(HTMLNames::disableremoteplaybackAttr))
     return false;
 
-  // Explicitly do not show cast button when the mediaControlsEnabled setting is
-  // false to make sure the overlay does not appear.
+  // Explicitly do not show cast button when:
+  // - the mediaControlsEnabled setting is false, to make sure the overlay does
+  //   not appear;
+  // - the immersiveModeEnabled setting is true.
   Document& document = media_element.GetDocument();
   if (document.GetSettings() &&
-      !document.GetSettings()->GetMediaControlsEnabled()) {
+      (!document.GetSettings()->GetMediaControlsEnabled() ||
+       document.GetSettings()->GetImmersiveModeEnabled())) {
     return false;
   }
 
@@ -359,6 +368,11 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
           this,
           &MediaControlsImpl::ElementSizeChangedTimerFired),
       keep_showing_until_timer_fires_(false) {
+  // On touch devices, start with the assumption that the user will interact via
+  // touch events.
+  Settings* settings = media_element.GetDocument().GetSettings();
+  is_touch_interaction_ = settings ? settings->GetMaxTouchPoints() > 0 : false;
+
   resize_observer_->observe(&media_element);
 }
 
@@ -430,7 +444,8 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
 //     |  |  (-internal-media-controls-button-panel)
 //     |  |  <video> only, otherwise children are directly attached to parent
 //     |  +-MediaControlPlayButtonElement
-//     |  |   (-webkit-media-controls-play-button)
+//     |  |    (-webkit-media-controls-play-button)
+//     |  |    {only present if audio only or ModernMediaControls is disabled}
 //     |  +-MediaControlCurrentTimeDisplayElement
 //     |  |    (-webkit-media-controls-current-time-display)
 //     |  +-MediaControlRemainingTimeDisplayElement
@@ -442,16 +457,20 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
 //     |  |    (-webkit-media-controls-mute-button)
 //     |  +-MediaControlVolumeSliderElement
 //     |  |    (-webkit-media-controls-volume-slider)
+//     |  |    {if not ModernMediaControlsEnabled}
 //     |  +-MediaControlPictureInPictureButtonElement
-//     |  |   (-webkit-media-controls-picture-in-picture-button)
+//     |  |    (-webkit-media-controls-picture-in-picture-button)
 //     |  +-MediaControlFullscreenButtonElement
 //     |  |    (-webkit-media-controls-fullscreen-button)
 //     |  +-MediaControlDownloadButtonElement
 //     |  |    (-internal-media-controls-download-button)
+//     |  |    {on the overflow menu if ModernMediaControls is enabled}
 //     |  +-MediaControlToggleClosedCaptionsButtonElement
 //     |  |    (-webkit-media-controls-toggle-closed-captions-button)
+//     |  |    {on the overflow menu if ModernMediaControls is enabled}
 //     |  +-MediaControlCastButtonElement
-//     |    (-internal-media-controls-cast-button)
+//     |       (-internal-media-controls-cast-button)
+//     |       {on the overflow menu if ModernMediaControls is enabled}
 //     \-MediaControlTimelineElement
 //          (-webkit-media-controls-timeline)
 // +-MediaControlTextTrackListElement
@@ -496,9 +515,7 @@ void MediaControlsImpl::InitializeControls() {
   // seperate button panel. This is because they are displayed in two lines.
   if (IsModern() && MediaElement().IsHTMLVideoElement()) {
     media_button_panel_ = new MediaControlButtonPanelElement(*this);
-    if (RuntimeEnabledFeatures::DoubleTapToJumpOnVideoEnabled()) {
-      scrubbing_message_ = new MediaControlScrubbingMessageElement(*this);
-    }
+    scrubbing_message_ = new MediaControlScrubbingMessageElement(*this);
   }
 
   play_button_ = new MediaControlPlayButtonElement(*this);
@@ -510,9 +527,12 @@ void MediaControlsImpl::InitializeControls() {
   timeline_ = new MediaControlTimelineElement(*this);
   mute_button_ = new MediaControlMuteButtonElement(*this);
 
-  volume_slider_ = new MediaControlVolumeSliderElement(*this);
-  if (PreferHiddenVolumeControls(GetDocument()))
-    volume_slider_->SetIsWanted(false);
+  // The volume slider should be shown if we are using the legacy controls.
+  if (!IsModern()) {
+    volume_slider_ = new MediaControlVolumeSliderElement(*this);
+    if (PreferHiddenVolumeControls(GetDocument()))
+      volume_slider_->SetIsWanted(false);
+  }
 
   // TODO(apacible): Enable for modern controls when SVG is added.
   if (RuntimeEnabledFeatures::PictureInPictureEnabled() && !IsModern() &&
@@ -579,14 +599,19 @@ void MediaControlsImpl::PopulatePanel() {
   Element* button_panel = panel_;
   if (IsModern() && MediaElement().IsHTMLVideoElement() &&
       !is_acting_as_audio_controls_) {
-    if (scrubbing_message_)
-      panel_->AppendChild(scrubbing_message_);
+    MaybeAppendChild(panel_, scrubbing_message_);
     panel_->AppendChild(overlay_play_button_);
     panel_->AppendChild(media_button_panel_);
     button_panel = media_button_panel_;
   }
 
-  button_panel->AppendChild(play_button_);
+  // The play button should only be on the button panel if we are playing audio
+  // only or are using the legacy controls.
+  if (!IsModern() || is_acting_as_audio_controls_ ||
+      MediaElement().IsHTMLAudioElement()) {
+    button_panel->AppendChild(play_button_);
+  }
+
   button_panel->AppendChild(current_time_display_);
   button_panel->AppendChild(duration_display_);
 
@@ -598,15 +623,20 @@ void MediaControlsImpl::PopulatePanel() {
   panel_->AppendChild(timeline_);
 
   button_panel->AppendChild(mute_button_);
-  button_panel->AppendChild(volume_slider_);
 
-  if (picture_in_picture_button_)
-    button_panel->AppendChild(picture_in_picture_button_);
+  MaybeAppendChild(button_panel, volume_slider_);
+  MaybeAppendChild(button_panel, picture_in_picture_button_);
 
   button_panel->AppendChild(fullscreen_button_);
-  button_panel->AppendChild(download_button_);
-  button_panel->AppendChild(cast_button_);
-  button_panel->AppendChild(toggle_closed_captions_button_);
+
+  // The download, cast and captions buttons should not be present on the modern
+  // controls button panel.
+  if (!IsModern()) {
+    button_panel->AppendChild(download_button_);
+    button_panel->AppendChild(cast_button_);
+    button_panel->AppendChild(toggle_closed_captions_button_);
+  }
+
   button_panel->AppendChild(overflow_menu_);
 }
 
@@ -834,7 +864,6 @@ void MediaControlsImpl::MakeOpaqueFromPointerEvent() {
     return;
 
   MakeOpaque();
-  pointer_event_did_show_controls_ = true;
 }
 
 void MediaControlsImpl::MakeTransparent() {
@@ -913,13 +942,13 @@ HTMLDivElement* MediaControlsImpl::PanelElement() {
   return panel_;
 }
 
-void MediaControlsImpl::BeginScrubbing() {
+void MediaControlsImpl::BeginScrubbing(bool is_touch_event) {
   if (!MediaElement().paused()) {
     is_paused_for_scrubbing_ = true;
     MediaElement().pause();
   }
 
-  if (scrubbing_message_) {
+  if (scrubbing_message_ && is_touch_event) {
     scrubbing_message_->SetIsWanted(true);
     if (scrubbing_message_->DoesFit())
       panel_->setAttribute("class", kScrubbingMessageCSSClass);
@@ -1156,7 +1185,7 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
       last_element = element;
     } else {
       add_elements = false;
-      if (element->HasOverflowButton()) {
+      if (element->HasOverflowButton() && !element->IsDisabled()) {
         overflow_wanted = true;
         element->SetOverflowElementIsWanted(true);
       }
@@ -1190,12 +1219,9 @@ void MediaControlsImpl::MaybeToggleControlsFromTap() {
   if (MediaElement().paused())
     return;
 
-  // If the controls are visible we should try to hide them unless they should
-  // be kept around for another reason. If the controls are not visible then
-  // show them and start the timer to automatically hide them. If a pointer
-  // event showed the controls in this batch of events then we should not hiden
-  // the controls.
-  if (IsVisible() && !pointer_event_did_show_controls_) {
+  // If the controls are visible then hide them. If the controls are not visible
+  // then show them and start the timer to automatically hide them.
+  if (IsVisible()) {
     MakeTransparent();
   } else {
     MakeOpaque();
@@ -1203,8 +1229,6 @@ void MediaControlsImpl::MaybeToggleControlsFromTap() {
       keep_showing_until_timer_fires_ = true;
       StartHideMediaControlsTimer();
     }
-
-    pointer_event_did_show_controls_ = false;
   }
 }
 
@@ -1227,61 +1251,17 @@ void MediaControlsImpl::DefaultEventHandler(Event* event) {
   // Touch events are treated differently to avoid fake mouse events to trigger
   // random behavior. The expect behaviour for touch is that a tap will show the
   // controls and they will hide when the timer to hide fires.
-  if (is_touch_event) {
-    if (event->type() != EventTypeNames::gesturetap)
-      return;
+  if (is_touch_event)
+    HandleTouchEvent(event);
 
-    if (!ContainsRelatedTarget(event)) {
-      if (!MediaElement().paused()) {
-        if (!IsVisible()) {
-          MakeOpaque();
-          // When the panel switches from invisible to visible, we need to mark
-          // the event handled to avoid buttons below the tap to be activated.
-          event->SetDefaultHandled();
-        }
-        if (ShouldHideMediaControls(kIgnoreWaitForTimer)) {
-          keep_showing_until_timer_fires_ = true;
-          StartHideMediaControlsTimer();
-        }
-      }
-    }
+  if (event->type() == EventTypeNames::mouseover && !is_touch_event)
+    is_touch_interaction_ = false;
 
-    return;
-  }
-
-  if (event->type() == EventTypeNames::pointerover) {
-    if (!ContainsRelatedTarget(event)) {
-      is_mouse_over_controls_ = true;
-      if (!MediaElement().paused()) {
-        MakeOpaqueFromPointerEvent();
-        StartHideMediaControlsIfNecessary();
-      }
-    }
-    return;
-  }
-
-  if (event->type() == EventTypeNames::pointerout) {
-    if (!ContainsRelatedTarget(event)) {
-      is_mouse_over_controls_ = false;
-      StopHideMediaControlsTimer();
-    }
-    return;
-  }
-
-  // The pointer event has finished so we should clear the bit.
-  if (event->type() == EventTypeNames::mouseout) {
-    pointer_event_did_show_controls_ = false;
-    return;
-  }
-
-  if (event->type() == EventTypeNames::pointermove) {
-    // When we get a mouse move, show the media controls, and start a timer
-    // that will hide the media controls after a 3 seconds without a mouse move.
-    MakeOpaqueFromPointerEvent();
-    if (ShouldHideMediaControls(kIgnoreVideoHover))
-      StartHideMediaControlsTimer();
-    return;
-  }
+  if ((event->type() == EventTypeNames::pointerover ||
+       event->type() == EventTypeNames::pointermove ||
+       event->type() == EventTypeNames::pointerout) &&
+      !is_touch_interaction_)
+    HandlePointerEvent(event);
 
   // If the user is interacting with the controls via the keyboard, don't hide
   // the controls. This will fire when the user tabs between controls (focusin)
@@ -1311,6 +1291,51 @@ void MediaControlsImpl::DefaultEventHandler(Event* event) {
       for (int i = 0; i < 5; i++)
         volume_slider_->OnMediaKeyboardEvent(event);
       return;
+    }
+  }
+}
+
+void MediaControlsImpl::HandlePointerEvent(Event* event) {
+  if (event->type() == EventTypeNames::pointerover) {
+    if (!ContainsRelatedTarget(event)) {
+      is_mouse_over_controls_ = true;
+      if (!MediaElement().paused()) {
+        MakeOpaqueFromPointerEvent();
+        StartHideMediaControlsIfNecessary();
+      }
+    }
+  } else if (event->type() == EventTypeNames::pointerout) {
+    if (!ContainsRelatedTarget(event)) {
+      is_mouse_over_controls_ = false;
+      StopHideMediaControlsTimer();
+    }
+  } else if (event->type() == EventTypeNames::pointermove) {
+    // When we get a mouse move, show the media controls, and start a timer
+    // that will hide the media controls after a 3 seconds without a mouse move.
+    is_mouse_over_controls_ = true;
+    MakeOpaqueFromPointerEvent();
+    if (ShouldHideMediaControls(kIgnoreVideoHover))
+      StartHideMediaControlsTimer();
+  }
+}
+
+void MediaControlsImpl::HandleTouchEvent(Event* event) {
+  if (IsModern()) {
+    is_mouse_over_controls_ = false;
+    is_touch_interaction_ = true;
+  }
+
+  if (event->type() == EventTypeNames::gesturetap &&
+      !ContainsRelatedTarget(event) && !MediaElement().paused()) {
+    if (!IsVisible()) {
+      MakeOpaque();
+      // When the panel switches from invisible to visible, we need to mark
+      // the event handled to avoid buttons below the tap to be activated.
+      event->SetDefaultHandled();
+    }
+    if (ShouldHideMediaControls(kIgnoreWaitForTimer)) {
+      keep_showing_until_timer_fires_ = true;
+      StartHideMediaControlsTimer();
     }
   }
 }
@@ -1366,15 +1391,17 @@ bool MediaControlsImpl::ContainsRelatedTarget(Event* event) {
 
 void MediaControlsImpl::OnVolumeChange() {
   mute_button_->UpdateDisplayType();
-  volume_slider_->SetVolume(MediaElement().muted() ? 0
-                                                   : MediaElement().volume());
 
   // Update visibility of volume controls.
   // TODO(mlamouri): it should not be part of the volumechange handling because
   // it is using audio availability as input.
   BatchedControlUpdate batch(this);
-  volume_slider_->SetIsWanted(MediaElement().HasAudio() &&
-                              !PreferHiddenVolumeControls(GetDocument()));
+  if (volume_slider_) {
+    volume_slider_->SetVolume(MediaElement().muted() ? 0
+                                                     : MediaElement().volume());
+    volume_slider_->SetIsWanted(MediaElement().HasAudio() &&
+                                !PreferHiddenVolumeControls(GetDocument()));
+  }
   if (ShouldShowDisabledControls()) {
     mute_button_->SetIsWanted(true);
     mute_button_->setAttribute(

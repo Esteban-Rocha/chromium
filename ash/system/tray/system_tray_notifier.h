@@ -17,14 +17,12 @@
 namespace ash {
 
 class BluetoothObserver;
-class ClockObserver;
 class IMEObserver;
 class NetworkObserver;
 class NetworkPortalDetectorObserver;
 class ScreenCaptureObserver;
 class ScreenShareObserver;
 class SystemTrayFocusObserver;
-class TracingObserver;
 class VirtualKeyboardObserver;
 
 namespace mojom {
@@ -42,14 +40,6 @@ class ASH_EXPORT SystemTrayNotifier {
   void RemoveBluetoothObserver(BluetoothObserver* observer);
   void NotifyRefreshBluetooth();
   void NotifyBluetoothDiscoveringChanged();
-
-  // Date and time.
-  void AddClockObserver(ClockObserver* observer);
-  void RemoveClockObserver(ClockObserver* observer);
-  void NotifyRefreshClock();
-  void NotifyDateFormatChanged();
-  void NotifySystemClockTimeUpdated();
-  void NotifySystemClockCanSetTimeChanged(bool can_set_time);
 
   // Input methods.
   void AddIMEObserver(IMEObserver* observer);
@@ -88,11 +78,6 @@ class ASH_EXPORT SystemTrayNotifier {
   void RemoveSystemTrayFocusObserver(SystemTrayFocusObserver* observer);
   void NotifyFocusOut(bool reverse);
 
-  // Tracing.
-  void AddTracingObserver(TracingObserver* observer);
-  void RemoveTracingObserver(TracingObserver* observer);
-  void NotifyTracingModeChanged(bool value);
-
   // Virtual keyboard.
   void AddVirtualKeyboardObserver(VirtualKeyboardObserver* observer);
   void RemoveVirtualKeyboardObserver(VirtualKeyboardObserver* observer);
@@ -100,7 +85,6 @@ class ASH_EXPORT SystemTrayNotifier {
 
  private:
   base::ObserverList<BluetoothObserver> bluetooth_observers_;
-  base::ObserverList<ClockObserver> clock_observers_;
   base::ObserverList<IMEObserver> ime_observers_;
   base::ObserverList<NetworkObserver> network_observers_;
   base::ObserverList<NetworkPortalDetectorObserver>
@@ -108,7 +92,6 @@ class ASH_EXPORT SystemTrayNotifier {
   base::ObserverList<ScreenCaptureObserver> screen_capture_observers_;
   base::ObserverList<ScreenShareObserver> screen_share_observers_;
   base::ObserverList<SystemTrayFocusObserver> system_tray_focus_observers_;
-  base::ObserverList<TracingObserver> tracing_observers_;
   base::ObserverList<VirtualKeyboardObserver> virtual_keyboard_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemTrayNotifier);

@@ -41,6 +41,7 @@ constexpr size_t kDefaultAllocationSize = 512 * 1024;
 // content/browser/loader/resource_loader.cc
 void PopulateResourceResponse(net::URLRequest* request,
                               bool is_load_timing_enabled,
+                              bool include_ssl_info,
                               ResourceResponse* response) {
   response->head.request_time = request->request_time();
   response->head.response_time = request->response_time();
@@ -48,6 +49,7 @@ void PopulateResourceResponse(net::URLRequest* request,
   request->GetCharset(&response->head.charset);
   response->head.content_length = request->GetExpectedContentSize();
   request->GetMimeType(&response->head.mime_type);
+  response->head.priority = request->priority();
   net::HttpResponseInfo response_info = request->response_info();
   response->head.was_fetched_via_spdy = response_info.was_fetched_via_spdy;
   response->head.was_alpn_negotiated = response_info.was_alpn_negotiated;
@@ -55,6 +57,7 @@ void PopulateResourceResponse(net::URLRequest* request,
       response_info.alpn_negotiated_protocol;
   response->head.connection_info = response_info.connection_info;
   response->head.socket_address = response_info.socket_address;
+  response->head.network_accessed = response_info.network_accessed;
 
   response->head.effective_connection_type =
       net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
@@ -70,6 +73,9 @@ void PopulateResourceResponse(net::URLRequest* request,
          net::IsCertStatusMinorError(response->head.cert_status)) &&
         net::IsLegacySymantecCert(request->ssl_info().public_key_hashes);
     response->head.cert_status = request->ssl_info().cert_status;
+
+    if (include_ssl_info)
+      response->head.ssl_info = request->ssl_info();
   }
 
   response->head.request_start = request->creation_time();
@@ -299,6 +305,10 @@ URLLoader::URLLoader(
         << "disabled, as that skips security checks in ResourceDispatcherHost. "
         << "The only acceptable usage is the browser using SimpleURLLoader.";
   }
+  if (report_raw_headers_) {
+    options_ |= mojom::kURLLoadOptionSendSSLInfoWithResponse |
+                mojom::kURLLoadOptionSendSSLInfoForCertificateError;
+  }
   url_request_context_getter_->AddObserver(this);
   binding_.set_connection_error_handler(
       base::BindOnce(&URLLoader::OnConnectionError, base::Unretained(this)));
@@ -445,8 +455,9 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
   *defer_redirect = true;
 
   scoped_refptr<ResourceResponse> response = new ResourceResponse();
-  PopulateResourceResponse(url_request_.get(), is_load_timing_enabled_,
-                           response.get());
+  PopulateResourceResponse(
+      url_request_.get(), is_load_timing_enabled_,
+      options_ & mojom::kURLLoadOptionSendSSLInfoWithResponse, response.get());
   if (report_raw_headers_) {
     response->head.raw_request_response_info = BuildRawRequestResponseInfo(
         *url_request_, raw_request_headers_, raw_response_headers_.get());
@@ -529,8 +540,9 @@ void URLLoader::OnResponseStarted(net::URLRequest* url_request, int net_error) {
   }
 
   response_ = new ResourceResponse();
-  PopulateResourceResponse(url_request_.get(), is_load_timing_enabled_,
-                           response_.get());
+  PopulateResourceResponse(
+      url_request_.get(), is_load_timing_enabled_,
+      options_ & mojom::kURLLoadOptionSendSSLInfoWithResponse, response_.get());
   if (report_raw_headers_) {
     response_->head.raw_request_response_info = BuildRawRequestResponseInfo(
         *url_request_, raw_request_headers_, raw_response_headers_.get());
@@ -773,10 +785,8 @@ void URLLoader::DeleteIfNeeded() {
 
 void URLLoader::SendResponseToClient() {
   base::Optional<net::SSLInfo> ssl_info;
-  if (options_ & mojom::kURLLoadOptionSendSSLInfoWithResponse)
-    ssl_info = url_request_->ssl_info();
   mojom::DownloadedTempFilePtr downloaded_file_ptr;
-  url_loader_client_->OnReceiveResponse(response_->head, ssl_info,
+  url_loader_client_->OnReceiveResponse(response_->head,
                                         std::move(downloaded_file_ptr));
 
   net::IOBufferWithSize* metadata =

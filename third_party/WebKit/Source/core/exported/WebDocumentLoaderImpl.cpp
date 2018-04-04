@@ -37,6 +37,9 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/SubresourceFilter.h"
+#include "platform/loader/fetch/ResourceFetcher.h"
+#include "platform/mhtml/ArchiveResource.h"
+#include "platform/mhtml/MHTMLArchive.h"
 #include "public/platform/WebDocumentSubresourceFilter.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
@@ -204,6 +207,23 @@ void WebDocumentLoaderImpl::SetUserActivated() {
 
 bool WebDocumentLoaderImpl::GetIsAdSubframe() const {
   return GetSubresourceFilter()->GetIsAssociatedWithAdSubframe();
+}
+
+void WebDocumentLoaderImpl::BlockParser() {
+  DocumentLoader::BlockParser();
+}
+
+void WebDocumentLoaderImpl::ResumeParser() {
+  DocumentLoader::ResumeParser();
+}
+
+bool WebDocumentLoaderImpl::IsArchive() const {
+  return Fetcher()->Archive();
+}
+
+WebArchiveInfo WebDocumentLoaderImpl::GetArchiveInfo() const {
+  const MHTMLArchive* archive = Fetcher()->Archive();
+  return {archive->MainResource()->Url(), archive->Date()};
 }
 
 void WebDocumentLoaderImpl::Trace(blink::Visitor* visitor) {

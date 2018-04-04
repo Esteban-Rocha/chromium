@@ -35,7 +35,7 @@ void TestURLLoaderFactory::AddResponse(const GURL& url,
   response.head = head;
   response.content = content;
   response.status = status;
-  responses_.push_back(response);
+  responses_[url] = response;
 
   for (auto it = pending_.begin(); it != pending_.end(); ++it) {
     if (CreateLoaderAndStartInternal(it->url, it->client.get())) {
@@ -56,6 +56,14 @@ void TestURLLoaderFactory::AddResponse(const std::string& url,
   AddResponse(GURL(url), head, content, status);
 }
 
+void TestURLLoaderFactory::ClearResponses() {
+  responses_.clear();
+}
+
+void TestURLLoaderFactory::SetInterceptor(const Interceptor& interceptor) {
+  interceptor_ = interceptor;
+}
+
 void TestURLLoaderFactory::CreateLoaderAndStart(
     mojom::URLLoaderRequest request,
     int32_t routing_id,
@@ -64,6 +72,9 @@ void TestURLLoaderFactory::CreateLoaderAndStart(
     const ResourceRequest& url_request,
     mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
+  if (interceptor_)
+    interceptor_.Run(url_request);
+
   if (CreateLoaderAndStartInternal(url_request.url, client.get()))
     return;
 
@@ -80,23 +91,20 @@ void TestURLLoaderFactory::Clone(mojom::URLLoaderFactoryRequest request) {
 bool TestURLLoaderFactory::CreateLoaderAndStartInternal(
     const GURL& url,
     mojom::URLLoaderClient* client) {
-  for (auto it = responses_.begin(); it != responses_.end(); ++it) {
-    if (it->url == url) {
-      CHECK(it->redirects.empty()) << "TODO(jam): handle redirects";
-      client->OnReceiveResponse(it->head, base::nullopt, nullptr);
-      mojo::DataPipe data_pipe;
-      uint32_t bytes_written = it->content.size();
-      CHECK_EQ(MOJO_RESULT_OK, data_pipe.producer_handle->WriteData(
-                                   it->content.data(), &bytes_written,
-                                   MOJO_WRITE_DATA_FLAG_ALL_OR_NONE));
-      client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
-      client->OnComplete(it->status);
-      responses_.erase(it);
-      return true;
-    }
-  }
+  auto it = responses_.find(url);
+  if (it == responses_.end())
+    return false;
 
-  return false;
+  CHECK(it->second.redirects.empty()) << "TODO(jam): handle redirects";
+  client->OnReceiveResponse(it->second.head, nullptr);
+  mojo::DataPipe data_pipe(it->second.content.size());
+  uint32_t bytes_written = it->second.content.size();
+  CHECK_EQ(MOJO_RESULT_OK, data_pipe.producer_handle->WriteData(
+                               it->second.content.data(), &bytes_written,
+                               MOJO_WRITE_DATA_FLAG_ALL_OR_NONE));
+  client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
+  client->OnComplete(it->second.status);
+  return true;
 }
 
 }  // namespace network

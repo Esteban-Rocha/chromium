@@ -90,8 +90,8 @@
 #include "content/public/common/url_utils.h"
 #include "extensions/buildflags/buildflags.h"
 #include "media/media_buildflags.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
 #include "url/gurl.h"
@@ -154,8 +154,8 @@
 #include "chrome/browser/ui/webui/chromeos/slow_trace_ui.h"
 #include "chrome/browser/ui/webui/chromeos/slow_ui.h"
 #include "chrome/browser/ui/webui/chromeos/sys_internals/sys_internals_ui.h"
-#include "components/proximity_auth/webui/proximity_auth_ui.h"
-#include "components/proximity_auth/webui/url_constants.h"
+#include "chromeos/components/proximity_auth/webui/proximity_auth_ui.h"
+#include "chromeos/components/proximity_auth/webui/url_constants.h"
 #endif
 
 #if defined(OS_CHROMEOS) && !defined(OFFICIAL_BUILD)
@@ -404,10 +404,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return MdBookmarksUI::IsEnabled() ? &NewWebUI<MdBookmarksUI>
                                       : &NewWebUI<BookmarksUI>;
   }
-  if (base::FeatureList::IsEnabled(features::kBundledConnectionHelpFeature) &&
-      url.host_piece() == security_interstitials::kChromeUIConnectionHelpHost) {
-    return &NewWebUI<security_interstitials::ConnectionHelpUI>;
-  }
   // Downloads list on Android uses the built-in download manager.
   if (url.host_piece() == chrome::kChromeUIDownloadsHost)
     return &NewWebUI<MdDownloadsUI>;
@@ -605,6 +601,11 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #endif
   if (IsAboutUI(url))
     return &NewWebUI<AboutUI>;
+
+  if (base::FeatureList::IsEnabled(features::kBundledConnectionHelpFeature) &&
+      url.host_piece() == security_interstitials::kChromeUIConnectionHelpHost) {
+    return &NewWebUI<security_interstitials::ConnectionHelpUI>;
+  }
 
   if (dom_distiller::IsEnableDomDistillerSet() &&
       url.host_piece() == dom_distiller::kChromeUIDomDistillerHost) {

@@ -72,8 +72,10 @@ PositionTemplate<Strategy> PositionTemplate<Strategy>::EditingPositionOf(
   if (!anchor_node || anchor_node->IsTextNode())
     return PositionTemplate<Strategy>(anchor_node, offset);
 
-  if (!EditingIgnoresContent(*anchor_node))
-    return PositionTemplate<Strategy>(anchor_node, offset);
+  if (!EditingIgnoresContent(*anchor_node)) {
+    return PositionTemplate<Strategy>::CreateWithoutValidationDeprecated(
+        *anchor_node, offset);
+  }
 
   if (offset == 0)
     return PositionTemplate<Strategy>(anchor_node,
@@ -125,12 +127,23 @@ PositionTemplate<Strategy>::PositionTemplate(const Node* anchor_node,
     : anchor_node_(const_cast<Node*>(anchor_node)),
       offset_(offset),
       anchor_type_(PositionAnchorType::kOffsetInAnchor) {
-  if (anchor_node_)
-    DCHECK_GE(offset, 0);
-  else
-    DCHECK_EQ(offset, 0);
 #if DCHECK_IS_ON()
   DCHECK(CanBeAnchorNode<Strategy>(anchor_node_.Get())) << anchor_node_;
+  if (!anchor_node_) {
+    DCHECK_EQ(offset, 0);
+    return;
+  }
+  if (anchor_node_->IsCharacterDataNode()) {
+    DCHECK_GE(offset, 0);
+    DCHECK_LE(static_cast<unsigned>(offset),
+              ToCharacterData(anchor_node_)->length())
+        << anchor_node_;
+    return;
+  }
+  DCHECK_GE(offset, 0);
+  DCHECK_LE(static_cast<unsigned>(offset),
+            Strategy::CountChildren(*anchor_node))
+      << anchor_node_;
 #endif
 }
 
@@ -144,6 +157,25 @@ PositionTemplate<Strategy>::PositionTemplate(const PositionTemplate& other)
     : anchor_node_(other.anchor_node_),
       offset_(other.offset_),
       anchor_type_(other.anchor_type_) {}
+
+// static
+template <typename Strategy>
+PositionTemplate<Strategy> PositionTemplate<Strategy>::CreateWithoutValidation(
+    const Node& container,
+    int offset) {
+  PositionTemplate<Strategy> result(container, 0);
+  result.offset_ = offset;
+  return result;
+}
+
+// static
+template <typename Strategy>
+PositionTemplate<Strategy>
+PositionTemplate<Strategy>::CreateWithoutValidationDeprecated(
+    const Node& container,
+    int offset) {
+  return CreateWithoutValidation(container, offset);
+}
 
 // --
 
@@ -168,7 +200,7 @@ Node* PositionTemplate<Strategy>::ComputeContainerNode() const {
 template <typename Strategy>
 static int MinOffsetForNode(Node* anchor_node, int offset) {
   if (anchor_node->IsCharacterDataNode())
-    return std::min(offset, anchor_node->MaxCharacterOffset());
+    return std::min(offset, static_cast<int>(ToCharacterData(anchor_node)->length()));
 
   int new_offset = 0;
   for (Node* node = Strategy::FirstChild(*anchor_node);
@@ -510,7 +542,7 @@ PositionTemplate<Strategy> PositionTemplate<Strategy>::AfterNode(
 template <typename Strategy>
 int PositionTemplate<Strategy>::LastOffsetInNode(const Node& node) {
   return node.IsCharacterDataNode()
-             ? node.MaxCharacterOffset()
+             ? static_cast<int>(ToCharacterData(node).length())
              : static_cast<int>(Strategy::CountChildren(node));
 }
 
@@ -672,8 +704,10 @@ String PositionTemplate<Strategy>::ToAnchorTypeAndOffsetString() const {
 
 template <typename Strategy>
 void PositionTemplate<Strategy>::ShowTreeForThis() const {
-  if (!AnchorNode())
+  if (!AnchorNode()) {
+    LOG(INFO) << "\nposition is null";
     return;
+  }
   LOG(INFO) << "\n"
             << AnchorNode()->ToTreeStringForThis().Utf8().data()
             << ToAnchorTypeAndOffsetString().Utf8().data();
@@ -681,8 +715,10 @@ void PositionTemplate<Strategy>::ShowTreeForThis() const {
 
 template <typename Strategy>
 void PositionTemplate<Strategy>::ShowTreeForThisInFlatTree() const {
-  if (!AnchorNode())
+  if (!AnchorNode()) {
+    LOG(INFO) << "\nposition is null";
     return;
+  }
   LOG(INFO) << "\n"
             << AnchorNode()->ToFlatTreeStringForThis().Utf8().data()
             << ToAnchorTypeAndOffsetString().Utf8().data();

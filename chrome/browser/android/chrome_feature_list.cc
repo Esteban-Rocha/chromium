@@ -23,9 +23,11 @@
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "components/payments/core/features.h"
 #include "components/safe_browsing/features.h"
+#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/subresource_filter/core/browser/subresource_filter_features.h"
 #include "content/public/common/content_features.h"
 #include "jni/ChromeFeatureList_jni.h"
+#include "media/base/media_switches.h"
 
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF8ToJavaString;
@@ -51,10 +53,11 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &features::kMaterialDesignIncognitoNTP,
     &features::kPermissionDelegation,
     &features::kServiceWorkerPaymentApps,
+    &features::kShowTrustedPublisherURL,
     &features::kSiteNotificationChannels,
     &features::kSimplifiedFullscreenUI,
     &features::kSoundContentSetting,
-    &features::kUnifiedConsent,
+    &features::kWebAuth,
     &features::kWebPayments,
     &feed::kInterestFeedContentSuggestions,
     &kAdjustWebApkInstallationSpace,
@@ -92,6 +95,8 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &kDownloadHomeShowStorageInfo,
     &data_reduction_proxy::features::kDataReductionMainMenu,
     &kFullscreenActivity,
+    &kHomePageButtonForceEnabled,
+    &kHorizontalTabSwitcherAndroid,
     &kImprovedA2HS,
     &kLanguagesPreference,
     &kModalPermissionDialogView,
@@ -131,6 +136,7 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &payments::features::kWebPaymentsSingleAppUiSkip,
     &kWebVrAutopresentFromIntent,
     &kWebVrCardboardSupport,
+    &media::kCafMediaRouterImpl,
     &ntp_snippets::kArticleSuggestionsExpandableHeader,
     &ntp_snippets::kIncreasedVisibility,
     &ntp_snippets::kForeignSessionsSuggestionsFeature,
@@ -140,11 +146,13 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &offline_pages::kBackgroundLoaderForDownloadsFeature,
     &offline_pages::kOfflinePagesCTFeature,    // See crbug.com/620421.
     &offline_pages::kOfflinePagesCTV2Feature,  // See crbug.com/734753.
+    &offline_pages::kOfflinePagesDescriptiveFailStatusFeature,
     &offline_pages::kOfflinePagesDescriptivePendingStatusFeature,
     &offline_pages::kOfflinePagesSharingFeature,
     &omnibox::kUIExperimentHideSteadyStateUrlSchemeAndSubdomains,
     &password_manager::features::kPasswordExport,
     &password_manager::features::kPasswordSearchMobile,
+    &signin::kUnifiedConsent,
     &subresource_filter::kSafeBrowsingSubresourceFilterExperimentalUI,
     &safe_browsing::kDispatchSafetyNetCheckOffThread,
 };
@@ -268,6 +276,12 @@ const base::Feature kDownloadHomeShowStorageInfo{
 const base::Feature kFullscreenActivity{"FullscreenActivity",
                                         base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kHomePageButtonForceEnabled{
+    "HomePageButtonForceEnabled", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kHorizontalTabSwitcherAndroid{
+    "HorizontalTabSwitcherAndroid", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Makes "Add to Home screen" in the app menu generate an APK for the shortcut
 // URL which opens Chrome in fullscreen.
 // This feature is kept around so that we have a kill-switch in case of server
@@ -375,7 +389,7 @@ const base::Feature kVrBrowsingInCustomTab{"VrBrowsingInCustomTab",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kVrBrowsingNativeAndroidUi{
-    "VrBrowsingNativeAndroidUi", base::FEATURE_DISABLED_BY_DEFAULT};
+    "VrBrowsingNativeAndroidUi", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kVrIconInDaydreamHome{"VrIconInDaydreamHome",
                                           base::FEATURE_ENABLED_BY_DEFAULT};

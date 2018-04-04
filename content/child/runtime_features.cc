@@ -81,10 +81,6 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
 #if !defined(OS_MACOSX)
   WebRuntimeFeatures::EnableNotificationContentImage(true);
 #endif
-
-#if defined(OS_ANDROID)
-  WebRuntimeFeatures::EnableDoubleTapToJumpOnVideo(true);
-#endif
 }
 
 void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
@@ -349,9 +345,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::EnableAutoplayMutedVideos(true);
   }
 
-  if (!base::FeatureList::IsEnabled(features::kWebAuth) &&
-      !enableExperimentalWebPlatformFeatures)
-    WebRuntimeFeatures::EnableWebAuth(false);
+  WebRuntimeFeatures::EnableWebAuth(
+      base::FeatureList::IsEnabled(features::kWebAuth));
 
   WebRuntimeFeatures::EnableClientPlaceholdersForServerLoFi(
       base::GetFieldTrialParamValue("PreviewsClientLoFi",
@@ -432,12 +427,18 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   WebRuntimeFeatures::EnableCodeCacheAfterExecute(
       base::FeatureList::IsEnabled(features::kCodeCacheAfterExecute));
 
+  WebRuntimeFeatures::EnableCacheInlineScriptCode(
+      base::FeatureList::IsEnabled(features::kCacheInlineScriptCode));
+
   if (base::FeatureList::IsEnabled(features::kUnifiedTouchAdjustment))
     WebRuntimeFeatures::EnableUnifiedTouchAdjustment(true);
 
   // Make srcset on link rel=preload work with SignedHTTPExchange flag too.
   if (base::FeatureList::IsEnabled(features::kSignedHTTPExchange))
     WebRuntimeFeatures::EnablePreloadImageSrcSetEnabled(true);
+
+  WebRuntimeFeatures::EnableOffMainThreadWebSocket(
+      base::FeatureList::IsEnabled(features::kOffMainThreadWebSocket));
 };
 
 }  // namespace content

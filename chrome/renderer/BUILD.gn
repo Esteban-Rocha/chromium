@@ -5,10 +5,11 @@
 import("//build/config/features.gni")
 import("//chrome/common/features.gni")
 import("//components/nacl/features.gni")
+import("//components/offline_pages/buildflags/features.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//tools/grit/grit_rule.gni")
 
 grit("resources") {
@@ -93,6 +94,8 @@ static_library("renderer") {
     "security_filter_peer.h",
     "ssl/ssl_certificate_error_page_controller.cc",
     "ssl/ssl_certificate_error_page_controller.h",
+    "supervised_user/supervised_user_error_page_controller.cc",
+    "supervised_user/supervised_user_error_page_controller.h",
     "tts_dispatcher.cc",
     "tts_dispatcher.h",
     "url_loader_throttle_provider_impl.cc",
@@ -146,8 +149,8 @@ static_library("renderer") {
     "//media/capture",
     "//mojo/public/cpp/bindings",
     "//net",
-    "//ppapi/features",
-    "//printing/features",
+    "//ppapi/buildflags",
+    "//printing/buildflags",
     "//services/metrics/public/cpp:metrics_cpp",
     "//services/metrics/public/mojom",
     "//services/service_manager/public/cpp",

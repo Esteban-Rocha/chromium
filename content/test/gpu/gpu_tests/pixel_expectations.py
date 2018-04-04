@@ -75,7 +75,7 @@ class PixelExpectations(GpuTestExpectations):
                bug=660461)
 
     self.Flaky('Pixel_OffscreenCanvas2DResizeOnWorker',
-        ['win10', ('intel', 0x1912), 'android'], bug=690663)
+        ['win10', ('intel', 0x1912)], bug=690663)
 
     self.Flaky('Pixel_OffscreenCanvasTransferBeforeStyleResize',
               ['mac', 'linux', 'win', 'android'], bug=735228)
@@ -112,9 +112,16 @@ class PixelExpectations(GpuTestExpectations):
     self.Fail('Pixel_CSS3DBlueBox_NoGpuProcess',
               ['linux', 'mac', 'win'], bug=744658)
 
-    self.Flaky('Pixel_2DCanvasWebGL', ['android'], bug=807370)
-    self.Flaky('Pixel_Canvas2DRedBox', ['android'], bug=809846)
-    self.Flaky('Pixel_CanvasDisplayLinearRGBAccelerated2D', ['android'],
-               bug=809868)
-    self.Flaky('Pixel_CanvasDisplayLinearRGBUnaccelerated2DGPUCompositing',
-               ['android'], bug=810006)
+    # TODO(enne): temporarily suppress these tests until rebaselined.
+    self.Fail('Pixel_2DCanvasWebGL', ['android'], bug=972546)
+    self.Fail('Pixel_Canvas2DRedBox', ['android'], bug=972546)
+    self.Fail('Pixel_CanvasDisplayLinearRGBAccelerated2D',
+              ['android'], bug=972546)
+    self.Fail('Pixel_CanvasDisplayLinearRGBUnaccelerated2DGPUCompositing',
+              ['android'], bug=972546)
+    self.Fail('Pixel_WebGLGreenTriangle_AA_Alpha', ['android'], bug=972546)
+    self.Fail('Pixel_WebGLGreenTriangle_AA_NoAlpha', ['android'], bug=972546)
+    self.Fail('Pixel_WebGLGreenTriangle_NoAA_Alpha', ['android'], bug=972546)
+    self.Fail('Pixel_WebGLGreenTriangle_NoAA_NoAlpha', ['android'], bug=972546)
+    self.Fail('Pixel_WebGLTransparentGreenTriangle_NoAlpha_ImplicitClear',
+              ['android'], bug=972546)

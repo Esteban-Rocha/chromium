@@ -37,6 +37,7 @@
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/compositor_extra/shadow.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
@@ -53,7 +54,6 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/window/non_client_view.h"
 #include "ui/wm/core/coordinate_conversion.h"
-#include "ui/wm/core/shadow.h"
 #include "ui/wm/core/shadow_types.h"
 
 namespace ash {
@@ -256,7 +256,7 @@ class ShieldButton : public views::Button {
           listener()->HandleReleaseEvent(location);
           break;
         case ui::ET_GESTURE_TAP:
-          listener()->ActivateDraggedWindow(location);
+          listener()->ActivateDraggedWindow();
           break;
         case ui::ET_GESTURE_END:
           listener()->ResetDraggedWindowGesture();
@@ -963,12 +963,9 @@ float WindowSelectorItem::GetItemScale(const gfx::Size& size) {
 
 void WindowSelectorItem::HandlePressEvent(
     const gfx::Point& location_in_screen) {
-  // Check the y position instead of using GetBoundsInScreen().Contains() so
-  // that it includes the image, close button and invisible margins.
-  tap_down_event_on_title_ = base::nullopt;
-  if (IsNewOverviewUi() &&
-      location_in_screen.y() < background_view_->GetBoundsInScreen().bottom()) {
-    tap_down_event_on_title_ = base::make_optional(location_in_screen);
+  // We allow switching finger while dragging, but do not allow dragging two or more items.
+  if (window_selector_->window_drag_controller() &&
+      window_selector_->window_drag_controller()->item()) {
     return;
   }
 
@@ -978,41 +975,38 @@ void WindowSelectorItem::HandlePressEvent(
 
 void WindowSelectorItem::HandleReleaseEvent(
     const gfx::Point& location_in_screen) {
-  if (tap_down_event_on_title_) {
-    SelectWindowIfBelowDistanceThreshold(location_in_screen);
+  if (!IsDragItem())
     return;
-  }
 
   EndDrag();
   window_selector_->CompleteDrag(this, location_in_screen);
 }
 
 void WindowSelectorItem::HandleDragEvent(const gfx::Point& location_in_screen) {
-  if (tap_down_event_on_title_)
+  if (!IsDragItem())
     return;
 
   window_selector_->Drag(this, location_in_screen);
 }
 
-void WindowSelectorItem::ActivateDraggedWindow(
-    const gfx::Point& location_in_screen) {
-  if (tap_down_event_on_title_) {
-    SelectWindowIfBelowDistanceThreshold(location_in_screen);
+void WindowSelectorItem::ActivateDraggedWindow() {
+  if (!IsDragItem())
     return;
-  }
 
-  DCHECK_EQ(this, window_selector_->window_drag_controller()->item());
   window_selector_->ActivateDraggedWindow();
 }
 
 void WindowSelectorItem::ResetDraggedWindowGesture() {
   OnSelectorItemDragEnded();
-
-  if (tap_down_event_on_title_)
+  if (!IsDragItem())
     return;
 
-  DCHECK_EQ(this, window_selector_->window_drag_controller()->item());
   window_selector_->ResetDraggedWindowGesture();
+}
+
+bool WindowSelectorItem::IsDragItem() {
+  return window_selector_->window_drag_controller() &&
+         window_selector_->window_drag_controller()->item() == this;
 }
 
 void WindowSelectorItem::SetShadowBounds(
@@ -1192,7 +1186,7 @@ void WindowSelectorItem::CreateWindowLabel(const base::string16& title) {
     label_view_->SetFontList(gfx::FontList().Derive(
         kLabelFontDelta, gfx::Font::NORMAL, gfx::Font::Weight::MEDIUM));
 
-    shadow_ = std::make_unique<::wm::Shadow>();
+    shadow_ = std::make_unique<ui::Shadow>();
     shadow_->Init(kShadowElevation);
     item_widget_->GetLayer()->Add(shadow_->layer());
   }
@@ -1327,16 +1321,6 @@ void WindowSelectorItem::FadeOut(std::unique_ptr<views::Widget> widget) {
   window_selector_->delegate()->AddDelayedAnimationObserver(
       std::move(observer));
   widget_ptr->SetOpacity(0.f);
-}
-
-void WindowSelectorItem::SelectWindowIfBelowDistanceThreshold(
-    const gfx::Point& event_location) {
-  DCHECK(tap_down_event_on_title_.has_value());
-
-  const gfx::Vector2d distance =
-      event_location - tap_down_event_on_title_.value();
-  if (distance.Length() < OverviewWindowDragController::kMinimumDragOffset)
-    window_selector_->SelectWindow(this);
 }
 
 gfx::SlideAnimation* WindowSelectorItem::GetBackgroundViewAnimation() {

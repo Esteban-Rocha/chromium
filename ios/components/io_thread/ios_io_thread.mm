@@ -285,7 +285,7 @@ net::URLRequestContextGetter* IOSIOThread::system_url_request_context_getter() {
   DCHECK_CURRENTLY_ON(web::WebThread::UI);
   if (!system_url_request_context_getter_.get()) {
     // If we're in unit_tests, IOSIOThread may not be run.
-    if (!web::WebThread::IsMessageLoopValid(web::WebThread::IO))
+    if (!web::WebThread::IsThreadInitialized(web::WebThread::IO))
       return nullptr;
     system_url_request_context_getter_ =
         new SystemURLRequestContextGetter(this);
@@ -356,9 +356,11 @@ void IOSIOThread::Init() {
       base::CommandLine(base::CommandLine::NO_PROGRAM),
       /*is_quic_force_disabled=*/false, quic_user_agent_id, &params_);
 
-  globals_->system_proxy_resolution_service = ProxyServiceFactory::CreateProxyService(
-      net_log_, nullptr, globals_->system_network_delegate.get(),
-      std::move(system_proxy_config_service_), true /* quick_check_enabled */);
+  globals_->system_proxy_resolution_service =
+      ProxyServiceFactory::CreateProxyResolutionService(
+          net_log_, nullptr, globals_->system_network_delegate.get(),
+          std::move(system_proxy_config_service_),
+          true /* quick_check_enabled */);
 
   globals_->system_request_context.reset(
       ConstructSystemRequestContext(globals_, params_, net_log_));

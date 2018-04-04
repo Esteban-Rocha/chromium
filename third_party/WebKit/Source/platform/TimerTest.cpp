@@ -10,8 +10,8 @@
 #include "platform/scheduler/base/task_queue_impl.h"
 #include "platform/scheduler/child/task_runner_impl.h"
 #include "platform/scheduler/child/web_scheduler.h"
+#include "platform/scheduler/main_thread/main_thread_scheduler.h"
 #include "platform/scheduler/renderer/main_thread_task_queue.h"
-#include "platform/scheduler/renderer/renderer_scheduler_impl.h"
 #include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
 #include "platform/wtf/RefCounted.h"
 #include "platform/wtf/Time.h"
@@ -20,12 +20,12 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::ElementsAre;
+using testing::ElementsAre;
 
 namespace blink {
 namespace {
 
-class TimerTest : public ::testing::Test {
+class TimerTest : public testing::Test {
  public:
   void SetUp() override {
     run_times_.clear();

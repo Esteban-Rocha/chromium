@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_mediator.h"
+#include "base/time/default_clock.h"
+#include "components/reading_list/core/reading_list_model_impl.h"
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_table_view_controller.h"
 #import "ios/chrome/browser/ui/toolbar/test/toolbar_test_navigation_manager.h"
 #import "ios/chrome/browser/ui/toolbar/test/toolbar_test_web_state.h"
@@ -37,17 +39,30 @@ const int kNumberOfWebStates = 3;
 class PopupMenuMediatorTest : public PlatformTest {
  public:
   PopupMenuMediatorTest() {
-    mediator_ = [[PopupMenuMediator alloc] initWithType:PopupMenuTypeToolsMenu];
+    reading_list_model_.reset(new ReadingListModelImpl(
+        nullptr, nullptr, base::DefaultClock::GetInstance()));
+    mediator_incognito_ =
+        [[PopupMenuMediator alloc] initWithType:PopupMenuTypeToolsMenu
+                                    isIncognito:YES
+                               readingListModel:reading_list_model_.get()];
+    mediator_non_incognito_ =
+        [[PopupMenuMediator alloc] initWithType:PopupMenuTypeToolsMenu
+                                    isIncognito:NO
+                               readingListModel:reading_list_model_.get()];
     popup_menu_ = OCMClassMock([PopupMenuTableViewController class]);
     popup_menu_strict_ =
         OCMStrictClassMock([PopupMenuTableViewController class]);
     OCMExpect([popup_menu_strict_ setPopupMenuItems:[OCMArg any]]);
+    OCMExpect([popup_menu_strict_ setCommandHandler:[OCMArg any]]);
     SetUpWebStateList();
   }
 
   // Explicitly disconnect the mediator so there won't be any WebStateList
   // observers when web_state_list_ gets dealloc.
-  ~PopupMenuMediatorTest() override { [mediator_ disconnect]; }
+  ~PopupMenuMediatorTest() override {
+    [mediator_incognito_ disconnect];
+    [mediator_non_incognito_ disconnect];
+  }
 
  protected:
   void SetUpWebStateList() {
@@ -80,7 +95,9 @@ class PopupMenuMediatorTest : public PlatformTest {
 
   void SetUpActiveWebState() { web_state_list_->ActivateWebStateAt(0); }
 
-  PopupMenuMediator* mediator_;
+  PopupMenuMediator* mediator_incognito_;
+  PopupMenuMediator* mediator_non_incognito_;
+  std::unique_ptr<ReadingListModelImpl> reading_list_model_;
   ToolbarTestWebState* web_state_;
   ToolbarTestNavigationManager* navigation_manager_;
   std::unique_ptr<WebStateList> web_state_list_;
@@ -89,14 +106,3 @@ class PopupMenuMediatorTest : public PlatformTest {
   // Mock refusing all calls except -setPopupMenuItems:.
   id popup_menu_strict_;
 };
-
-// Test no setup is being done on the PopupMenu if there's no Webstate.
-TEST_F(PopupMenuMediatorTest, TestPopupMenuSetupWithNoWebstate) {
-  mediator_.popupMenu = popup_menu_strict_;
-}
-
-// Test no setup is being done on the LocationBar if there's no active Webstate.
-TEST_F(PopupMenuMediatorTest, TestPopupMenuSetupWithNoActiveWebstate) {
-  mediator_.webStateList = web_state_list_.get();
-  mediator_.popupMenu = popup_menu_strict_;
-}

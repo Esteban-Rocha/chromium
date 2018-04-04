@@ -23,7 +23,7 @@
 #include "third_party/skia/include/utils/SkNullCanvas.h"
 
 namespace blink {
-class SVGImageTest : public ::testing::Test {
+class SVGImageTest : public testing::Test {
  public:
   SVGImage& GetImage() { return *image_; }
 
@@ -110,8 +110,8 @@ TEST_F(SVGImageTest, TimelineSuspendAndResume) {
   // Fire the timer/trigger a frame update. Since the observer always returns
   // true for shouldPauseAnimation, this will result in the timeline being
   // suspended.
-  testing::RunDelayedTasks(TimeDelta::FromMilliseconds(1) +
-                           TimeDelta::FromSecondsD(timer->NextFireInterval()));
+  test::RunDelayedTasks(TimeDelta::FromMilliseconds(1) +
+                        TimeDelta::FromSecondsD(timer->NextFireInterval()));
   EXPECT_TRUE(chrome_client.IsSuspended());
   EXPECT_FALSE(timer->IsActive());
 
@@ -144,8 +144,8 @@ TEST_F(SVGImageTest, ResetAnimation) {
 
   // Fire the timer/trigger a frame update. The timeline will remain
   // suspended and no frame will be scheduled.
-  testing::RunDelayedTasks(TimeDelta::FromMillisecondsD(1) +
-                           TimeDelta::FromSecondsD(timer->NextFireInterval()));
+  test::RunDelayedTasks(TimeDelta::FromMillisecondsD(1) +
+                        TimeDelta::FromSecondsD(timer->NextFireInterval()));
   EXPECT_TRUE(chrome_client.IsSuspended());
   EXPECT_FALSE(timer->IsActive());
 

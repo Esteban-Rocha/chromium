@@ -147,6 +147,9 @@ message OmniboxEventProto {
     // The user is in the maps app.
     APP_MAPS = 12;
 
+    // This omnibox interaction started with the user tapping the search button.
+    SEARCH_BUTTON_AS_STARTING_FOCUS = 13;
+
     // When adding new classifications, please consider adding them in
     // chromium's chrome/browser/resources/omnibox/omnibox.html
     // so that these new options are displayed on about:omnibox.

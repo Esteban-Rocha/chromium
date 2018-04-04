@@ -273,6 +273,11 @@ class RenderWidgetHostViewAura::WindowObserver : public aura::WindowObserver {
     view_->ParentHierarchyChanged();
   }
 
+  void OnWindowTitleChanged(aura::Window* window) override {
+    if (window == view_->window_)
+      view_->WindowTitleChanged();
+  }
+
  private:
   RenderWidgetHostViewAura* view_;
 
@@ -526,10 +531,6 @@ void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
   InternalSetBounds(gfx::Rect(relative_origin, rect.size()));
 }
 
-gfx::Vector2dF RenderWidgetHostViewAura::GetLastScrollOffset() const {
-  return last_scroll_offset_;
-}
-
 gfx::NativeView RenderWidgetHostViewAura::GetNativeView() const {
   DCHECK(!is_mus_browser_plugin_guest_);
   return window_;
@@ -738,6 +739,13 @@ void RenderWidgetHostViewAura::UpdateBackgroundColorFromRenderer(
   window_->layer()->SetColor(color);
 }
 
+void RenderWidgetHostViewAura::WindowTitleChanged() {
+  if (delegated_frame_host_) {
+    delegated_frame_host_->WindowTitleChanged(
+        base::UTF16ToUTF8(window_->GetTitle()));
+  }
+}
+
 bool RenderWidgetHostViewAura::IsMouseLocked() {
   return event_handler_->mouse_locked();
 }
@@ -835,10 +843,6 @@ void RenderWidgetHostViewAura::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     base::OnceCallback<void(const SkBitmap&)> callback) {
-  if (!IsSurfaceAvailableForCopy()) {
-    std::move(callback).Run(SkBitmap());
-    return;
-  }
   delegated_frame_host_->CopyFromCompositingSurface(src_subrect, dst_size,
                                                     std::move(callback));
 }
@@ -878,24 +882,8 @@ void RenderWidgetHostViewAura::SubmitCompositorFrame(
   DCHECK(delegated_frame_host_);
   TRACE_EVENT0("content", "RenderWidgetHostViewAura::OnSwapCompositorFrame");
 
-  last_scroll_offset_ = frame.metadata.root_scroll_offset;
-  if (IsUseZoomForDSFEnabled()) {
-    // With zoom-for-DSF Blink pixel coordinates are used and zoom is used to
-    // adjusts for the device scale factor. That's why last_scroll_offset_
-    // needs to be scaled to view coordinates.
-    // Without zoom-for-DSF the values are already in view coordinates.
-    last_scroll_offset_.Scale(1.0f / current_device_scale_factor_);
-  }
-
   delegated_frame_host_->SubmitCompositorFrame(
       local_surface_id, std::move(frame), std::move(hit_test_region_list));
-  if (frame.metadata.selection.start != selection_start_ ||
-      frame.metadata.selection.end != selection_end_) {
-    selection_start_ = frame.metadata.selection.start;
-    selection_end_ = frame.metadata.selection.end;
-    selection_controller_client_->UpdateClientSelectionBounds(selection_start_,
-                                                              selection_end_);
-  }
 }
 
 void RenderWidgetHostViewAura::OnDidNotProduceFrame(
@@ -1793,10 +1781,18 @@ void RenderWidgetHostViewAura::OnHostMovedInPixels(
 // RenderWidgetHostViewAura, RenderFrameMetadataProvider::Observer
 // implementation:
 void RenderWidgetHostViewAura::OnRenderFrameMetadataChanged() {
-  UpdateBackgroundColorFromRenderer(host()
-                                        ->render_frame_metadata_provider()
-                                        ->LastRenderFrameMetadata()
-                                        .root_background_color);
+  RenderWidgetHostViewBase::OnRenderFrameMetadataChanged();
+  const cc::RenderFrameMetadata& metadata =
+      host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
+  UpdateBackgroundColorFromRenderer(metadata.root_background_color);
+
+  if (metadata.selection.start != selection_start_ ||
+      metadata.selection.end != selection_end_) {
+    selection_start_ = metadata.selection.start;
+    selection_end_ = metadata.selection.end;
+    selection_controller_client_->UpdateClientSelectionBounds(selection_start_,
+                                                              selection_end_);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2088,16 +2084,6 @@ void RenderWidgetHostViewAura::SnapToPhysicalPixelBoundary() {
     ui::SnapLayerToPhysicalPixelBoundary(snapped->layer(), window_->layer());
 
   has_snapped_to_boundary_ = true;
-}
-
-bool RenderWidgetHostViewAura::OnShowContextMenu(
-    const ContextMenuParams& params) {
-#if defined(OS_WIN)
-  event_handler_->SetContextMenuParams(params);
-  return params.source_type != ui::MENU_SOURCE_LONG_PRESS;
-#else
-  return true;
-#endif  // defined(OS_WIN)
 }
 
 void RenderWidgetHostViewAura::SetSelectionControllerClientForTest(

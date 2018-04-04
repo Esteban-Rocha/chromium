@@ -9,7 +9,6 @@ import("//third_party/WebKit/Source/bindings/modules/v8/v8.gni")
 
 bindings_core_v8_files =
     get_path_info([
-                    "core/v8/custom/V8CSSStyleDeclarationCustom.cpp",
                     "core/v8/custom/V8CustomXPathNSResolver.cpp",
                     "core/v8/custom/V8CustomXPathNSResolver.h",
                     "core/v8/custom/V8DevToolsHostCustom.cpp",
@@ -43,6 +42,8 @@ bindings_core_v8_files =
                     "core/v8/ExceptionState.h",
                     "core/v8/GeneratedCodeHelper.cpp",
                     "core/v8/GeneratedCodeHelper.h",
+                    "core/v8/InitializeV8ExtrasBinding.cpp",
+                    "core/v8/InitializeV8ExtrasBinding.h",
                     "core/v8/IDLDictionaryBase.cpp",
                     "core/v8/IDLDictionaryBase.h",
                     "core/v8/IDLTypes.h",
@@ -189,6 +190,7 @@ bindings_unittest_files =
           "core/v8/BindingSecurityTest.cpp",
           "core/v8/DictionaryTest.cpp",
           "core/v8/DOMWrapperWorldTest.cpp",
+          "core/v8/InitializeV8ExtrasBindingTest.cpp",
           "core/v8/IDLTypesTest.cpp",
           "core/v8/NativeValueTraitsImplTest.cpp",
           "core/v8/NativeValueTraitsTest.cpp",
@@ -209,6 +211,8 @@ bindings_unittest_files =
           "core/v8/serialization/SerializedScriptValueTest.cpp",
           "core/v8/serialization/SerializedScriptValueThreadedTest.cpp",
           "core/v8/serialization/V8ScriptValueSerializerTest.cpp",
+          "core/v8/V8ExtrasTestUtils.cpp",
+          "core/v8/V8ExtrasTestUtils.h",
         ],
         "abspath")
 bindings_unittest_files += bindings_modules_v8_unittest_files

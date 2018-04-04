@@ -37,13 +37,13 @@
 #include <limits>
 #include <memory>
 
+#include "base/atomicops.h"
 #include "base/location.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "build/build_config.h"
 #include "platform/Histogram.h"
 #include "platform/bindings/RuntimeCallStats.h"
 #include "platform/heap/BlinkGCMemoryDumpProvider.h"
-#include "platform/heap/CallbackStack.h"
 #include "platform/heap/Handle.h"
 #include "platform/heap/Heap.h"
 #include "platform/heap/HeapCompact.h"
@@ -83,6 +83,10 @@ WTF::ThreadSpecific<ThreadState*>* ThreadState::thread_specific_ = nullptr;
 uint8_t ThreadState::main_thread_state_storage_[sizeof(ThreadState)];
 
 const size_t kDefaultAllocatedObjectSizeThreshold = 100 * 1024;
+
+// Duration of one incremental marking step. Should be short enough that it
+// doesn't cause jank even though it is scheduled as a normal task.
+const double kIncrementalMarkingStepDurationInSeconds = 0.001;
 
 namespace {
 
@@ -419,7 +423,7 @@ bool ThreadState::ShouldScheduleIncrementalMarking() const {
 #if BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
   // TODO(mlippautz): For now immediately schedule incremental marking if
   // the runtime flag is provided, basically exercising a stress test.
-  return (GcState() == kNoGCScheduled || GcState() == kSweeping) &&
+  return GcState() == kNoGCScheduled &&
          RuntimeEnabledFeatures::HeapIncrementalMarkingEnabled();
 #else
   return false;
@@ -686,18 +690,19 @@ void ThreadState::ScheduleIncrementalMarkingFinalize() {
 }
 
 void ThreadState::ScheduleIdleGC() {
-  if (IsSweepingInProgress()) {
-    SetGCState(kSweepingAndIdleGCScheduled);
+  SetGCState(kIdleGCScheduled);
+  if (IsSweepingInProgress())
+    return;
+  // Some threads (e.g. PPAPI thread) don't have a scheduler.
+  // Also some tests can call Platform::SetCurrentPlatformForTesting() at any
+  // time, so we need to check for the scheduler here instead of
+  // ScheduleIdleGC().
+  if (!Platform::Current()->CurrentThread()->Scheduler()) {
+    SetGCState(kNoGCScheduled);
     return;
   }
-
-  // Some threads (e.g. PPAPI thread) don't have a scheduler.
-  if (!Platform::Current()->CurrentThread()->Scheduler())
-    return;
-
   Platform::Current()->CurrentThread()->Scheduler()->PostNonNestableIdleTask(
       FROM_HERE, WTF::Bind(&ThreadState::PerformIdleGC, WTF::Unretained(this)));
-  SetGCState(kIdleGCScheduled);
 }
 
 void ThreadState::ScheduleIdleLazySweep() {
@@ -712,11 +717,6 @@ void ThreadState::ScheduleIdleLazySweep() {
 
 void ThreadState::SchedulePreciseGC() {
   DCHECK(CheckThread());
-  if (IsSweepingInProgress()) {
-    SetGCState(kSweepingAndPreciseGCScheduled);
-    return;
-  }
-
   SetGCState(kPreciseGCScheduled);
 }
 
@@ -733,10 +733,6 @@ void UnexpectedGCState(ThreadState::GCState gc_state) {
     UNEXPECTED_GCSTATE(kIdleGCScheduled);
     UNEXPECTED_GCSTATE(kPreciseGCScheduled);
     UNEXPECTED_GCSTATE(kFullGCScheduled);
-    UNEXPECTED_GCSTATE(kGCRunning);
-    UNEXPECTED_GCSTATE(kSweeping);
-    UNEXPECTED_GCSTATE(kSweepingAndIdleGCScheduled);
-    UNEXPECTED_GCSTATE(kSweepingAndPreciseGCScheduled);
     UNEXPECTED_GCSTATE(kIncrementalMarkingStartScheduled);
     UNEXPECTED_GCSTATE(kIncrementalMarkingStepScheduled);
     UNEXPECTED_GCSTATE(kIncrementalMarkingFinalizeScheduled);
@@ -757,13 +753,16 @@ void ThreadState::SetGCState(GCState gc_state) {
     case kNoGCScheduled:
       DCHECK(CheckThread());
       VERIFY_STATE_TRANSITION(
-          gc_state_ == kSweeping || gc_state_ == kSweepingAndIdleGCScheduled ||
+          gc_state_ == kNoGCScheduled || gc_state_ == kIdleGCScheduled ||
+          gc_state_ == kPreciseGCScheduled || gc_state_ == kFullGCScheduled ||
+          gc_state_ == kPageNavigationGCScheduled ||
+          gc_state_ == kIncrementalMarkingStartScheduled ||
+          gc_state_ == kIncrementalMarkingStepScheduled ||
           gc_state_ == kIncrementalMarkingFinalizeScheduled);
       break;
     case kIncrementalMarkingStartScheduled:
       DCHECK(CheckThread());
-      VERIFY_STATE_TRANSITION((gc_state_ == kSweeping) ||
-                              (gc_state_ == kNoGCScheduled));
+      VERIFY_STATE_TRANSITION(gc_state_ == kNoGCScheduled);
       break;
     case kIncrementalMarkingStepScheduled:
       DCHECK(CheckThread());
@@ -774,34 +773,22 @@ void ThreadState::SetGCState(GCState gc_state) {
       DCHECK(CheckThread());
       VERIFY_STATE_TRANSITION(gc_state_ == kIncrementalMarkingStepScheduled);
       break;
-    case kIdleGCScheduled:
-    case kPreciseGCScheduled:
     case kFullGCScheduled:
     case kPageNavigationGCScheduled:
+      // These GCs should not be scheduled while sweeping is in progress.
+      DCHECK(!IsSweepingInProgress());
+      FALLTHROUGH;
+    case kIdleGCScheduled:
+    case kPreciseGCScheduled:
       DCHECK(CheckThread());
       VERIFY_STATE_TRANSITION(
           gc_state_ == kNoGCScheduled || gc_state_ == kIdleGCScheduled ||
+          gc_state_ == kIncrementalMarkingStartScheduled ||
+          gc_state_ == kIncrementalMarkingStepScheduled ||
+          gc_state_ == kIncrementalMarkingFinalizeScheduled ||
           gc_state_ == kPreciseGCScheduled || gc_state_ == kFullGCScheduled ||
-          gc_state_ == kPageNavigationGCScheduled || gc_state_ == kSweeping ||
-          gc_state_ == kSweepingAndIdleGCScheduled ||
-          gc_state_ == kSweepingAndPreciseGCScheduled);
+          gc_state_ == kPageNavigationGCScheduled);
       CompleteSweep();
-      break;
-    case kGCRunning:
-      DCHECK(!IsInGC());
-      VERIFY_STATE_TRANSITION(gc_state_ != kGCRunning);
-      break;
-    case kSweeping:
-      DCHECK(IsInGC());
-      DCHECK(CheckThread());
-      VERIFY_STATE_TRANSITION(gc_state_ == kGCRunning);
-      break;
-    case kSweepingAndIdleGCScheduled:
-    case kSweepingAndPreciseGCScheduled:
-      DCHECK(CheckThread());
-      VERIFY_STATE_TRANSITION(gc_state_ == kSweeping ||
-                              gc_state_ == kSweepingAndIdleGCScheduled ||
-                              gc_state_ == kSweepingAndPreciseGCScheduled);
       break;
     default:
       NOTREACHED();
@@ -870,7 +857,7 @@ void ThreadState::RunScheduledGC(BlinkGC::StackState stack_state) {
 
 void ThreadState::PreSweep(BlinkGC::MarkingType marking_type,
                            BlinkGC::SweepingType sweeping_type) {
-  DCHECK(IsInGC());
+  DCHECK(InAtomicMarkingPause());
   DCHECK(CheckThread());
   Heap().PrepareForSweep();
 
@@ -893,9 +880,8 @@ void ThreadState::PreSweep(BlinkGC::MarkingType marking_type,
     return;
   }
 
-  // We have to set the GCState to Sweeping before calling pre-finalizers
+  // We have to set the GCPhase to Sweeping before calling pre-finalizers
   // to disallow a GC during the pre-finalizers.
-  SetGCState(kSweeping);
   SetGCPhase(GCPhase::kSweeping);
 
   // Allocation is allowed during the pre-finalizers and destructors.
@@ -1041,20 +1027,8 @@ void ThreadState::PostSweep() {
   }
 
   SetGCPhase(GCPhase::kNone);
-  switch (GcState()) {
-    case kSweeping:
-      SetGCState(kNoGCScheduled);
-      break;
-    case kSweepingAndPreciseGCScheduled:
-      SetGCState(kPreciseGCScheduled);
-      break;
-    case kSweepingAndIdleGCScheduled:
-      SetGCState(kNoGCScheduled);
-      ScheduleIdleGC();
-      break;
-    default:
-      NOTREACHED();
-  }
+  if (GcState() == kIdleGCScheduled)
+    ScheduleIdleGC();
 
   gc_age_++;
 
@@ -1260,27 +1234,69 @@ void ThreadState::InvokePreFinalizers() {
   }
 }
 
+// static
+base::subtle::AtomicWord ThreadState::incremental_marking_counter_ = 0;
+
+void ThreadState::EnableIncrementalMarkingBarrier() {
+  CHECK(!IsIncrementalMarking());
+  base::subtle::Barrier_AtomicIncrement(&incremental_marking_counter_, 1);
+  SetIncrementalMarking(true);
+}
+
+void ThreadState::DisableIncrementalMarkingBarrier() {
+  CHECK(IsIncrementalMarking());
+  base::subtle::Barrier_AtomicIncrement(&incremental_marking_counter_, -1);
+  SetIncrementalMarking(false);
+}
+
 void ThreadState::IncrementalMarkingStart() {
   VLOG(2) << "[state:" << this << "] "
           << "IncrementalMarking: Start";
+  CompleteSweep();
   AtomicPauseScope atomic_pause_scope(this);
-  Heap().EnableIncrementalMarkingBarrier();
+  RecursiveMutexLocker persistent_lock(
+      ProcessHeap::CrossThreadPersistentMutex());
+  MarkPhasePrologue(BlinkGC::kNoHeapPointersOnStack,
+                    BlinkGC::kIncrementalMarking, BlinkGC::kIdleGC);
+  MarkPhaseVisitRoots();
+  EnableIncrementalMarkingBarrier();
   ScheduleIncrementalMarkingStep();
+  DCHECK(IsMarkingInProgress());
 }
 
 void ThreadState::IncrementalMarkingStep() {
   VLOG(2) << "[state:" << this << "] "
           << "IncrementalMarking: Step";
   AtomicPauseScope atomic_pause_scope(this);
-  ScheduleIncrementalMarkingFinalize();
+  DCHECK(IsMarkingInProgress());
+  RecursiveMutexLocker persistent_lock(
+      ProcessHeap::CrossThreadPersistentMutex());
+  bool complete = MarkPhaseAdvanceMarking(
+      CurrentTimeTicksInSeconds() + kIncrementalMarkingStepDurationInSeconds);
+  if (complete)
+    ScheduleIncrementalMarkingFinalize();
+  else
+    ScheduleIncrementalMarkingStep();
+  DCHECK(IsMarkingInProgress());
 }
 
 void ThreadState::IncrementalMarkingFinalize() {
   VLOG(2) << "[state:" << this << "] "
           << "IncrementalMarking: Finalize";
-  AtomicPauseScope atomic_pause_scope(this);
-  Heap().DisableIncrementalMarkingBarrier();
   SetGCState(kNoGCScheduled);
+  DisableIncrementalMarkingBarrier();
+  AtomicPauseScope atomic_pause_scope(this);
+  DCHECK(IsMarkingInProgress());
+  RecursiveMutexLocker persistent_lock(
+      ProcessHeap::CrossThreadPersistentMutex());
+  MarkPhaseVisitRoots();
+  bool complete =
+      MarkPhaseAdvanceMarking(std::numeric_limits<double>::infinity());
+  CHECK(complete);
+  MarkPhaseEpilogue(current_gc_data_.marking_type);
+  PreSweep(current_gc_data_.marking_type, BlinkGC::kLazySweeping);
+  DCHECK(IsSweepingInProgress());
+  DCHECK_EQ(GcState(), kNoGCScheduled);
 }
 
 void ThreadState::CollectGarbage(BlinkGC::StackState stack_state,
@@ -1297,10 +1313,19 @@ void ThreadState::CollectGarbage(BlinkGC::StackState stack_state,
   double start_total_collect_garbage_time =
       WTF::CurrentTimeTicksInMilliseconds();
 
+  if (IsMarkingInProgress()) {
+    // Set stack state in case we are starting a Conservative GC while
+    // incremental marking is in progress.
+    current_gc_data_.stack_state = stack_state;
+    IncrementalMarkingFinalize();
+  }
+
   CompleteSweep();
 
   RUNTIME_CALL_TIMER_SCOPE_IF_ISOLATE_EXISTS(
       GetIsolate(), RuntimeCallStats::CounterId::kCollectGarbage);
+
+  SetGCState(kNoGCScheduled);
 
   {
     AtomicPauseScope atomic_pause_scope(this);
@@ -1385,8 +1410,7 @@ void ThreadState::MarkPhasePrologue(BlinkGC::StackState stack_state,
   if (isolate_ && perform_cleanup_)
     perform_cleanup_(isolate_);
 
-  DCHECK(!IsInGC());
-  SetGCState(kGCRunning);
+  DCHECK(InAtomicMarkingPause());
   Heap().MakeConsistentForGC();
   Heap().FlushHeapDoesNotContainCacheIfNeeded();
   Heap().ClearArenaAges();
@@ -1404,9 +1428,6 @@ void ThreadState::MarkPhaseVisitRoots() {
   // StackFrameDepth should be disabled so we don't trace most of the object
   // graph in one incremental marking step.
   DCHECK(!Heap().GetStackFrameDepth().IsEnabled());
-  // Incremental marking is not supported for conservative GC.
-  if (current_gc_data_.stack_state == BlinkGC::kHeapPointersOnStack)
-    DCHECK_EQ(current_gc_data_.marking_type, BlinkGC::kAtomicMarking);
 
   // 1. Trace persistent roots.
   Heap().VisitPersistentRoots(current_gc_data_.visitor.get());
@@ -1445,6 +1466,8 @@ void ThreadState::MarkPhaseEpilogue(BlinkGC::MarkingType marking_type) {
   Heap().PostMarkingProcessing(visitor);
   Heap().WeakProcessing(visitor);
   Heap().DecommitCallbackStacks();
+
+  current_gc_data_.visitor.reset();
 
 #if BUILDFLAG(BLINK_HEAP_VERIFICATION)
   VerifyMarking(marking_type);

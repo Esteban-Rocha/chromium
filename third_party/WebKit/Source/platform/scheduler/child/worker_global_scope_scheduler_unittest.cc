@@ -9,13 +9,13 @@
 #include "base/memory/ptr_util.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/test/test_simple_task_runner.h"
-#include "platform/scheduler/child/worker_scheduler_impl.h"
 #include "platform/scheduler/test/task_queue_manager_for_test.h"
+#include "platform/scheduler/worker/worker_thread_scheduler.h"
 #include "platform/wtf/Functional.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::ElementsAreArray;
+using testing::ElementsAreArray;
 
 namespace blink {
 namespace scheduler {
@@ -27,7 +27,7 @@ void AppendToVectorTestTask(std::vector<std::string>* vector,
   vector->push_back(value);
 }
 
-class WorkerGlobalScopeSchedulerTest : public ::testing::Test {
+class WorkerGlobalScopeSchedulerTest : public testing::Test {
  public:
   WorkerGlobalScopeSchedulerTest()
       : mock_task_runner_(new base::TestSimpleTaskRunner()),
@@ -76,7 +76,7 @@ TEST_F(WorkerGlobalScopeSchedulerTest, TestPostTasks) {
   RunUntilIdle();
   PostTestTask(&run_order, "T3");
   RunUntilIdle();
-  EXPECT_THAT(run_order, ::testing::ElementsAre("T1", "T2", "T3"));
+  EXPECT_THAT(run_order, testing::ElementsAre("T1", "T2", "T3"));
 
   // Tasks should not run after the scheduler is disposed of.
   global_scope_scheduler_->Dispose();

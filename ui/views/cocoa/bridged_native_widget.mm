@@ -126,8 +126,7 @@ using NSViewComparatorValue = id;
 using NSViewComparatorValue = __kindof NSView*;
 #endif
 
-const CGFloat kMavericksMenuOpacity = 251.0 / 255.0;
-const CGFloat kYosemiteMenuOpacity = 177.0 / 255.0;
+const CGFloat kYosemiteMenuOpacity = 245.0 / 255.0;
 const int kYosemiteMenuBlur = 80;
 
 // Margin at edge and corners of the window that trigger resizing. These match
@@ -399,8 +398,7 @@ BridgedNativeWidget::BridgedNativeWidget(NativeWidgetMac* parent)
       target_fullscreen_state_(false),
       in_fullscreen_transition_(false),
       window_visible_(false),
-      wants_to_be_visible_(false),
-      mouse_down_monitor_(nullptr) {
+      wants_to_be_visible_(false) {
   if (BridgedNativeWidget::ShouldUseDragEventMonitor())
     SetupDragEventMonitor();
 
@@ -447,17 +445,6 @@ void BridgedNativeWidget::Init(base::scoped_nsobject<NSWindow> window,
          selector:@selector(onSystemControlTintChanged:)
              name:NSControlTintDidChangeNotification
            object:nil];
-
-  // Right-clicks outside a bubble should dismiss them, but that doesn't cause
-  // loss of focus on Mac, so add an event monitor to detect.
-  if (params.type == Widget::InitParams::TYPE_BUBBLE) {
-    mouse_down_monitor_ = [NSEvent
-        addLocalMonitorForEventsMatchingMask:NSRightMouseDownMask
-        handler:^NSEvent* (NSEvent* event) {
-          OnRightMouseDownWithBubble(event);
-          return event;
-        }];
-  }
 
   // Validate the window's initial state, otherwise the bridge's initial
   // tracking state will be incorrect.
@@ -798,10 +785,6 @@ void BridgedNativeWidget::OnWindowWillClose() {
     parent_ = nullptr;
   }
   [[NSNotificationCenter defaultCenter] removeObserver:window_delegate_];
-  if (mouse_down_monitor_) {
-    [NSEvent removeMonitor:mouse_down_monitor_];
-    mouse_down_monitor_ = nullptr;
-  }
 
   [show_animation_ stopAnimation];  // If set, calls OnShowAnimationComplete().
   DCHECK(!show_animation_);
@@ -976,7 +959,8 @@ void BridgedNativeWidget::OnBackingPropertiesChanged() {
 
 void BridgedNativeWidget::OnWindowKeyStatusChangedTo(bool is_key) {
   Widget* widget = native_widget_mac()->GetWidget();
-  widget->OnNativeWidgetActivationChanged(is_key);
+  if (!widget->OnNativeWidgetActivationChanged(is_key))
+    return;
   // The contentView is the BridgedContentView hosting the views::RootView. The
   // focus manager will already know if a native subview has focus.
   if ([window_ contentView] == [window_ firstResponder]) {
@@ -1474,17 +1458,13 @@ void BridgedNativeWidget::AddCompositorSuperview() {
   if (widget_type_ == Widget::InitParams::TYPE_MENU) {
     // Giving the canvas opacity messes up subpixel font rendering, so use a
     // solid background, but make the CALayer transparent.
-    if (base::mac::IsAtLeastOS10_10()) {
-      [background_layer setOpacity:kYosemiteMenuOpacity];
-      CGSSetWindowBackgroundBlurRadius(
-          _CGSDefaultConnection(), [window_ windowNumber], kYosemiteMenuBlur);
-      // The blur effect does not occur with a fully transparent (or fully
-      // layer-backed) window. Setting a window background will use square
-      // corners, so ask the contentView to draw one instead.
-      [bridged_view_ setDrawMenuBackgroundForBlur:YES];
-    } else {
-      [background_layer setOpacity:kMavericksMenuOpacity];
-    }
+    [background_layer setOpacity:kYosemiteMenuOpacity];
+    CGSSetWindowBackgroundBlurRadius(_CGSDefaultConnection(),
+                                     [window_ windowNumber], kYosemiteMenuBlur);
+    // The blur effect does not occur with a fully transparent (or fully
+    // layer-backed) window. Setting a window background will use square
+    // corners, so ask the contentView to draw one instead.
+    [bridged_view_ setDrawMenuBackgroundForBlur:YES];
   }
 
   // Set the layer first to create a layer-hosting view (not layer-backed).
@@ -1581,28 +1561,6 @@ void BridgedNativeWidget::SetDraggable(bool draggable) {
   // Calling the below seems to be an effective solution.
   [window_ setMovableByWindowBackground:NO];
   [window_ setMovableByWindowBackground:YES];
-}
-
-void BridgedNativeWidget::OnRightMouseDownWithBubble(NSEvent* event) {
-  NSWindow* target = [event window];
-  if ([target isSheet])
-    return;
-
-  // Do not close the bubble if the event happened on a window with a higher
-  // level.  For example, the content of a browser action bubble opens a
-  // calendar picker window with NSPopUpMenuWindowLevel, and a date selection
-  // closes the picker window, but it should not close the bubble.
-  if ([target level] > [window_ level])
-    return;
-
-  // If the event is in |window_|'s hierarchy, do not close the bubble.
-  while (target) {
-    if (target == window_.get())
-      return;
-    target = [target parentWindow];
-  }
-
-  OnWindowKeyStatusChangedTo(false);
 }
 
 }  // namespace views

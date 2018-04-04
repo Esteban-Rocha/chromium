@@ -89,8 +89,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/histogram_fetcher.h"
 #include "content/public/browser/notification_service.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/metrics/android_metrics_provider.h"
@@ -164,6 +164,13 @@ const int kMaxHistogramGatheringWaitDuration = 60000;  // 60 seconds.
 // third_party/crashpad/crashpad/handler/handler_main.cc.
 const char kCrashpadHistogramAllocatorName[] = "CrashpadMetrics";
 
+#if defined(OS_WIN)
+// Must be kept in sync with the allocator name in
+// notification_helper/notification_helper.cc.
+constexpr char kNotificationHelperHistogramAllocatorName[] =
+    "NotificationHelperMetrics";
+#endif
+
 #if defined(OS_WIN) || defined(OS_MACOSX)
 // The stream type assigned to the minidump stream that holds the serialized
 // system profile proto.
@@ -187,6 +194,9 @@ void RegisterFileMetricsPreferences(PrefRegistrySimple* registry) {
 #if defined(OS_WIN)
   metrics::FileMetricsProvider::RegisterPrefs(
       registry, installer::kSetupHistogramAllocatorName);
+
+  metrics::FileMetricsProvider::RegisterPrefs(
+      registry, kNotificationHelperHistogramAllocatorName);
 #endif
 }
 
@@ -285,6 +295,34 @@ std::unique_ptr<metrics::FileMetricsProvider> CreateFileMetricsProvider(
       metrics::FileMetricsProvider::SOURCE_HISTOGRAMS_ATOMIC_DIR,
       metrics::FileMetricsProvider::ASSOCIATE_CURRENT_RUN,
       installer::kSetupHistogramAllocatorName));
+
+  // When metrics reporting is enabled, register the notification_helper metrics
+  // files; otherwise delete any existing files in order to preserve user
+  // privacy.
+  // TODO(chengx): Investigate if there is a need to update
+  // RegisterOrRemovePreviousRunMetricsFile and apply it here to remove
+  // potential duplicate code.
+  if (!user_data_dir.empty()) {
+    base::FilePath notification_helper_metrics_upload_dir =
+        user_data_dir.AppendASCII(kNotificationHelperHistogramAllocatorName);
+
+    if (metrics_reporting_enabled) {
+      file_metrics_provider->RegisterSource(
+          metrics::FileMetricsProvider::Params(
+              notification_helper_metrics_upload_dir,
+              metrics::FileMetricsProvider::SOURCE_HISTOGRAMS_ATOMIC_DIR,
+              metrics::FileMetricsProvider::ASSOCIATE_CURRENT_RUN,
+              kNotificationHelperHistogramAllocatorName));
+    } else {
+      base::PostTaskWithTraits(
+          FROM_HERE,
+          {base::MayBlock(), base::TaskPriority::BACKGROUND,
+           base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
+          base::BindOnce(base::IgnoreResult(&base::DeleteFile),
+                         std::move(notification_helper_metrics_upload_dir),
+                         /*recursive=*/true));
+    }
+  }
 #endif
 
   return file_metrics_provider;
@@ -590,7 +628,7 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
       std::make_unique<metrics::ScreenInfoMetricsProvider>());
 
   metrics_service_->RegisterMetricsProvider(CreateFileMetricsProvider(
-      ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled()));
+      metrics_state_manager_->IsMetricsReportingEnabled()));
 
   metrics_service_->RegisterMetricsProvider(
       std::make_unique<metrics::DriveMetricsProvider>(

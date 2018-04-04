@@ -25,16 +25,19 @@
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
+#include "components/ukm/content/source_url_recorder.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/console_message_level.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 #include "url/gurl.h"
 
 #if defined(OS_ANDROID)
@@ -89,7 +92,6 @@ void OnListItemClicked(bool off_the_record,
 #endif
 
 void LogTabUnderAttempt(content::NavigationHandle* handle,
-                        base::Optional<ukm::SourceId> opener_source_id,
                         bool off_the_record) {
   LogAction(TabUnderNavigationThrottle::Action::kDidTabUnder, off_the_record);
 
@@ -97,8 +99,10 @@ void LogTabUnderAttempt(content::NavigationHandle* handle,
   // where the popup opener tab helper is not observing at the time the
   // previous navigation commit.
   ukm::UkmRecorder* ukm_recorder = ukm::UkmRecorder::Get();
-  if (opener_source_id && ukm_recorder) {
-    ukm::builders::AbusiveExperienceHeuristic(opener_source_id.value())
+  ukm::SourceId opener_source_id =
+      ukm::GetSourceIdForWebContentsDocument(handle->GetWebContents());
+  if (opener_source_id != ukm::kInvalidSourceId && ukm_recorder) {
+    ukm::builders::AbusiveExperienceHeuristic(opener_source_id)
         .SetDidTabUnder(true)
         .Record(ukm_recorder);
   }
@@ -140,13 +144,15 @@ TabUnderNavigationThrottle::TabUnderNavigationThrottle(
                  handle->GetWebContents()->GetBrowserContext())
                  ->GetBoolean(prefs::kTabUnderProtection)),
       has_opened_popup_since_last_user_gesture_at_start_(
-          HasOpenedPopupSinceLastUserGesture()) {}
+          HasOpenedPopupSinceLastUserGesture()),
+      started_in_foreground_(handle->GetWebContents()->GetVisibility() ==
+                             content::Visibility::VISIBLE) {}
 
 bool TabUnderNavigationThrottle::IsSuspiciousClientRedirect() const {
   // Some browser initiated navigations have HasUserGesture set to false. This
   // should eventually be fixed in crbug.com/617904. In the meantime, just dont
   // block browser initiated ones.
-  if (!navigation_handle()->IsInMainFrame() ||
+  if (started_in_foreground_ || !navigation_handle()->IsInMainFrame() ||
       navigation_handle()->HasUserGesture() ||
       !navigation_handle()->IsRendererInitiated()) {
     return false;
@@ -199,8 +205,7 @@ TabUnderNavigationThrottle::MaybeBlockNavigation() {
   DCHECK(popup_opener);
   popup_opener->OnDidTabUnder();
 
-  LogTabUnderAttempt(navigation_handle(),
-                     popup_opener->last_committed_source_id(), off_the_record_);
+  LogTabUnderAttempt(navigation_handle(), off_the_record_);
 
   if (block_) {
     const std::string error =

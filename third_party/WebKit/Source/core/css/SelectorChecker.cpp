@@ -789,13 +789,8 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
           }
         }
       }
-      if (mode_ == kResolvingStyle) {
+      if (mode_ == kResolvingStyle)
         element.SetStyleAffectedByEmpty();
-        if (context.in_rightmost_compound)
-          element_style_->SetEmptyState(result);
-        else if (element.GetComputedStyle())
-          element.MutableComputedStyle()->SetEmptyState(result);
-      }
       return result;
     }
     case CSSSelector::kPseudoFirstChild:
@@ -863,8 +858,8 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
              IsLastOfType(element, element.TagQName());
     }
     case CSSSelector::kPseudoPlaceholderShown:
-      if (IsTextControlElement(element))
-        return ToTextControlElement(element).IsPlaceholderVisible();
+      if (auto* text_control = ToTextControlOrNull(element))
+        return text_control->IsPlaceholderVisible();
       break;
     case CSSSelector::kPseudoNthChild:
       if (mode_ == kResolvingStyle) {

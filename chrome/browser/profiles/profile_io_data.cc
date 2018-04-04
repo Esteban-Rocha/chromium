@@ -173,21 +173,26 @@
 #include "net/reporting/reporting_service.h"
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
+#if (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
+#include "chrome/browser/net/trial_comparison_cert_verifier.h"
+#include "net/cert/cert_verify_proc_builtin.h"
+#endif
+
 using content::BrowserContext;
 using content::BrowserThread;
 using content::ResourceContext;
 
 namespace {
 
-net::CertVerifier* g_cert_verifier_for_testing = nullptr;
+net::CertVerifier* g_cert_verifier_for_profile_io_data_testing = nullptr;
 
-// A CertVerifier that forwards all requests to |g_cert_verifier_for_testing|.
-// This is used to allow Profiles to have their own
-// std::unique_ptr<net::CertVerifier> while forwarding calls to the shared
-// verifier.
-class WrappedTestingCertVerifier : public net::CertVerifier {
+// A CertVerifier that forwards all requests to
+// |g_cert_verifier_for_profile_io_data_testing|. This is used to allow Profiles
+// to have their own std::unique_ptr<net::CertVerifier> while forwarding calls
+// to the shared verifier.
+class WrappedCertVerifierForProfileIODataTesting : public net::CertVerifier {
  public:
-  ~WrappedTestingCertVerifier() override = default;
+  ~WrappedCertVerifierForProfileIODataTesting() override = default;
 
   // CertVerifier implementation
   int Verify(const RequestParams& params,
@@ -197,15 +202,15 @@ class WrappedTestingCertVerifier : public net::CertVerifier {
              std::unique_ptr<Request>* out_req,
              const net::NetLogWithSource& net_log) override {
     verify_result->Reset();
-    if (!g_cert_verifier_for_testing)
+    if (!g_cert_verifier_for_profile_io_data_testing)
       return net::ERR_FAILED;
-    return g_cert_verifier_for_testing->Verify(params, crl_set, verify_result,
-                                               callback, out_req, net_log);
+    return g_cert_verifier_for_profile_io_data_testing->Verify(
+        params, crl_set, verify_result, callback, out_req, net_log);
   }
   bool SupportsOCSPStapling() override {
-    if (!g_cert_verifier_for_testing)
+    if (!g_cert_verifier_for_profile_io_data_testing)
       return false;
-    return g_cert_verifier_for_testing->SupportsOCSPStapling();
+    return g_cert_verifier_for_profile_io_data_testing->SupportsOCSPStapling();
   }
 };
 
@@ -536,7 +541,7 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
   network_prediction_options_.MoveToThread(io_task_runner);
 
 #if defined(OS_CHROMEOS)
-  if (!g_cert_verifier_for_testing) {
+  if (!g_cert_verifier_for_profile_io_data_testing) {
     profile_params_->policy_cert_verifier =
         policy::PolicyCertServiceFactory::CreateForProfile(profile);
   }
@@ -666,7 +671,7 @@ ProfileIOData::ProfileIOData(Profile::ProfileType profile_type)
 }
 
 ProfileIOData::~ProfileIOData() {
-  if (BrowserThread::IsMessageLoopValid(BrowserThread::IO))
+  if (BrowserThread::IsThreadInitialized(BrowserThread::IO))
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Pull the contents of the request context maps onto the stack for sanity
@@ -846,7 +851,7 @@ void ProfileIOData::AddProtocolHandlersToBuilder(
 // static
 void ProfileIOData::SetCertVerifierForTesting(
     net::CertVerifier* cert_verifier) {
-  g_cert_verifier_for_testing = cert_verifier;
+  g_cert_verifier_for_profile_io_data_testing = cert_verifier;
 }
 
 content::ResourceContext* ProfileIOData::GetResourceContext() const {
@@ -1138,8 +1143,9 @@ void ProfileIOData::Init(
   certificate_provider_ = std::move(profile_params_->certificate_provider);
 #endif
 
-  if (g_cert_verifier_for_testing) {
-    builder->SetCertVerifier(std::make_unique<WrappedTestingCertVerifier>());
+  if (g_cert_verifier_for_profile_io_data_testing) {
+    builder->SetCertVerifier(
+        std::make_unique<WrappedCertVerifierForProfileIODataTesting>());
   } else {
     std::unique_ptr<net::CertVerifier> cert_verifier;
 #if defined(OS_CHROMEOS)
@@ -1156,6 +1162,11 @@ void ProfileIOData::Init(
       cert_verifier = std::make_unique<net::CachingCertVerifier>(
           std::make_unique<net::MultiThreadedCertVerifier>(verify_proc.get()));
     }
+#elif defined(OS_LINUX) || defined(OS_MACOSX)
+    cert_verifier = std::make_unique<net::CachingCertVerifier>(
+        std::make_unique<TrialComparisonCertVerifier>(
+            profile_params_->profile, net::CertVerifyProc::CreateDefault(),
+            net::CreateCertVerifyProcBuiltin()));
 #else
     cert_verifier = std::make_unique<net::CachingCertVerifier>(
         std::make_unique<net::MultiThreadedCertVerifier>(
@@ -1441,7 +1452,7 @@ void ProfileIOData::ShutdownOnUIThread(
 #endif
 
   if (!context_getters->empty()) {
-    if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
+    if (BrowserThread::IsThreadInitialized(BrowserThread::IO)) {
       BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
           base::BindOnce(&NotifyContextGettersOfShutdownOnIO,

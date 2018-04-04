@@ -150,7 +150,8 @@ TrayBubbleView::InitParams::InitParams(const InitParams& other) = default;
 TrayBubbleView::RerouteEventHandler::RerouteEventHandler(
     TrayBubbleView* tray_bubble_view)
     : tray_bubble_view_(tray_bubble_view) {
-  aura::Env::GetInstance()->PrependPreTargetHandler(this);
+  aura::Env::GetInstance()->AddPreTargetHandler(
+      this, ui::EventTarget::Priority::kSystem);
 }
 
 TrayBubbleView::RerouteEventHandler::~RerouteEventHandler() {
@@ -311,6 +312,13 @@ void TrayBubbleView::ResetDelegate() {
 
 int TrayBubbleView::GetDialogButtons() const {
   return ui::DIALOG_BUTTON_NONE;
+}
+
+ax::mojom::Role TrayBubbleView::GetAccessibleWindowRole() const {
+  // We override the role because the base class sets it to alert dialog.
+  // This would make screen readers announce the whole of the system tray
+  // which is undesirable.
+  return ax::mojom::Role::kDialog;
 }
 
 void TrayBubbleView::SizeToContents() {

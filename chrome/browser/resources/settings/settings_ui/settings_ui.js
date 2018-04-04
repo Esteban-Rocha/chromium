@@ -59,7 +59,7 @@ Polymer({
     lastSearchQuery_: {
       type: String,
       value: '',
-    }
+    },
   },
 
   listeners: {

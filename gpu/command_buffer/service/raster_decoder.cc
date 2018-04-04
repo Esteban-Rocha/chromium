@@ -23,12 +23,15 @@
 #include "gpu/command_buffer/common/raster_cmd_format.h"
 #include "gpu/command_buffer/common/raster_cmd_ids.h"
 #include "gpu/command_buffer/common/sync_token.h"
+#include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/context_state.h"
 #include "gpu/command_buffer/service/decoder_client.h"
 #include "gpu/command_buffer/service/error_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
+#include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/query_manager.h"
@@ -185,6 +188,28 @@ ScopedTextureBinder::~ScopedTextureBinder() {
   state_->RestoreActiveTexture();
 }
 
+// Temporarily changes a decoder's PIXEL_UNPACK_BUFFER to 0 and set pixel unpack
+// params to default, and restore them when this object goes out of scope.
+class ScopedPixelUnpackState {
+ public:
+  explicit ScopedPixelUnpackState(ContextState* state);
+  ~ScopedPixelUnpackState();
+
+ private:
+  ContextState* state_;
+  DISALLOW_COPY_AND_ASSIGN(ScopedPixelUnpackState);
+};
+
+ScopedPixelUnpackState::ScopedPixelUnpackState(ContextState* state)
+    : state_(state) {
+  DCHECK(state_);
+  state_->PushTextureUnpackState();
+}
+
+ScopedPixelUnpackState::~ScopedPixelUnpackState() {
+  state_->RestoreUnpackState();
+}
+
 }  // namespace
 
 class RasterDecoderImpl : public RasterDecoder, public gles2::ErrorStateClient {
@@ -209,7 +234,13 @@ class RasterDecoderImpl : public RasterDecoder, public gles2::ErrorStateClient {
   void Destroy(bool have_context) override;
   bool MakeCurrent() override;
   gl::GLContext* GetGLContext() override;
+  const FeatureInfo* GetFeatureInfo() const override {
+    return feature_info_.get();
+  }
   Capabilities GetCapabilities() override;
+  void RestoreGlobalState() const override;
+  void ClearAllAttributes() const override;
+  void RestoreAllAttributes() const override;
   void RestoreState(const gles2::ContextState* prev_state) override;
   void RestoreActiveTexture() const override;
   void RestoreAllTextureUnitAndSamplerBindings(
@@ -260,6 +291,33 @@ class RasterDecoderImpl : public RasterDecoder, public gles2::ErrorStateClient {
                  bool can_bind_to_sampler) override;
   gles2::ContextGroup* GetContextGroup() override;
   gles2::ErrorState* GetErrorState() override;
+  bool IsCompressedTextureFormat(unsigned format) override;
+  bool ClearLevel(gles2::Texture* texture,
+                  unsigned target,
+                  int level,
+                  unsigned format,
+                  unsigned type,
+                  int xoffset,
+                  int yoffset,
+                  int width,
+                  int height) override;
+  bool ClearCompressedTextureLevel(gles2::Texture* texture,
+                                   unsigned target,
+                                   int level,
+                                   unsigned format,
+                                   int width,
+                                   int height) override;
+  bool ClearLevel3D(gles2::Texture* texture,
+                    unsigned target,
+                    int level,
+                    unsigned format,
+                    unsigned type,
+                    int width,
+                    int height,
+                    int depth) override {
+    NOTIMPLEMENTED();
+    return false;
+  }
 
   // ErrorClientState implementation.
   void OnContextLostError() override;
@@ -268,6 +326,7 @@ class RasterDecoderImpl : public RasterDecoder, public gles2::ErrorStateClient {
   Logger* GetLogger() override;
 
   void SetIgnoreCachedStateForTest(bool ignore) override;
+  ImageManager* GetImageManagerForTest() override;
 
  private:
   std::unordered_map<GLuint, TextureMetadata> texture_metadata_;
@@ -293,6 +352,8 @@ class RasterDecoderImpl : public RasterDecoder, public gles2::ErrorStateClient {
 
   MemoryTracker* memory_tracker() { return group_->memory_tracker(); }
 
+  BufferManager* buffer_manager() { return group_->buffer_manager(); }
+
   bool EnsureGPUMemoryAvailable(size_t estimated_size) {
     MemoryTracker* tracker = memory_tracker();
     if (tracker) {
@@ -306,6 +367,8 @@ class RasterDecoderImpl : public RasterDecoder, public gles2::ErrorStateClient {
   }
 
   TextureManager* texture_manager() { return group_->texture_manager(); }
+
+  ImageManager* image_manager() { return group_->image_manager(); }
 
   // Creates a Texture for the given texture.
   TextureRef* CreateTexture(GLuint client_id, GLuint service_id) {
@@ -371,13 +434,9 @@ class RasterDecoderImpl : public RasterDecoder, public gles2::ErrorStateClient {
   void DoFlush();
   void DoGetIntegerv(GLenum pname, GLint* params, GLsizei params_size);
   void DoTexParameteri(GLuint texture_id, GLenum pname, GLint param);
-  void DoBindTexImage2DCHROMIUM(GLuint texture_id, GLint image_id) {
-    NOTIMPLEMENTED();
-  }
+  void DoBindTexImage2DCHROMIUM(GLuint texture_id, GLint image_id);
   void DoProduceTextureDirect(GLuint texture, const volatile GLbyte* key);
-  void DoReleaseTexImage2DCHROMIUM(GLuint texture_id, GLint image_id) {
-    NOTIMPLEMENTED();
-  }
+  void DoReleaseTexImage2DCHROMIUM(GLuint texture_id, GLint image_id);
   void TexStorage2DImage(TextureRef* texture_ref,
                          const TextureMetadata& texture_metadata,
                          GLsizei width,
@@ -499,6 +558,11 @@ class RasterDecoderImpl : public RasterDecoder, public gles2::ErrorStateClient {
   // A table of CommandInfo for all the commands.
   static const CommandInfo command_info[kNumCommands - kFirstRasterCommand];
 
+  // Most recent generation of the TextureManager.  If this no longer matches
+  // the current generation when our context becomes current, then we'll rebind
+  // all the textures to stay up to date with Texture::service_id() changes.
+  uint32_t texture_manager_service_id_generation_;
+
   // Number of commands remaining to be processed in DoCommands().
   int commands_to_process_;
 
@@ -602,6 +666,7 @@ RasterDecoderImpl::RasterDecoderImpl(
     Outputter* outputter,
     ContextGroup* group)
     : RasterDecoder(command_buffer_service),
+      texture_manager_service_id_generation_(0),
       commands_to_process_(0),
       current_decoder_error_(error::kNoError),
       client_(client),
@@ -718,6 +783,11 @@ bool RasterDecoderImpl::MakeCurrent() {
     group_->LoseContexts(error::kUnknown);
     return false;
   }
+  DCHECK_EQ(api(), gl::g_current_gl_context);
+
+  // Rebind textures if the service ids may have changed.
+  RestoreAllExternalTextureBindingsIfNeeded();
+
   return true;
 }
 
@@ -739,30 +809,61 @@ Capabilities RasterDecoderImpl::GetCapabilities() {
   return caps;
 }
 
+void RasterDecoderImpl::RestoreGlobalState() const {
+  state_.RestoreGlobalState(nullptr);
+}
+
+void RasterDecoderImpl::ClearAllAttributes() const {
+  // Must use native VAO 0, as RestoreAllAttributes can't fully restore
+  // other VAOs.
+  if (feature_info_->feature_flags().native_vertex_array_object)
+    api()->glBindVertexArrayOESFn(0);
+
+  for (uint32_t i = 0; i < group_->max_vertex_attribs(); ++i) {
+    if (i != 0)  // Never disable attribute 0
+      state_.vertex_attrib_manager->SetDriverVertexAttribEnabled(i, false);
+    if (features().angle_instanced_arrays)
+      api()->glVertexAttribDivisorANGLEFn(i, 0);
+  }
+}
+
+void RasterDecoderImpl::RestoreAllAttributes() const {
+  state_.RestoreVertexAttribs();
+}
+
 void RasterDecoderImpl::RestoreState(const ContextState* prev_state) {
-  NOTIMPLEMENTED();
+  TRACE_EVENT1("gpu", "RasterDecoderImpl::RestoreState", "context",
+               logger_.GetLogPrefix());
+  state_.RestoreState(prev_state);
 }
 
 void RasterDecoderImpl::RestoreActiveTexture() const {
-  NOTIMPLEMENTED();
+  state_.RestoreActiveTexture();
 }
 
 void RasterDecoderImpl::RestoreAllTextureUnitAndSamplerBindings(
     const ContextState* prev_state) const {
-  NOTIMPLEMENTED();
+  state_.RestoreAllTextureUnitAndSamplerBindings(prev_state);
 }
 
 void RasterDecoderImpl::RestoreActiveTextureUnitBinding(
     unsigned int target) const {
-  NOTIMPLEMENTED();
+  state_.RestoreActiveTextureUnitBinding(target);
 }
 
 void RasterDecoderImpl::RestoreBufferBinding(unsigned int target) {
-  NOTIMPLEMENTED();
+  if (target == GL_PIXEL_PACK_BUFFER) {
+    state_.UpdatePackParameters();
+  } else if (target == GL_PIXEL_UNPACK_BUFFER) {
+    state_.UpdateUnpackParameters();
+  }
+  gles2::Buffer* bound_buffer =
+      buffer_manager()->GetBufferInfoForTarget(&state_, target);
+  api()->glBindBufferFn(target, bound_buffer ? bound_buffer->service_id() : 0);
 }
 
 void RasterDecoderImpl::RestoreBufferBindings() const {
-  NOTIMPLEMENTED();
+  state_.RestoreBufferBindings();
 }
 
 void RasterDecoderImpl::RestoreFramebufferBindings() const {
@@ -770,19 +871,34 @@ void RasterDecoderImpl::RestoreFramebufferBindings() const {
 }
 
 void RasterDecoderImpl::RestoreRenderbufferBindings() {
-  NOTIMPLEMENTED();
+  state_.RestoreRenderbufferBindings();
 }
 
 void RasterDecoderImpl::RestoreProgramBindings() const {
-  NOTIMPLEMENTED();
+  state_.RestoreProgramSettings(nullptr, false);
 }
 
 void RasterDecoderImpl::RestoreTextureState(unsigned service_id) const {
-  NOTIMPLEMENTED();
+  Texture* texture = texture_manager()->GetTextureForServiceId(service_id);
+  if (texture) {
+    GLenum target = texture->target();
+    api()->glBindTextureFn(target, service_id);
+    api()->glTexParameteriFn(target, GL_TEXTURE_WRAP_S, texture->wrap_s());
+    api()->glTexParameteriFn(target, GL_TEXTURE_WRAP_T, texture->wrap_t());
+    api()->glTexParameteriFn(target, GL_TEXTURE_MIN_FILTER,
+                             texture->min_filter());
+    api()->glTexParameteriFn(target, GL_TEXTURE_MAG_FILTER,
+                             texture->mag_filter());
+    if (feature_info_->IsWebGL2OrES3Context()) {
+      api()->glTexParameteriFn(target, GL_TEXTURE_BASE_LEVEL,
+                               texture->base_level());
+    }
+    RestoreTextureUnitBindings(state_.active_texture_unit);
+  }
 }
 
 void RasterDecoderImpl::RestoreTextureUnitBindings(unsigned unit) const {
-  NOTIMPLEMENTED();
+  state_.RestoreTextureUnitBindings(unit, nullptr);
 }
 
 void RasterDecoderImpl::RestoreVertexAttribArray(unsigned index) {
@@ -790,7 +906,30 @@ void RasterDecoderImpl::RestoreVertexAttribArray(unsigned index) {
 }
 
 void RasterDecoderImpl::RestoreAllExternalTextureBindingsIfNeeded() {
-  NOTIMPLEMENTED();
+  if (texture_manager()->GetServiceIdGeneration() ==
+      texture_manager_service_id_generation_)
+    return;
+
+  // Texture manager's version has changed, so rebind all external textures
+  // in case their service ids have changed.
+  for (unsigned texture_unit_index = 0;
+       texture_unit_index < state_.texture_units.size(); texture_unit_index++) {
+    const TextureUnit& texture_unit = state_.texture_units[texture_unit_index];
+    if (texture_unit.bind_target != GL_TEXTURE_EXTERNAL_OES)
+      continue;
+
+    if (TextureRef* texture_ref =
+            texture_unit.bound_texture_external_oes.get()) {
+      api()->glActiveTextureFn(GL_TEXTURE0 + texture_unit_index);
+      api()->glBindTextureFn(GL_TEXTURE_EXTERNAL_OES,
+                             texture_ref->service_id());
+    }
+  }
+
+  api()->glActiveTextureFn(GL_TEXTURE0 + state_.active_texture_unit);
+
+  texture_manager_service_id_generation_ =
+      texture_manager()->GetServiceIdGeneration();
 }
 
 QueryManager* RasterDecoderImpl::GetQueryManager() {
@@ -866,6 +1005,10 @@ Logger* RasterDecoderImpl::GetLogger() {
 
 void RasterDecoderImpl::SetIgnoreCachedStateForTest(bool ignore) {
   state_.SetIgnoreCachedStateForTest(ignore);
+}
+
+ImageManager* RasterDecoderImpl::GetImageManagerForTest() {
+  return group_->image_manager();
 }
 
 void RasterDecoderImpl::BeginDecoding() {
@@ -1031,6 +1174,132 @@ gles2::ContextGroup* RasterDecoderImpl::GetContextGroup() {
 
 gles2::ErrorState* RasterDecoderImpl::GetErrorState() {
   return state_.GetErrorState();
+}
+
+bool RasterDecoderImpl::IsCompressedTextureFormat(unsigned format) {
+  return feature_info_->validators()->compressed_texture_format.IsValid(format);
+}
+
+bool RasterDecoderImpl::ClearLevel(gles2::Texture* texture,
+                                   unsigned target,
+                                   int level,
+                                   unsigned format,
+                                   unsigned type,
+                                   int xoffset,
+                                   int yoffset,
+                                   int width,
+                                   int height) {
+  DCHECK(target != GL_TEXTURE_3D && target != GL_TEXTURE_2D_ARRAY &&
+         target != GL_TEXTURE_EXTERNAL_OES);
+  uint32_t channels = GLES2Util::GetChannelsForFormat(format);
+  if (channels & GLES2Util::kDepth) {
+    DCHECK(false) << "depth not supported";
+    return false;
+  }
+
+  const uint32_t kMaxZeroSize = 1024 * 1024 * 4;
+
+  uint32_t size;
+  uint32_t padded_row_size;
+  if (!GLES2Util::ComputeImageDataSizes(width, height, 1, format, type,
+                                        state_.unpack_alignment, &size, nullptr,
+                                        &padded_row_size)) {
+    return false;
+  }
+
+  TRACE_EVENT1("gpu", "RasterDecoderImpl::ClearLevel", "size", size);
+
+  int tile_height;
+
+  if (size > kMaxZeroSize) {
+    if (kMaxZeroSize < padded_row_size) {
+      // That'd be an awfully large texture.
+      return false;
+    }
+    // We should never have a large total size with a zero row size.
+    DCHECK_GT(padded_row_size, 0U);
+    tile_height = kMaxZeroSize / padded_row_size;
+    if (!GLES2Util::ComputeImageDataSizes(width, tile_height, 1, format, type,
+                                          state_.unpack_alignment, &size,
+                                          nullptr, nullptr)) {
+      return false;
+    }
+  } else {
+    tile_height = height;
+  }
+
+  api()->glBindTextureFn(texture->target(), texture->service_id());
+  {
+    // Add extra scope to destroy zero and the object it owns right
+    // after its usage.
+    // Assumes the size has already been checked.
+    std::unique_ptr<char[]> zero(new char[size]);
+    memset(zero.get(), 0, size);
+
+    ScopedPixelUnpackState reset_restore(&state_);
+    GLint y = 0;
+    while (y < height) {
+      GLint h = y + tile_height > height ? height - y : tile_height;
+      api()->glTexSubImage2DFn(
+          target, level, xoffset, yoffset + y, width, h,
+          TextureManager::AdjustTexFormat(feature_info_.get(), format), type,
+          zero.get());
+      y += tile_height;
+    }
+  }
+
+  TextureRef* bound_texture =
+      texture_manager()->GetTextureInfoForTarget(&state_, texture->target());
+  api()->glBindTextureFn(texture->target(),
+                         bound_texture ? bound_texture->service_id() : 0);
+  DCHECK(glGetError() == GL_NO_ERROR);
+  return true;
+}
+
+bool RasterDecoderImpl::ClearCompressedTextureLevel(gles2::Texture* texture,
+                                                    unsigned target,
+                                                    int level,
+                                                    unsigned format,
+                                                    int width,
+                                                    int height) {
+  DCHECK(target != GL_TEXTURE_3D && target != GL_TEXTURE_2D_ARRAY);
+  // This code path can only be called if the texture was originally
+  // allocated via TexStorage2D. Note that TexStorage2D is exposed
+  // internally for ES 2.0 contexts, but compressed texture support is
+  // not part of that exposure.
+  DCHECK(feature_info_->IsWebGL2OrES3Context());
+
+  GLsizei bytes_required = 0;
+  std::string error_str;
+  if (!GetCompressedTexSizeInBytes("ClearCompressedTextureLevel", width, height,
+                                   1, format, &bytes_required,
+                                   state_.GetErrorState())) {
+    return false;
+  }
+
+  TRACE_EVENT1("gpu", "RasterDecoderImpl::ClearCompressedTextureLevel",
+               "bytes_required", bytes_required);
+
+  api()->glBindBufferFn(GL_PIXEL_UNPACK_BUFFER, 0);
+  {
+    // Add extra scope to destroy zero and the object it owns right
+    // after its usage.
+    std::unique_ptr<char[]> zero(new char[bytes_required]);
+    memset(zero.get(), 0, bytes_required);
+    api()->glBindTextureFn(texture->target(), texture->service_id());
+    api()->glCompressedTexSubImage2DFn(target, level, 0, 0, width, height,
+                                       format, bytes_required, zero.get());
+  }
+  TextureRef* bound_texture =
+      texture_manager()->GetTextureInfoForTarget(&state_, texture->target());
+  api()->glBindTextureFn(texture->target(),
+                         bound_texture ? bound_texture->service_id() : 0);
+  gles2::Buffer* bound_buffer =
+      buffer_manager()->GetBufferInfoForTarget(&state_, GL_PIXEL_UNPACK_BUFFER);
+  if (bound_buffer) {
+    api()->glBindBufferFn(GL_PIXEL_UNPACK_BUFFER, bound_buffer->service_id());
+  }
+  return true;
 }
 
 void RasterDecoderImpl::OnContextLostError() {
@@ -1377,6 +1646,101 @@ void RasterDecoderImpl::DoTexParameteri(GLuint client_id,
                                    pname, param);
 }
 
+void RasterDecoderImpl::DoBindTexImage2DCHROMIUM(GLuint client_id,
+                                                 GLint image_id) {
+  TextureRef* texture_ref = GetTexture(client_id);
+  if (!texture_ref) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "BindTexImage2DCHROMIUM",
+                       "unknown texture");
+    return;
+  }
+
+  TextureMetadata* texture_metadata = GetTextureMetadata(client_id);
+  if (!texture_metadata) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "BindTexImage2DCHROMIUM",
+                       "unknown texture");
+    return;
+  }
+
+  gl::GLImage* image = image_manager()->LookupImage(image_id);
+  if (!image) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "BindTexImage2DCHROMIUM",
+                       "no image found with the given ID");
+    return;
+  }
+
+  Texture* texture = texture_ref->texture();
+  if (texture->IsImmutable()) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "BindTexImage2DCHROMIUM",
+                       "texture is immutable");
+    return;
+  }
+
+  Texture::ImageState image_state = Texture::UNBOUND;
+
+  {
+    ScopedTextureBinder binder(&state_, texture_manager(), texture_ref,
+                               texture_metadata->target());
+
+    if (image->BindTexImage(texture_metadata->target()))
+      image_state = Texture::BOUND;
+  }
+
+  gfx::Size size = image->GetSize();
+  texture_manager()->SetLevelInfo(
+      texture_ref, texture_metadata->target(), 0, image->GetInternalFormat(),
+      size.width(), size.height(), 1, 0, image->GetInternalFormat(),
+      GL_UNSIGNED_BYTE, gfx::Rect(size));
+  texture_manager()->SetLevelImage(texture_ref, texture_metadata->target(), 0,
+                                   image, image_state);
+}
+
+void RasterDecoderImpl::DoReleaseTexImage2DCHROMIUM(GLuint client_id,
+                                                    GLint image_id) {
+  TRACE_EVENT0("gpu", "RasterDecoderImpl::DoReleaseTexImage2DCHROMIUM");
+
+  TextureRef* texture_ref = GetTexture(client_id);
+  if (!texture_ref) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "ReleaseTexImage2DCHROMIUM",
+                       "unknown texture");
+    return;
+  }
+
+  TextureMetadata* texture_metadata = GetTextureMetadata(client_id);
+  if (!texture_metadata) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "ReleaseTexImage2DCHROMIUM",
+                       "unknown texture");
+    return;
+  }
+
+  gl::GLImage* image = image_manager()->LookupImage(image_id);
+  if (!image) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "ReleaseTexImage2DCHROMIUM",
+                       "no image found with the given ID");
+    return;
+  }
+
+  Texture::ImageState image_state;
+
+  // Do nothing when image is not currently bound.
+  if (texture_ref->texture()->GetLevelImage(texture_metadata->target(), 0,
+                                            &image_state) != image)
+    return;
+
+  if (image_state == Texture::BOUND) {
+    ScopedTextureBinder binder(&state_, texture_manager(), texture_ref,
+                               texture_metadata->target());
+
+    image->ReleaseTexImage(texture_metadata->target());
+    texture_manager()->SetLevelInfo(texture_ref, texture_metadata->target(), 0,
+                                    GL_RGBA, 0, 0, 1, 0, GL_RGBA,
+                                    GL_UNSIGNED_BYTE, gfx::Rect());
+  }
+
+  texture_manager()->SetLevelImage(texture_ref, texture_metadata->target(), 0,
+                                   nullptr, Texture::UNBOUND);
+}
+
 void RasterDecoderImpl::DoProduceTextureDirect(GLuint client_id,
                                                const volatile GLbyte* key) {
   TRACE_EVENT2("gpu", "RasterDecoderImpl::DoProduceTextureDirect", "context",
@@ -1575,19 +1939,13 @@ void RasterDecoderImpl::DoTexStorage2D(GLuint client_id,
   for (int ii = 0; ii < levels; ++ii) {
     uint32_t size;
     if (is_compressed_format) {
-      DCHECK_EQ(static_cast<unsigned int>(GL_ETC1_RGB8_OES), internal_format);
-      base::CheckedNumeric<uint32_t> bytes_required(0);
-      const int kS3TCBlockWidth = 4;
-      const int kS3TCBlockHeight = 4;
-      const int kS3TCDXT1BlockSize = 8;
-      bytes_required = (width + kS3TCBlockWidth - 1) / kS3TCBlockWidth;
-      bytes_required *= (height + kS3TCBlockHeight - 1) / kS3TCBlockHeight;
-      bytes_required *= kS3TCDXT1BlockSize;
-      if (!bytes_required.IsValid()) {
-        LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glTexStorage2D", "invalid size");
+      GLsizei level_size;
+      if (!GetCompressedTexSizeInBytes("glTexStorage2D", level_width,
+                                       level_height, 1, internal_format,
+                                       &level_size, state_.GetErrorState())) {
         return;
       }
-      size = bytes_required.ValueOrDefault(0);
+      size = static_cast<uint32_t>(level_size);
     } else {
       if (!GLES2Util::ComputeImageDataSizesES3(
               level_width, level_height, 1 /* level_depth */, format, type,

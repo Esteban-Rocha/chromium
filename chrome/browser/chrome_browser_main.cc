@@ -185,8 +185,8 @@
 #include "net/http/http_network_layer.h"
 #include "net/http/http_stream_factory.h"
 #include "net/url_request/url_request.h"
-#include "printing/features/features.h"
-#include "rlz/features/features.h"
+#include "printing/buildflags/buildflags.h"
+#include "rlz/buildflags/buildflags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/material_design/material_design_controller.h"
@@ -850,6 +850,8 @@ ChromeBrowserMainParts::ChromeBrowserMainParts(
       shutdown_watcher_(new ShutdownWatcherHelper()),
       ui_thread_profiler_(ThreadProfiler::CreateAndStartOnMainThread(
           metrics::CallStackProfileParams::UI_THREAD)),
+      should_call_pre_main_loop_start_startup_on_variations_service_(
+          !parameters.ui_task),
       profile_(NULL),
       run_message_loop_(true) {
   // If we're running tests (ui_task is non-null).
@@ -1491,72 +1493,12 @@ void ChromeBrowserMainParts::PostProfileInit() {
     chrome_extra_parts_[i]->PostProfileInit();
 }
 
-#if defined(SYZYASAN)
-
-// This function must be in the global namespace as it needs to be friended
-// by ChromeMetricsServiceAccessor.
-void SyzyASANRegisterExperiment(const char* name, const char* group) {
-  ChromeMetricsServiceAccessor::RegisterSyntheticFieldTrial(name, group);
-}
-
-namespace {
-
-void WINAPI SyzyASANExperimentCallback(const char* name, const char* group) {
-  // Indirect through the function above, so that the friend declaration doesn't
-  // need the ugly calling convention.
-  SyzyASANRegisterExperiment(name, group);
-}
-
-void SetupSyzyASAN() {
-  typedef VOID(WINAPI* SyzyASANExperimentCallbackFn)(const char* name,
-                                                     const char* group);
-  typedef VOID(WINAPI* SyzyASANEnumExperimentsFn)(SyzyASANExperimentCallbackFn);
-  HMODULE syzyasan_handle = ::GetModuleHandle(L"syzyasan_rtl.dll");
-  if (!syzyasan_handle)
-    return;
-
-  // Export the SyzyASAN experiments as synthetic field trials.
-  SyzyASANEnumExperimentsFn syzyasan_enum_experiments =
-      reinterpret_cast<SyzyASANEnumExperimentsFn>(
-            ::GetProcAddress(syzyasan_handle, "asan_EnumExperiments"));
-  if (syzyasan_enum_experiments) {
-    syzyasan_enum_experiments(&SyzyASANExperimentCallback);
-  }
-
-  // Enable the deferred free mechanism in the syzyasan module, which helps the
-  // performance by deferring some work on the critical path to a background
-  // thread. Note that this is now enabled by default, the feature is kept as a
-  // kill switch.
-  if (base::FeatureList::IsEnabled(features::kSyzyasanDeferredFree)) {
-    typedef VOID(WINAPI * SyzyasanEnableDeferredFreeThreadFunc)(VOID);
-    bool success = false;
-    SyzyasanEnableDeferredFreeThreadFunc syzyasan_enable_deferred_free =
-        reinterpret_cast<SyzyasanEnableDeferredFreeThreadFunc>(
-            ::GetProcAddress(syzyasan_handle,
-                             "asan_EnableDeferredFreeThread"));
-    if (syzyasan_enable_deferred_free) {
-      syzyasan_enable_deferred_free();
-      success = true;
-    }
-    UMA_HISTOGRAM_BOOLEAN("Syzyasan.DeferredFreeWasEnabled", success);
-  }
-}
-
-}  // namespace
-
-#endif  // SYZYASAN
-
-
 void ChromeBrowserMainParts::PreBrowserStart() {
   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreBrowserStart");
   for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
     chrome_extra_parts_[i]->PreBrowserStart();
 
   three_d_observer_.reset(new ThreeDAPIObserver());
-
-#if defined(SYZYASAN)
-  SetupSyzyASAN();
-#endif
 
 // Start the tab manager here so that we give the most amount of time for the
 // other services to start up before we start adjusting the oom priority.
@@ -2091,9 +2033,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     const base::TimeDelta delta = base::TimeTicks::Now() - browser_open_start;
     startup_metric_utils::RecordBrowserOpenTabsDelta(delta);
 
-    // If we're running tests (ui_task is non-null), then we don't want to
-    // call StartRepeatedVariationsSeedFetch
-    if (parameters().ui_task == NULL) {
+    if (should_call_pre_main_loop_start_startup_on_variations_service_) {
       // Request new variations seed information from server.
       variations::VariationsService* variations_service =
           browser_process_->variations_service();
@@ -2210,23 +2150,6 @@ void ChromeBrowserMainParts::PostMainMessageLoopRun() {
 
   restart_last_session_ = browser_shutdown::ShutdownPreThreadsStop();
   browser_process_->StartTearDown();
-
-#if defined(SYZYASAN)
-  // Disable the deferred free mechanism in the syzyasan module. This is needed
-  // to avoid a potential crash when the syzyasan module is unloaded.
-  if (base::FeatureList::IsEnabled(features::kSyzyasanDeferredFree)) {
-    typedef VOID(WINAPI * SyzyasanDisableDeferredFreeThreadFunc)(VOID);
-    HMODULE syzyasan_handle = ::GetModuleHandle(L"syzyasan_rtl.dll");
-    if (syzyasan_handle) {
-      SyzyasanDisableDeferredFreeThreadFunc syzyasan_disable_deferred_free =
-          reinterpret_cast<SyzyasanDisableDeferredFreeThreadFunc>(
-              ::GetProcAddress(syzyasan_handle,
-                               "asan_DisableDeferredFreeThread"));
-      if (syzyasan_disable_deferred_free)
-        syzyasan_disable_deferred_free();
-    }
-  }
-#endif  // defined(SYZYASAN)
 #endif  // defined(OS_ANDROID)
 }
 

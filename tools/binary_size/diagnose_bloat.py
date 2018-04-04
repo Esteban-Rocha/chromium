@@ -115,7 +115,8 @@ class NativeDiff(BaseDiff):
 
 
 class ResourceSizesDiff(BaseDiff):
-  _SUMMARY_SECTIONS = ('Breakdown', 'Specifics', 'StaticInitializersCount')
+  _SUMMARY_SECTIONS = (
+      'Breakdown', 'Dex', 'Specifics', 'StaticInitializersCount')
   # Sections where it makes sense to sum subsections into a section total.
   _AGGREGATE_SECTIONS = (
       'InstallBreakdown', 'Breakdown', 'MainLibInfo', 'Uncompressed')
@@ -782,6 +783,9 @@ def _CurrentGitHash(subrepo):
 
 def _SetRestoreFunc(subrepo):
   branch = _GitCmd(['rev-parse', '--abbrev-ref', 'HEAD'], subrepo)
+  # Happens when the repo didn't start on a named branch.
+  if branch == 'HEAD':
+    branch = _GitCmd(['rev-parse', 'HEAD'], subrepo)
   def _RestoreFunc():
     logging.warning('Restoring original git checkout')
     _GitCmd(['checkout', branch], subrepo)

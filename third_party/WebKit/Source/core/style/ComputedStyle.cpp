@@ -835,7 +835,8 @@ void ComputedStyle::UpdatePropertySpecificDifferences(
           other.HasCurrentBackdropFilterAnimation() ||
       HasInlineTransform() != other.HasInlineTransform() ||
       BackfaceVisibility() != other.BackfaceVisibility() ||
-      HasWillChangeCompositingHint() != other.HasWillChangeCompositingHint()) {
+      HasWillChangeCompositingHint() != other.HasWillChangeCompositingHint() ||
+      UsedTransformStyle3D() != other.UsedTransformStyle3D()) {
     diff.SetCompositingReasonsChanged();
   }
 }
@@ -1487,14 +1488,12 @@ LineLogicalSide ComputedStyle::GetTextEmphasisLineLogicalSide() const {
 }
 
 CSSAnimationData& ComputedStyle::AccessAnimations() {
-  DCHECK(!AnimationPropertiesLocked());
   if (!AnimationsInternal())
     SetAnimationsInternal(CSSAnimationData::Create());
   return *AnimationsInternal();
 }
 
 CSSTransitionData& ComputedStyle::AccessTransitions() {
-  DCHECK(!AnimationPropertiesLocked());
   if (!TransitionsInternal())
     SetTransitionsInternal(CSSTransitionData::Create());
   return *TransitionsInternal();
@@ -2117,7 +2116,6 @@ void ComputedStyle::GetBorderEdgeInfo(BorderEdge edges[],
 }
 
 void ComputedStyle::CopyChildDependentFlagsFrom(const ComputedStyle& other) {
-  SetEmptyState(other.EmptyState());
   if (other.HasExplicitlyInheritedProperties())
     SetHasExplicitlyInheritedProperties();
 }

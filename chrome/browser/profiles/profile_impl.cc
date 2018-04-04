@@ -123,8 +123,8 @@
 #include "content/public/common/content_constants.h"
 #include "extensions/buildflags/buildflags.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 #include "services/identity/identity_service.h"
 #include "services/identity/public/mojom/constants.mojom.h"
 #include "services/preferences/public/cpp/in_process_service_factory.h"
@@ -1129,10 +1129,11 @@ void ProfileImpl::RegisterInProcessServices(StaticServiceMap* services) {
     info.task_runner = base::ThreadTaskRunnerHandle::Get();
     info.factory = base::BindRepeating([] {
       return std::unique_ptr<service_manager::Service>(
-          std::make_unique<chromeos::multidevice::MultiDeviceSetupService>());
+          std::make_unique<
+              chromeos::multidevice_setup::MultiDeviceSetupService>());
     });
     services->insert(
-        std::make_pair(multidevice_setup::mojom::kServiceName, info));
+        std::make_pair(chromeos::multidevice_setup::mojom::kServiceName, info));
   }
 #endif
 

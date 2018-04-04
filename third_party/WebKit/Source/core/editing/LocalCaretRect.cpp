@@ -34,7 +34,9 @@
 #include "core/editing/InlineBoxPosition.h"
 #include "core/editing/NGFlatTreeShorthands.h"
 #include "core/editing/PositionWithAffinity.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/layout/api/LineLayoutAPIShim.h"
+#include "core/layout/line/InlineTextBox.h"
 #include "core/layout/line/RootInlineBox.h"
 #include "core/layout/ng/inline/ng_caret_rect.h"
 #include "core/layout/ng/inline/ng_offset_mapping.h"
@@ -42,6 +44,50 @@
 namespace blink {
 
 namespace {
+
+// Returns true if |layout_object| and |offset| points after line end.
+template <typename Strategy>
+bool NeedsLineEndAdjustment(
+    const PositionWithAffinityTemplate<Strategy>& adjusted) {
+  const PositionTemplate<Strategy>& position = adjusted.GetPosition();
+  const LayoutObject& layout_object = *position.AnchorNode()->GetLayoutObject();
+  if (!layout_object.IsText())
+    return false;
+  const LayoutText& layout_text = ToLayoutText(layout_object);
+  if (layout_text.IsBR())
+    return position.IsAfterAnchor();
+  // For normal text nodes.
+  if (!layout_text.Style()->PreserveNewline())
+    return false;
+  if (!layout_text.TextLength() ||
+      layout_text.CharacterAt(layout_text.TextLength() - 1) != '\n')
+    return false;
+  if (position.IsAfterAnchor())
+    return true;
+  return position.IsOffsetInAnchor() &&
+         position.OffsetInContainerNode() ==
+             static_cast<int>(layout_text.TextLength());
+}
+
+// Returns the first InlineBoxPosition at next line of last InlineBoxPosition
+// in |layout_object| if it exists to avoid making InlineBoxPosition at end of
+// line.
+template <typename Strategy>
+InlineBoxPosition NextLinePositionOf(
+    const PositionWithAffinityTemplate<Strategy>& adjusted) {
+  const PositionTemplate<Strategy>& position = adjusted.GetPosition();
+  const LayoutText& layout_text =
+      ToLayoutTextOrDie(*position.AnchorNode()->GetLayoutObject());
+  InlineTextBox* const last = layout_text.LastTextBox();
+  const RootInlineBox& root = last->Root();
+  const RootInlineBox* const next_root = root.NextRootBox();
+  if (!next_root)
+    return InlineBoxPosition();
+  InlineBox* const inline_box = next_root->FirstLeafChild();
+  return AdjustInlineBoxPositionForTextDirection(
+      inline_box, inline_box->CaretMinOffset(),
+      layout_text.Style()->GetUnicodeBidi());
+}
 
 template <typename Strategy>
 LocalCaretRect LocalCaretRectOfPositionTemplate(
@@ -71,7 +117,9 @@ LocalCaretRect LocalCaretRectOfPositionTemplate(
     DCHECK_EQ(PrimaryDirectionOf(*position.AnchorNode()),
               PrimaryDirectionOf(*adjusted.AnchorNode()));
     const InlineBoxPosition& box_position =
-        ComputeInlineBoxPositionForInlineAdjustedPosition(adjusted);
+        NeedsLineEndAdjustment(adjusted)
+            ? NextLinePositionOf(adjusted)
+            : ComputeInlineBoxPositionForInlineAdjustedPosition(adjusted);
 
     if (box_position.inline_box) {
       const LayoutObject* box_layout_object =
@@ -171,6 +219,61 @@ LocalCaretRect LocalCaretRectOfPosition(
 LocalCaretRect LocalSelectionRectOfPosition(
     const PositionWithAffinity& position) {
   return LocalSelectionRectOfPositionTemplate<EditingStrategy>(position);
+}
+
+// ----
+
+template <typename Strategy>
+static IntRect AbsoluteCaretBoundsOfAlgorithm(
+    const VisiblePositionTemplate<Strategy>& visible_position) {
+  DCHECK(visible_position.IsValid()) << visible_position;
+  const LocalCaretRect& caret_rect =
+      LocalCaretRectOfPosition(visible_position.ToPositionWithAffinity());
+  if (caret_rect.IsEmpty())
+    return IntRect();
+  return LocalToAbsoluteQuadOf(caret_rect).EnclosingBoundingBox();
+}
+
+IntRect AbsoluteCaretBoundsOf(const VisiblePosition& visible_position) {
+  return AbsoluteCaretBoundsOfAlgorithm<EditingStrategy>(visible_position);
+}
+
+// TODO(editing-dev): This function does pretty much the same thing as
+// |AbsoluteCaretBoundsOf()|. Consider merging them.
+IntRect AbsoluteCaretRectOfPosition(const PositionWithAffinity& position,
+                                    LayoutUnit* extra_width_to_end_of_line) {
+  const LocalCaretRect local_caret_rect =
+      LocalCaretRectOfPosition(position, extra_width_to_end_of_line);
+  if (!local_caret_rect.layout_object)
+    return IntRect();
+
+  const IntRect local_rect = PixelSnappedIntRect(local_caret_rect.rect);
+  return local_rect == IntRect()
+             ? IntRect()
+             : local_caret_rect.layout_object
+                   ->LocalToAbsoluteQuad(FloatRect(local_rect))
+                   .EnclosingBoundingBox();
+}
+
+template <typename Strategy>
+static IntRect AbsoluteSelectionBoundsOfAlgorithm(
+    const VisiblePositionTemplate<Strategy>& visible_position) {
+  DCHECK(visible_position.IsValid()) << visible_position;
+  const LocalCaretRect& caret_rect =
+      LocalSelectionRectOfPosition(visible_position.ToPositionWithAffinity());
+  if (caret_rect.IsEmpty())
+    return IntRect();
+  return LocalToAbsoluteQuadOf(caret_rect).EnclosingBoundingBox();
+}
+
+IntRect AbsoluteSelectionBoundsOf(const VisiblePosition& visible_position) {
+  return AbsoluteSelectionBoundsOfAlgorithm<EditingStrategy>(visible_position);
+}
+
+IntRect AbsoluteCaretBoundsOf(
+    const VisiblePositionInFlatTree& visible_position) {
+  return AbsoluteCaretBoundsOfAlgorithm<EditingInFlatTreeStrategy>(
+      visible_position);
 }
 
 }  // namespace blink

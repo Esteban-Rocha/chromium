@@ -10,10 +10,10 @@
 
 namespace blink {
 
-class DOMFileSystemBaseTest : public ::testing::Test {
+class DOMFileSystemBaseTest : public testing::Test {
  public:
   DOMFileSystemBaseTest() {
-    file_path_ = testing::BlinkRootDir();
+    file_path_ = test::BlinkRootDir();
     file_path_.append("/Source/modules/filesystem/DOMFileSystemBaseTest.cpp");
     GetFileMetadata(file_path_, file_metadata_);
     file_metadata_.platform_path = file_path_;

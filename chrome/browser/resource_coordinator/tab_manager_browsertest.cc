@@ -12,6 +12,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
+#include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
 #include "chrome/browser/resource_coordinator/tab_manager.h"
 #include "chrome/browser/resource_coordinator/tab_manager_web_contents_data.h"
 #include "chrome/browser/resource_coordinator/time.h"
@@ -48,11 +49,16 @@ namespace resource_coordinator {
 
 namespace {
 
-static constexpr char kBlinkPageLifecycleFeature[] = "PageLifecycle";
+constexpr char kBlinkPageLifecycleFeature[] = "PageLifecycle";
+constexpr base::TimeDelta kShortDelay = base::TimeDelta::FromSeconds(1);
 
 class TabManagerTest : public InProcessBrowserTest {
  public:
-  TabManagerTest() : scoped_set_tick_clock_for_testing_(&test_clock_) {}
+  TabManagerTest() : scoped_set_tick_clock_for_testing_(&test_clock_) {
+    // Start with a non-null TimeTicks, as there is no discard protection for
+    // a tab with a null focused timestamp.
+    test_clock_.Advance(kShortDelay);
+  }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures,
@@ -111,6 +117,8 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest, TabManagerBasics) {
   TabManager* tab_manager = g_browser_process->GetTabManager();
 
   // Get three tabs open.
+
+  test_clock_.Advance(kShortDelay);
   WindowedNotificationObserver load1(
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       content::NotificationService::AllSources());
@@ -120,6 +128,7 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest, TabManagerBasics) {
   browser()->OpenURL(open1);
   load1.Wait();
 
+  test_clock_.Advance(kShortDelay);
   WindowedNotificationObserver load2(
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       content::NotificationService::AllSources());
@@ -129,6 +138,7 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest, TabManagerBasics) {
   browser()->OpenURL(open2);
   load2.Wait();
 
+  test_clock_.Advance(kShortDelay);
   WindowedNotificationObserver load3(
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       content::NotificationService::AllSources());
@@ -190,9 +200,11 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest, TabManagerBasics) {
 
   // Kill the third tab after making second tab active.
   tsm->ActivateTabAt(1, true);
+
   EXPECT_EQ(1, tsm->active_index());
   EXPECT_FALSE(tab_manager->IsTabDiscarded(tsm->GetWebContentsAt(1)));
-  tab_manager->DiscardWebContentsAt(2, tsm, DiscardReason::kProactive);
+  FastForwardAfterDiscardProtectionTime();
+  tab_manager->DiscardTabImpl(DiscardReason::kProactive);
   EXPECT_TRUE(tab_manager->IsTabDiscarded(tsm->GetWebContentsAt(2)));
 
   // Force creation of the FindBarController.
@@ -797,11 +809,16 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest,
       "TabManager.Discarding.DiscardedTabCouldFastShutdown", false, 1);
 }
 
+// TODO(fdoray): Move this test to |tab_lifecyle_unit_unittest.cc|.
+// https://crbug.com/775644
 IN_PROC_BROWSER_TEST_F(TabManagerTest, FreezeTab) {
   const char kMainFrameFrozenStateJS[] =
       "window.domAutomationController.send(mainFrameFreezeCount);";
   const char kChildFrameFrozenStateJS[] =
       "window.domAutomationController.send(childFrameFreezeCount);";
+  const char kHiddenStateJS[] =
+      "window.domAutomationController.send("
+      "window.document.hidden);";
 
   const int freezing_index = 1;  // The second tab.
   // Setup the embedded_test_server to serve a cross-site frame.
@@ -829,6 +846,12 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest, FreezeTab) {
               child_frame->GetProcess()->GetID());
   }
 
+  // Ensure that the tab is hidden or backgrounded.
+  bool hidden_state_result;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(main_frame, kHiddenStateJS,
+                                                   &hidden_state_result));
+  EXPECT_TRUE(hidden_state_result);
+
   EXPECT_TRUE(content::ExecuteScript(
       main_frame,
       "if (window.location.pathname != '/iframe_cross_site.html')"
@@ -853,8 +876,7 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest, FreezeTab) {
   EXPECT_EQ(0, freeze_count_result);
 
   // Freeze the tab. If it fails then we might be freezing a visible tab.
-  g_browser_process->GetTabManager()->FreezeWebContentsAt(
-      freezing_index, browser()->tab_strip_model());
+  TabLifecycleUnitExternal::FromWebContents(content)->FreezeTab();
 
   // freeze_count_result should be exactly 1 for both frames. The valus is
   // incremented in the onfreeze callback. If it is >1, then the callback was
@@ -884,8 +906,9 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest, TabManagerWasDiscarded) {
   EXPECT_FALSE(not_discarded_result);
 
   // Discard the tab. This simulates a tab discard.
-  g_browser_process->GetTabManager()->DiscardWebContentsAt(
-      0, browser()->tab_strip_model(), DiscardReason::kProactive);
+  TabLifecycleUnitExternal::FromWebContents(
+      browser()->tab_strip_model()->GetActiveWebContents())
+      ->DiscardTab();
 
   // Here we simulate re-focussing the tab causing reload with navigation,
   // the navigation will reload the tab.
@@ -915,7 +938,7 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest,
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   content::RenderFrameHost* main_frame = contents->GetMainFrame();
-  ASSERT_LE(2u, contents->GetAllFrames().size());
+  ASSERT_EQ(3u, contents->GetAllFrames().size());
   content::RenderFrameHost* child_frame = contents->GetAllFrames()[1];
 
   // Sanity check that in this test page the main frame and the
@@ -941,8 +964,7 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest,
   EXPECT_FALSE(before_discard_childframe_result);
 
   // Discard the tab. This simulates a tab discard.
-  g_browser_process->GetTabManager()->DiscardWebContentsAt(
-      0, browser()->tab_strip_model(), DiscardReason::kProactive);
+  TabLifecycleUnitExternal::FromWebContents(contents)->DiscardTab();
 
   // Here we simulate re-focussing the tab causing reload with navigation,
   // the navigation will reload the tab.
@@ -967,11 +989,20 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest,
   EXPECT_TRUE(discarded_childframe_result);
 
   // Navigate the child frame, wasDiscarded is not set anymore.
-  // TODO(panicker): Add test to navigate the child frame cross site.
   GURL childframe_url(embedded_test_server()->GetURL("b.com", "/title1.html"));
   EXPECT_TRUE(NavigateIframeToURL(contents, "frame1", childframe_url));
   EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
-      child_frame, kDiscardedStateJS, &discarded_childframe_result));
+      contents->GetAllFrames()[1], kDiscardedStateJS,
+      &discarded_childframe_result));
+  EXPECT_FALSE(discarded_childframe_result);
+
+  // Navigate second child frame cross site.
+  GURL second_childframe_url(
+      embedded_test_server()->GetURL("d.com", "/title1.html"));
+  EXPECT_TRUE(NavigateIframeToURL(contents, "frame2", second_childframe_url));
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      contents->GetAllFrames()[2], kDiscardedStateJS,
+      &discarded_childframe_result));
   EXPECT_FALSE(discarded_childframe_result);
 
   // Navigate the main frame (same site) again, wasDiscarded is not set anymore.
@@ -980,8 +1011,13 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest,
       main_frame, kDiscardedStateJS, &discarded_mainframe_result));
   EXPECT_FALSE(discarded_mainframe_result);
 
-  // TODO(panicker): Add test to go back in history and ensure wasDiscarded is
-  // still false.
+  // Go back in history and ensure wasDiscarded is still false.
+  content::TestNavigationObserver observer(contents);
+  contents->GetController().GoBack();
+  observer.Wait();
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      main_frame, kDiscardedStateJS, &discarded_mainframe_result));
+  EXPECT_FALSE(discarded_mainframe_result);
 }
 
 namespace {

@@ -36,13 +36,13 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/class_property.h"
 #include "ui/compositor/compositor.h"
+#include "ui/compositor_extra/shadow.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 #include "ui/gfx/path.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/coordinate_conversion.h"
-#include "ui/wm/core/shadow.h"
 #include "ui/wm/core/shadow_controller.h"
 #include "ui/wm/core/shadow_types.h"
 #include "ui/wm/core/window_animations.h"
@@ -55,6 +55,9 @@ DEFINE_LOCAL_UI_CLASS_PROPERTY_KEY(Surface*, kMainSurfaceKey, nullptr)
 
 // Application Id set by the client.
 DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(std::string, kApplicationIdKey, nullptr);
+
+// Application Id set by the client.
+DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(std::string, kStartupIdKey, nullptr);
 
 // The accelerator keys used to close ShellSurfaces.
 const struct {
@@ -98,6 +101,7 @@ class CustomFrameView : public ash::CustomFrameViewAsh {
       : CustomFrameViewAsh(widget),
         client_controlled_move_resize_(client_controlled_move_resize) {
     SetEnabled(enabled);
+    SetVisible(enabled);
     if (!enabled)
       CustomFrameViewAsh::SetShouldPaintHeader(false);
   }
@@ -106,7 +110,7 @@ class CustomFrameView : public ash::CustomFrameViewAsh {
 
   // Overridden from ash::CustomFrameViewAshBase:
   void SetShouldPaintHeader(bool paint) override {
-    if (enabled()) {
+    if (visible()) {
       CustomFrameViewAsh::SetShouldPaintHeader(paint);
       return;
     }
@@ -132,43 +136,55 @@ class CustomFrameView : public ash::CustomFrameViewAsh {
     layer->SetMasksToBounds(true);
   }
 
+  // Overridden from aura::WindowObserver:
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds,
+                             ui::PropertyChangeReason reason) override {
+    // When window bounds are changed, we need to update the header view so that
+    // the window mask layer bounds can be set correctly in function
+    // SetShouldPaintHeader(). Note: this can be removed if the layer mask in
+    // CustomFrameView becomes unnecessary.
+    CustomFrameViewAsh::UpdateHeaderView();
+  }
+
   // Overridden from views::NonClientFrameView:
   gfx::Rect GetBoundsForClientView() const override {
-    if (enabled())
+    if (visible())
       return ash::CustomFrameViewAsh::GetBoundsForClientView();
     return bounds();
   }
   gfx::Rect GetWindowBoundsForClientBounds(
       const gfx::Rect& client_bounds) const override {
-    if (enabled()) {
+    if (visible()) {
       return ash::CustomFrameViewAsh::GetWindowBoundsForClientBounds(
           client_bounds);
     }
     return client_bounds;
   }
   int NonClientHitTest(const gfx::Point& point) override {
-    if (enabled() || !client_controlled_move_resize_)
+    if (visible() || !client_controlled_move_resize_)
       return ash::CustomFrameViewAsh::NonClientHitTest(point);
     return GetWidget()->client_view()->NonClientHitTest(point);
   }
   void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override {
-    if (enabled())
+    if (visible())
       return ash::CustomFrameViewAsh::GetWindowMask(size, window_mask);
   }
   void ResetWindowControls() override {
-    if (enabled())
+    if (visible())
       return ash::CustomFrameViewAsh::ResetWindowControls();
   }
   void UpdateWindowIcon() override {
-    if (enabled())
+    if (visible())
       return ash::CustomFrameViewAsh::ResetWindowControls();
   }
   void UpdateWindowTitle() override {
-    if (enabled())
+    if (visible())
       return ash::CustomFrameViewAsh::UpdateWindowTitle();
   }
   void SizeConstraintsChanged() override {
-    if (enabled())
+    if (visible())
       return ash::CustomFrameViewAsh::SizeConstraintsChanged();
   }
   gfx::Size GetMinimumSize() const override {
@@ -234,7 +250,7 @@ class CustomWindowTargeter : public aura::WindowTargeter {
     if (ash::wm::GetWindowState(widget_->GetNativeWindow())
                 ->allow_set_bounds_direct()
             ? client_controlled_move_resize_
-            : !widget_->non_client_view()->frame_view()->enabled()) {
+            : !widget_->non_client_view()->frame_view()->visible()) {
       return false;
     }
 
@@ -511,6 +527,25 @@ void ShellSurfaceBase::SetApplicationId(const std::string& application_id) {
     SetApplicationId(widget_->GetNativeWindow(), application_id);
 }
 
+// static
+void ShellSurfaceBase::SetStartupId(aura::Window* window,
+                                    const std::string& id) {
+  TRACE_EVENT1("exo", "ShellSurfaceBase::SetStartupId", "startup_id", id);
+  window->SetProperty(kStartupIdKey, new std::string(id));
+}
+
+// static
+const std::string* ShellSurfaceBase::GetStartupId(aura::Window* window) {
+  return window->GetProperty(kStartupIdKey);
+}
+
+void ShellSurfaceBase::SetStartupId(const char* startup_id) {
+  // Store the value in |startup_id_| in case the window does not exist yet.
+  startup_id_ = std::string(startup_id);
+  if (widget_ && widget_->GetNativeWindow())
+    SetStartupId(widget_->GetNativeWindow(), startup_id);
+}
+
 void ShellSurfaceBase::Close() {
   if (!close_callback_.is_null())
     close_callback_.Run();
@@ -597,6 +632,12 @@ ShellSurfaceBase::AsTracedValue() const {
 
     if (application_id)
       value->SetString("application_id", *application_id);
+
+    const std::string* startup_id =
+        GetStartupId(GetWidget()->GetNativeWindow());
+
+    if (startup_id)
+      value->SetString("startup_id", *startup_id);
   }
   return value;
 }
@@ -708,10 +749,15 @@ void ShellSurfaceBase::OnSetFrame(SurfaceFrameType type) {
 
 void ShellSurfaceBase::OnSetFrameColors(SkColor active_color,
                                         SkColor inactive_color) {
-  // TODO(reveman): Allow frame colors to change after surface has been enabled.
   has_frame_colors_ = true;
-  active_frame_color_ = active_color;
-  inactive_frame_color_ = inactive_color;
+  active_frame_color_ = SkColorSetA(active_color, SK_AlphaOPAQUE);
+  inactive_frame_color_ = SkColorSetA(inactive_color, SK_AlphaOPAQUE);
+  if (widget_) {
+    widget_->GetNativeWindow()->SetProperty(ash::kFrameActiveColorKey,
+                                            active_frame_color_);
+    widget_->GetNativeWindow()->SetProperty(ash::kFrameInactiveColorKey,
+                                            inactive_frame_color_);
+  }
 }
 
 void ShellSurfaceBase::OnSetParent(Surface* parent,
@@ -746,6 +792,10 @@ void ShellSurfaceBase::OnSetParent(Surface* parent,
   } else {
     SetParentWindow(nullptr);
   }
+}
+
+void ShellSurfaceBase::OnSetStartupId(const char* startup_id) {
+  SetStartupId(startup_id);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1102,6 +1152,7 @@ void ShellSurfaceBase::CreateShellSurfaceWidget(
   window->SetEventTargeter(base::WrapUnique(
       new CustomWindowTargeter(widget_, client_controlled_move_resize_)));
   SetApplicationId(window, application_id_);
+  SetStartupId(window, startup_id_);
   SetMainSurface(window, root_surface());
 
   // Start tracking changes to window bounds and window state.
@@ -1182,8 +1233,6 @@ void ShellSurfaceBase::Configure() {
 }
 
 bool ShellSurfaceBase::IsResizing() const {
-  if (!resizer_)
-    return false;
   ash::wm::WindowState* window_state =
       ash::wm::GetWindowState(widget_->GetNativeWindow());
   if (!window_state->is_dragged())
@@ -1214,11 +1263,7 @@ void ShellSurfaceBase::UpdateWidgetBounds() {
   if (!pending_configs_.empty() || scoped_configure_)
     return;
 
-  gfx::Rect visible_bounds = GetVisibleBounds();
-  gfx::Rect new_widget_bounds =
-      widget_->non_client_view()->GetWindowBoundsForClientBounds(
-          visible_bounds);
-  new_widget_bounds.set_origin(GetWidgetOrigin());
+  gfx::Rect new_widget_bounds = GetWidgetBounds();
 
   // Set |ignore_window_bounds_changes_| as this change to window bounds
   // should not result in a configure request.
@@ -1260,7 +1305,7 @@ void ShellSurfaceBase::UpdateShadow() {
   } else {
     wm::SetShadowElevation(window, wm::kShadowElevationDefault);
 
-    wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
+    ui::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
     // Maximized/Fullscreen window does not create a shadow.
     if (!shadow)
       return;
@@ -1429,21 +1474,26 @@ void ShellSurfaceBase::EndDrag(bool revert) {
   UpdateWidgetBounds();
 }
 
-gfx::Point ShellSurfaceBase::GetWidgetOrigin() const {
-  if (movement_disabled_)
-    return origin_;
-
-  // Preserve widget position.
-  if (resize_component_ == HTCAPTION)
-    return widget_->GetWindowBoundsInScreen().origin();
-
-  // Compute widget origin using surface origin if the current location of
-  // surface is being anchored to one side of the widget as a result of a
-  // resize operation.
+gfx::Rect ShellSurfaceBase::GetWidgetBounds() const {
   gfx::Rect visible_bounds = GetVisibleBounds();
-  gfx::Point origin = GetSurfaceOrigin() + visible_bounds.OffsetFromOrigin();
-  wm::ConvertPointToScreen(widget_->GetNativeWindow(), &origin);
-  return origin;
+  gfx::Rect new_widget_bounds =
+      widget_->non_client_view()->GetWindowBoundsForClientBounds(
+          visible_bounds);
+  if (movement_disabled_) {
+    new_widget_bounds.set_origin(origin_);
+  } else if (resize_component_ == HTCAPTION) {
+    // Preserve widget position.
+    new_widget_bounds.set_origin(widget_->GetWindowBoundsInScreen().origin());
+  } else {
+    // Compute widget origin using surface origin if the current location of
+    // surface is being anchored to one side of the widget as a result of a
+    // resize operation.
+    gfx::Rect visible_bounds = GetVisibleBounds();
+    gfx::Point origin = GetSurfaceOrigin() + visible_bounds.OffsetFromOrigin();
+    wm::ConvertPointToScreen(widget_->GetNativeWindow(), &origin);
+    new_widget_bounds.set_origin(origin);
+  }
+  return new_widget_bounds;
 }
 
 gfx::Point ShellSurfaceBase::GetSurfaceOrigin() const {

@@ -163,13 +163,10 @@ class TestingOmniboxEditController : public ChromeOmniboxEditController {
 
  private:
   // ChromeOmniboxEditController:
-  void UpdateWithoutTabRestore() override {}
-  void OnChanged() override {}
   ToolbarModel* GetToolbarModel() override { return toolbar_model_; }
   const ToolbarModel* GetToolbarModel() const override {
     return toolbar_model_;
   }
-  content::WebContents* GetWebContents() override { return nullptr; }
 
   ToolbarModel* toolbar_model_;
 
@@ -184,6 +181,7 @@ class OmniboxViewViewsTest : public ChromeViewsTestBase {
  public:
   OmniboxViewViewsTest();
 
+  TestToolbarModel* toolbar_model() { return &toolbar_model_; }
   TestingOmniboxView* omnibox_view() { return omnibox_view_.get(); }
   views::Textfield* omnibox_textfield() { return omnibox_view(); }
   ui::TextEditCommand scheduled_text_edit_command() const {
@@ -389,4 +387,31 @@ TEST_F(OmniboxViewViewsTest, Emphasis) {
                 omnibox_view()->scheme_range());
     }
   }
+}
+
+TEST_F(OmniboxViewViewsTest, RevertOnBlur) {
+  toolbar_model()->set_text(base::ASCIIToUTF16("permanent text"));
+  omnibox_view()->model()->ResetDisplayUrls();
+  omnibox_view()->RevertAll();
+
+  EXPECT_EQ(base::ASCIIToUTF16("permanent text"), omnibox_view()->text());
+  EXPECT_FALSE(omnibox_view()->model()->user_input_in_progress());
+
+  omnibox_view()->SetUserText(base::ASCIIToUTF16("user text"));
+
+  EXPECT_EQ(base::ASCIIToUTF16("user text"), omnibox_view()->text());
+  EXPECT_TRUE(omnibox_view()->model()->user_input_in_progress());
+
+  // Expect that on blur, if the text has been edited, stay in user input mode.
+  omnibox_textfield()->OnBlur();
+  EXPECT_EQ(base::ASCIIToUTF16("user text"), omnibox_view()->text());
+  EXPECT_TRUE(omnibox_view()->model()->user_input_in_progress());
+
+  // Expect that on blur, if the text is the same as the permanent text, exit
+  // user input mode.
+  omnibox_view()->SetUserText(base::ASCIIToUTF16("permanent text"));
+  EXPECT_TRUE(omnibox_view()->model()->user_input_in_progress());
+  omnibox_textfield()->OnBlur();
+  EXPECT_EQ(base::ASCIIToUTF16("permanent text"), omnibox_view()->text());
+  EXPECT_FALSE(omnibox_view()->model()->user_input_in_progress());
 }

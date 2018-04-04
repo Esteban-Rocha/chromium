@@ -92,7 +92,7 @@
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/platform_handle.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/device/public/cpp/generic_sensor/motion_data.h"
 #include "services/network/public/cpp/features.h"
 #include "services/service_manager/public/cpp/connector.h"
@@ -123,7 +123,7 @@
 #include "third_party/WebKit/public/platform/modules/device_orientation/WebDeviceOrientationListener.h"
 #include "third_party/WebKit/public/platform/modules/webmidi/WebMIDIAccessor.h"
 #include "third_party/WebKit/public/platform/scheduler/child/webthread_base.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "third_party/WebKit/public/platform/scheduler/web_main_thread_scheduler.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/sqlite/sqlite3.h"
 #include "url/gurl.h"
@@ -214,6 +214,21 @@ network::mojom::URLLoaderFactoryPtr GetBlobURLLoaderFactoryGetter() {
   RenderThreadImpl::current()->GetRendererHost()->GetBlobURLLoaderFactory(
       mojo::MakeRequest(&blob_loader_factory));
   return blob_loader_factory;
+}
+
+gpu::ContextType ToGpuContextType(blink::Platform::ContextType type) {
+  switch (type) {
+    case blink::Platform::kWebGL1ContextType:
+      return gpu::CONTEXT_TYPE_WEBGL1;
+    case blink::Platform::kWebGL2ContextType:
+      return gpu::CONTEXT_TYPE_WEBGL2;
+    case blink::Platform::kGLES2ContextType:
+      return gpu::CONTEXT_TYPE_OPENGLES2;
+    case blink::Platform::kGLES3ContextType:
+      return gpu::CONTEXT_TYPE_OPENGLES3;
+  }
+  NOTREACHED();
+  return gpu::CONTEXT_TYPE_OPENGLES2;
 }
 
 }  // namespace
@@ -1129,12 +1144,8 @@ RendererBlinkPlatformImpl::CreateOffscreenGraphicsContext3DProvider(
 
   attributes.fail_if_major_perf_caveat =
       web_attributes.fail_if_major_performance_caveat;
-  DCHECK_GT(web_attributes.web_gl_version, 0u);
-  DCHECK_LE(web_attributes.web_gl_version, 2u);
-  if (web_attributes.web_gl_version == 2)
-    attributes.context_type = gpu::CONTEXT_TYPE_WEBGL2;
-  else
-    attributes.context_type = gpu::CONTEXT_TYPE_WEBGL1;
+
+  attributes.context_type = ToGpuContextType(web_attributes.context_type);
 
   constexpr bool automatic_flushes = true;
   constexpr bool support_locking = false;
@@ -1145,8 +1156,8 @@ RendererBlinkPlatformImpl::CreateOffscreenGraphicsContext3DProvider(
           RenderThreadImpl::current()->GetGpuMemoryBufferManager(),
           kGpuStreamIdDefault, kGpuStreamPriorityDefault,
           gpu::kNullSurfaceHandle, GURL(top_document_web_url),
-          automatic_flushes, support_locking, gpu::SharedMemoryLimits(),
-          attributes, share_context,
+          automatic_flushes, support_locking, web_attributes.support_grcontext,
+          gpu::SharedMemoryLimits(), attributes, share_context,
           ui::command_buffer_metrics::OFFSCREEN_CONTEXT_FOR_WEBGL));
   return std::make_unique<WebGraphicsContext3DProviderImpl>(
       std::move(provider), is_software_rendering);

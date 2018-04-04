@@ -9,6 +9,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/stringprintf.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/quads/surface_draw_quad.h"
 #include "components/viz/host/host_frame_sink_manager.h"
@@ -20,6 +21,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/common/frame_messages.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "ui/base/layout.h"
@@ -731,7 +733,8 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
 }
 
 void RenderWidgetHostInputEventRouter::ReportBubblingScrollToSameView(
-    const blink::WebGestureEvent& event) {
+    const blink::WebGestureEvent& event,
+    const RenderWidgetHostViewBase* view) {
   static auto* type_key = base::debug::AllocateCrashKeyString(
       "same-view-bubble-event-type", base::debug::CrashKeySize::Size32);
   base::debug::ScopedCrashKeyString type_key_value(
@@ -740,6 +743,17 @@ void RenderWidgetHostInputEventRouter::ReportBubblingScrollToSameView(
       "same-view-bubble-source-device", base::debug::CrashKeySize::Size32);
   base::debug::ScopedCrashKeyString device_key_value(
       device_key, std::to_string(event.SourceDevice()));
+
+  // Issue 824772 is a potential cause for issue 818214. Report whether
+  // devtools is in use to investigate whether there are other causes.
+  auto* contents = view->host()->delegate()->GetAsWebContents();
+  const bool have_devtools =
+      contents && DevToolsAgentHost::IsDebuggerAttached(contents);
+  static auto* devtools_key = base::debug::AllocateCrashKeyString(
+      "same-view-bubble-have-devtools", base::debug::CrashKeySize::Size32);
+  base::debug::ScopedCrashKeyString devtools_key_value(
+      devtools_key, std::to_string(have_devtools));
+
   base::debug::DumpWithoutCrashing();
 }
 
@@ -822,7 +836,7 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
     // bubbling.
     // TODO(818214): Remove once this issue no longer occurs.
     if (resending_view == bubbling_gesture_scroll_target_.target) {
-      ReportBubblingScrollToSameView(event);
+      ReportBubblingScrollToSameView(event, resending_view);
       first_bubbling_scroll_target_.target = nullptr;
       bubbling_gesture_scroll_target_.target = nullptr;
       return;
@@ -1064,6 +1078,11 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
     const blink::WebGestureEvent& gesture_event,
     const ui::LatencyInfo& latency,
     const base::Optional<gfx::PointF>& target_location) {
+  // Temporary logging for https://crbug.com/824774.
+  static auto* target_source_key = base::debug::AllocateCrashKeyString(
+      "touchscreen-gesture-target-source", base::debug::CrashKeySize::Size32);
+  base::debug::SetCrashKeyString(target_source_key, "input");
+
   if (gesture_event.GetType() == blink::WebInputEvent::kGesturePinchBegin) {
     in_touchscreen_gesture_pinch_ = true;
     // If the root view wasn't already receiving the gesture stream, then we
@@ -1121,6 +1140,7 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
     // RenderWidgetTargeter. These gesture events should always have a
     // unique_touch_event_id of 0.
     touchscreen_gesture_target_.target = target;
+    base::debug::SetCrashKeyString(target_source_key, "touch_id=0");
     DCHECK(target_location.has_value());
     touchscreen_gesture_target_.delta =
         target_location.value() - gesture_event.PositionInWidget();
@@ -1145,6 +1165,7 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
     // don't worry about the fact we're ignoring |result.should_query_view|, as
     // this is the best we can do until we fix https://crbug.com/595422.
     touchscreen_gesture_target_.target = result.view;
+    base::debug::SetCrashKeyString(target_source_key, "no_matching_id");
     touchscreen_gesture_target_.delta = transformed_point - original_point;
   } else if (is_gesture_start) {
     touchscreen_gesture_target_ = gesture_target_it->second;
@@ -1170,6 +1191,12 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
   blink::WebGestureEvent event(gesture_event);
   event.SetPositionInWidget(event.PositionInWidget() +
                             touchscreen_gesture_target_.delta);
+  // Temporary logging for https://crbug.com/824774.
+  static auto* target_ptr_key = base::debug::AllocateCrashKeyString(
+      "touchscreen-gesture-target-ptr", base::debug::CrashKeySize::Size64);
+  base::debug::SetCrashKeyString(
+      target_ptr_key,
+      base::StringPrintf("%p", touchscreen_gesture_target_.target));
   touchscreen_gesture_target_.target->ProcessGestureEvent(event, latency);
 }
 

@@ -224,9 +224,6 @@ const char kDisableLoginAnimations[] = "disable-login-animations";
 // Disables requests for an enterprise machine certificate during attestation.
 const char kDisableMachineCertRequest[] = "disable-machine-cert-request";
 
-// Disables material design Error screen.
-const char kDisableMdErrorScreen[] = "disable-md-error-screen";
-
 // Disables mtp write support.
 const char kDisableMtpWriteSupport[] = "disable-mtp-write-support";
 
@@ -514,6 +511,9 @@ const char kOobeTimerInterval[] = "oobe-timer-interval";
 // If set to "true", the profile requires policy during restart (policy load
 // must succeed, otherwise session restart should fail).
 const char kProfileRequiresPolicy[] = "profile-requires-policy";
+
+// The rlz ping delay (in seconds) that overwrites the default value.
+const char kRlzPingDelay[] = "rlz-ping-delay";
 
 // Overrides network stub behavior. By default, ethernet, wifi and vpn are
 // enabled, and transitions occur instantaneously. Multiple options can be

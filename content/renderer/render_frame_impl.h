@@ -62,7 +62,7 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/system/data_pipe.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
@@ -701,6 +701,8 @@ class CONTENT_EXPORT RenderFrameImpl
   void DidObserveLoadingBehavior(
       blink::WebLoadingBehaviorFlag behavior) override;
   void DidObserveNewFeatureUsage(blink::mojom::WebFeature feature) override;
+  void DidObserveNewCssPropertyUsage(int css_property,
+                                     bool is_animated) override;
   bool ShouldTrackUseCounter(const blink::WebURL& url) override;
   void DidCreateScriptContext(v8::Local<v8::Context> context,
                               int world_id) override;
@@ -1052,6 +1054,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnSetFocusedFrame();
   void OnTextTrackSettingsChanged(
       const FrameMsg_TextTrackSettings_Params& params);
+  void OnCheckCompleted();
   void OnPostMessageEvent(const FrameMsg_PostMessage_Params& params);
   void OnReportContentSecurityPolicyViolation(
       const content::CSPViolationParams& violation_params);
@@ -1627,8 +1630,10 @@ class CONTENT_EXPORT RenderFrameImpl
     blink::WebFormElement form;
     blink::WebSourceLocation source_location;
     blink::WebString devtools_initiator_info;
+    blink::mojom::BlobURLTokenPtr blob_url_token;
 
     explicit PendingNavigationInfo(const NavigationPolicyInfo& info);
+    ~PendingNavigationInfo();
   };
 
   // Contains information about a pending navigation to be sent to the browser.

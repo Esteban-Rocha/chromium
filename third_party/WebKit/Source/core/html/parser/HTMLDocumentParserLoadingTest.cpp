@@ -24,9 +24,8 @@ class HTMLDocumentParserSimTest : public SimTest {
   HistogramTester histogram_;
 };
 
-class HTMLDocumentParserLoadingTest
-    : public HTMLDocumentParserSimTest,
-      public ::testing::WithParamInterface<bool> {
+class HTMLDocumentParserLoadingTest : public HTMLDocumentParserSimTest,
+                                      public testing::WithParamInterface<bool> {
  protected:
   HTMLDocumentParserLoadingTest() {
     Document::SetThreadedParsingEnabledForTesting(GetParam());
@@ -35,10 +34,10 @@ class HTMLDocumentParserLoadingTest
 
 INSTANTIATE_TEST_CASE_P(Threaded,
                         HTMLDocumentParserLoadingTest,
-                        ::testing::Values(true));
+                        testing::Values(true));
 INSTANTIATE_TEST_CASE_P(NotThreaded,
                         HTMLDocumentParserLoadingTest,
-                        ::testing::Values(false));
+                        testing::Values(false));
 
 TEST_P(HTMLDocumentParserLoadingTest,
        ShouldNotPauseParsingForExternalStylesheetsInHead) {
@@ -56,10 +55,10 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("bodyDiv"));
   css_head_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("bodyDiv"));
 }
 
@@ -81,10 +80,10 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("bodyDiv"));
   css_head_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("bodyDiv"));
 }
 
@@ -107,20 +106,20 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after"));
 
   // Completing the head css shouldn't change anything
   css_head_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after"));
 
   // Completing the body resource and pumping the tasks should continue parsing
   // and create the "after" div.
   css_body_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after"));
 }
@@ -149,7 +148,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
     <div id="after1"></div>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after1"));
   EXPECT_FALSE(GetDocument().getElementById("after2"));
@@ -159,7 +158,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
       "<link rel=stylesheet href=testBody2.css>"
       "<div id=\"after2\"></div>");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after1"));
   EXPECT_FALSE(GetDocument().getElementById("after2"));
@@ -171,7 +170,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after1"));
   EXPECT_FALSE(GetDocument().getElementById("after2"));
@@ -179,7 +178,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
 
   // Completing the head css shouldn't change anything
   css_head_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after1"));
   EXPECT_FALSE(GetDocument().getElementById("after2"));
@@ -187,7 +186,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
 
   // Completing the second css shouldn't change anything
   css_body_resource2.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after1"));
   EXPECT_FALSE(GetDocument().getElementById("after2"));
@@ -197,7 +196,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
   // the second css which was already completed and then pause again before the
   // third css.
   css_body_resource1.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after1"));
   EXPECT_TRUE(GetDocument().getElementById("after2"));
@@ -205,7 +204,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
 
   // Completing the third css should let it continue to the end.
   css_body_resource3.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after1"));
   EXPECT_TRUE(GetDocument().getElementById("after2"));
@@ -230,7 +229,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after"));
 
@@ -259,20 +258,20 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after"));
 
   // Completing the head css shouldn't change anything
   css_head_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after"));
 
   // Completing the body resource and pumping the tasks should continue parsing
   // and create the "after" div.
   css_body_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after"));
 }
@@ -298,20 +297,20 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after"));
 
   // Completing the head css shouldn't change anything
   css_head_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_FALSE(GetDocument().getElementById("after"));
 
   // Completing the body resource and pumping the tasks should continue parsing
   // and create the "after" div.
   css_body_resource.Complete("");
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after"));
 }
@@ -335,7 +334,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after"));
   css_head_resource.Complete("");
@@ -360,7 +359,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after"));
   css_head_resource.Complete("");
@@ -392,7 +391,7 @@ TEST_P(HTMLDocumentParserLoadingTest,
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_TRUE(GetDocument().getElementById("before"));
   EXPECT_TRUE(GetDocument().getElementById("after"));
 
@@ -409,7 +408,7 @@ TEST_F(HTMLDocumentParserSimTest, NoRewindNoDocWrite) {
     </body></html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   histogram_.ExpectTotalCount("Parser.DiscardedTokenCount", 0);
 }
 
@@ -424,7 +423,7 @@ TEST_F(HTMLDocumentParserSimTest, RewindBrokenToken) {
     </script>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   histogram_.ExpectTotalCount("Parser.DiscardedTokenCount", 1);
 }
 
@@ -439,7 +438,7 @@ TEST_F(HTMLDocumentParserSimTest, RewindDifferentNamespace) {
     </script>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   histogram_.ExpectTotalCount("Parser.DiscardedTokenCount", 1);
 }
 
@@ -453,7 +452,7 @@ TEST_F(HTMLDocumentParserSimTest, NoRewindSaneDocWrite1) {
       "document.write('<script>console.log(\'hello world\');<\\/script>');"
       "</script>");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   histogram_.ExpectTotalCount("Parser.DiscardedTokenCount", 0);
 }
 
@@ -468,7 +467,7 @@ TEST_F(HTMLDocumentParserSimTest, NoRewindSaneDocWrite2) {
     </script>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   histogram_.ExpectTotalCount("Parser.DiscardedTokenCount", 0);
 }
 
@@ -488,7 +487,7 @@ TEST_F(HTMLDocumentParserSimTest, NoRewindSaneDocWriteWithTitle) {
     </html>
   )HTML");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   histogram_.ExpectTotalCount("Parser.DiscardedTokenCount", 0);
 }
 

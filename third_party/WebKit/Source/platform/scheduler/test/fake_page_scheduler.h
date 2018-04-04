@@ -5,7 +5,7 @@
 #ifndef THIRD_PARTY_WEBKIT_SOURCE_PLATFORM_SCHEDULER_TEST_FAKE_PAGE_SCHEDULER_H_
 #define THIRD_PARTY_WEBKIT_SOURCE_PLATFORM_SCHEDULER_TEST_FAKE_PAGE_SCHEDULER_H_
 
-#include "platform/scheduler/renderer/page_scheduler.h"
+#include "platform/scheduler/public/page_scheduler.h"
 
 namespace blink {
 namespace scheduler {
@@ -50,6 +50,7 @@ class FakePageScheduler final : public PageScheduler {
 
   void SetPageVisible(bool is_page_visible) override {}
   void SetPageFrozen(bool is_page_frozen) override {}
+  void SetKeepActive(bool keep_active) override {}
 
   std::unique_ptr<FrameScheduler> CreateFrameScheduler(
       BlameContext* blame_context,

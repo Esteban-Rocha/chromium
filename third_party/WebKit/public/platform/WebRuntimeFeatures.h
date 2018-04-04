@@ -73,6 +73,7 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableAccelerated2dCanvas(bool);
   BLINK_PLATFORM_EXPORT static void EnableAllowActivationDelegationAttr(bool);
   BLINK_PLATFORM_EXPORT static void EnableAudioOutputDevices(bool);
+  BLINK_PLATFORM_EXPORT static void EnableCacheInlineScriptCode(bool);
   BLINK_PLATFORM_EXPORT static void EnableCanvas2dImageChromium(bool);
   BLINK_PLATFORM_EXPORT static void EnableCSSHexAlphaColor(bool);
   BLINK_PLATFORM_EXPORT static void EnableScrollTopLeftInterop(bool);
@@ -128,7 +129,6 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableScriptedSpeech(bool);
   BLINK_PLATFORM_EXPORT static void EnableScrollAnchoring(bool);
   BLINK_PLATFORM_EXPORT static void EnableScrollAnchorSerialization(bool);
-  BLINK_PLATFORM_EXPORT static void EnableServiceWorkerNavigationPreload(bool);
   BLINK_PLATFORM_EXPORT static void EnableServiceWorkerScriptFullCodeCache(
       bool);
   BLINK_PLATFORM_EXPORT static void EnableSharedArrayBuffer(bool);
@@ -183,10 +183,10 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableStopLoadingInBackground(bool);
   BLINK_PLATFORM_EXPORT static void EnableStopNonTimersInBackground(bool);
   BLINK_PLATFORM_EXPORT static void EnablePWAFullCodeCache(bool);
-  BLINK_PLATFORM_EXPORT static void EnableDoubleTapToJumpOnVideo(bool);
   BLINK_PLATFORM_EXPORT static void EnableCodeCacheAfterExecute(bool);
   BLINK_PLATFORM_EXPORT static void EnableUnifiedTouchAdjustment(bool);
   BLINK_PLATFORM_EXPORT static void EnableMojoBlobURLs(bool);
+  BLINK_PLATFORM_EXPORT static void EnableOffMainThreadWebSocket(bool);
 
  private:
   WebRuntimeFeatures();

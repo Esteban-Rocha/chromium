@@ -56,7 +56,6 @@ class Document;
 class ElementAnimations;
 class ElementIntersectionObserverData;
 class ElementRareData;
-class ElementShadow;
 class ExceptionState;
 class FloatQuad;
 class FocusOptions;
@@ -460,7 +459,7 @@ class CORE_EXPORT Element : public ContainerNode {
   void DetachLayoutTree(const AttachContext& = AttachContext()) override;
 
   virtual LayoutObject* CreateLayoutObject(const ComputedStyle&);
-  virtual bool LayoutObjectIsNeeded(const ComputedStyle&);
+  virtual bool LayoutObjectIsNeeded(const ComputedStyle&) const;
   void RecalcStyle(StyleRecalcChange);
   void RecalcStyleForReattach();
   bool NeedsRebuildLayoutTree(
@@ -481,8 +480,6 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void SetNeedsCompositingUpdate();
 
-  ElementShadow* Shadow() const;
-  ElementShadow& EnsureShadow();
   // If type of ShadowRoot (either closed or open) is explicitly specified,
   // creation of multiple shadow roots is prohibited in any combination and
   // throws an exception.  Multiple shadow roots are allowed only when
@@ -738,6 +735,7 @@ class CORE_EXPORT Element : public ContainerNode {
 
   virtual bool IsFormControlElement() const { return false; }
   virtual bool IsSpinButtonElement() const { return false; }
+  // This returns true for <textarea> and some types of <input>.
   virtual bool IsTextControl() const { return false; }
   virtual bool IsOptionalFormControl() const { return false; }
   virtual bool IsRequiredFormControl() const { return false; }
@@ -963,13 +961,16 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void RebuildPseudoElementLayoutTree(PseudoId, WhitespaceAttacher&);
   void RebuildShadowRootLayoutTree(WhitespaceAttacher&);
-  inline void CheckForEmptyStyleChange();
+  inline void CheckForEmptyStyleChange(const Node* node_before_change,
+                                       const Node* node_after_change);
 
   void UpdatePseudoElement(PseudoId, StyleRecalcChange);
   bool UpdateFirstLetter(Element*);
 
   inline PseudoElement* CreatePseudoElementIfNeeded(PseudoId);
   void CreateAndAttachPseudoElementIfNeeded(PseudoId, AttachContext&);
+
+  ShadowRoot& CreateAndAttachShadowRoot(ShadowRootType);
 
   // FIXME: Everyone should allow author shadows.
   virtual bool AreAuthorShadowsAllowed() const { return true; }
@@ -1041,7 +1042,7 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void CreateUniqueElementData();
 
-  bool ShouldInvalidateDistributionWhenAttributeChanged(ElementShadow*,
+  bool ShouldInvalidateDistributionWhenAttributeChanged(ShadowRoot&,
                                                         const QualifiedName&,
                                                         const AtomicString&);
 
@@ -1254,19 +1255,19 @@ inline void Element::SetTagNameForCreateElementNS(
 }
 
 inline bool IsShadowHost(const Node* node) {
-  return node && node->IsElementNode() && ToElement(node)->Shadow();
+  return node && node->GetShadowRoot();
 }
 
 inline bool IsShadowHost(const Node& node) {
-  return node.IsElementNode() && ToElement(node).Shadow();
+  return node.GetShadowRoot();
 }
 
 inline bool IsShadowHost(const Element* element) {
-  return element && element->Shadow();
+  return element && element->GetShadowRoot();
 }
 
 inline bool IsShadowHost(const Element& element) {
-  return element.Shadow();
+  return element.GetShadowRoot();
 }
 
 inline bool IsAtShadowBoundary(const Element* element) {

@@ -446,11 +446,10 @@ class WebContents : public PageNavigator,
   virtual void WasShown() = 0;
   virtual void WasHidden() = 0;
 
-  // Invoked when the WebContents becomes occluded/unoccluded. An occluded
-  // WebContents isn't painted on the screen, except in a window switching
-  // feature (e.g. Alt-Tab).
+  // Invoked when the WebContents becomes occluded. An occluded WebContents
+  // isn't painted on the screen, except in a window switching feature (e.g.
+  // Alt-Tab).
   virtual void WasOccluded() = 0;
-  virtual void WasUnOccluded() = 0;
 
   // Returns the visibility of the WebContents' view.
   virtual Visibility GetVisibility() const = 0;
@@ -480,6 +479,10 @@ class WebContents : public PageNavigator,
 
   // Invoked when visible security state changes.
   virtual void DidChangeVisibleSecurityState() = 0;
+
+  // Notify this WebContents that the preferences have changed. This will send
+  // an IPC to all the renderer processes associated with this WebContents.
+  virtual void NotifyPreferencesChanged() = 0;
 
   // Commands ------------------------------------------------------------------
 
@@ -805,6 +808,20 @@ class WebContents : public PageNavigator,
 
   // Tells the WebContents whether the context menu is showing.
   virtual void SetShowingContextMenu(bool showing) = 0;
+
+  // Pause and unpause scheduled tasks in the page of blink. This function will
+  // suspend page loadings and all background processing like active javascript,
+  // and timers through |blink::Page::SetPaused|. If you want to resume the
+  // paused state, you have to call this function with |false| argument again.
+  // The function with |false| should be called after calling it with |true|. If
+  // not, assertion will happen.
+  //
+  // WARNING: This only pauses the activities in the particular page in the
+  // renderer process, but may indirectly block or break other pages when they
+  // wait for the common backend (e.g. storage) in the browser process.
+  // TODO(gyuyoung): https://crbug.com/822564 - Make this feature safer and fix
+  // bugs.
+  virtual void PausePageScheduledTasks(bool paused) = 0;
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(

@@ -86,7 +86,7 @@ struct WindowPortPropertyDataMus : public ui::PropertyData {
 // message loop starts, or upon destruction.
 class EventAckHandler : public base::RunLoop::NestingObserver {
  public:
-  explicit EventAckHandler(std::unique_ptr<EventResultCallback> ack_callback)
+  explicit EventAckHandler(EventResultCallback ack_callback)
       : ack_callback_(std::move(ack_callback)) {
     DCHECK(ack_callback_);
     base::RunLoop::AddNestingObserverOnCurrentThread(this);
@@ -96,8 +96,9 @@ class EventAckHandler : public base::RunLoop::NestingObserver {
     base::RunLoop::RemoveNestingObserverOnCurrentThread(this);
     if (ack_callback_) {
       NotifyPlatformEventSource();
-      ack_callback_->Run(handled_ ? ui::mojom::EventResult::HANDLED
-                                  : ui::mojom::EventResult::UNHANDLED);
+      std::move(ack_callback_)
+          .Run(handled_ ? ui::mojom::EventResult::HANDLED
+                        : ui::mojom::EventResult::UNHANDLED);
     }
   }
 
@@ -118,8 +119,7 @@ class EventAckHandler : public base::RunLoop::NestingObserver {
     // Otherwise we appear unresponsive for the life of the nested run loop.
     if (ack_callback_) {
       NotifyPlatformEventSource();
-      ack_callback_->Run(ui::mojom::EventResult::HANDLED);
-      ack_callback_.reset();
+      std::move(ack_callback_).Run(ui::mojom::EventResult::HANDLED);
     }
   }
 
@@ -131,7 +131,7 @@ class EventAckHandler : public base::RunLoop::NestingObserver {
 #endif
   }
 
-  std::unique_ptr<EventResultCallback> ack_callback_;
+  EventResultCallback ack_callback_;
   bool handled_ = false;
 #if defined(USE_OZONE)
   ui::Event* event_ = nullptr;
@@ -781,10 +781,10 @@ void WindowTreeClient::SetWindowTree(ui::mojom::WindowTreePtr window_tree_ptr) {
 
   WindowTreeConnectionEstablished(tree_ptr_.get());
   tree_ptr_->GetCursorLocationMemory(
-      base::Bind(&WindowTreeClient::OnReceivedCursorLocationMemory,
-                 weak_factory_.GetWeakPtr()));
+      base::BindOnce(&WindowTreeClient::OnReceivedCursorLocationMemory,
+                     weak_factory_.GetWeakPtr()));
 
-  tree_ptr_.set_connection_error_handler(base::Bind(
+  tree_ptr_.set_connection_error_handler(base::BindOnce(
       &WindowTreeClient::OnConnectionLost, weak_factory_.GetWeakPtr()));
 
   if (window_manager_delegate_) {
@@ -885,11 +885,10 @@ WindowTreeHostMus* WindowTreeClient::WmNewDisplayAddedImpl(
   return window_tree_host_ptr;
 }
 
-std::unique_ptr<EventResultCallback>
-WindowTreeClient::CreateEventResultCallback(int32_t event_id) {
-  return std::make_unique<EventResultCallback>(
-      base::Bind(&ui::mojom::WindowTree::OnWindowInputEventAck,
-                 base::Unretained(tree_), event_id));
+EventResultCallback WindowTreeClient::CreateEventResultCallback(
+    int32_t event_id) {
+  return base::BindOnce(&ui::mojom::WindowTree::OnWindowInputEventAck,
+                        base::Unretained(tree_), event_id);
 }
 
 void WindowTreeClient::OnReceivedCursorLocationMemory(
@@ -1026,7 +1025,7 @@ void WindowTreeClient::OnWindowMusCreated(WindowMus* window) {
           base::FeatureList::IsEnabled(features::kMash)
               ? display_init_params->mirrors
               : std::vector<display::Display>(),
-          base::Bind(&OnAckMustSucceed, FROM_HERE));
+          base::BindOnce(&OnAckMustSucceed, FROM_HERE));
     }
   }
 }
@@ -1897,7 +1896,7 @@ void WindowTreeClient::SetBlockingContainers(
   }
   window_manager_client_->SetBlockingContainers(
       std::move(transport_all_blocking_containers),
-      base::Bind(&OnAckMustSucceed, FROM_HERE));
+      base::BindOnce(&OnAckMustSucceed, FROM_HERE));
 }
 
 void WindowTreeClient::GetWindowManager(
@@ -2373,7 +2372,8 @@ void WindowTreeClient::SetDisplayConfiguration(
             : display::kInvalidDisplayId;
     window_manager_client_->SetDisplayConfiguration(
         displays, std::move(viewport_metrics), primary_display_id,
-        internal_display_id, mirrors, base::Bind(&OnAckMustSucceed, FROM_HERE));
+        internal_display_id, mirrors,
+        base::BindOnce(&OnAckMustSucceed, FROM_HERE));
   }
 }
 
@@ -2392,7 +2392,7 @@ void WindowTreeClient::AddDisplayReusingWindowTreeHost(
     window_manager_client_->SetDisplayRoot(
         display, std::move(viewport_metrics), is_primary_display,
         display_root_window->server_id(), mirrors,
-        base::Bind(&OnAckMustSucceed, FROM_HERE));
+        base::BindOnce(&OnAckMustSucceed, FROM_HERE));
     window_tree_host->compositor()->SetLocalSurfaceId(
         display_root_window->GetOrAllocateLocalSurfaceId(
             window_tree_host->GetBoundsInPixels().size()));
@@ -2416,7 +2416,7 @@ void WindowTreeClient::SwapDisplayRoots(WindowTreeHostMus* window_tree_host1,
 
   if (window_manager_client_) {
     window_manager_client_->SwapDisplayRoots(
-        display_id1, display_id2, base::Bind(&OnAckMustSucceed, FROM_HERE));
+        display_id1, display_id2, base::BindOnce(&OnAckMustSucceed, FROM_HERE));
   }
 }
 

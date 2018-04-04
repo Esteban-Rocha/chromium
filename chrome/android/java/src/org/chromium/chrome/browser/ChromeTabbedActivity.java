@@ -29,6 +29,7 @@ import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
@@ -142,7 +143,6 @@ import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsAccessibility;
 import org.chromium.content_public.common.Referrer;
-import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.PageTransition;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.widget.Toast;
@@ -278,6 +278,8 @@ public class ChromeTabbedActivity
     private LocaleManager mLocaleManager;
 
     private AppIndexingUtil mAppIndexingUtil;
+
+    private Runnable mShowHistoryRunnable;
 
     /**
      * Whether an initial tab needs to be created during UI initialization.
@@ -680,7 +682,7 @@ public class ChromeTabbedActivity
         // left until onScreenshotTaken() since it is less expensive to keep monitoring on and
         // check when the help UI is accessed than it is to start/stop monitoring per tab change
         // (e.g. tab switch or in overview mode).
-        if (DeviceFormFactor.isTablet()) return;
+        if (isTablet()) return;
 
         mScreenshotMonitor.startMonitoring();
     }
@@ -791,7 +793,7 @@ public class ChromeTabbedActivity
             TraceEvent.begin("ChromeTabbedActivity.initializeUI");
 
             CompositorViewHolder compositorViewHolder = getCompositorViewHolder();
-            if (DeviceFormFactor.isTablet()) {
+            if (isTablet()) {
                 mLayoutManager = new LayoutManagerChromeTablet(compositorViewHolder);
             } else {
                 mLayoutManager = new LayoutManagerChromePhone(compositorViewHolder);
@@ -1431,8 +1433,7 @@ public class ChromeTabbedActivity
 
     @Override
     protected int getToolbarLayoutId() {
-        if (DeviceFormFactor.isTablet()) return R.layout.toolbar_tablet;
-        return R.layout.toolbar_phone;
+        return isTablet() ? R.layout.toolbar_tablet : R.layout.toolbar_phone;
     }
 
     @Override
@@ -1459,7 +1460,7 @@ public class ChromeTabbedActivity
     @Override
     protected void initializeToolbar() {
         super.initializeToolbar();
-        if (DeviceFormFactor.isTablet()) {
+        if (isTablet()) {
             getToolbarManager().setShouldUpdateToolbarPrimaryColor(false);
         }
     }
@@ -2033,6 +2034,13 @@ public class ChromeTabbedActivity
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // Detecting a long press of the back button via onLongPress is broken in Android N.
+        // To work around this, use a postDelayed, which is supported in all versions.
+        if (keyCode == KeyEvent.KEYCODE_BACK && !isTablet()) {
+            if (mShowHistoryRunnable == null) mShowHistoryRunnable = this ::showFullHistoryForTab;
+            mHandler.postDelayed(mShowHistoryRunnable, ViewConfiguration.getLongPressTimeout());
+            return super.onKeyDown(keyCode, event);
+        }
         if (!mUIInitialized) {
             return super.onKeyDown(keyCode, event);
         }
@@ -2041,6 +2049,16 @@ public class ChromeTabbedActivity
         return KeyboardShortcuts.onKeyDown(event, this, isCurrentTabVisible, true)
                 || super.onKeyDown(keyCode, event);
     }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && !isTablet()) {
+            mHandler.removeCallbacks(mShowHistoryRunnable);
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    private void showFullHistoryForTab() {}
 
     @Override
     public void onProvideKeyboardShortcuts(List<KeyboardShortcutGroup> data, Menu menu,
@@ -2166,7 +2184,7 @@ public class ChromeTabbedActivity
 
     @Override
     protected void setStatusBarColor(@Nullable Tab tab, int color) {
-        if (DeviceFormFactor.isTablet()) return;
+        if (isTablet()) return;
 
         int tabSwitcherColor = Color.BLACK;
         boolean supportsDarkStatusIcons = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M;

@@ -1394,12 +1394,14 @@ void InputHandlerProxy::HandleScrollElasticityOverscroll(
   // impl thread event handling paths.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
-      base::Bind(&InputScrollElasticityController::ObserveGestureEventAndResult,
-                 scroll_elasticity_controller_->GetWeakPtr(), gesture_event,
-                 scroll_result));
+      base::BindOnce(
+          &InputScrollElasticityController::ObserveGestureEventAndResult,
+          scroll_elasticity_controller_->GetWeakPtr(), gesture_event,
+          scroll_result));
 }
 
-void InputHandlerProxy::SetTickClockForTesting(base::TickClock* tick_clock) {
+void InputHandlerProxy::SetTickClockForTesting(
+    const base::TickClock* tick_clock) {
   tick_clock_ = tick_clock;
 }
 

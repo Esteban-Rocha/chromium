@@ -29,7 +29,6 @@
 class PrefRegistrySimple;
 
 namespace base {
-class RefCountedBytes;
 class SequencedTaskRunner;
 }  // namespace base
 
@@ -77,14 +76,6 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   // command line, lock/login screens).
   static const SkColor kInvalidColor;
 
-  // The paths of wallpaper directories.
-  // TODO(crbug.com/776464): Move these to anonymous namespace after
-  // |WallpaperManager::LoadWallpaper| and
-  // |WallpaperManager::GetDeviceWallpaperDir| are migrated.
-  static base::FilePath dir_user_data_path_;
-  static base::FilePath dir_chrome_os_wallpapers_path_;
-  static base::FilePath dir_chrome_os_custom_wallpapers_path_;
-
   // Directory names of custom wallpapers.
   static const char kSmallWallpaperSubDir[];
   static const char kLargeWallpaperSubDir[];
@@ -103,10 +94,6 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   static const int kSmallWallpaperMaxHeight;
   static const int kLargeWallpaperMaxWidth;
   static const int kLargeWallpaperMaxHeight;
-
-  // The width and height of wallpaper thumbnails.
-  static const int kWallpaperThumbnailWidth;
-  static const int kWallpaperThumbnailHeight;
 
   // The color of the wallpaper if no other wallpaper images are available.
   static const SkColor kDefaultWallpaperColor;
@@ -139,16 +126,6 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   static base::FilePath GetCustomWallpaperDir(const std::string& sub_dir);
 
   // Resizes |image| to a resolution which is nearest to |preferred_width| and
-  // |preferred_height| while respecting the |layout| choice. |output_skia| is
-  // optional (may be null). Returns true on success.
-  static bool ResizeImage(const gfx::ImageSkia& image,
-                          WallpaperLayout layout,
-                          int preferred_width,
-                          int preferred_height,
-                          scoped_refptr<base::RefCountedBytes>* output,
-                          gfx::ImageSkia* output_skia);
-
-  // Resizes |image| to a resolution which is nearest to |preferred_width| and
   // |preferred_height| while respecting the |layout| choice and saves the
   // resized wallpaper to |path|. |output_skia| is optional (may be
   // null). Returns true on success.
@@ -158,9 +135,6 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
                                      int preferred_width,
                                      int preferred_height,
                                      gfx::ImageSkia* output_skia);
-
-  // Returns the file path of the device policy wallpaper.
-  static base::FilePath GetDevicePolicyWallpaperFilePath();
 
   // Gets |account_id|'s custom wallpaper at |wallpaper_path|. Falls back to the
   // original custom wallpaper. When |show_wallpaper| is true, shows the
@@ -261,11 +235,6 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   // |locking| is true and remove it otherwise.
   void PrepareWallpaperForLockScreenChange(bool locking);
 
-  // Returns the location of the active user's wallpaper (either an URL or a
-  // file path). Returns an empty string if there's no active user, or the
-  // active user has not set a user wallpaper.
-  std::string GetActiveUserWallpaperLocation();
-
   // WindowTreeHostManager::Observer:
   void OnDisplayConfigurationChanged() override;
 
@@ -337,6 +306,7 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
             const base::FilePath& user_data_path,
             const base::FilePath& chromeos_wallpapers_path,
             const base::FilePath& chromeos_custom_wallpapers_path,
+            const base::FilePath& device_policy_wallpaper_path,
             bool is_device_wallpaper_policy_enforced) override;
   void SetCustomWallpaper(mojom::WallpaperUserInfoPtr user_info,
                           const std::string& wallpaper_files_id,
@@ -382,6 +352,8 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   void GetWallpaperColors(GetWallpaperColorsCallback callback) override;
   void IsActiveUserWallpaperControlledByPolicy(
       IsActiveUserWallpaperControlledByPolicyCallback callback) override;
+  void GetActiveUserWallpaperLocation(
+      GetActiveUserWallpaperLocationCallback callback) override;
   void ShouldShowWallpaperSetting(
       ShouldShowWallpaperSettingCallback callback) override;
 
@@ -521,6 +493,15 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   // system state (e.g. wallpaper image, SessionState, etc.).
   bool ShouldCalculateColors() const;
 
+  // Caches color calculation results in the local state pref service.
+  void CacheProminentColors(const std::vector<SkColor>& colors,
+                            const std::string& current_location);
+
+  // Gets prominent color cache from the local state pref service. Returns an
+  // empty value if the cache is not available.
+  base::Optional<std::vector<SkColor>> GetCachedColors(
+      const std::string& current_location);
+
   // Move all wallpaper widgets to the locked container.
   // Returns true if the wallpaper moved.
   bool MoveToLockedContainer();
@@ -541,10 +522,13 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   void OnDevicePolicyWallpaperDecoded(const gfx::ImageSkia& image);
 
   // Implementation of |IsActiveUserWallpaperControlledByPolicy|.
-  bool IsActiveUserWallpaperControlledByPolicyImpl();
+  bool IsActiveUserWallpaperControlledByPolicyImpl() const;
+
+  // Implementation of |GetActiveUserWallpaperLocation|.
+  std::string GetActiveUserWallpaperLocationImpl() const;
 
   // Implementation of |ShouldShowWallpaperSetting|.
-  bool ShouldShowWallpaperSettingImpl();
+  bool ShouldShowWallpaperSettingImpl() const;
 
   // When wallpaper resizes, we can check which displays will be affected. For
   // simplicity, we only lock the compositor for the internal display.
@@ -638,6 +622,11 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   // 'set wallpaper' request. (e.g. when a custom wallpaper decoding fails, a
   // default wallpaper decoding is initiated.)
   std::vector<base::FilePath> decode_requests_for_testing_;
+
+  // PrefService provided by Shell::OnLocalStatePrefServiceInitialized.
+  // Valid for the lifetime of ash::Shell which owns WallpaperController.
+  // May be null during intialization or in tests.
+  PrefService* local_state_ = nullptr;
 
   base::WeakPtrFactory<WallpaperController> weak_factory_;
 

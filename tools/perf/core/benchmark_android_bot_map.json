@@ -44,8 +44,7 @@
   "14": {
     "benchmarks": [
       "dromaeo",
-      "smoothness.simple_mobile_sites",
-      "v8.detached_context_age_in_gc"
+      "smoothness.simple_mobile_sites"
     ]
   },
   "15": {
@@ -56,12 +55,14 @@
   },
   "16": {
     "benchmarks": [
-      "smoothness.top_25_smooth"
+      "smoothness.top_25_smooth",
+      "rendering.mobile"
     ]
   },
   "17": {
     "benchmarks": [
-      "smoothness.tough_ad_cases"
+      "smoothness.tough_ad_cases",
+      "rendering.desktop"
     ]
   },
   "18": {

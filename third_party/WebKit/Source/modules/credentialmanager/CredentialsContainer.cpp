@@ -13,7 +13,7 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/frame/Frame.h"
 #include "core/frame/UseCounter.h"
 #include "core/inspector/ConsoleMessage.h"
@@ -117,11 +117,8 @@ bool CheckSecurityRequirementsBeforeRequest(
   // execution context is valid, it must have a responsible browsing context.
   SECURITY_CHECK(resolver->GetFrame());
 
-  String error_message;
-  if (!resolver->GetExecutionContext()->IsSecureContext(error_message)) {
-    resolver->Reject(DOMException::Create(kSecurityError, error_message));
-    return false;
-  }
+  // The API is not exposed in non-secure context.
+  SECURITY_CHECK(resolver->GetExecutionContext()->IsSecureContext());
 
   if (required_origin_type == RequiredOriginType::kSecureAndSameWithAncestors &&
       !IsSameOriginWithAncestors(resolver->GetFrame())) {
@@ -256,6 +253,10 @@ DOMException* CredentialManagerErrorToDOMException(
           "Parameters for this operation are not supported.");
     case CredentialManagerError::INVALID_DOMAIN:
       return DOMException::Create(kSecurityError, "This is an invalid domain.");
+    case CredentialManagerError::INVALID_STATE:
+      return DOMException::Create(
+          kInvalidStateError,
+          "Attempting to register an already-registered key.");
     case CredentialManagerError::NOT_IMPLEMENTED:
       return DOMException::Create(kNotSupportedError, "Not implemented");
     case CredentialManagerError::UNKNOWN:

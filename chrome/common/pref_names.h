@@ -14,8 +14,8 @@
 #include "components/offline_pages/buildflags/buildflags.h"
 #include "extensions/buildflags/buildflags.h"
 #include "media/media_buildflags.h"
-#include "ppapi/features/features.h"
-#include "rlz/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "rlz/buildflags/buildflags.h"
 
 namespace prefs {
 
@@ -408,6 +408,7 @@ extern const char kRecommendedNativePrintersFile[];
 extern const char kRecommendedNativePrintersAccessMode[];
 extern const char kRecommendedNativePrintersBlacklist[];
 extern const char kRecommendedNativePrintersWhitelist[];
+extern const char kUserNativePrintersAllowed[];
 #endif  // OS_CHROMEOS
 
 extern const char kDefaultSupervisedUserFilteringBehavior[];
@@ -781,7 +782,7 @@ extern const char kBrowserGuestModeEnabled[];
 extern const char kBrowserAddPersonEnabled[];
 extern const char kForceBrowserSignin[];
 
-extern const char kEasyUnlockDeviceId[];
+extern const char kCryptAuthDeviceId[];
 extern const char kEasyUnlockHardlockState[];
 extern const char kEasyUnlockLocalStateTpmKeys[];
 extern const char kEasyUnlockLocalStateUserPrefs[];

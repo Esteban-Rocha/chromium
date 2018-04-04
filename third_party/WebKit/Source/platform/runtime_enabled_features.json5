@@ -148,6 +148,9 @@
       status: "experimental",
     },
     {
+      name: "CacheInlineScriptCode"
+    },
+    {
       name: "CacheStyleSheetWithMediaQueries",
       status: "experimental",
     },
@@ -340,6 +343,10 @@
       status: "experimental",
     },
     {
+      name: "CustomElementDefaultStyle",
+      status: "experimental",
+    },
+    {
       name: "CustomElementsBuiltin",
       status: "stable",
     },
@@ -389,10 +396,6 @@
     },
     {
       name: "DocumentWrite",
-    },
-    {
-      name: "DoubleTapToJumpOnVideo",
-      settable_from_internals: true
     },
     {
       name: "EmbedderCSPEnforcement",
@@ -501,7 +504,7 @@
     {
       name: "FramebustingNeedsSameOriginOrUserGesture",
       settable_from_internals: true,
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "FramesTimingFunction",
@@ -590,10 +593,13 @@
     },
     {
       name: "LayoutNG",
-      implied_by: ["LayoutNGBlockFragmentation"],
+      implied_by: ["LayoutNGBlockFragmentation", "LayoutNGFlexBox"],
     },
     {
       name: "LayoutNGBlockFragmentation",
+    },
+    {
+      name: "LayoutNGFlexBox",
     },
     {
       name: "LayoutNGFragmentCaching",
@@ -783,6 +789,9 @@
     {
       name: "NullableDocumentDomain",
       status: "experimental",
+    },
+    {
+      name: "OffMainThreadWebSocket",
     },
     {
       name: "OffscreenCanvas",
@@ -981,6 +990,10 @@
     {
       name: "RootLayerScrolling",
       status: "stable",
+    },
+    {
+      name: "RTCPeerConnectionGetStatsSelector",
+      status: "experimental",
     },
     {
       name: "RtcPeerConnectionId",

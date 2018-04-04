@@ -540,7 +540,7 @@ class InputHandlerProxyEventQueueTest : public testing::TestWithParam<bool> {
         CreateGestureScrollFlingPinch(type, source_device, delta_y_or_scale, x,
                                       y),
         latency,
-        base::Bind(
+        base::BindOnce(
             &InputHandlerProxyEventQueueTest::DidHandleInputEventAndOverscroll,
             weak_ptr_factory_.GetWeakPtr()));
   }
@@ -558,7 +558,8 @@ class InputHandlerProxyEventQueueTest : public testing::TestWithParam<bool> {
     return input_handler_proxy_->compositor_event_queue_->queue_;
   }
 
-  void SetInputHandlerProxyTickClockForTesting(base::TickClock* tick_clock) {
+  void SetInputHandlerProxyTickClockForTesting(
+      const base::TickClock* tick_clock) {
     input_handler_proxy_->SetTickClockForTesting(tick_clock);
   }
 

@@ -85,7 +85,7 @@
     },
 
     'chromium.chromedriver': {
-      'Win7': 'release_bot_x86_minimal_symbols',
+      'Win7': 'release_bot_x86',
       'Mac 10.6': 'release_bot',
       'Linux': 'release_bot',
       'Linux32': 'release_bot_x86',
@@ -105,8 +105,8 @@
     },
 
     'chromium.clang': {
-      'CFI Linux CF': 'cfi_full_cfi_diag_recover_release_static',
-      'CFI Linux ToT': 'clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on',
+      'CFI Linux CF': 'cfi_full_cfi_icall_cfi_diag_recover_release_static',
+      'CFI Linux ToT': 'clang_tot_cfi_full_cfi_icall_cfi_diag_thin_lto_release_static_dcheck_always_on',
       'CFI Linux (icall)': 'cfi_full_diag_icall_release_static_dcheck_always_on',
       'CrWinAsan': 'asan_clang_fuzzer_static_v8_heap_x86_full_symbols_release',
       'CrWinAsan(dll)': 'asan_clang_shared_v8_heap_x86_full_symbols_release',
@@ -126,11 +126,10 @@
       'CrWinClngLLD64dbg': 'clang_tot_full_symbols_shared_debug_use_lld',
       'CrWinClngLLDdbg': 'clang_tot_full_symbols_shared_debug_use_lld_x86',
       'linux-win_cross-rel': 'clang_tot_win_release_cross',
-      'ToTAndroid': 'android_clang_tot_release',
+      'ToTAndroid': 'android_clang_tot_release_minimal_symbols',
       'ToTAndroid64': 'android_clang_tot_release_arm64',
       'ToTAndroidASan': 'android_clang_tot_asan',
       'ToTAndroid (dbg)': 'android_clang_tot_dbg',
-      'ToTAndroid': 'android_clang_tot_release',
       'ToTAndroidCFI': 'android_clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on',
       'ToTAndroid64': 'android_clang_tot_release_arm64',
       'ToTAndroid x64': 'android_clang_tot_x64',
@@ -167,8 +166,8 @@
       'Android deterministic': 'android_without_codecs_release_bot_minimal_symbols',
       'Android deterministic (dbg)': 'android_debug_bot',
       'Browser Side Navigation Linux': 'release_bot',
-      'CFI Linux CF': 'cfi_full_cfi_diag_recover_release_static',
-      'CFI Linux ToT': 'clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on',
+      'CFI Linux CF': 'cfi_full_cfi_icall_cfi_diag_recover_release_static',
+      'CFI Linux ToT': 'clang_tot_cfi_full_cfi_icall_cfi_diag_thin_lto_release_static_dcheck_always_on',
       'CFI Linux (icall)': 'cfi_full_diag_icall_release_static_dcheck_always_on',
       'chromeos-amd64-generic-rel-goma-canary': 'cros_chrome_sdk',
 
@@ -336,6 +335,7 @@
       'Cast Android (dbg)': 'android_cast_debug_static_bot',
       'Cast Linux': 'cast_release_bot',
       'Cast Audio Linux': 'cast_audio_release_bot',
+      'Jumbo Linux x64': 'jumbo_release_bot_minimal_symbols',
       'Leak Detection Linux': 'release_bot',
       'Linux Builder (dbg)': 'debug_bot',
       'Linux Builder (dbg)(32)': 'debug_bot_x86',
@@ -393,27 +393,27 @@
     },
 
     'chromium.perf': {
-      'Android Builder': 'official_goma_minimal_symbols_android',
-      'Android arm64 Builder': 'official_goma_minimal_symbols_android_arm64',
-      'Android Compile': 'official_goma_minimal_symbols_android',
-      'Android arm64 Compile': 'official_goma_minimal_symbols_android_arm64',
-      'Linux Builder': 'official_goma_perf',
-      'Mac Builder': 'official_goma',
-      'Win Builder': 'official_goma_x86',
-      'Win x64 Builder': 'official_goma',
+      'Android Builder Perf': 'official_goma_minimal_symbols_android',
+      'Android arm64 Builder Perf': 'official_goma_minimal_symbols_android_arm64',
+      'Android Compile Perf': 'official_goma_minimal_symbols_android',
+      'Android arm64 Compile Perf': 'official_goma_minimal_symbols_android_arm64',
+      'Linux Builder Perf': 'official_goma_perf',
+      'Mac Builder Perf': 'official_goma',
+      'Win Builder Perf': 'official_goma_x86',
+      'Win x64 Builder Perf': 'official_goma',
     },
 
     'chromium.perf.fyi': {
-      'Linux Compile FYI': 'official_goma_perf',
-      'Android Builder FYI': 'official_goma_minimal_symbols_android',
-      'Android arm64 Builder FYI': 'official_goma_minimal_symbols_android_arm64',
-      'Android CFI Builder FYI': 'official_goma_minimal_symbols_android_cfi',
-      'Android CFI arm64 Builder FYI': 'official_goma_minimal_symbols_android_cfi_arm64',
+      'Linux Compile Perf FYI': 'official_goma_perf',
+      'Android Builder Perf FYI': 'official_goma_minimal_symbols_android',
+      'Android arm64 Builder Perf FYI': 'official_goma_minimal_symbols_android_arm64',
+      'Android CFI Builder Perf FYI': 'official_goma_minimal_symbols_android_cfi',
+      'Android CFI arm64 Builder Perf FYI': 'official_goma_minimal_symbols_android_cfi_arm64',
       'Battor Agent Linux': 'release_bot',
       'Battor Agent Mac': 'release_bot',
       'Battor Agent Win': 'release_bot',
-      'Mac Builder FYI': 'official_goma',
-      'Win Builder FYI': 'official_goma_x86',
+      'Mac Builder Perf FYI': 'official_goma',
+      'Win Builder Perf FYI': 'official_goma_x86',
     },
 
     'chromium.swarm': {
@@ -552,7 +552,6 @@
       'android_cfi_rel_ng': 'android_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on_goma',
       'android_clang_dbg_recipe': 'android_clang_asan_debug_trybot_compile_only',
       'android_compile_dbg': 'android_debug_trybot_compile_only',
-      'android_compile_mips_dbg': 'android_debug_trybot_compile_only_mipsel',
       'android_compile_x64_dbg': 'android_debug_trybot_compile_only_x64',
       'android_compile_x86_dbg': 'android_debug_trybot_compile_only_x86',
       'android_coverage': 'android_debug_trybot_java_coverage',
@@ -680,8 +679,8 @@
     },
 
     'tryserver.chromium.perf': {
-      'Android Compile': 'official_goma_minimal_symbols_android',
-      'Android arm64 Compile': 'official_goma_minimal_symbols_android_arm64',
+      'Android Compile Perf': 'official_goma_minimal_symbols_android',
+      'Android arm64 Compile Perf': 'official_goma_minimal_symbols_android_arm64',
       'android_arm64_perf_bisect_builder': 'official_goma_minimal_symbols_android_arm64',
       'android_fyi_perf_bisect': 'official_goma_minimal_symbols_android',
       'android_nexus5X_perf_bisect': 'official_goma_minimal_symbols_android',
@@ -693,12 +692,12 @@
       'android_perf_bisect_builder': 'official_goma_minimal_symbols_android',
       'android_s5_perf_bisect': 'official_goma_minimal_symbols_android',
       'android_webview_arm64_aosp_perf_bisect': 'official_goma_minimal_symbols_android',
-      'Linux Builder': 'official_goma_perf',
+      'Linux Builder Perf': 'official_goma_perf',
       'linux_fyi_perf_bisect': 'official_goma',
       'linux_perf_bisect': 'official_goma',
       'linux_perf_bisect_builder': 'official_goma',
       'linux_perf_cq': 'official_goma',
-      'Mac Builder': 'official_goma',
+      'Mac Builder Perf': 'official_goma',
       'mac_10_10_perf_bisect': 'official_goma',
       'mac_10_11_perf_bisect': 'official_goma',
       'mac_fyi_perf_bisect': 'official_goma',
@@ -707,8 +706,8 @@
       'mac_retina_perf_bisect': 'official_goma',
       'mac_retina_perf_cq': 'official_goma',
       'obbs_fyi': 'official_goma_perf',
-      'Win Builder': 'official_goma_x86',
-      'Win x64 Builder': 'official_goma',
+      'Win Builder Perf': 'official_goma_x86',
+      'Win x64 Builder Perf': 'official_goma',
       'win_8_perf_bisect': 'official_goma_x86',
       'win_fyi_perf_bisect': 'official_goma_x86',
       'win_perf_bisect': 'official_goma_x86',
@@ -811,10 +810,6 @@
 
     'android_clang_tot_dbg': [
       'android_without_codecs', 'clang_tot', 'shared', 'debug',
-    ],
-
-    'android_clang_tot_release': [
-      'android_without_codecs', 'clang_tot', 'release',
     ],
 
     'android_clang_tot_release_arm64': [
@@ -928,10 +923,6 @@
       'android', 'debug_trybot', 'compile_only', 'arm64',
     ],
 
-    'android_debug_trybot_compile_only_mipsel': [
-      'android', 'debug_trybot', 'compile_only', 'mipsel',
-    ],
-
     'android_debug_trybot_compile_only_x64': [
       'android', 'debug_trybot', 'compile_only', 'x64',
     ],
@@ -967,6 +958,11 @@
     'android_release_bot_minimal_symbols': [
       'android', 'release_bot', 'minimal_symbols',
       'strip_debug_info',
+    ],
+
+    'android_clang_tot_release_minimal_symbols': [
+      'android', 'release', 'static', 'minimal_symbols',
+      'strip_debug_info', 'clang_tot',
     ],
 
     'android_release_bot_minimal_symbols_arm64': [
@@ -1096,8 +1092,8 @@
       'cast', 'cast_audio', 'release_trybot',
     ],
 
-    'cfi_full_cfi_diag_recover_release_static': [
-      'cfi_full', 'cfi_diag', 'cfi_recover', 'thin_lto', 'release', 'static',
+    'cfi_full_cfi_icall_cfi_diag_recover_release_static': [
+      'cfi_full', 'cfi_icall', 'cfi_diag', 'cfi_recover', 'thin_lto', 'release', 'static',
     ],
 
     'cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on_goma': [
@@ -1134,6 +1130,10 @@
 
     'clang_tot_asan_lsan_static_release': [
       'clang_tot', 'asan', 'lsan', 'static', 'release',
+    ],
+
+    'clang_tot_cfi_full_cfi_icall_cfi_diag_thin_lto_release_static_dcheck_always_on': [
+      'clang_tot', 'cfi_full', 'cfi_icall', 'cfi_diag', 'thin_lto', 'release', 'static', 'dcheck_always_on',
     ],
 
     'clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on': [

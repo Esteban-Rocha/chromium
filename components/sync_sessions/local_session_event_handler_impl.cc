@@ -27,14 +27,6 @@ using sessions::SerializedNavigationEntry;
 // The maximum number of navigations in each direction we care to sync.
 const int kMaxSyncNavigationCount = 6;
 
-// Ensure that the tab id is not invalid.
-bool ShouldSyncTabId(SessionID::id_type tab_id) {
-  if (tab_id == kInvalidTabID) {
-    return false;
-  }
-  return true;
-}
-
 bool IsWindowSyncable(const SyncedWindowDelegate& window_delegate) {
   return window_delegate.ShouldSync() && window_delegate.GetTabCount() &&
          window_delegate.HasWindow();
@@ -170,7 +162,7 @@ void LocalSessionEventHandlerImpl::AssociateWindows(ReloadTabsOption option,
     for (auto& win_iter : current_session->windows) {
       for (auto& tab : win_iter.second->wrapped_window.tabs) {
         int sync_id = TabNodePool::kInvalidTabNodeID;
-        if (!session_tracker_->GetTabNodeFromLocalTabId(tab->tab_id.id(),
+        if (!session_tracker_->GetTabNodeFromLocalTabId(tab->tab_id,
                                                         &sync_id) ||
             sync_id == TabNodePool::kInvalidTabNodeID) {
           continue;
@@ -199,18 +191,18 @@ void LocalSessionEventHandlerImpl::AssociateWindows(ReloadTabsOption option,
       continue;
     }
 
-    SessionID::id_type window_id = window_delegate->GetSessionId();
-    DVLOG(1) << "Associating window " << window_id << " with "
+    SessionID window_id = window_delegate->GetSessionId();
+    DVLOG(1) << "Associating window " << window_id.id() << " with "
              << window_delegate->GetTabCount() << " tabs.";
 
     bool found_tabs = false;
     for (int j = 0; j < window_delegate->GetTabCount(); ++j) {
-      SessionID::id_type tab_id = window_delegate->GetTabIdAt(j);
+      SessionID tab_id = window_delegate->GetTabIdAt(j);
       SyncedTabDelegate* synced_tab = window_delegate->GetTabAt(j);
 
       // GetTabAt can return a null tab; in that case just skip it. Similarly,
       // if for some reason the tab id is invalid, skip it.
-      if (!synced_tab || !ShouldSyncTabId(tab_id)) {
+      if (!synced_tab || !tab_id.is_valid()) {
         continue;
       }
 
@@ -242,7 +234,7 @@ void LocalSessionEventHandlerImpl::AssociateWindows(ReloadTabsOption option,
           AssociateRestoredPlaceholderTab(*synced_tab, tab_id, window_id,
                                           batch);
         } else {
-          DVLOG(1) << "Placeholder tab " << tab_id << " has no sync id.";
+          DVLOG(1) << "Placeholder tab " << tab_id.id() << " has no sync id.";
         }
       } else if (RELOAD_TABS == option) {
         AssociateTab(synced_tab, has_tabbed_window, batch);
@@ -253,9 +245,9 @@ void LocalSessionEventHandlerImpl::AssociateWindows(ReloadTabsOption option,
       // the OnLocalTabModified method invoking AssociateTab directly.
       // Therefore, we can key whether this window has valid tabs based on
       // the tab's presence in the tracker.
-      const sessions::SessionTab* tab = nullptr;
-      if (session_tracker_->LookupSessionTab(current_session_tag_, tab_id,
-                                             &tab)) {
+      const sessions::SessionTab* tab =
+          session_tracker_->LookupSessionTab(current_session_tag_, tab_id);
+      if (tab) {
         found_tabs = true;
 
         // Update this window's representation in the synced session tracker.
@@ -321,9 +313,9 @@ void LocalSessionEventHandlerImpl::AssociateTab(
     return;
   }
 
-  SessionID::id_type tab_id = tab_delegate->GetSessionId();
-  DVLOG(1) << "Syncing tab " << tab_id << " from window "
-           << tab_delegate->GetWindowId();
+  SessionID tab_id = tab_delegate->GetSessionId();
+  DVLOG(1) << "Syncing tab " << tab_id.id() << " from window "
+           << tab_delegate->GetWindowId().id();
 
   int tab_node_id = TabNodePool::kInvalidTabNodeID;
   bool existing_tab_node = true;
@@ -400,8 +392,9 @@ void LocalSessionEventHandlerImpl::UpdateTaskTracker(
 
 void LocalSessionEventHandlerImpl::WriteTasksIntoSpecifics(
     sync_pb::SessionTab* tab_specifics) {
-  TabTasks* tab_tasks =
-      task_tracker_.GetTabTasks(tab_specifics->tab_id(), kInvalidTabID);
+  TabTasks* tab_tasks = task_tracker_.GetTabTasks(
+      SessionID::FromSerializedValue(tab_specifics->tab_id()),
+      /*parent_tab_id=*/SessionID::InvalidValue());
   for (int i = 0; i < tab_specifics->navigation_size(); i++) {
     // Excluding blocked navigations, which are appended at tail.
     if (tab_specifics->navigation(i).blocked_state() ==
@@ -458,8 +451,8 @@ void LocalSessionEventHandlerImpl::OnFaviconsChanged(
 
 void LocalSessionEventHandlerImpl::AssociateRestoredPlaceholderTab(
     const SyncedTabDelegate& tab_delegate,
-    SessionID::id_type new_tab_id,
-    SessionID::id_type new_window_id,
+    SessionID new_tab_id,
+    SessionID new_window_id,
     WriteBatch* batch) {
   DCHECK_NE(tab_delegate.GetSyncId(), TabNodePool::kInvalidTabNodeID);
 
@@ -479,7 +472,7 @@ void LocalSessionEventHandlerImpl::AssociateRestoredPlaceholderTab(
   // Update the window id on the SessionTab itself.
   sessions::SessionTab* local_tab =
       session_tracker_->GetTab(current_session_tag_, new_tab_id);
-  local_tab->window_id.set_id(new_window_id);
+  local_tab->window_id = new_window_id;
 
   AppendChangeForExistingTab(tab_delegate.GetSyncId(), *local_tab, batch);
 }
@@ -501,8 +494,8 @@ void LocalSessionEventHandlerImpl::SetSessionTabFromDelegate(
     base::Time mtime,
     sessions::SessionTab* session_tab) const {
   DCHECK(session_tab);
-  session_tab->window_id.set_id(tab_delegate.GetWindowId());
-  session_tab->tab_id.set_id(tab_delegate.GetSessionId());
+  session_tab->window_id = tab_delegate.GetWindowId();
+  session_tab->tab_id = tab_delegate.GetSessionId();
   session_tab->tab_visual_index = 0;
   // Use -1 to indicate that the index hasn't been set properly yet.
   session_tab->current_navigation_index = -1;

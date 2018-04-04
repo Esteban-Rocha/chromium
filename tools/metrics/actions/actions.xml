@@ -5025,6 +5025,14 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="FileBrowser.SelectSearch">
+  <owner>sashab@chromium.org</owner>
+  <description>
+    Chrome OS Files App: When the user focused the search field at the top of
+    the file manager app.
+  </description>
+</action>
+
 <action name="FileBrowser.SuggestApps.ShowDialog">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -5616,6 +5624,14 @@ should be able to be added at any place in this file.
   <owner>rlp@chromium.org</owner>
   <owner>somast@chromium.org</owner>
   <description>User triggered the hotword by saying 'Ok Google'.</description>
+</action>
+
+<action name="ITunesLinksHandler_StoreKitLaunched">
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    Record when StoreKit is launched on the iOS app by ITunesLinkHandler. This
+    should happen when the user navigates to iTunes appstore URL.
+  </description>
 </action>
 
 <action name="ImportLockDialogCocoa_Shown">
@@ -11633,6 +11649,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileDownloadFileUIInstallGoogleDrive">
+  <owner>eugenebut@chromium.org</owner>
+  <description>
+    User has requested installation of Google Drive app from the Download file
+    UI.
+  </description>
+</action>
+
 <action name="MobileDownloadFileUIShown">
   <owner>eugenebut@chromium.org</owner>
   <description>User was presented with the Download file UI.</description>
@@ -11778,6 +11802,13 @@ should be able to be added at any place in this file.
   <obsolete>Obsolete as of 5/2015</obsolete>
   <owner>aurimas@chromium.org</owner>
   <description>User pressed the back icon in the app menu.</description>
+</action>
+
+<action name="MobileMenuCloseAllIncognitoTabs">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User pressed 'Close all incognito tabs' in the app menu.
+  </description>
 </action>
 
 <action name="MobileMenuCloseAllTabs">
@@ -12596,9 +12627,32 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="MobileToolbarShowSearchMenu">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User long pressed the 'Search' button to displayed the associated menu.
+  </description>
+</action>
+
 <action name="MobileToolbarShowStackView">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="MobileToolbarShowTabGridMenu">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User long pressed the Tab Grid button to display the menu associated with
+    it.
+  </description>
+</action>
+
+<action name="MobileToolbarShowTabHistoryMenu">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User long pressed the toolbar navigation buttons to display the tab history
+    menu.
+  </description>
 </action>
 
 <action name="MobileToolbarStackViewNewTab">
@@ -13323,6 +13377,14 @@ should be able to be added at any place in this file.
 <action name="Omnibox_DragURL">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="OpenActiveTabInPwaWindow">
+  <owner>alancutter@chromium.org</owner>
+  <description>
+    Opens the current tab as an app window belonging to the PWA that has the URL
+    in its scope.
+  </description>
 </action>
 
 <action name="OpenAddBluetoothDeviceDialog">
@@ -16720,6 +16782,14 @@ should be able to be added at any place in this file.
   <owner>pmonette@chromium.org</owner>
   <description>
     The user clicked the &quot;Switch Anyway&quot; button in the Edge promo.
+  </description>
+</action>
+
+<action name="SettingsMenu_ExtensionsLinkClicked">
+  <owner>aee@chromium.org</owner>
+  <description>
+    The user clicked the &quot;Extensions&quot; external link in the settings
+    menu (drawer).
   </description>
 </action>
 

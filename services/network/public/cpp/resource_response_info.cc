@@ -15,7 +15,9 @@ ResourceResponseInfo::ResourceResponseInfo()
       content_length(-1),
       encoded_data_length(-1),
       encoded_body_length(-1),
+      network_accessed(false),
       appcache_id(0),
+      priority(net::RequestPriority::DEFAULT_PRIORITY),
       was_fetched_via_spdy(false),
       was_alpn_negotiated(false),
       was_alternate_protocol_available(false),
@@ -26,8 +28,6 @@ ResourceResponseInfo::ResourceResponseInfo()
       previews_state(0),
       effective_connection_type(net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN),
       cert_status(0),
-      ssl_connection_status(0),
-      ssl_key_exchange_group(0),
       did_service_worker_navigation_preload(false),
       blocked_cross_site_document(false) {}
 

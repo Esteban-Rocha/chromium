@@ -127,12 +127,12 @@ void CORSURLLoader::ResumeReadingBodyFromNet() {
 
 void CORSURLLoader::OnReceiveResponse(
     const ResourceResponseHead& response_head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     mojom::DownloadedTempFilePtr downloaded_file) {
   DCHECK(network_loader_);
   DCHECK(forwarding_client_);
   DCHECK(!is_waiting_follow_redirect_call_);
   if (fetch_cors_flag_ && cors::IsCORSEnabledRequestMode(fetch_request_mode_)) {
+    // TODO(toyoshim): Reflect --allow-file-access-from-files flag.
     base::Optional<mojom::CORSError> cors_error = cors::CheckAccess(
         last_response_url_, response_head.headers->response_code(),
         GetHeaderString(response_head.headers,
@@ -147,7 +147,7 @@ void CORSURLLoader::OnReceiveResponse(
       return;
     }
   }
-  forwarding_client_->OnReceiveResponse(response_head, ssl_info,
+  forwarding_client_->OnReceiveResponse(response_head,
                                         std::move(downloaded_file));
 }
 

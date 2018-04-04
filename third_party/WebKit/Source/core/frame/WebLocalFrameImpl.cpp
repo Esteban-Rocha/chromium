@@ -117,6 +117,7 @@
 #include "core/editing/SetSelectionOptions.h"
 #include "core/editing/TextAffinity.h"
 #include "core/editing/VisiblePosition.h"
+#include "core/editing/WritingDirection.h"
 #include "core/editing/finder/FindInPageCoordinates.h"
 #include "core/editing/finder/TextFinder.h"
 #include "core/editing/ime/ImeTextSpanVectorBuilder.h"
@@ -182,7 +183,6 @@
 #include "core/paint/TransformRecorder.h"
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/WindowPerformance.h"
-#include "platform/FrameScheduler.h"
 #include "platform/bindings/DOMWrapperWorld.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/bindings/V8PerIsolateData.h"
@@ -202,6 +202,7 @@
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/loader/fetch/SubstituteData.h"
+#include "platform/scheduler/public/frame_scheduler.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/weborigin/KURL.h"
@@ -938,6 +939,10 @@ void WebLocalFrameImpl::LoadRequest(const WebURLRequest& request) {
        base::UnguessableToken::Create());
 }
 
+void WebLocalFrameImpl::CheckCompleted() {
+  GetFrame()->GetDocument()->CheckCompleted();
+}
+
 void WebLocalFrameImpl::LoadHTMLString(const WebData& data,
                                        const WebURL& base_url,
                                        const WebURL& unreachable_url,
@@ -1156,15 +1161,15 @@ void WebLocalFrameImpl::SetTextDirection(WebTextDirection direction) {
 
   switch (direction) {
     case kWebTextDirectionDefault:
-      editor.SetBaseWritingDirection(NaturalWritingDirection);
+      editor.SetBaseWritingDirection(WritingDirection::kNatural);
       break;
 
     case kWebTextDirectionLeftToRight:
-      editor.SetBaseWritingDirection(LeftToRightWritingDirection);
+      editor.SetBaseWritingDirection(WritingDirection::kLeftToRight);
       break;
 
     case kWebTextDirectionRightToLeft:
-      editor.SetBaseWritingDirection(RightToLeftWritingDirection);
+      editor.SetBaseWritingDirection(WritingDirection::kRightToLeft);
       break;
 
     default:

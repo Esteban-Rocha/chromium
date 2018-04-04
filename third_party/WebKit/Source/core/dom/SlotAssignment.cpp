@@ -4,12 +4,12 @@
 
 #include "core/dom/SlotAssignment.h"
 
-#include "core/dom/ElementShadow.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/dom/V0InsertionPoint.h"
+#include "core/dom/ng/slot_assignment_engine.h"
 #include "core/html/HTMLDetailsElement.h"
 #include "core/html/HTMLSlotElement.h"
 #include "core/html/forms/HTMLOptGroupElement.h"
@@ -204,7 +204,16 @@ SlotAssignment::SlotAssignment(ShadowRoot& owner)
   DCHECK(owner.IsV1());
 }
 
-void SlotAssignment::RecalcAssignmentNg() {
+void SlotAssignment::SetNeedsAssignmentRecalc() {
+  DCHECK(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
+  needs_assignment_recalc_ = true;
+  if (owner_->isConnected()) {
+    owner_->GetDocument().GetSlotAssignmentEngine().AddShadowRootNeedingRecalc(
+        *owner_);
+  }
+}
+
+void SlotAssignment::RecalcAssignment() {
   DCHECK(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
 
   if (!needs_assignment_recalc_)
@@ -242,10 +251,21 @@ void SlotAssignment::RecalcAssignmentNg() {
 
     if (slot)
       slot->AppendAssignedNode(child);
+    else
+      child.LazyReattachIfAttached();
   }
+
+  if (owner_->isConnected()) {
+    owner_->GetDocument()
+        .GetSlotAssignmentEngine()
+        .RemoveShadowRootNeedingRecalc(*owner_);
+  }
+
+  for (auto& slot : Slots())
+    slot->RecalcFlatTreeChildren();
 }
 
-void SlotAssignment::RecalcAssignment() {
+void SlotAssignment::RecalcAssignmentForDistribution() {
   DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
 
   for (Member<HTMLSlotElement> slot : Slots())
@@ -289,7 +309,7 @@ void SlotAssignment::RecalcAssignment() {
 void SlotAssignment::RecalcDistribution() {
   DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
 
-  RecalcAssignment();
+  RecalcAssignmentForDistribution();
   const HeapVector<Member<HTMLSlotElement>>& slots = Slots();
 
   for (auto slot : slots)

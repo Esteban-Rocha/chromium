@@ -4,7 +4,7 @@
 
 #include "core/fetch/BytesConsumerTestUtil.h"
 
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/Functional.h"
@@ -14,11 +14,11 @@ namespace blink {
 
 namespace {
 using Result = BytesConsumer::Result;
-using ::testing::_;
-using ::testing::ByMove;
-using ::testing::DoAll;
-using ::testing::Return;
-using ::testing::SetArgPointee;
+using testing::_;
+using testing::ByMove;
+using testing::DoAll;
+using testing::Return;
+using testing::SetArgPointee;
 }  // namespace
 
 BytesConsumerTestUtil::MockBytesConsumer::MockBytesConsumer() {
@@ -193,8 +193,8 @@ BytesConsumerTestUtil::TwoPhaseReader::Run() {
   OnStateChange();
   while (result_ != BytesConsumer::Result::kDone &&
          result_ != BytesConsumer::Result::kError)
-    testing::RunPendingTasks();
-  testing::RunPendingTasks();
+    test::RunPendingTasks();
+  test::RunPendingTasks();
   return std::make_pair(result_, std::move(data_));
 }
 

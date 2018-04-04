@@ -737,8 +737,14 @@ class CompositingRenderWidgetHostViewBrowserTestHiDPI
   DISALLOW_COPY_AND_ASSIGN(CompositingRenderWidgetHostViewBrowserTestHiDPI);
 };
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_ScrollOffset DISABLED_ScrollOffset
+#else
+#define MAYBE_ScrollOffset ScrollOffset
+#endif
+
 IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTestHiDPI,
-                       ScrollOffset) {
+                       MAYBE_ScrollOffset) {
   const int kContentHeight = 2000;
   const int kScrollAmount = 100;
 
@@ -764,11 +770,7 @@ IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTestHiDPI,
   if (!ShouldContinueAfterTestURLLoad())
     return;
 
-  RenderWidgetHostViewBase* rwhv = GetRenderWidgetHostView();
-  gfx::Vector2dF scroll_offset = rwhv->GetLastScrollOffset();
-
-  EXPECT_EQ(scroll_offset.x(), 0);
-  EXPECT_EQ(scroll_offset.y(), kScrollAmount);
+  EXPECT_FALSE(GetRenderWidgetHostView()->IsScrollOffsetAtTop());
 }
 
 #if defined(OS_CHROMEOS)

@@ -14,6 +14,8 @@ import org.chromium.chrome.browser.suggestions.SuggestionsNavigationDelegateImpl
 import org.chromium.chrome.browser.suggestions.SuggestionsUiDelegateImpl;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet;
+import org.chromium.chrome.browser.widget.bottomsheet.BottomSheetController;
+import org.chromium.chrome.browser.widget.bottomsheet.BottomSheetObserver;
 
 /**
  * The coordinator for the contextual suggestions UI component. Manages communication with other
@@ -25,11 +27,11 @@ import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet;
  */
 public class ContextualSuggestionsCoordinator {
     private final ChromeActivity mActivity;
-    private final BottomSheet mBottomSheet;
+    private final BottomSheetController mBottomSheetController;
+    private final TabModelSelector mTabModelSelector;
     private final Profile mProfile;
     private final ContextualSuggestionsModel mModel;
     private final ContextualSuggestionsMediator mMediator;
-    private final SuggestionsUiDelegateImpl mUiDelegate;
 
     private @Nullable ToolbarCoordinator mToolbarCoordinator;
     private @Nullable ContentCoordinator mContentCoordinator;
@@ -38,26 +40,19 @@ public class ContextualSuggestionsCoordinator {
     /**
      * Construct a new {@link ContextualSuggestionsCoordinator}.
      * @param activity The containing {@link ChromeActivity}.
-     * @param bottomSheet The {@link BottomSheet} where contextual suggestions will be displayed.
+     * @param bottomSheetController The {@link BottomSheetController} to request content be shown.
      * @param tabModelSelector The {@link TabModelSelector} for the activity.
      */
-    public ContextualSuggestionsCoordinator(
-            ChromeActivity activity, BottomSheet bottomSheet, TabModelSelector tabModelSelector) {
+    public ContextualSuggestionsCoordinator(ChromeActivity activity,
+            BottomSheetController bottomSheetController, TabModelSelector tabModelSelector) {
         mActivity = activity;
-        mBottomSheet = bottomSheet;
+        mBottomSheetController = bottomSheetController;
+        mTabModelSelector = tabModelSelector;
         mProfile = Profile.getLastUsedProfile().getOriginalProfile();
 
         mModel = new ContextualSuggestionsModel();
-        mMediator = new ContextualSuggestionsMediator(
-                mActivity, mProfile, tabModelSelector, this, mModel);
-
-        SuggestionsSource suggestionsSource = mMediator.getSuggestionsSource();
-        SuggestionsNavigationDelegate navigationDelegate = new SuggestionsNavigationDelegateImpl(
-                mActivity, mProfile, mBottomSheet, tabModelSelector);
-        mUiDelegate = new SuggestionsUiDelegateImpl(suggestionsSource, new DummyEventReporter(),
-                navigationDelegate, mProfile, mBottomSheet,
-                mActivity.getChromeApplication().getReferencePool(),
-                mActivity.getSnackbarManager());
+        mMediator = new ContextualSuggestionsMediator(mActivity, mProfile, tabModelSelector,
+                activity.getFullscreenManager(), this, mModel);
     }
 
     /** Called when the containing activity is destroyed. */
@@ -70,18 +65,71 @@ public class ContextualSuggestionsCoordinator {
     }
 
     /**
-     * Displays contextual suggestions in the {@link BottomSheet}.
+     * Preload the contextual suggestions content in the {@link BottomSheet}; the sheet won't
+     * actually be shown until {@link #showContentInSheet()} is called.
      */
-    void displaySuggestions() {
-        // TODO(twellington): Introduce another method that creates bottom sheet content with only
-        // a toolbar view when suggestions are fist available, and use this method to construct the
-        // content view when the sheet is opened.
-        mToolbarCoordinator = new ToolbarCoordinator(mActivity, mBottomSheet, mModel);
-        mContentCoordinator = new ContentCoordinator(mActivity, mBottomSheet, mProfile, mUiDelegate,
-                mModel, mActivity.getWindowAndroid(), mActivity::closeContextMenu);
+    void preloadContentInSheet() {
+        mToolbarCoordinator =
+                new ToolbarCoordinator(mActivity, mBottomSheetController.getBottomSheet(), mModel);
+        mContentCoordinator =
+                new ContentCoordinator(mActivity, mBottomSheetController.getBottomSheet());
         mBottomSheetContent = new ContextualSuggestionsBottomSheetContent(
                 mContentCoordinator, mToolbarCoordinator);
-        mBottomSheet.showContent(mBottomSheetContent);
+        // TODO(twellington): Handle the case where preload returns false.
+        mBottomSheetController.requestContentPreload(mBottomSheetContent);
+    }
+
+    /**
+     * Show the contextual suggestions content in the {@link BottomSheet}.
+     * {@link #preloadContentInSheet()} must be called prior to calling this method.
+     *
+     * Only the views needed for peeking the bottom sheet will be constructed. Another
+     * call to {@link #displaySuggestions()} is needed to finish inflating views for the
+     * suggestions cards.
+     */
+    void showContentInSheet() {
+        // #preloadContentInSheet will always be called before this method, regardless of
+        // whether content was actually put in the sheet (meaning mBottomSheetContent should never
+        // be null). If content is not successfully preloaded
+        // BottomSheetController#requestContentPreload will return false.
+        assert mBottomSheetContent != null;
+        mBottomSheetController.requestShowContent(mBottomSheetContent, false);
+    }
+
+    /**
+     * Finish showing the contextual suggestions in the {@link BottomSheet}.
+     * {@link #showContentInSheet()} must be called prior to calling this method.
+     *
+     * @param suggestionsSource The {@link SuggestionsSource} used to retrieve additional things
+     *                          needed to display suggestions (e.g. favicons, thumbnails).
+     */
+    void showSuggestions(SuggestionsSource suggestionsSource) {
+        SuggestionsNavigationDelegate navigationDelegate = new SuggestionsNavigationDelegateImpl(
+                mActivity, mProfile, mBottomSheetController.getBottomSheet(), mTabModelSelector);
+        SuggestionsUiDelegateImpl uiDelegate =
+                new SuggestionsUiDelegateImpl(suggestionsSource, new DummyEventReporter(),
+                        navigationDelegate, mProfile, mBottomSheetController.getBottomSheet(),
+                        mActivity.getChromeApplication().getReferencePool(),
+                        mActivity.getSnackbarManager());
+
+        mContentCoordinator.showSuggestions(mActivity, mProfile, uiDelegate, mModel,
+                mActivity.getWindowAndroid(), mActivity::closeContextMenu);
+    }
+
+    /**
+     * Add an observer to the {@link BottomSheet}.
+     * @param observer The observer to add.
+     */
+    void addBottomSheetObserver(BottomSheetObserver observer) {
+        mBottomSheetController.getBottomSheet().addObserver(observer);
+    }
+
+    /**
+     * Remove an observer to the {@link BottomSheet}.
+     * @param observer The observer to remove.
+     */
+    void removeBottomSheetObserver(BottomSheetObserver observer) {
+        mBottomSheetController.getBottomSheet().removeObserver(observer);
     }
 
     /** Removes contextual suggestions from the {@link BottomSheet}. */
@@ -97,7 +145,7 @@ public class ContextualSuggestionsCoordinator {
         }
 
         if (mBottomSheetContent != null) {
-            mBottomSheet.showContent(null);
+            mBottomSheetController.hideContent(mBottomSheetContent, true);
             mBottomSheetContent.destroy();
             mBottomSheetContent = null;
         }

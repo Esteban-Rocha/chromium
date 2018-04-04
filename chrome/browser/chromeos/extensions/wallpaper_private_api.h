@@ -19,10 +19,6 @@ class CollectionInfoFetcher;
 class ImageInfoFetcher;
 }  // namespace backdrop_wallpaper_handlers
 
-namespace base {
-class RefCountedBytes;
-}  // namespace base
-
 // Wallpaper manager strings.
 class WallpaperPrivateGetStringsFunction : public UIThreadExtensionFunction {
  public:
@@ -34,6 +30,11 @@ class WallpaperPrivateGetStringsFunction : public UIThreadExtensionFunction {
 
   // ExtensionFunction:
   ResponseAction Run() override;
+
+ private:
+  // Responds with the dictionary after getting the wallpaper location.
+  void OnWallpaperLocationReturned(std::unique_ptr<base::DictionaryValue> dict,
+                                   const std::string& location);
 };
 
 // Check if sync themes setting is enabled.
@@ -155,14 +156,6 @@ class WallpaperPrivateSetCustomWallpaperFunction
 
  private:
   void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) override;
-
-  // Generates thumbnail of custom wallpaper. A simple STRETCH is used for
-  // generating thunbail.
-  void GenerateThumbnail(const base::FilePath& thumbnail_path,
-                         std::unique_ptr<gfx::ImageSkia> image);
-
-  // Thumbnail is ready. Calls api function javascript callback.
-  void ThumbnailGenerated(base::RefCountedBytes* data);
 
   std::unique_ptr<
       extensions::api::wallpaper_private::SetCustomWallpaper::Params>

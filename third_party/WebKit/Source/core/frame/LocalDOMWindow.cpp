@@ -44,7 +44,6 @@
 #include "core/dom/ComputedAccessibleNode.h"
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/FrameRequestCallbackCollection.h"
-#include "core/dom/SandboxFlags.h"
 #include "core/dom/ScriptedIdleTaskController.h"
 #include "core/dom/SinkDocument.h"
 #include "core/dom/UserGestureIndicator.h"
@@ -67,6 +66,7 @@
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Navigator.h"
 #include "core/frame/PausableTimer.h"
+#include "core/frame/SandboxFlags.h"
 #include "core/frame/Screen.h"
 #include "core/frame/ScrollToOptions.h"
 #include "core/frame/Settings.h"
@@ -902,7 +902,7 @@ bool LocalDOMWindow::find(const String& string,
   FindOptions options =
       (backwards ? kBackwards : 0) | (case_sensitive ? 0 : kCaseInsensitive) |
       (wrap ? kWrapAround : 0) | (whole_word ? kWholeWord | kAtWordStarts : 0);
-  return GetFrame()->GetEditor().FindString(string, options);
+  return Editor::FindString(*GetFrame(), string, options);
 }
 
 bool LocalDOMWindow::offscreenBuffering() const {

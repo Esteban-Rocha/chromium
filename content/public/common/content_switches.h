@@ -143,6 +143,7 @@ CONTENT_EXPORT extern const char kEnableUseZoomForDSF[];
 CONTENT_EXPORT extern const char kEnableViewport[];
 CONTENT_EXPORT extern const char kEnableVtune[];
 CONTENT_EXPORT extern const char kEnableVulkan[];
+CONTENT_EXPORT extern const char kEnableWebAuthTestingAPI[];
 CONTENT_EXPORT extern const char kEnableWebGLDraftExtensions[];
 CONTENT_EXPORT extern const char kEnableWebGLImageChromium[];
 CONTENT_EXPORT extern const char kEnableWebVR[];
@@ -171,7 +172,9 @@ CONTENT_EXPORT extern const char kLogGpuControlListDecisions[];
 CONTENT_EXPORT extern const char kLoggingLevel[];
 CONTENT_EXPORT extern const char kLogFile[];
 CONTENT_EXPORT extern const char kMainFrameResizesAreOrientationChanges[];
+extern const char kMaxAppCacheOriginCacheSizeMb[];
 extern const char kMaxAppCacheDiskCacheSizeMb[];
+extern const char kMaxDecodedImageSizeMb[];
 extern const char kMaxUntiledLayerHeight[];
 extern const char kMaxUntiledLayerWidth[];
 CONTENT_EXPORT extern const char kMessageLoopTypeUi[];
@@ -248,6 +251,7 @@ CONTENT_EXPORT extern const char kEnforceWebRtcIPPermissionCheck[];
 CONTENT_EXPORT extern const char kForceWebRtcIPHandlingPolicy[];
 extern const char kWebRtcMaxCaptureFramerate[];
 extern const char kWebRtcMaxCpuConsumptionPercentage[];
+CONTENT_EXPORT extern const char kWebRtcRemoteEventLogUploadNoSuppression[];
 CONTENT_EXPORT extern const char kWebRtcStunProbeTrialParameter[];
 #endif
 

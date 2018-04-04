@@ -15,6 +15,7 @@
 #include "gpu/command_buffer/service/raster_decoder_unittest_base.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gl/gl_image_stub.h"
 #include "ui/gl/gl_mock.h"
 
 using ::testing::_;
@@ -28,6 +29,7 @@ namespace raster {
 namespace {
 const GLsizei kWidth = 10;
 const GLsizei kHeight = 20;
+const GLint kImageId = 1;
 
 class MockMemoryTracker : public gles2::MemoryTracker {
  public:
@@ -353,6 +355,89 @@ TEST_P(RasterDecoderTest, ProduceAndConsumeTexture) {
   EXPECT_EQ(width, kWidth);
   EXPECT_EQ(height, kHeight);
   EXPECT_EQ(kServiceTextureId, texture->service_id());
+}
+
+TEST_P(RasterDecoderTest, ReleaseTexImage2DCHROMIUM) {
+  scoped_refptr<gl::GLImage> image(new gl::GLImageStub);
+  GetImageManagerForTest()->AddImage(image.get(), kImageId);
+  EXPECT_FALSE(GetImageManagerForTest()->LookupImage(kImageId) == nullptr);
+
+  // Bind image to texture.
+  SetScopedTextureBinderExpectations(GL_TEXTURE_2D);
+  cmds::BindTexImage2DCHROMIUM bind_tex_image_2d_cmd;
+  bind_tex_image_2d_cmd.Init(client_texture_id_, kImageId);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(bind_tex_image_2d_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  gles2::TextureRef* texture_ref =
+      group().texture_manager()->GetTexture(client_texture_id_);
+  ASSERT_TRUE(texture_ref != nullptr);
+  gles2::Texture* texture = texture_ref->texture();
+  GLsizei width;
+  GLsizei height;
+  EXPECT_TRUE(
+      texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height, nullptr));
+  // Dimensions from |image| above.
+  EXPECT_EQ(1, width);
+  EXPECT_EQ(1, height);
+
+  // Image should now be set.
+  EXPECT_FALSE(texture->GetLevelImage(GL_TEXTURE_2D, 0) == nullptr);
+
+  // Release image from texture.
+  SetScopedTextureBinderExpectations(GL_TEXTURE_2D);
+  cmds::ReleaseTexImage2DCHROMIUM release_tex_image_2d_cmd;
+  release_tex_image_2d_cmd.Init(client_texture_id_, kImageId);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(release_tex_image_2d_cmd));
+
+  EXPECT_TRUE(
+      texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height, nullptr));
+  // Size reset.
+  EXPECT_EQ(0, width);
+  EXPECT_EQ(0, height);
+
+  // Image should no longer be set.
+  EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 0) == nullptr);
+}
+
+// TODO(backer): Port CopyTexSubImage2DTwiceClearsUnclearedTexture) after
+// CopyTexSubImage implemented.
+
+TEST_P(RasterDecoderTest, GLImageAttachedAfterClearLevel) {
+  scoped_refptr<gl::GLImage> image(new gl::GLImageStub);
+  GetImageManagerForTest()->AddImage(image.get(), kImageId);
+
+  // Bind image to texture.
+  SetScopedTextureBinderExpectations(GL_TEXTURE_2D);
+  cmds::BindTexImage2DCHROMIUM bind_tex_image_2d_cmd;
+  bind_tex_image_2d_cmd.Init(client_texture_id_, kImageId);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(bind_tex_image_2d_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  // Check binding.
+  gles2::TextureRef* texture_ref =
+      group().texture_manager()->GetTexture(client_texture_id_);
+  ASSERT_TRUE(texture_ref != nullptr);
+  gles2::Texture* texture = texture_ref->texture();
+  EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 0) == image.get());
+
+  GLenum target = GL_TEXTURE_2D;
+  GLint level = 0;
+  GLint xoffset = 0;
+  GLint yoffset = 0;
+  GLsizei width = 1;
+  GLsizei height = 1;
+  GLenum format = GL_RGBA;
+  GLenum type = GL_UNSIGNED_BYTE;
+
+  // ClearLevel should use glTexSubImage2D to avoid unbinding GLImage.
+  SetupClearTextureExpectations(kServiceTextureId, 0 /* old_service_id */,
+                                GL_TEXTURE_2D, GL_TEXTURE_2D, level, format,
+                                type, xoffset, yoffset, width, height, 0);
+
+  GetDecoder()->ClearLevel(texture, target, level, format, type, xoffset,
+                           yoffset, width, height);
+  EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 0) == image.get());
 }
 
 }  // namespace raster

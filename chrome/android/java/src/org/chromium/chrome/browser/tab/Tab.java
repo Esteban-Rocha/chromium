@@ -87,7 +87,6 @@ import org.chromium.chrome.browser.tabmodel.AsyncTabParamsManager;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
-import org.chromium.chrome.browser.tabmodel.TabModelImpl;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabReparentingParams;
 import org.chromium.chrome.browser.util.ColorUtils;
@@ -364,9 +363,7 @@ public class Tab
     private TabRedirectHandler mTabRedirectHandler;
 
     private FullscreenManager mFullscreenManager;
-    private float mPreviousTopControlsOffsetY = Float.NaN;
-    private float mPreviousBottomControlsOffsetY = Float.NaN;
-    private float mPreviousContentOffsetY = Float.NaN;
+    private final TabBrowserControlsOffsetHelper mControlsOffsetHelper;
 
     /**
      * Indicates whether this tab is detached from any activity and its corresponding
@@ -421,6 +418,11 @@ public class Tab
     private int mTopControlsHeight;
     private int mBottomControlsHeight;
     private boolean mControlsResizeView;
+
+    /**
+     * The publisher URL for pages hosted on a trusted CDN, or null otherwise.
+     */
+    private @Nullable String mTrustedCdnPublisherUrl;
 
     private GestureStateListener createGestureStateListener() {
         return new GestureStateListener() {
@@ -611,6 +613,8 @@ public class Tab
 
         ContextualSearchTabHelper.createForTab(this);
         MediaSessionTabHelper.createForTab(this);
+
+        mControlsOffsetHelper = new TabBrowserControlsOffsetHelper(this);
 
         if (creationState != null) {
             mTabUma = new TabUma(creationState);
@@ -1268,7 +1272,7 @@ public class Tab
             loadIfNeeded();
             assert !isFrozen();
 
-            if (mContentViewCore != null) mContentViewCore.onShow();
+            if (getWebContents() != null) getWebContents().onShow();
 
             if (mTabUma != null) {
                 mTabUma.onShow(type, getTimestampMillis(),
@@ -1309,7 +1313,7 @@ public class Tab
             mIsHidden = true;
             updateInteractableState();
 
-            if (mContentViewCore != null) mContentViewCore.onHide();
+            if (getWebContents() != null) getWebContents().onHide();
 
             // Clean up any fullscreen state that might impact other tabs.
             if (mFullscreenManager != null) {
@@ -2012,10 +2016,7 @@ public class Tab
                             LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
             notifyContentChanged();
         }
-        FullscreenManager fullscreenManager = getFullscreenManager();
-        if (fullscreenManager != null) {
-            fullscreenManager.setPositionsForTabToNonFullscreen();
-        }
+        mControlsOffsetHelper.showAndroidControls(false);
     }
 
     /**
@@ -2101,9 +2102,7 @@ public class Tab
             mInfoBarContainer = null;
         }
 
-        mPreviousTopControlsOffsetY = Float.NaN;
-        mPreviousBottomControlsOffsetY = Float.NaN;
-        mPreviousContentOffsetY = Float.NaN;
+        mControlsOffsetHelper.clearPreviousPositions();
 
         mNeedsReload = false;
     }
@@ -2611,7 +2610,7 @@ public class Tab
         if (mContentViewCore != null) {
             originalWidth = mContentView.getWidth();
             originalHeight = mContentView.getHeight();
-            mContentViewCore.onHide();
+            mContentViewCore.getWebContents().onHide();
         }
 
         Rect bounds = new Rect();
@@ -2634,7 +2633,7 @@ public class Tab
             nativeOnPhysicalBackingSizeChanged(mNativeTabAndroid,
                     newContentViewCore.getWebContents(), bounds.right, bounds.bottom);
         }
-        newContentViewCore.onShow();
+        newContentViewCore.getWebContents().onShow();
         setContentViewCore(newContentViewCore);
 
         destroyNativePageInternal(previousNativePage);
@@ -2801,33 +2800,6 @@ public class Tab
     }
 
     /**
-     * Called when offset values related with fullscreen functionality has been changed by the
-     * compositor.
-     * @param topControlsOffsetY The Y offset of the top controls in physical pixels.
-     *    {@code Float.NaN} if the value is invalid and the cached value should be used.
-     * @param bottomControlsOffsetY The Y offset of the bottom controls in physical pixels.
-     *    {@code Float.NaN} if the value is invalid and the cached value should be used.
-     * @param contentOffsetY The Y offset of the content in physical pixels.
-     */
-    void onOffsetsChanged(
-            float topControlsOffsetY, float bottomControlsOffsetY, float contentOffsetY) {
-        if (!Float.isNaN(topControlsOffsetY)) mPreviousTopControlsOffsetY = topControlsOffsetY;
-        if (!Float.isNaN(bottomControlsOffsetY)) {
-            mPreviousBottomControlsOffsetY = bottomControlsOffsetY;
-        }
-        if (!Float.isNaN(contentOffsetY)) mPreviousContentOffsetY = contentOffsetY;
-
-        if (mFullscreenManager == null) return;
-        if (isShowingSadTab() || isNativePage()) {
-            mFullscreenManager.setPositionsForTabToNonFullscreen();
-        } else {
-            mFullscreenManager.setPositionsForTab(mPreviousTopControlsOffsetY,
-                    mPreviousBottomControlsOffsetY, mPreviousContentOffsetY);
-        }
-        TabModelImpl.setActualTabSwitchLatencyMetricRequired();
-    }
-
-    /**
      * Push state about whether or not the browser controls can show or hide to the renderer.
      */
     public void updateFullscreenEnabledState() {
@@ -2958,24 +2930,7 @@ public class Tab
      */
     public void setFullscreenManager(FullscreenManager manager) {
         mFullscreenManager = manager;
-        if (mFullscreenManager != null) {
-            boolean topOffsetsInitialized = !Float.isNaN(mPreviousTopControlsOffsetY)
-                    && !Float.isNaN(mPreviousContentOffsetY);
-            boolean bottomOffsetsInitialized =
-                    !Float.isNaN(mPreviousBottomControlsOffsetY);
-            boolean isChromeHomeEnabled = FeatureUtilities.isChromeHomeEnabled();
-
-            // Make sure the dominant control offsets have been set.
-            if ((!topOffsetsInitialized && !isChromeHomeEnabled)
-                    || (!bottomOffsetsInitialized && isChromeHomeEnabled)) {
-                mFullscreenManager.setPositionsForTabToNonFullscreen();
-            } else {
-                mFullscreenManager.setPositionsForTab(mPreviousTopControlsOffsetY,
-                        mPreviousBottomControlsOffsetY,
-                        mPreviousContentOffsetY);
-            }
-            updateFullscreenEnabledState();
-        }
+        mControlsOffsetHelper.resetPositions();
     }
 
     /**
@@ -3333,7 +3288,7 @@ public class Tab
         mIsRendererUnresponsive = true;
         if (mFullscreenManager == null) return;
 
-        mFullscreenManager.setPositionsForTabToNonFullscreen();
+        mControlsOffsetHelper.showAndroidControls(false);
         updateBrowserControlsState(BrowserControlsState.SHOWN, false);
     }
 
@@ -3433,9 +3388,27 @@ public class Tab
      */
     public void onTabModalDialogStateChanged(boolean isShowing) {
         mIsShowingTabModalDialog = isShowing;
-        if (mFullscreenManager == null) return;
-        mFullscreenManager.setPositionsForTabToNonFullscreen();
-        updateBrowserControlsState(BrowserControlsState.SHOWN, false);
+        // Also need to update browser control state after dismissal to refresh the constraints.
+        if (isShowing && areRendererInputEventsIgnored()) {
+            mControlsOffsetHelper.showAndroidControls(true);
+        } else {
+            updateBrowserControlsState(BrowserControlsState.SHOWN,
+                    !mControlsOffsetHelper.isControlsOffsetOverridden());
+        }
+    }
+
+    /**
+     * @return Whether input events from the renderer are ignored on the browser side.
+     */
+    boolean areRendererInputEventsIgnored() {
+        return nativeAreRendererInputEventsIgnored(mNativeTabAndroid);
+    }
+
+    /**
+     * @return The {@link TabBrowserControlsOffsetHelper} for this tab.
+     */
+    public TabBrowserControlsOffsetHelper getControlsOffsetHelper() {
+        return mControlsOffsetHelper;
     }
 
     @CalledByNative
@@ -3515,6 +3488,22 @@ public class Tab
         nativeMediaDownloadInProductHelpDismissed(mNativeTabAndroid);
     }
 
+    /**
+     * @return The publisher URL if the current page is hosted on a trusted CDN, or null otherwise.
+     */
+    public @Nullable String getTrustedCdnPublisherUrl() {
+        ChromeActivity activity = getActivity();
+        if (activity == null) return null;
+        if (!activity.canShowTrustedCdnPublisherUrl()) return null;
+        if (getSecurityLevel() == ConnectionSecurityLevel.DANGEROUS) return null;
+        return mTrustedCdnPublisherUrl;
+    }
+
+    @CalledByNative
+    private void setTrustedCdnPublisherUrl(@Nullable String url) {
+        mTrustedCdnPublisherUrl = url;
+    }
+
     private native void nativeInit();
     private native void nativeDestroy(long nativeTabAndroid);
     private native void nativeInitWebContents(long nativeTabAndroid, boolean incognito,
@@ -3552,4 +3541,5 @@ public class Tab
     private native void nativeAttachDetachedTab(long nativeTabAndroid);
     private native void nativeMediaDownloadInProductHelpDismissed(long nativeTabAndroid);
     private native int nativeGetCurrentRenderProcessId(long nativeTabAndroid);
+    private native boolean nativeAreRendererInputEventsIgnored(long nativeTabAndroid);
 }

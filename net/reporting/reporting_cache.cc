@@ -67,10 +67,11 @@ class ReportingCacheImpl : public ReportingCache {
                  const std::string& group,
                  const std::string& type,
                  std::unique_ptr<const base::Value> body,
+                 int depth,
                  base::TimeTicks queued,
                  int attempts) override {
     auto report = std::make_unique<ReportingReport>(
-        url, group, type, std::move(body), queued, attempts);
+        url, group, type, std::move(body), depth, queued, attempts);
 
     auto inserted =
         reports_.insert(std::make_pair(report.get(), std::move(report)));
@@ -452,7 +453,7 @@ class ReportingCacheImpl : public ReportingCache {
       return earliest_used;
   }
 
-  base::TickClock* tick_clock() { return context_->tick_clock(); }
+  const base::TickClock* tick_clock() { return context_->tick_clock(); }
 
   ReportingContext* context_;
 

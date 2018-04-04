@@ -26,11 +26,11 @@
 #include "public/web/WebFindOptions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using blink::testing::RunPendingTasks;
+using blink::test::RunPendingTasks;
 
 namespace blink {
 
-class TextFinderTest : public ::testing::Test {
+class TextFinderTest : public testing::Test {
  protected:
   TextFinderTest() {
     web_view_helper_.Initialize();

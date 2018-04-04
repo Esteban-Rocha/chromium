@@ -102,11 +102,10 @@ class NssHttpTest : public ::testing::Test {
                                                             std::move(handler));
 
     SetURLRequestContextForNSSHttpIO(&context_);
-    EnsureNSSHttpIOInit();
   }
 
   void TearDown() override {
-    ShutdownNSSHttpIO();
+    SetURLRequestContextForNSSHttpIO(nullptr);
 
     if (handler_)
       URLRequestFilter::GetInstance()->RemoveHostnameHandler("http", kAiaHost);

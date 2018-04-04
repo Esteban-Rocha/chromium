@@ -585,8 +585,8 @@ public class LocationBarTablet extends LocationBarLayout {
     private boolean shouldShowMicButton() {
         // If the download UI is enabled, the mic button should be only be shown when the url bar
         // is focused.
-        return isVoiceSearchEnabled() && mNativeInitialized
-                && (mUrlBar.hasFocus() || mUrlFocusChangeInProgress);
+        return mVoiceRecognitionHandler != null && mVoiceRecognitionHandler.isVoiceSearchEnabled()
+                && mNativeInitialized && (mUrlBar.hasFocus() || mUrlFocusChangeInProgress);
     }
 
     @Override
@@ -601,6 +601,7 @@ public class LocationBarTablet extends LocationBarLayout {
         View largestChildView = null;
         for (int i = urlContainerChildIndex + 1; i < getChildCount(); i++) {
             View childView = getChildAt(i);
+            if (childView.getVisibility() == View.GONE) continue;
             FrameLayout.LayoutParams childLayoutParams =
                     (FrameLayout.LayoutParams) childView.getLayoutParams();
             int width = childLayoutParams.width

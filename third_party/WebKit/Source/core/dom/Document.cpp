@@ -76,7 +76,6 @@
 #include "core/dom/ElementCreationOptions.h"
 #include "core/dom/ElementDataCache.h"
 #include "core/dom/ElementRegistrationOptions.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/FlatTreeTraversal.h"
@@ -95,6 +94,7 @@
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/ScriptedAnimationController.h"
 #include "core/dom/ShadowRoot.h"
+#include "core/dom/SlotAssignment.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/TransformSource.h"
 #include "core/dom/TreeWalker.h"
@@ -104,6 +104,7 @@
 #include "core/dom/events/Event.h"
 #include "core/dom/events/EventListener.h"
 #include "core/dom/events/ScopedEventQueue.h"
+#include "core/dom/ng/slot_assignment_engine.h"
 #include "core/dom/trustedtypes/TrustedHTML.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/FrameSelection.h"
@@ -122,6 +123,7 @@
 #include "core/frame/FrameConsole.h"
 #include "core/frame/History.h"
 #include "core/frame/HostsUsingFeatures.h"
+#include "core/frame/Intervention.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameClient.h"
@@ -2118,7 +2120,13 @@ void Document::UpdateStyleAndLayoutTree() {
   DocumentAnimations::UpdateAnimationTimingIfNeeded(*this);
   EvaluateMediaQueryListIfNeeded();
   UpdateUseShadowTreesIfNeeded();
+
+  // For V0 Shadow DOM or V1 Shadow DOM without IncrementalShadowDOM
   UpdateDistribution();
+
+  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+    GetSlotAssignmentEngine().RecalcSlotAssignments();
+
   UpdateActiveStyle();
   UpdateStyleInvalidationIfNeeded();
 
@@ -3392,7 +3400,7 @@ bool Document::DispatchBeforeUnloadEvent(ChromeClient& chrome_client,
   if (!GetFrame()->HasBeenActivated()) {
     beforeunload_dialog_histogram.Count(kNoDialogNoUserGesture);
     AddConsoleMessage(ConsoleMessage::Create(
-        kJSMessageSource, kErrorMessageLevel,
+        kInterventionMessageSource, kErrorMessageLevel,
         "Blocked attempt to show a 'beforeunload' confirmation panel for a "
         "frame that never had a user gesture since its load. "
         "https://www.chromestatus.com/feature/5082396709879808"));
@@ -3403,7 +3411,7 @@ bool Document::DispatchBeforeUnloadEvent(ChromeClient& chrome_client,
     beforeunload_dialog_histogram.Count(
         kNoDialogMultipleConfirmationForNavigation);
     AddConsoleMessage(ConsoleMessage::Create(
-        kJSMessageSource, kErrorMessageLevel,
+        kInterventionMessageSource, kErrorMessageLevel,
         "Blocked attempt to show multiple 'beforeunload' confirmation panels "
         "for a single navigation."));
     return true;
@@ -6396,7 +6404,11 @@ void Document::AddConsoleMessage(ConsoleMessage* console_message) {
         SourceLocation::Create(Url().GetString(), line_number, 0, nullptr));
     console_message->SetNodes(frame_, std::move(nodes));
   }
-  frame_->Console().AddMessage(console_message);
+
+  if (console_message->Source() == kInterventionMessageSource)
+    Intervention::GenerateReport(frame_, console_message->Message());
+  else
+    frame_->Console().AddMessage(console_message);
 }
 
 void Document::TasksWerePaused() {
@@ -7288,6 +7300,7 @@ void Document::Trace(blink::Visitor* visitor) {
   visitor->Trace(property_registry_);
   visitor->Trace(network_state_observer_);
   visitor->Trace(policy_);
+  visitor->Trace(slot_assignment_engine_);
   Supplementable<Document>::Trace(visitor);
   TreeScope::Trace(visitor);
   ContainerNode::Trace(visitor);
@@ -7332,6 +7345,12 @@ bool Document::CurrentFrameHadRAF() const {
 bool Document::NextFrameHasPendingRAF() const {
   return scripted_animation_controller_ &&
          scripted_animation_controller_->NextFrameHasPendingRAF();
+}
+
+SlotAssignmentEngine& Document::GetSlotAssignmentEngine() {
+  if (!slot_assignment_engine_)
+    slot_assignment_engine_ = SlotAssignmentEngine::Create();
+  return *slot_assignment_engine_;
 }
 
 void Document::TraceWrappers(const ScriptWrappableVisitor* visitor) const {

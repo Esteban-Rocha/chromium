@@ -10,7 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/sticky_keys/sticky_keys_controller.h"
 #include "base/bind.h"
@@ -35,7 +34,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
-#include "chrome/browser/chromeos/accessibility/select_to_speak_event_rewriter.h"
 #include "chrome/browser/chromeos/accessibility/spoken_feedback_event_rewriter.h"
 #include "chrome/browser/chromeos/app_mode/arc/arc_kiosk_app_manager.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launch_error.h"
@@ -53,6 +51,7 @@
 #include "chrome/browser/chromeos/dbus/finch_features_service_provider_delegate.h"
 #include "chrome/browser/chromeos/dbus/kiosk_info_service_provider.h"
 #include "chrome/browser/chromeos/dbus/screen_lock_service_provider.h"
+#include "chrome/browser/chromeos/dbus/vm_applications_service_provider_delegate.h"
 #include "chrome/browser/chromeos/display/quirks_manager_delegate_impl.h"
 #include "chrome/browser/chromeos/events/event_rewriter_controller.h"
 #include "chrome/browser/chromeos/events/event_rewriter_delegate_impl.h"
@@ -133,6 +132,7 @@
 #include "chromeos/dbus/services/liveness_service_provider.h"
 #include "chromeos/dbus/services/proxy_resolution_service_provider.h"
 #include "chromeos/dbus/services/virtual_file_request_service_provider.h"
+#include "chromeos/dbus/services/vm_applications_service_provider.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/login/login_state.h"
@@ -172,7 +172,7 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "printing/backend/print_backend.h"
-#include "rlz/features/features.h"
+#include "rlz/buildflags/buildflags.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/ime/chromeos/ime_keyboard.h"
@@ -333,7 +333,7 @@ class DBusServices {
     CrosDBusService::ServiceProviderList service_providers;
     CrosDBusService::ServiceProviderList display_service_providers;
 
-    if (GetAshConfig() == ash::Config::CLASSIC) {
+    if (GetAshConfig() != ash::Config::MASH) {
       // TODO(lannm): This will eventually be served by mus-ws.
       display_service_providers.push_back(
           std::make_unique<DisplayPowerServiceProvider>(
@@ -404,6 +404,13 @@ class DBusServices {
             std::make_unique<ChromeFeaturesServiceProvider>(
                 std::make_unique<FinchFeaturesServiceProviderDelegate>())));
 
+    vm_applications_service_ = CrosDBusService::Create(
+        vm_tools::apps::kVmApplicationsServiceName,
+        dbus::ObjectPath(vm_tools::apps::kVmApplicationsServicePath),
+        CrosDBusService::CreateServiceProviderList(
+            std::make_unique<VmApplicationsServiceProvider>(
+                std::make_unique<VmApplicationsServiceProviderDelegate>())));
+
     // Initialize PowerDataCollector after DBusThreadManager is initialized.
     PowerDataCollector::Initialize();
 
@@ -448,6 +455,7 @@ class DBusServices {
     virtual_file_request_service_.reset();
     component_updater_service_.reset();
     finch_features_service_.reset();
+    vm_applications_service_.reset();
     PowerDataCollector::Shutdown();
     PowerPolicyController::Shutdown();
     device::BluetoothAdapterFactory::Shutdown();
@@ -474,6 +482,7 @@ class DBusServices {
   std::unique_ptr<CrosDBusService> virtual_file_request_service_;
   std::unique_ptr<CrosDBusService> component_updater_service_;
   std::unique_ptr<CrosDBusService> finch_features_service_;
+  std::unique_ptr<CrosDBusService> vm_applications_service_;
 
   ChromeConsoleServiceProviderDelegate console_service_provider_delegate_;
 
@@ -798,7 +807,9 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
     WizardController::SetZeroDelays();
   }
 
-  power_prefs_.reset(new PowerPrefs(PowerPolicyController::Get()));
+  power_prefs_ = std::make_unique<PowerPrefs>(
+      PowerPolicyController::Get(),
+      DBusThreadManager::Get()->GetPowerManagerClient());
 
   arc_kiosk_app_manager_.reset(new ArcKioskAppManager());
 
@@ -1039,11 +1050,6 @@ void ChromeBrowserMainPartsChromeos::PostBrowserStart() {
         std::unique_ptr<ui::EventRewriter>(new KeyboardDrivenEventRewriter()));
     keyboard_event_rewriters_->AddEventRewriter(
         std::unique_ptr<ui::EventRewriter>(new SpokenFeedbackEventRewriter()));
-    keyboard_event_rewriters_->AddEventRewriter(
-        std::unique_ptr<ui::EventRewriter>(new SelectToSpeakEventRewriter(
-            ash::Shell::Get()
-                ->GetPrimaryRootWindowController()
-                ->GetRootWindow())));
     event_rewriter_delegate_ = std::make_unique<EventRewriterDelegateImpl>();
     keyboard_event_rewriters_->AddEventRewriter(
         std::make_unique<ui::EventRewriterChromeOS>(

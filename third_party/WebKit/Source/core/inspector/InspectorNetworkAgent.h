@@ -99,6 +99,9 @@ class CORE_EXPORT InspectorNetworkAgent final
                       DocumentLoader*,
                       const char* data,
                       int data_length);
+  void DidReceiveBlob(unsigned long identifier,
+                      DocumentLoader*,
+                      scoped_refptr<BlobDataHandle>);
   void DidReceiveEncodedDataLength(DocumentLoader*,
                                    unsigned long identifier,
                                    int encoded_data_length);
@@ -169,18 +172,18 @@ class CORE_EXPORT InspectorNetworkAgent final
   void FrameScheduledClientNavigation(LocalFrame*);
   void FrameClearedScheduledClientNavigation(LocalFrame*);
 
-  void DidCreateWebSocket(Document*,
+  void DidCreateWebSocket(ExecutionContext*,
                           unsigned long identifier,
                           const KURL& request_url,
                           const String&);
-  void WillSendWebSocketHandshakeRequest(Document*,
+  void WillSendWebSocketHandshakeRequest(ExecutionContext*,
                                          unsigned long identifier,
                                          const WebSocketHandshakeRequest*);
-  void DidReceiveWebSocketHandshakeResponse(Document*,
+  void DidReceiveWebSocketHandshakeResponse(ExecutionContext*,
                                             unsigned long identifier,
                                             const WebSocketHandshakeRequest*,
                                             const WebSocketHandshakeResponse*);
-  void DidCloseWebSocket(Document*, unsigned long identifier);
+  void DidCloseWebSocket(ExecutionContext*, unsigned long identifier);
   void DidReceiveWebSocketFrame(unsigned long identifier,
                                 int op_code,
                                 bool masked,

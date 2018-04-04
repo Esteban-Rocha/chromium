@@ -72,17 +72,9 @@ MS_TRUETYPE_FONTS_PACKAGE = 'ttf-mscorefonts-installer'
 CONTENT_SHELL_FONTS_DIR = "test_fonts"
 
 FONT_FILES = [
-    [[MS_TRUETYPE_FONTS_DIR], 'Arial.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Comic_Sans_MS.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Comic_Sans_MS_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Impact.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
     [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
@@ -190,6 +182,8 @@ class Port(object):
 
     # All of the non-reftest baseline extensions we use.
     BASELINE_EXTENSIONS = ('.wav', '.txt', '.png')
+
+    FLAG_EXPECTATIONS_PREFIX = 'FlagExpectations'
 
     # Because this is an abstract base class, arguments to functions may be
     # unused in this class - pylint: disable=unused-argument
@@ -1425,7 +1419,7 @@ class Port(object):
         flag = self.primary_driver_flag()
         if flag:
             return self._filesystem.join(
-                self.layout_tests_dir(), 'FlagExpectations', flag.lstrip('-'))
+                self.layout_tests_dir(), self.FLAG_EXPECTATIONS_PREFIX, flag.lstrip('-'))
 
     def _flag_specific_baseline_search_path(self):
         flag = self.primary_driver_flag()

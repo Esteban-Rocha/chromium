@@ -18,6 +18,7 @@
 #include "chrome/browser/vr/model/assets.h"
 #include "chrome/browser/vr/model/model.h"
 #include "chrome/browser/vr/model/omnibox_suggestions.h"
+#include "chrome/browser/vr/model/platform_toast.h"
 #include "chrome/browser/vr/model/sound_id.h"
 #include "chrome/browser/vr/speech_recognizer.h"
 #include "chrome/browser/vr/ui_browser_interface.h"
@@ -74,8 +75,7 @@ base::WeakPtr<BrowserUiInterface> Ui::GetBrowserUiWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-void Ui::SetWebVrMode(bool enabled, bool show_toast) {
-  model_->web_vr.show_exit_toast = show_toast;
+void Ui::SetWebVrMode(bool enabled) {
   if (enabled) {
     model_->web_vr.has_received_permissions = false;
     if (!model_->web_vr_autopresentation_enabled()) {
@@ -195,7 +195,8 @@ void Ui::SetOmniboxSuggestions(
 
 bool Ui::CanSendWebVrVSync() {
   return model_->web_vr_enabled() &&
-         !model_->web_vr.awaiting_min_splash_screen_duration();
+         !model_->web_vr.awaiting_min_splash_screen_duration() &&
+         !model_->web_vr.showing_hosted_ui;
 }
 
 void Ui::ShowSoftInput(bool show) {
@@ -221,21 +222,39 @@ void Ui::UpdateWebInputIndices(int selection_start,
 
 void Ui::SetAlertDialogEnabled(bool enabled,
                                ContentInputDelegate* delegate,
-                               int width,
-                               int height) {
-  model_->native_ui.hosted_ui_enabled = enabled;
-  model_->native_ui.size_ratio =
-      static_cast<float>(height) / static_cast<float>(width);
-  model_->native_ui.delegate = delegate;
+                               float width,
+                               float height) {
+  model_->web_vr.showing_hosted_ui = enabled;
+  model_->hosted_platform_ui.hosted_ui_enabled = enabled;
+  model_->hosted_platform_ui.rect.set_height(height);
+  model_->hosted_platform_ui.rect.set_width(width);
+  model_->hosted_platform_ui.delegate = delegate;
 }
 
-void Ui::SetAlertDialogSize(int width, int height) {
-  model_->native_ui.size_ratio =
-      static_cast<float>(height) / static_cast<float>(width);
+void Ui::SetAlertDialogSize(float width, float height) {
+  model_->hosted_platform_ui.rect.set_height(height);
+  model_->hosted_platform_ui.rect.set_width(width);
+}
+
+void Ui::SetDialogLocation(float x, float y) {
+  model_->hosted_platform_ui.rect.set_y(y);
+  model_->hosted_platform_ui.rect.set_x(x);
+}
+
+void Ui::SetDialogFloating() {
+  model_->hosted_platform_ui.floating = true;
+}
+
+void Ui::ShowPlatformToast(const base::string16& text) {
+  model_->platform_toast = std::make_unique<PlatformToast>(text);
+}
+
+void Ui::CancelPlatformToast() {
+  model_->platform_toast.reset();
 }
 
 bool Ui::ShouldRenderWebVr() {
-  return model_->web_vr.has_produced_frames();
+  return model_->web_vr.presenting_web_vr();
 }
 
 void Ui::OnGlInitialized(
@@ -258,7 +277,7 @@ void Ui::OnGlInitialized(
   model_->content_overlay_texture_id = content_overlay_texture_id;
   model_->content_location = content_location;
   model_->content_overlay_location = content_overlay_location;
-  model_->native_ui.texture_id = ui_texture_id;
+  model_->hosted_platform_ui.texture_id = ui_texture_id;
 }
 
 void Ui::RequestFocus(int element_id) {
@@ -294,6 +313,11 @@ void Ui::OnAppButtonClicked() {
 
   if (model_->editing_web_input) {
     ShowSoftInput(false);
+    return;
+  }
+
+  if (model_->hosted_platform_ui.hosted_ui_enabled) {
+    browser_->CloseHostedDialog();
     return;
   }
 

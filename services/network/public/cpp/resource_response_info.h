@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_timing_info.h"
+#include "net/base/request_priority.h"
 #include "net/cert/ct_policy_status.h"
 #include "net/cert/signed_certificate_timestamp_and_status.h"
 #include "net/http/http_response_headers.h"
@@ -69,6 +70,9 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceResponseInfo {
   // has been read to the end.
   int64_t encoded_body_length;
 
+  // True if the request accessed the network in the process of retrieving data.
+  bool network_accessed;
+
   // The appcache this response was loaded from, or kAppCacheNoCacheId.
   // TODO(rdsmith): Remove conceptual dependence on appcache.
   int64_t appcache_id;
@@ -76,6 +80,9 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceResponseInfo {
   // The manifest url of the appcache this response was loaded from.
   // Note: this value is only populated for main resource requests.
   GURL appcache_manifest_url;
+
+  // The priority level for this request.
+  net::RequestPriority priority;
 
   // Detailed timing information used by the WebTiming, HAR and Developer
   // Tools.  Includes socket ID and socket reuse information.
@@ -155,29 +162,14 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceResponseInfo {
   // only for responses that correspond to main frame requests.
   net::EffectiveConnectionType effective_connection_type;
 
-  // DER-encoded X509Certificate certificate chain. Only present if the renderer
-  // process set report_raw_headers to true.
-  std::vector<std::string> certificate;
-
   // Bitmask of status info of the SSL certificate. See cert_status_flags.h for
   // values.
   net::CertStatus cert_status;
 
-  // Information about the SSL connection itself. See
-  // ssl_connection_status_flags.h for values. The protocol version,
-  // ciphersuite, and compression in use are encoded within. Only present if
-  // the renderer process set report_raw_headers to true.
-  int ssl_connection_status;
-
-  // The key exchange group used by the SSL connection or zero if unknown or not
-  // applicable. Only present if the renderer process set report_raw_headers to
-  // true.
-  uint16_t ssl_key_exchange_group;
-
-  // List of Signed Certificate Timestamps (SCTs) and their corresponding
-  // validation status. Only present if the renderer process set
-  // report_raw_headers to true.
-  net::SignedCertificateTimestampAndStatusList signed_certificate_timestamps;
+  // Only provided if kURLLoadOptionsSendSSLInfoWithResponse was specified to
+  // the URLLoaderFactory::CreateLoaderAndStart option or
+  // if ResourceRequest::report_raw_headers is set.
+  base::Optional<net::SSLInfo> ssl_info;
 
   // In case this is a CORS response fetched by a ServiceWorker, this is the
   // set of headers that should be exposed.

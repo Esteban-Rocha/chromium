@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <map>
 #include <set>
 #include <utility>
 #include <vector>
@@ -190,7 +191,7 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/device/public/mojom/battery_monitor.mojom.h"
 #include "services/device/public/mojom/constants.mojom.h"
 #include "services/network/public/cpp/features.h"
@@ -361,25 +362,32 @@ class RenderProcessMemoryDumpProvider
         this);
   }
 
-  void AddHost(RenderProcessHostImpl* host) { hosts_.insert(host); }
+  void AddHost(RenderProcessHostImpl* host) {
+    hosts_.emplace(host, base::Time::Now());
+  }
+
   void RemoveHost(RenderProcessHostImpl* host) { hosts_.erase(host); }
 
  private:
   // base::trace_event::MemoryDumpProvider:
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
                     base::trace_event::ProcessMemoryDump* pmd) override {
-    for (auto* host : hosts_) {
+    for (auto& iter : hosts_) {
+      auto* host = iter.first;
       base::trace_event::MemoryAllocatorDump* dump = pmd->CreateAllocatorDump(
           base::StringPrintf("mojo/render_process_host/0x%" PRIxPTR,
                              reinterpret_cast<uintptr_t>(host)));
       dump->AddScalar("is_initialized",
                       base::trace_event::MemoryAllocatorDump::kUnitsObjects,
                       host->is_initialized() ? 1 : 0);
+      dump->AddScalar("age",
+                      base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+                      (base::Time::Now() - iter.second).InSeconds());
     }
     return true;
   }
 
-  std::set<RenderProcessHostImpl*> hosts_;
+  std::map<RenderProcessHostImpl*, base::Time> hosts_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessMemoryDumpProvider);
 };
@@ -1317,6 +1325,10 @@ RenderProcessHost* RenderProcessHostImpl::CreateRenderProcessHost(
 }
 
 // static
+const unsigned int RenderProcessHostImpl::kMaxFrameDepthForPriority =
+    std::numeric_limits<unsigned int>::max();
+
+// static
 RenderProcessHost* RenderProcessHostImpl::CreateOrUseSpareRenderProcessHost(
     BrowserContext* browser_context,
     StoragePartitionImpl* storage_partition_impl,
@@ -1352,7 +1364,7 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       route_provider_binding_(this),
       visible_clients_(0),
       priority_({
-        blink::kLaunchingProcessIsBackgrounded,
+        blink::kLaunchingProcessIsBackgrounded, frame_depth_,
             blink::kLaunchingProcessIsBoostedForPendingView,
 #if defined(OS_ANDROID)
             ChildProcessImportance::NORMAL,
@@ -1387,6 +1399,9 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       shared_bitmap_allocation_notifier_impl_(
           viz::ServerSharedBitmapManager::current()),
       weak_factory_(this) {
+  for (size_t i = 0; i < kNumKeepAliveClients; i++)
+    keep_alive_client_count_[i] = 0;
+
   widget_helper_ = new RenderWidgetHelper();
 
   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
@@ -1409,6 +1424,9 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       GetID(), storage_partition_impl_->GetServiceWorkerContext()));
 
   AddObserver(indexed_db_factory_.get());
+#if defined(OS_MACOSX)
+  AddObserver(MachBroker::GetInstance());
+#endif
 
   InitializeChannelProxy();
 
@@ -2165,23 +2183,61 @@ bool RenderProcessHostImpl::IsProcessBackgrounded() const {
   return priority_.background;
 }
 
-void RenderProcessHostImpl::IncrementKeepAliveRefCount() {
+void RenderProcessHostImpl::IncrementKeepAliveRefCount(
+    RenderProcessHost::KeepAliveClientType client) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!is_keep_alive_ref_count_disabled_);
+  base::TimeTicks now = base::TimeTicks::Now();
+  size_t client_type = static_cast<size_t>(client);
+  keep_alive_client_count_[client_type]++;
+  if (keep_alive_client_count_[client_type] == 1)
+    keep_alive_client_start_time_[client_type] = now;
+
   ++keep_alive_ref_count_;
-  if (keep_alive_ref_count_ - 1 == 0) {
+  if (keep_alive_ref_count_ == 1) {
     GetRendererInterface()->SetSchedulerKeepActive(true);
   }
 }
 
-void RenderProcessHostImpl::DecrementKeepAliveRefCount() {
+void RenderProcessHostImpl::DecrementKeepAliveRefCount(
+    RenderProcessHost::KeepAliveClientType client) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!is_keep_alive_ref_count_disabled_);
   DCHECK_GT(keep_alive_ref_count_, 0U);
+  base::TimeTicks now = base::TimeTicks::Now();
+  size_t client_type = static_cast<size_t>(client);
+  keep_alive_client_count_[client_type]--;
+  if (keep_alive_client_count_[client_type] == 0) {
+    RecordKeepAliveDuration(client, keep_alive_client_start_time_[client_type],
+                            now);
+  }
+
   --keep_alive_ref_count_;
   if (keep_alive_ref_count_ == 0) {
     Cleanup();
     GetRendererInterface()->SetSchedulerKeepActive(false);
+  }
+}
+
+void RenderProcessHostImpl::RecordKeepAliveDuration(
+    RenderProcessHost::KeepAliveClientType client,
+    base::TimeTicks start,
+    base::TimeTicks end) {
+  switch (client) {
+    case RenderProcessHost::KeepAliveClientType::kServiceWorker:
+      UMA_HISTOGRAM_LONG_TIMES(
+          "BrowserRenderProcessHost.KeepAliveDuration.ServiceWorker",
+          end - start);
+      break;
+    case RenderProcessHost::KeepAliveClientType::kSharedWorker:
+      UMA_HISTOGRAM_LONG_TIMES(
+          "BrowserRenderProcessHost.KeepAliveDuration.SharedWorker",
+          end - start);
+      break;
+    case RenderProcessHost::KeepAliveClientType::kFetch:
+      UMA_HISTOGRAM_LONG_TIMES(
+          "BrowserRenderProcessHost.KeepAliveDuration.Fetch", end - start);
+      break;
   }
 }
 
@@ -2191,6 +2247,16 @@ void RenderProcessHostImpl::DisableKeepAliveRefCount() {
   if (!keep_alive_ref_count_)
     return;
   keep_alive_ref_count_ = 0;
+  base::TimeTicks now = base::TimeTicks::Now();
+  for (size_t i = 0; i < kNumKeepAliveClients; i++) {
+    if (keep_alive_client_count_[i] > 0) {
+      RecordKeepAliveDuration(
+          static_cast<RenderProcessHost::KeepAliveClientType>(i),
+          keep_alive_client_start_time_[i], now);
+      keep_alive_client_count_[i] = 0;
+    }
+  }
+
   // Cleaning up will also remove this from the SpareRenderProcessHostManager.
   Cleanup();
 }
@@ -2324,6 +2390,10 @@ void RenderProcessHostImpl::UpdateClientPriority(PriorityClient* client) {
 
 int RenderProcessHostImpl::VisibleClientCount() const {
   return visible_clients_;
+}
+
+unsigned int RenderProcessHostImpl::GetFrameDepthForTesting() const {
+  return frame_depth_;
 }
 
 #if defined(OS_ANDROID)
@@ -2596,6 +2666,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDomAutomationController,
     switches::kEnableAutomation,
     switches::kEnableExperimentalWebPlatformFeatures,
+    switches::kEnableHeapProfiling,
     switches::kEnableGPUClientLogging,
     switches::kEnableGpuClientTracing,
     switches::kEnableGpuMemoryBufferVideoFrames,
@@ -2647,6 +2718,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kReducedReferrerGranularity,
     switches::kRegisterPepperPlugins,
     switches::kRendererStartupDialog,
+    switches::kReportVp9AsAnUnsupportedMimeType,
     switches::kSamplingHeapProfiler,
     switches::kShowPaintRects,
     switches::kStatsCollectionController,
@@ -3831,14 +3903,29 @@ void RenderProcessHostImpl::SuddenTerminationChanged(bool enabled) {
 
 void RenderProcessHostImpl::UpdateProcessPriorityInputs() {
   int32_t new_visible_widgets_count = 0;
+  unsigned int new_frame_depth = kMaxFrameDepthForPriority;
 #if defined(OS_ANDROID)
   ChildProcessImportance new_effective_importance =
       ChildProcessImportance::NORMAL;
 #endif
   for (auto* client : priority_clients_) {
     Priority priority = client->GetPriority();
-    if (!priority.is_hidden)
+
+    // Compute the lowest depth of widgets with highest visibility priority.
+    // See comment on |frame_depth_| for more details.
+    if (priority.is_hidden) {
+      if (!new_visible_widgets_count) {
+        new_frame_depth = std::min(new_frame_depth, priority.frame_depth);
+      }
+    } else {
+      if (new_visible_widgets_count) {
+        new_frame_depth = std::min(new_frame_depth, priority.frame_depth);
+      } else {
+        new_frame_depth = priority.frame_depth;
+      }
       new_visible_widgets_count++;
+    }
+
 #if defined(OS_ANDROID)
     new_effective_importance =
         std::max(new_effective_importance, priority.importance);
@@ -3847,6 +3934,7 @@ void RenderProcessHostImpl::UpdateProcessPriorityInputs() {
 
   bool inputs_changed = new_visible_widgets_count != visible_clients_;
   visible_clients_ = new_visible_widgets_count;
+  frame_depth_ = new_frame_depth;
 #if defined(OS_ANDROID)
   inputs_changed =
       inputs_changed || new_effective_importance != effective_importance_;
@@ -3872,6 +3960,7 @@ void RenderProcessHostImpl::UpdateProcessPriority() {
     visible_clients_ == 0 && media_stream_count_ == 0 &&
         !base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kDisableRendererBackgrounding),
+    frame_depth_,
     // boost_for_pending_views
     !!pending_views_,
 #if defined(OS_ANDROID)

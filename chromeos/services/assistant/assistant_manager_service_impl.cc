@@ -30,7 +30,11 @@ AssistantManagerServiceImpl::AssistantManagerServiceImpl(
                                                      kDefaultConfigStr)),
       assistant_manager_internal_(
           UnwrapAssistantManagerInternal(assistant_manager_.get())),
-      display_connection_(std::make_unique<CrosDisplayConnection>(this)) {}
+      display_connection_(std::make_unique<CrosDisplayConnection>(this)),
+      main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      weak_factory_(this) {
+  assistant_manager_->AddConversationStateListener(this);
+}
 
 AssistantManagerServiceImpl::~AssistantManagerServiceImpl() {}
 
@@ -44,6 +48,84 @@ void AssistantManagerServiceImpl::Start(const std::string& access_token) {
 
   // Set the flag to avoid starting the service multiple times.
   running_ = true;
+}
+
+bool AssistantManagerServiceImpl::IsRunning() const {
+  return running_;
+}
+
+void AssistantManagerServiceImpl::SetAccessToken(
+    const std::string& access_token) {
+  // Push the |access_token| we got as an argument into AssistantManager before
+  // starting to ensure that all server requests will be authenticated once
+  // it is started. |user_id| is used to pair a user to their |access_token|,
+  // since we do not support multi-user in this example we can set it to a
+  // dummy value like "0".
+  assistant_manager_->SetAuthTokens({std::pair<std::string, std::string>(
+      /* user_id: */ "0", access_token)});
+}
+
+void AssistantManagerServiceImpl::EnableListening(bool enable) {
+  assistant_manager_->EnableListening(enable);
+}
+
+void AssistantManagerServiceImpl::SendTextQuery(const std::string& query) {
+  assistant_manager_internal_->SendTextQuery(query);
+}
+
+void AssistantManagerServiceImpl::AddAssistantEventSubscriber(
+    mojom::AssistantEventSubscriberPtr subscriber) {
+  subscribers_.AddPtr(std::move(subscriber));
+}
+
+void AssistantManagerServiceImpl::OnShowHtml(const std::string& html) {
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&AssistantManagerServiceImpl::OnShowHtmlOnMainThread,
+                     weak_factory_.GetWeakPtr(), html));
+}
+
+void AssistantManagerServiceImpl::OnShowSuggestions(
+    const std::vector<std::string>& suggestions) {
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &AssistantManagerServiceImpl::OnShowSuggestionsOnMainThread,
+          weak_factory_.GetWeakPtr(), suggestions));
+}
+
+void AssistantManagerServiceImpl::OnShowText(const std::string& text) {
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&AssistantManagerServiceImpl::OnShowTextOnMainThread,
+                     weak_factory_.GetWeakPtr(), text));
+}
+
+void AssistantManagerServiceImpl::OnOpenUrl(const std::string& url) {
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&AssistantManagerServiceImpl::OnOpenUrlOnMainThread,
+                     weak_factory_.GetWeakPtr(), url));
+}
+
+void AssistantManagerServiceImpl::OnRecognitionStateChanged(
+    assistant_client::ConversationStateListener::RecognitionState state,
+    const assistant_client::ConversationStateListener::RecognitionResult&
+        recognition_result) {
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &AssistantManagerServiceImpl::OnRecognitionStateChangedOnMainThread,
+          weak_factory_.GetWeakPtr(), state, recognition_result));
+}
+
+void AssistantManagerServiceImpl::OnSpeechLevelUpdated(
+    const float speech_level) {
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &AssistantManagerServiceImpl::OnSpeechLevelUpdatedOnMainThread,
+          weak_factory_.GetWeakPtr(), speech_level));
 }
 
 void AssistantManagerServiceImpl::StartAssistantInternal(
@@ -82,49 +164,65 @@ std::string AssistantManagerServiceImpl::BuildUserAgent(
   return user_agent;
 }
 
-bool AssistantManagerServiceImpl::IsRunning() const {
-  return running_;
-}
-
-void AssistantManagerServiceImpl::SetAccessToken(
-    const std::string& access_token) {
-  // Push the |access_token| we got as an argument into AssistantManager before
-  // starting to ensure that all server requests will be authenticated once
-  // it is started. |user_id| is used to pair a user to their |access_token|,
-  // since we do not support multi-user in this example we can set it to a
-  // dummy value like "0".
-  assistant_manager_->SetAuthTokens({std::pair<std::string, std::string>(
-      /* user_id: */ "0", access_token)});
-}
-
-void AssistantManagerServiceImpl::EnableListening(bool enable) {
-  assistant_manager_->EnableListening(enable);
-}
-
-void AssistantManagerServiceImpl::SendTextQuery(const std::string& query) {
-  assistant_manager_internal_->SendTextQuery(query);
-}
-
-void AssistantManagerServiceImpl::AddAssistantEventSubscriber(
-    mojom::AssistantEventSubscriberPtr subscriber) {
-  subscribers_.AddPtr(std::move(subscriber));
-}
-
-void AssistantManagerServiceImpl::OnShowHtml(const std::string& html) {
+void AssistantManagerServiceImpl::OnShowHtmlOnMainThread(
+    const std::string& html) {
   subscribers_.ForAllPtrs([&html](auto* ptr) { ptr->OnHtmlResponse(html); });
 }
 
-void AssistantManagerServiceImpl::OnShowText(const std::string& text) {
+void AssistantManagerServiceImpl::OnShowSuggestionsOnMainThread(
+    const std::vector<std::string>& suggestions) {
+  subscribers_.ForAllPtrs(
+      [&suggestions](auto* ptr) { ptr->OnSuggestionsResponse(suggestions); });
+}
+
+void AssistantManagerServiceImpl::OnShowTextOnMainThread(
+    const std::string& text) {
   subscribers_.ForAllPtrs([&text](auto* ptr) { ptr->OnTextResponse(text); });
 }
 
-void AssistantManagerServiceImpl::OnOpenUrl(const std::string& url) {
+void AssistantManagerServiceImpl::OnOpenUrlOnMainThread(
+    const std::string& url) {
   subscribers_.ForAllPtrs(
       [&url](auto* ptr) { ptr->OnOpenUrlResponse(GURL(url)); });
 }
 
-void AssistantManagerServiceImpl::OnSpeechLevelUpdated(
-    const float speech_level) {}
+void AssistantManagerServiceImpl::OnRecognitionStateChangedOnMainThread(
+    assistant_client::ConversationStateListener::RecognitionState state,
+    const assistant_client::ConversationStateListener::RecognitionResult&
+        recognition_result) {
+  switch (state) {
+    case assistant_client::ConversationStateListener::RecognitionState::STARTED:
+      subscribers_.ForAllPtrs(
+          [](auto* ptr) { ptr->OnSpeechRecognitionStarted(); });
+      break;
+    case assistant_client::ConversationStateListener::RecognitionState::
+        INTERMEDIATE_RESULT:
+      subscribers_.ForAllPtrs([&recognition_result](auto* ptr) {
+        ptr->OnSpeechRecognitionIntermediateResult(
+            recognition_result.high_confidence_text,
+            recognition_result.low_confidence_text);
+      });
+      break;
+    case assistant_client::ConversationStateListener::RecognitionState::
+        END_OF_UTTERANCE:
+      subscribers_.ForAllPtrs(
+          [](auto* ptr) { ptr->OnSpeechRecognitionEndOfUtterance(); });
+      break;
+    case assistant_client::ConversationStateListener::RecognitionState::
+        FINAL_RESULT:
+      subscribers_.ForAllPtrs([&recognition_result](auto* ptr) {
+        ptr->OnSpeechRecognitionFinalResult(
+            recognition_result.recognized_speech);
+      });
+      break;
+  }
+}
+
+void AssistantManagerServiceImpl::OnSpeechLevelUpdatedOnMainThread(
+    const float speech_level) {
+  subscribers_.ForAllPtrs(
+      [&speech_level](auto* ptr) { ptr->OnSpeechLevelUpdated(speech_level); });
+}
 
 }  // namespace assistant
 }  // namespace chromeos

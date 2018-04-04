@@ -122,6 +122,8 @@ _OS_SPECIFIC_FILTER['mac'] = [
     'MobileEmulationCapabilityTest.testTapElement',
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=1945
     'ChromeDriverTest.testWindowFullScreen',
+    # crbug.com/827171
+    'ChromeDriverTest.testWindowMinimize',
 ]
 
 _DESKTOP_NEGATIVE_FILTER = [
@@ -1646,6 +1648,19 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     self._driver.Load('about:blank')
     self._driver.ExecuteScript('Object.prototype.$family = undefined;')
     self.assertEquals(1, self._driver.ExecuteScript('return 1;'))
+
+  def testWebWorkerFrames(self):
+    """Verify web worker frames are handled correctly.
+
+    Regression test for bug
+    https://bugs.chromium.org/p/chromedriver/issues/detail?id=2340.
+    The bug was triggered by opening a page with web worker, and then opening a
+    page on a different site. We simulate a different site by using 'localhost'
+    as the host name (default is '127.0.0.1').
+    """
+    self._driver.Load(self.GetHttpUrlForFile('/chromedriver/web_worker.html'))
+    self._driver.Load(self._http_server.GetUrl('localhost')
+                      + '/chromedriver/empty.html')
 
 
 class ChromeDriverSiteIsolation(ChromeDriverBaseTestWithWebServer):

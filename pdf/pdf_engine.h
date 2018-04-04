@@ -146,6 +146,9 @@ class PDFEngine {
     virtual void ScrollToY(int y_in_screen_coords,
                            bool compensate_for_toolbar) = 0;
 
+    // Scroll by a given delta relative to the current position.
+    virtual void ScrollBy(const pp::Point& point) = 0;
+
     // Scroll to zero-based |page|.
     virtual void ScrollToPage(int page) = 0;
 
@@ -232,8 +235,8 @@ class PDFEngine {
     virtual void DocumentPaintOccurred() = 0;
 
     // Notifies the client that the document has finished loading.
-    virtual void DocumentLoadComplete(
-        const DocumentFeatures& document_features) = 0;
+    virtual void DocumentLoadComplete(const DocumentFeatures& document_features,
+                                      uint32_t file_size) = 0;
 
     // Notifies the client that the document has failed to load.
     virtual void DocumentLoadFailed() = 0;

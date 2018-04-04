@@ -9,9 +9,9 @@
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
-#include "platform/scheduler/renderer/page_scheduler.h"
+#include "platform/scheduler/public/page_scheduler.h"
 #include "public/platform/WebThread.h"
-#include "public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "public/platform/scheduler/web_main_thread_scheduler.h"
 
 namespace blink {
 

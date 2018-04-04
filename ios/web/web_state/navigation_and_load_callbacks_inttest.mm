@@ -1097,14 +1097,8 @@ TEST_F(NavigationAndLoadCallbacksTest, ForwardPostNavigation) {
   }
 
   EXPECT_CALL(observer_, DidStartNavigation(web_state(), _));
-  if (@available(iOS 10, *)) {
-    // Starting from iOS10, ShouldAllowResponse is not called when going back
-    // after form submission.
-  } else {
-    EXPECT_CALL(*decider_, ShouldAllowResponse(_, /*for_main_frame=*/true))
-        .WillOnce(Return(true));
-  }
   EXPECT_CALL(observer_, DidFinishNavigation(web_state(), _));
+  // ShouldAllowResponse is not called when going back after form submission.
   EXPECT_CALL(observer_, DidStopLoading(web_state()));
   EXPECT_CALL(observer_,
               PageLoaded(web_state(), PageLoadCompletionStatus::SUCCESS));
@@ -1193,14 +1187,8 @@ TEST_F(NavigationAndLoadCallbacksTest, DownloadNavigation) {
   }));
 }
 
-#if TARGET_IPHONE_SIMULATOR
-#define MAYBE_FailedLoad FailedLoad
-#else
-#define MAYBE_FailedLoad DISABLED_FailedLoad
-#endif
 // Tests failed load after the navigation is sucessfully finished.
-// TODO(crbug.com/812669): Re-enable this test on devices.
-TEST_F(NavigationAndLoadCallbacksTest, MAYBE_FailedLoad) {
+TEST_F(NavigationAndLoadCallbacksTest, FailedLoad) {
   GURL url = test_server_->GetURL("/exabyte_response");
 
   NavigationContext* context = nullptr;

@@ -150,7 +150,7 @@ base::Version GetCurrentlyInstalledVersionImpl(base::Version* critical_update) {
 
 }  // namespace
 
-UpgradeDetectorImpl::UpgradeDetectorImpl(base::TickClock* tick_clock)
+UpgradeDetectorImpl::UpgradeDetectorImpl(const base::TickClock* tick_clock)
     : UpgradeDetector(tick_clock),
       blocking_task_runner_(base::CreateSequencedTaskRunnerWithTraits(
           {base::TaskPriority::BACKGROUND,
@@ -279,7 +279,7 @@ void UpgradeDetectorImpl::DetectUpgradeTask(
       GetCurrentlyInstalledVersionImpl(&critical_update);
 
   // Get the version of the currently *running* instance of Chrome.
-  base::Version running_version(version_info::GetVersionNumber());
+  const base::Version& running_version = version_info::GetVersion();
   if (!running_version.IsValid()) {
     NOTREACHED();
     return;

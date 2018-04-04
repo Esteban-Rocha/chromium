@@ -50,7 +50,7 @@
 
 namespace blink {
 
-class BitmapImageTest : public ::testing::Test {
+class BitmapImageTest : public testing::Test {
  public:
   class FakeImageObserver : public GarbageCollectedFinalized<FakeImageObserver>,
                             public ImageObserver {
@@ -79,9 +79,9 @@ class BitmapImageTest : public ::testing::Test {
   };
 
   static scoped_refptr<SharedBuffer> ReadFile(const char* file_name) {
-    String file_path = testing::BlinkRootDir();
+    String file_path = test::BlinkRootDir();
     file_path.append(file_name);
-    return testing::ReadFromFile(file_path);
+    return test::ReadFromFile(file_path);
   }
 
   // Accessors to BitmapImage's protected methods.
@@ -632,7 +632,7 @@ struct HistogramTestParams {
 
 template <typename HistogramEnumType>
 class BitmapHistogramTest : public BitmapImageTest,
-                            public ::testing::WithParamInterface<
+                            public testing::WithParamInterface<
                                 HistogramTestParams<HistogramEnumType>> {
  protected:
   void RunTest(const char* histogram_name) {
@@ -669,7 +669,7 @@ const DecodedImageTypeHistogramTest::ParamType
 INSTANTIATE_TEST_CASE_P(
     DecodedImageTypeHistogramTest,
     DecodedImageTypeHistogramTest,
-    ::testing::ValuesIn(kDecodedImageTypeHistogramTestparams));
+    testing::ValuesIn(kDecodedImageTypeHistogramTestparams));
 
 using DecodedImageOrientationHistogramTest =
     BitmapHistogramTest<ImageOrientationEnum>;
@@ -700,6 +700,6 @@ const DecodedImageOrientationHistogramTest::ParamType
 INSTANTIATE_TEST_CASE_P(
     DecodedImageOrientationHistogramTest,
     DecodedImageOrientationHistogramTest,
-    ::testing::ValuesIn(kDecodedImageOrientationHistogramTestParams));
+    testing::ValuesIn(kDecodedImageOrientationHistogramTestParams));
 
 }  // namespace blink

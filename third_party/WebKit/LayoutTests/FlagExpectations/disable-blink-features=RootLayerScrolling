@@ -1847,7 +1847,6 @@ crbug.com/626703 external/wpt/webaudio/the-audio-api/the-audioparam-interface/re
 crbug.com/626703 external/wpt/webaudio/the-audio-api/the-audioparam-interface/retrospective-setValueAtTime.html [ Timeout ]
 crbug.com/626703 external/wpt/webaudio/the-audio-api/the-audioparam-interface/retrospective-setValueCurveAtTime.html [ Timeout ]
 crbug.com/626703 external/wpt/webaudio/the-audio-api/the-mediaelementaudiosourcenode-interface/mediaElementAudioSourceToScriptProcessorTest.html [ Timeout ]
-crbug.com/626703 [ Mac10.13 ] external/wpt/webauthn/interfaces.https.html [ Timeout ]
 crbug.com/626703 external/wpt/webrtc/RTCPeerConnection-setLocalDescription-rollback.html [ Timeout ]
 crbug.com/626703 external/wpt/webrtc/RTCPeerConnection-setRemoteDescription.html [ Timeout ]
 crbug.com/626703 external/wpt/webrtc/RTCPeerConnection-setRemoteDescription-rollback.html [ Timeout ]
@@ -2341,7 +2340,6 @@ crbug.com/663585 editing/pasteboard/data-transfer-items-image-png.html [ Pass Fa
 
 crbug.com/652536 fast/events/mouse-cursor.html [ Pass Failure ]
 crbug.com/652536 virtual/mouseevent_fractional/fast/events/mouse-cursor.html [ Pass Failure ]
-crbug.com/671478 fast/table/percent-height-replaced-content-in-cell.html [ Pass Failure ]
 crbug.com/663858 fast/text/selection/emphasis.html [ Pass Failure ]
 crbug.com/663858 fast/text/emphasis-vertical.html [ Pass Failure ]
 crbug.com/664816 http/tests/security/contentSecurityPolicy/require-sri-for/require-sri-for-script-reportonly-blocked.php [ Pass Failure ]

@@ -134,6 +134,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void SetRate(double rate) override;
   void SetVolume(double volume) override;
   void EnterPictureInPicture() override;
+  void ExitPictureInPicture() override;
   void SetSinkId(const blink::WebString& sink_id,
                  const blink::WebSecurityOrigin& security_origin,
                  blink::WebSetSinkIdCallbacks* web_callback) override;
@@ -266,7 +267,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void UpdateRemotePlaybackCompatibility(bool is_compatible) override;
 
   // Test helper methods for exercising media suspension.
-  void ForceStaleStateForTesting() override;
+  void ForceStaleStateForTesting(ReadyState target_state) override;
   bool IsSuspendedForTesting() override;
 
   // Called from WebMediaPlayerCast.
@@ -533,15 +534,15 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   bool CanPlayThrough();
 
   // Internal implementation of Pipeline::Client::OnBufferingStateChange(). When
-  // |force_update| is true, the given state will be set even if the pipeline is
-  // not currently stable.
+  // |for_suspended_start| is true, the given state will be set even if the
+  // pipeline is not currently stable.
   void OnBufferingStateChangeInternal(BufferingState state,
-                                      bool force_update = false);
+                                      bool for_suspended_start = false);
 
   // Records |natural_size| to MediaLog and video height to UMA.
   void RecordVideoNaturalSize(const gfx::Size& natural_size);
 
-  void SetTickClockForTest(base::TickClock* tick_clock);
+  void SetTickClockForTest(const base::TickClock* tick_clock);
 
   // Returns the current time without clamping to Duration() as required by
   // HTMLMediaElement for handling ended. This method will never return a
@@ -686,7 +687,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   std::unique_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 
-  base::TickClock* tick_clock_ = nullptr;
+  const base::TickClock* tick_clock_ = nullptr;
 
   BufferedDataSourceHostImpl buffered_data_source_host_;
   UrlIndex* const url_index_;
@@ -785,6 +786,12 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   // The time at which DoLoad() is executed.
   base::TimeTicks load_start_time_;
+
+  // Time elapsed time from |load_start_time_| to OnMetadata(). Used to later
+  // adjust |load_start_time_| if a suspended startup occurred.
+  base::TimeDelta time_to_metadata_;
+  bool skip_metrics_due_to_startup_suspend_ = false;
+
   bool have_reported_time_to_play_ready_ = false;
 
   // Records pipeline statistics for describing media capabilities.
@@ -880,7 +887,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   mojom::MediaMetricsProviderPtr media_metrics_provider_;
 
-  base::Optional<bool> stale_state_override_for_testing_;
+  base::Optional<ReadyState> stale_state_override_for_testing_;
 
   // True if we attempt to start the media pipeline in a suspended state for
   // preload=metadata. Cleared upon pipeline startup.

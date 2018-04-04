@@ -4,13 +4,14 @@
 
 #include "chrome/browser/notifications/notification_platform_bridge_win.h"
 
+#include <memory>
+
 #include <windows.ui.notifications.h>
 #include <wrl/client.h>
-#include <wrl/wrappers/corewrappers.h>
-#include <memory>
 
 #include "base/hash.h"
 #include "base/memory/ptr_util.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -34,10 +35,11 @@ using message_center::Notification;
 
 namespace {
 
-const char kLaunchId[] = "0|Default|0|https://example.com/|notification_id";
-const char kOrigin[] = "https://www.google.com/";
-const char kNotificationId[] = "id";
-const char kProfileId[] = "Default";
+constexpr char kLaunchId[] =
+    "0|0|Default|0|https://example.com/|notification_id";
+constexpr char kOrigin[] = "https://www.google.com/";
+constexpr char kNotificationId[] = "id";
+constexpr char kProfileId[] = "Default";
 
 }  // namespace
 
@@ -60,6 +62,7 @@ class NotificationPlatformBridgeWinTest : public testing::Test {
     notification->set_renotify(renotify);
     MockNotificationImageRetainer image_retainer;
     NotificationLaunchId launch_id(kLaunchId);
+    DCHECK(launch_id.is_valid());
     std::unique_ptr<NotificationTemplateBuilder> builder =
         NotificationTemplateBuilder::Build(&image_retainer, launch_id,
                                            kProfileId, *notification);
@@ -142,7 +145,7 @@ TEST_F(NotificationPlatformBridgeWinTest, Suppress) {
   // Register a single notification.
   base::string16 tag = base::UintToString16(base::Hash(kNotificationId));
   MockIToastNotification item1(
-      L"<toast launch=\"0|Default|0|https://foo.com/|id\"></toast>", tag);
+      L"<toast launch=\"0|0|Default|0|https://foo.com/|id\"></toast>", tag);
   notifications.push_back(&item1);
 
   // Request this notification with renotify true (should not be suppressed).
@@ -157,4 +160,16 @@ TEST_F(NotificationPlatformBridgeWinTest, Suppress) {
 
   notification_platform_bridge_win_->SetDisplayedNotificationsForTesting(
       nullptr);
+}
+
+TEST_F(NotificationPlatformBridgeWinTest, GetProfileIdFromLaunchId) {
+  // Given a valid launch id, the profile id can be obtained correctly.
+  ASSERT_EQ(NotificationPlatformBridgeWin::GetProfileIdFromLaunchId(
+                L"1|1|0|Default|0|https://example.com/|notification_id"),
+            "Default");
+
+  // Given an invalid launch id, the profile id is set to an empty string.
+  ASSERT_EQ(NotificationPlatformBridgeWin::GetProfileIdFromLaunchId(
+                L"1|Default|0|https://example.com/|notification_id"),
+            "");
 }

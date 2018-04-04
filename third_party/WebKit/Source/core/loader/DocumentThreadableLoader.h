@@ -68,8 +68,8 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
                                         const ResourceLoaderOptions&);
 
   // Exposed for testing. Code outside this class should not call this function.
-  static WebURLRequest CreateAccessControlPreflightRequestForTesting(
-      const WebURLRequest&);
+  static std::unique_ptr<ResourceRequest>
+  CreateAccessControlPreflightRequestForTesting(const ResourceRequest&);
 
   static DocumentThreadableLoader* Create(ThreadableLoadingContext&,
                                           ThreadableLoaderClient*,
@@ -90,8 +90,9 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
  private:
   enum BlockingBehavior { kLoadSynchronously, kLoadAsynchronously };
 
-  static WebURLRequest CreateAccessControlPreflightRequest(
-      const WebURLRequest&);
+  static std::unique_ptr<ResourceRequest> CreateAccessControlPreflightRequest(
+      const ResourceRequest&,
+      const SecurityOrigin*);
 
   DocumentThreadableLoader(ThreadableLoadingContext&,
                            ThreadableLoaderClient*,
@@ -121,6 +122,7 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
   void RedirectBlocked() override;
   void DataDownloaded(Resource*, int) override;
   void DidReceiveResourceTiming(Resource*, const ResourceTimingInfo&) override;
+  void DidDownloadToBlob(Resource*, scoped_refptr<BlobDataHandle>) override;
 
   // Notify Inspector and log to console about resource response. Use this
   // method if response is not going to be finished normally.

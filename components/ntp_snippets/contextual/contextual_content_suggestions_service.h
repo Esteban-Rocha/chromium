@@ -17,6 +17,7 @@
 #include "components/ntp_snippets/callbacks.h"
 #include "components/ntp_snippets/content_suggestion.h"
 #include "components/ntp_snippets/contextual/contextual_suggestions_fetcher.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 
 namespace ntp_snippets {
 
@@ -29,25 +30,16 @@ class ContextualContentSuggestionsService : public KeyedService {
  public:
   // A structure representing a suggestion cluster.
   struct Cluster {
+   public:
     Cluster();
+    Cluster(Cluster&& other);
     ~Cluster();
 
     std::string title;
     std::vector<ContentSuggestion> suggestions;
 
+   private:
     DISALLOW_COPY_AND_ASSIGN(Cluster);
-  };
-
-  // Delegate for UI to hook into contextual suggestions service.
-  class Delegate {
-   public:
-    virtual ~Delegate() = default;
-
-    // Sends the new suggestions to the delegate, when they are available.
-    virtual void OnSuggestionsAvailable(std::vector<Cluster> clusters) = 0;
-    // Informs the delegate that user has switched to another tab or clobbered
-    // the current tab, therefore the UI state should be cleared.
-    virtual void OnStateCleared() = 0;
   };
 
   ContextualContentSuggestionsService(
@@ -63,9 +55,17 @@ class ContextualContentSuggestionsService : public KeyedService {
                               const GURL& url,
                               std::vector<ContentSuggestion> suggestions)>;
 
+  using FetchContextualSuggestionClustersCallback =
+      base::OnceCallback<void(std::vector<Cluster> clusters)>;
+
   // Asynchronously fetches contextual suggestions for the given URL.
   void FetchContextualSuggestions(const GURL& url,
                                   FetchContextualSuggestionsCallback callback);
+
+  // Asynchronously fetches contextual suggestions for the given URL.
+  void FetchContextualSuggestionClusters(
+      const GURL& url,
+      FetchContextualSuggestionClustersCallback callback);
 
   // Fetches an image for a given contextual suggestion ID.
   // Asynchronous if cache or network is queried.
@@ -73,10 +73,20 @@ class ContextualContentSuggestionsService : public KeyedService {
       const ContentSuggestion::ID& suggestion_id,
       ImageFetchedCallback callback);
 
+  // Used to report events using various metrics (e.g. UMA, UKM).
+  // TODO(donnd): Change type of event ID, implement.
+  void ReportEvent(ukm::SourceId sourceId, int event_id);
+
  private:
   void DidFetchContextualSuggestions(
       const GURL& url,
       FetchContextualSuggestionsCallback callback,
+      Status status,
+      ContextualSuggestionsFetcher::OptionalSuggestions fetched_suggestions);
+
+  // Temporary function to wire new bridge to the old prototype.
+  void DidFetchContextualSuggestionsClusterWrapper(
+      FetchContextualSuggestionClustersCallback callback,
       Status status,
       ContextualSuggestionsFetcher::OptionalSuggestions fetched_suggestions);
 

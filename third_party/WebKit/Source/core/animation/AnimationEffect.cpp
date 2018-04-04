@@ -85,6 +85,13 @@ double AnimationEffect::ActiveDurationInternal() const {
   return result;
 }
 
+double AnimationEffect::EndTimeInternal() const {
+  // Per the spec, the end time has a lower bound of 0.0:
+  // https://drafts.csswg.org/web-animations-1/#end-time
+  return std::max(
+      timing_.start_delay + ActiveDurationInternal() + timing_.end_delay, 0.0);
+}
+
 void AnimationEffect::UpdateSpecifiedTiming(const Timing& timing) {
   // FIXME: Test whether the timing is actually different?
   timing_ = timing;
@@ -99,12 +106,16 @@ void AnimationEffect::getComputedTiming(
   computed_timing.setEndTime(EndTimeInternal() * 1000);
   computed_timing.setActiveDuration(ActiveDurationInternal() * 1000);
 
-  if (EnsureCalculated().is_in_effect) {
+  if (IsNull(EnsureCalculated().local_time)) {
+    computed_timing.setLocalTimeToNull();
+  } else {
     computed_timing.setLocalTime(EnsureCalculated().local_time * 1000);
+  }
+
+  if (EnsureCalculated().is_in_effect) {
     computed_timing.setProgress(EnsureCalculated().progress.value());
     computed_timing.setCurrentIteration(EnsureCalculated().current_iteration);
   } else {
-    computed_timing.setLocalTimeToNull();
     computed_timing.setProgressToNull();
     computed_timing.setCurrentIterationToNull();
   }

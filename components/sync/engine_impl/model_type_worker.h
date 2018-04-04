@@ -59,6 +59,9 @@ class ModelTypeWorker : public UpdateHandler,
                         public CommitContributor,
                         public CommitQueue {
  public:
+  // Public for testing.
+  enum DecryptionStatus { SUCCESS, DECRYPTION_PENDING, FAILED_TO_DECRYPT };
+
   ModelTypeWorker(ModelType type,
                   const sync_pb::ModelTypeState& initial_state,
                   bool trigger_initial_sync,
@@ -68,6 +71,14 @@ class ModelTypeWorker : public UpdateHandler,
                   DataTypeDebugInfoEmitter* debug_info_emitter,
                   CancelationSignal* cancelation_signal);
   ~ModelTypeWorker() override;
+
+  // Public for testing.
+  // |cryptographer| can be null.
+  // |response_data| must be not null.
+  static DecryptionStatus PopulateUpdateResponseData(
+      const Cryptographer* cryptographer,
+      const sync_pb::SyncEntity& update_entity,
+      UpdateResponseData* response_data);
 
   ModelType GetModelType() const;
 
@@ -115,6 +126,19 @@ class ModelTypeWorker : public UpdateHandler,
  private:
   using EntityMap = std::map<std::string, std::unique_ptr<WorkerEntityTracker>>;
 
+  // Attempts to decrypt the given specifics and return them in the |out|
+  // parameter. Assumes cryptographer.CanDecrypt(specifics) returned true.
+  //
+  // Returns false if the decryption failed. There are no guarantees about the
+  // contents of |out| when that happens.
+  //
+  // In theory, this should never fail. Only corrupt or invalid entries could
+  // cause this to fail, and no clients are known to create such entries. The
+  // failure case is an attempt to be defensive against bad input.
+  static bool DecryptSpecifics(const Cryptographer& cryptographer,
+                               const sync_pb::EntitySpecifics& in,
+                               sync_pb::EntitySpecifics* out);
+
   // Helper function to actually send |pending_updates_| to the processor.
   void ApplyPendingUpdates();
 
@@ -142,18 +166,6 @@ class ModelTypeWorker : public UpdateHandler,
   // whether anything in |entities_| was not decryptable by |cryptographer_|.
   // Should only be called during a GetUpdates cycle.
   void DecryptStoredEntities();
-
-  // Attempts to decrypt the given specifics and return them in the |out|
-  // parameter. Assumes cryptographer_->CanDecrypt(specifics) returned true.
-  //
-  // Returns false if the decryption failed. There are no guarantees about the
-  // contents of |out| when that happens.
-  //
-  // In theory, this should never fail. Only corrupt or invalid entries could
-  // cause this to fail, and no clients are known to create such entries. The
-  // failure case is an attempt to be defensive against bad input.
-  bool DecryptSpecifics(const sync_pb::EntitySpecifics& in,
-                        sync_pb::EntitySpecifics* out);
 
   // Returns the entity tracker for the given |tag_hash|, or nullptr.
   WorkerEntityTracker* GetEntityTracker(const std::string& tag_hash);

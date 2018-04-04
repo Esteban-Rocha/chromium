@@ -15,9 +15,12 @@
 #include "base/timer/timer.h"
 #include "content/browser/bad_message.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/origin_util.h"
 #include "content/public/common/service_manager_connection.h"
 #include "crypto/sha2.h"
@@ -171,11 +174,11 @@ bool AreOptionsSupportedByU2fAuthenticators(
   if (options->authenticator_selection) {
     if (options->authenticator_selection->user_verification ==
             webauth::mojom::UserVerificationRequirement::REQUIRED ||
-        options->authenticator_selection->require_resident_key)
+        options->authenticator_selection->require_resident_key ||
+        options->authenticator_selection->authenticator_attachment ==
+            webauth::mojom::AuthenticatorAttachment::PLATFORM)
       return false;
   }
-  if (!IsAlgorithmSupportedByU2fAuthenticators(options->public_key_parameters))
-    return false;
   return true;
 }
 
@@ -277,31 +280,38 @@ std::string Base64UrlEncode(const base::span<const uint8_t> input) {
 }  // namespace
 
 AuthenticatorImpl::AuthenticatorImpl(RenderFrameHost* render_frame_host)
-    : timer_(std::make_unique<base::OneShotTimer>()),
+    : WebContentsObserver(WebContents::FromRenderFrameHost(render_frame_host)),
       render_frame_host_(render_frame_host),
+      timer_(std::make_unique<base::OneShotTimer>()),
+      binding_(this),
       weak_factory_(this) {
   DCHECK(render_frame_host_);
   DCHECK(timer_);
+
+  protocols_.insert(device::U2fTransportProtocol::kUsbHumanInterfaceDevice);
+  if (base::FeatureList::IsEnabled(features::kWebAuthBle)) {
+    protocols_.insert(device::U2fTransportProtocol::kBluetoothLowEnergy);
+  }
 }
 
 AuthenticatorImpl::AuthenticatorImpl(RenderFrameHost* render_frame_host,
                                      service_manager::Connector* connector,
                                      std::unique_ptr<base::OneShotTimer> timer)
-    : protocols_({/* no protocols in tests */}),
-      timer_(std::move(timer)),
+    : WebContentsObserver(WebContents::FromRenderFrameHost(render_frame_host)),
       render_frame_host_(render_frame_host),
       connector_(connector),
+      timer_(std::move(timer)),
+      binding_(this),
       weak_factory_(this) {
   DCHECK(render_frame_host_);
   DCHECK(timer_);
 }
 
-AuthenticatorImpl::~AuthenticatorImpl() {
-  bindings_.CloseAllBindings();
-}
+AuthenticatorImpl::~AuthenticatorImpl() {}
 
 void AuthenticatorImpl::Bind(webauth::mojom::AuthenticatorRequest request) {
-  bindings_.AddBinding(this, std::move(request));
+  DCHECK(!binding_.is_bound());
+  binding_.Bind(std::move(request));
 }
 
 // static
@@ -392,8 +402,17 @@ void AuthenticatorImpl::MakeCredential(
 
   // Verify that the request doesn't contain parameters that U2F authenticators
   // cannot fulfill.
-  // TODO(crbug.com/819256): Improve messages for "Not Supported" errors.
+  // TODO(crbug.com/819256): Improve messages for "Not Allowed" errors.
   if (!AreOptionsSupportedByU2fAuthenticators(options)) {
+    InvokeCallbackAndCleanup(
+        std::move(callback),
+        webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
+    return;
+  }
+
+  // TODO(crbug.com/819256): Improve messages for "Not Supported" errors.
+  if (!IsAlgorithmSupportedByU2fAuthenticators(
+          options->public_key_parameters)) {
     InvokeCallbackAndCleanup(
         std::move(callback),
         webauth::mojom::AuthenticatorStatus::NOT_SUPPORTED_ERROR, nullptr);
@@ -480,7 +499,7 @@ void AuthenticatorImpl::GetAssertion(
       webauth::mojom::UserVerificationRequirement::REQUIRED) {
     InvokeCallbackAndCleanup(
         std::move(callback),
-        webauth::mojom::AuthenticatorStatus::NOT_SUPPORTED_ERROR, nullptr);
+        webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
     return;
   }
 
@@ -530,6 +549,18 @@ void AuthenticatorImpl::GetAssertion(
                      weak_factory_.GetWeakPtr()));
 }
 
+void AuthenticatorImpl::DidFinishNavigation(
+    NavigationHandle* navigation_handle) {
+  if (!navigation_handle->HasCommitted() ||
+      navigation_handle->IsSameDocument() ||
+      navigation_handle->GetRenderFrameHost() != render_frame_host_) {
+    return;
+  }
+
+  binding_.Close();
+  Cleanup();
+}
+
 // Callback to handle the async registration response from a U2fDevice.
 void AuthenticatorImpl::OnRegisterResponse(
     device::FidoReturnCode status_code,
@@ -539,7 +570,7 @@ void AuthenticatorImpl::OnRegisterResponse(
   DCHECK(u2f_request_) << "unsupported callback hairpin";
 
   switch (status_code) {
-    case device::FidoReturnCode::kConditionsNotSatisfied:
+    case device::FidoReturnCode::kInvalidState:
       // Duplicate registration: the new credential would be created on an
       // authenticator that already contains one of the credentials in
       // |exclude_credentials|.
@@ -554,6 +585,7 @@ void AuthenticatorImpl::OnRegisterResponse(
           webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
       return;
     case device::FidoReturnCode::kInvalidParams:
+    case device::FidoReturnCode::kConditionsNotSatisfied:
       NOTREACHED();
       return;
     case device::FidoReturnCode::kSuccess:
@@ -647,6 +679,7 @@ void AuthenticatorImpl::OnSignResponse(
           webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
       return;
     case device::FidoReturnCode::kInvalidParams:
+    case device::FidoReturnCode::kInvalidState:
       NOTREACHED();
       return;
     case device::FidoReturnCode::kSuccess:

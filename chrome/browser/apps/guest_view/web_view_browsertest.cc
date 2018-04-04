@@ -91,7 +91,7 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "third_party/WebKit/public/platform/WebMouseEvent.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -1052,6 +1052,23 @@ IN_PROC_BROWSER_TEST_P(WebViewTest, AudibilityStatePropagates) {
     was_audible_delegate->WaitForInvalidateTypeTab();
   EXPECT_FALSE(embedder->WasRecentlyAudible());
   EXPECT_FALSE(guest->WasRecentlyAudible());
+}
+
+IN_PROC_BROWSER_TEST_P(WebViewTest, WebViewRespectsInsets) {
+  LoadAppWithGuest("web_view/simple");
+
+  content::WebContents* guest = GetGuestWebContents();
+  content::RenderWidgetHostView* guest_host_view =
+      guest->GetRenderWidgetHostView();
+
+  gfx::Insets insets(0, 0, 100, 0);
+  gfx::Rect expected(guest_host_view->GetVisibleViewportSize());
+  expected.Inset(insets);
+
+  guest_host_view->SetInsets(gfx::Insets(0, 0, 100, 0));
+
+  gfx::Size size_after = guest_host_view->GetVisibleViewportSize();
+  EXPECT_EQ(expected.size(), size_after);
 }
 
 IN_PROC_BROWSER_TEST_P(WebViewTest, AudioMutesWhileAttached) {

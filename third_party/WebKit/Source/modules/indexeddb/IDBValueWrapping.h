@@ -5,6 +5,7 @@
 #ifndef IDBValueWrapping_h
 #define IDBValueWrapping_h
 
+#include "base/feature_list.h"
 #include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
@@ -26,6 +27,9 @@ class ScriptState;
 class ScriptValue;
 class SerializedScriptValue;
 class SharedBuffer;
+
+const base::Feature kIndexedDBLargeValueWrapping{
+    "IndexedDBLargeValueWrapping", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Logic for serializing V8 values for storage in IndexedDB.
 //

@@ -144,7 +144,7 @@
 #include "net/base/port_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/url_util.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/metrics/public/cpp/mojo_ukm_recorder.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
@@ -161,7 +161,7 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebThread.h"
 #include "third_party/WebKit/public/platform/scheduler/child/webthread_base.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "third_party/WebKit/public/platform/scheduler/web_main_thread_scheduler.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebKit.h"
@@ -362,6 +362,7 @@ scoped_refptr<ui::ContextProviderCommandBuffer> CreateOffscreenContext(
     bool support_gles2_interface,
     bool support_raster_interface,
     bool support_oop_rasterization,
+    bool support_grcontext,
     ui::command_buffer_metrics::ContextType type,
     int32_t stream_id,
     gpu::SchedulingPriority stream_priority) {
@@ -399,7 +400,7 @@ scoped_refptr<ui::ContextProviderCommandBuffer> CreateOffscreenContext(
       stream_priority, gpu::kNullSurfaceHandle,
       GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext/" +
            ui::command_buffer_metrics::ContextTypeToString(type)),
-      automatic_flushes, support_locking, limits, attributes,
+      automatic_flushes, support_locking, support_grcontext, limits, attributes,
       nullptr /* share_context */, type);
 }
 
@@ -1535,7 +1536,7 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
   DCHECK(IsMainThread());
 
   if (!gpu_factories_.empty()) {
-    if (gpu_factories_.back()->ContextProviderMainThread())
+    if (!gpu_factories_.back()->CheckContextProviderLost())
       return gpu_factories_.back().get();
 
     GetMediaThreadTaskRunner()->PostTask(
@@ -1558,12 +1559,14 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
   bool support_gles2_interface = true;
   bool support_raster_interface = false;
   bool support_oop_rasterization = false;
+  bool support_grcontext = false;
   scoped_refptr<ui::ContextProviderCommandBuffer> media_context_provider =
-      CreateOffscreenContext(
-          gpu_channel_host, GetGpuMemoryBufferManager(), limits,
-          support_locking, support_gles2_interface, support_raster_interface,
-          support_oop_rasterization, ui::command_buffer_metrics::MEDIA_CONTEXT,
-          kGpuStreamIdMedia, kGpuStreamPriorityMedia);
+      CreateOffscreenContext(gpu_channel_host, GetGpuMemoryBufferManager(),
+                             limits, support_locking, support_gles2_interface,
+                             support_raster_interface,
+                             support_oop_rasterization, support_grcontext,
+                             ui::command_buffer_metrics::MEDIA_CONTEXT,
+                             kGpuStreamIdMedia, kGpuStreamPriorityMedia);
 
   const bool enable_video_accelerator =
       !cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode) &&
@@ -1613,10 +1616,11 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
   bool support_gles2_interface = true;
   bool support_raster_interface = false;
   bool support_oop_rasterization = false;
+  bool support_grcontext = true;
   shared_main_thread_contexts_ = CreateOffscreenContext(
       std::move(gpu_channel_host), GetGpuMemoryBufferManager(),
       gpu::SharedMemoryLimits(), support_locking, support_gles2_interface,
-      support_raster_interface, support_oop_rasterization,
+      support_raster_interface, support_oop_rasterization, support_grcontext,
       ui::command_buffer_metrics::RENDERER_MAINTHREAD_CONTEXT,
       kGpuStreamIdDefault, kGpuStreamPriorityDefault);
   auto result = shared_main_thread_contexts_->BindToCurrentThread();
@@ -2172,13 +2176,14 @@ void RenderThreadImpl::RequestNewLayerTreeFrameSink(
 
   constexpr bool automatic_flushes = false;
   constexpr bool support_locking = false;
+  constexpr bool support_grcontext = false;
 
   scoped_refptr<ui::ContextProviderCommandBuffer> context_provider(
       new ui::ContextProviderCommandBuffer(
           gpu_channel_host, GetGpuMemoryBufferManager(), kGpuStreamIdDefault,
           kGpuStreamPriorityDefault, gpu::kNullSurfaceHandle, url,
-          automatic_flushes, support_locking, limits, attributes,
-          nullptr /* share_context */,
+          automatic_flushes, support_locking, support_grcontext, limits,
+          attributes, nullptr /* share_context */,
           ui::command_buffer_metrics::RENDER_COMPOSITOR_CONTEXT));
 
   if (layout_test_deps_) {
@@ -2459,10 +2464,6 @@ void RenderThreadImpl::RecordPurgeMemory(RendererMemoryMetrics before) {
                                 mbytes);
 }
 
-scoped_refptr<base::TaskRunner> RenderThreadImpl::GetFileThreadTaskRunner() {
-  return blink_platform_impl_->BaseFileTaskRunner();
-}
-
 scoped_refptr<base::SingleThreadTaskRunner>
 RenderThreadImpl::GetMediaThreadTaskRunner() {
   DCHECK(message_loop()->task_runner()->BelongsToCurrentThread());
@@ -2502,10 +2503,11 @@ RenderThreadImpl::SharedCompositorWorkerContextProvider() {
           switches::kEnableOOPRasterization);
   bool support_gles2_interface = !support_oop_rasterization;
   bool support_raster_interface = true;
+  bool support_grcontext = !support_oop_rasterization;
   shared_worker_context_provider_ = CreateOffscreenContext(
       std::move(gpu_channel_host), GetGpuMemoryBufferManager(),
       gpu::SharedMemoryLimits(), support_locking, support_gles2_interface,
-      support_raster_interface, support_oop_rasterization,
+      support_raster_interface, support_oop_rasterization, support_grcontext,
       ui::command_buffer_metrics::RENDER_WORKER_CONTEXT, kGpuStreamIdWorker,
       kGpuStreamPriorityWorker);
   auto result = shared_worker_context_provider_->BindToCurrentThread();

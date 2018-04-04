@@ -44,10 +44,10 @@
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/Node.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/ShadowRoot.h"
+#include "core/dom/ShadowRootV0.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/Text.h"
 #include "core/dom/V0InsertionPoint.h"
@@ -1658,6 +1658,12 @@ std::unique_ptr<protocol::Array<protocol::DOM::BackendNode>>
 InspectorDOMAgent::BuildDistributedNodesForSlot(HTMLSlotElement* slot_element) {
   std::unique_ptr<protocol::Array<protocol::DOM::BackendNode>>
       distributed_nodes = protocol::Array<protocol::DOM::BackendNode>::create();
+  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()) {
+    // TODO(hayato): Support distributed_nodes for IncrementalShadowDOM.
+    // We might use HTMLSlotElement::flat_tree_children here, however, we don't
+    // want to expose it, as of now.
+    return distributed_nodes;
+  }
   for (Node* node = slot_element->FirstDistributedNode(); node;
        node = slot_element->DistributedNodeNextTo(*node)) {
     if (IsWhitespace(node))
@@ -1982,7 +1988,7 @@ void InspectorDOMAgent::DidPerformElementShadowDistribution(
 
   if (ShadowRoot* root = shadow_host->GetShadowRoot()) {
     const HeapVector<Member<V0InsertionPoint>>& insertion_points =
-        root->DescendantInsertionPoints();
+        root->V0().DescendantInsertionPoints();
     for (const auto& it : insertion_points) {
       V0InsertionPoint* insertion_point = it.Get();
       int insertion_point_id = document_node_to_id_map_->at(insertion_point);

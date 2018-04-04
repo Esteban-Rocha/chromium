@@ -37,6 +37,7 @@
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
+#include "chromeos/components/proximity_auth/switches.h"
 #include "components/assist_ranker/predictor_config_definitions.h"
 #include "components/autofill/core/browser/autofill_experiments.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -74,7 +75,6 @@
 #include "components/previews/core/previews_features.h"
 #include "components/previews/core/previews_switches.h"
 #include "components/printing/browser/features.h"
-#include "components/proximity_auth/switches.h"
 #include "components/search_provider_logos/features.h"
 #include "components/search_provider_logos/switches.h"
 #include "components/security_state/core/features.h"
@@ -110,8 +110,8 @@
 #include "net/cert/cert_verify_proc_android.h"
 #include "net/nqe/effective_connection_type.h"
 #include "net/nqe/network_quality_estimator_params.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 #include "services/device/public/cpp/device_features.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
@@ -959,6 +959,16 @@ const FeatureEntry::FeatureVariation kDataReductionMainMenuFeatureVariations[] =
       arraysize(kPersistentMenuItemEnabled), nullptr}};
 #endif  // OS_ANDROID
 
+const FeatureEntry::Choice kEnableHeapProfilingChoices[] = {
+    {flags_ui::kGenericExperimentChoiceDisabled, "", ""},
+    {flag_descriptions::kEnableHeapProfilingModePseudo,
+     switches::kEnableHeapProfiling, switches::kEnableHeapProfilingModePseudo},
+    {flag_descriptions::kEnableHeapProfilingModeNative,
+     switches::kEnableHeapProfiling, switches::kEnableHeapProfilingModeNative},
+    {flag_descriptions::kEnableHeapProfilingTaskProfiler,
+     switches::kEnableHeapProfiling,
+     switches::kEnableHeapProfilingTaskProfiler}};
+
 const FeatureEntry::Choice kEnableOutOfProcessHeapProfilingChoices[] = {
     {flags_ui::kGenericExperimentChoiceDisabled, "", ""},
     {flag_descriptions::kEnableOutOfProcessHeapProfilingModeMinimal,
@@ -1551,10 +1561,6 @@ const FeatureEntry kFeatureEntries[] = {
     {"show-touch-hud", flag_descriptions::kShowTouchHudName,
      flag_descriptions::kShowTouchHudDescription, kOsCrOS,
      SINGLE_VALUE_TYPE(ash::switches::kAshTouchHud)},
-    {"skip-extra-ash-window-positioning",
-     flag_descriptions::kSkipExtraAshWindowPositioningName,
-     flag_descriptions::kSkipExtraAshWindowPositioningDescription, kOsCrOS,
-     SINGLE_VALUE_TYPE(switches::kSkipExtraAshWindowPositioning)},
 #endif  // OS_CHROMEOS
     {
         "disable-accelerated-video-decode",
@@ -1894,6 +1900,9 @@ const FeatureEntry kFeatureEntries[] = {
     {"enable-chrome-modern-design", flag_descriptions::kChromeModernDesignName,
      flag_descriptions::kChromeModernDesignDescription, kOsAndroid,
      FEATURE_VALUE_TYPE(chrome::android::kChromeModernDesign)},
+    {"force-enable-home-page-button", flag_descriptions::kHomePageButtonName,
+     flag_descriptions::kHomePageButtonDescription, kOsAndroid,
+     FEATURE_VALUE_TYPE(chrome::android::kHomePageButtonForceEnabled)},
 #endif  // OS_ANDROID
 #if defined(OS_ANDROID)
     {"enable-tab-modal-js-dialog-android",
@@ -2311,6 +2320,12 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kBackgroundLoaderForDownloadsName,
      flag_descriptions::kBackgroundLoaderForDownloadsDescription, kOsAndroid,
      FEATURE_VALUE_TYPE(offline_pages::kBackgroundLoaderForDownloadsFeature)},
+    {"offline-pages-failed-download",
+     flag_descriptions::kOfflinePagesDescriptiveFailStatusName,
+     flag_descriptions::kOfflinePagesDescriptiveFailStatusDescription,
+     kOsAndroid,
+     FEATURE_VALUE_TYPE(
+         offline_pages::kOfflinePagesDescriptiveFailStatusFeature)},
     {"offline-pages-pending-download",
      flag_descriptions::kOfflinePagesDescriptivePendingStatusName,
      flag_descriptions::kOfflinePagesDescriptivePendingStatusDescription,
@@ -2920,6 +2935,14 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kEnableAutofillCreditCardUploadCvcPromptDescription,
      kOsDesktop,
      FEATURE_VALUE_TYPE(autofill::kAutofillUpstreamRequestCvcIfMissing)},
+    {"enable-autofill-credit-card-upload-google-pay-on-android-branding",
+     flag_descriptions::
+         kEnableAutofillCreditCardUploadGooglePayOnAndroidBrandingName,
+     flag_descriptions::
+         kEnableAutofillCreditCardUploadGooglePayOnAndroidBrandingDescription,
+     kOsAndroid,
+     FEATURE_VALUE_TYPE(
+         autofill::features::kAutofillUpstreamUseGooglePayOnAndroidBranding)},
     {"enable-autofill-credit-card-upload-send-detected-values",
      flag_descriptions::kEnableAutofillCreditCardUploadSendDetectedValuesName,
      flag_descriptions::
@@ -2930,10 +2953,6 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::
          kEnableAutofillCreditCardUploadSendPanFirstSixDescription,
      kOsAll, FEATURE_VALUE_TYPE(autofill::kAutofillUpstreamSendPanFirstSix)},
-    {"enable-autofill-send-billing-customer-number",
-     flag_descriptions::kEnableAutofillSendBillingCustomerNumberName,
-     flag_descriptions::kEnableAutofillSendBillingCustomerNumberDescription,
-     kOsAll, FEATURE_VALUE_TYPE(autofill::kAutofillSendBillingCustomerNumber)},
 
     {"enable-autofill-native-dropdown-views",
      flag_descriptions::kEnableAutofillNativeDropdownViewsName,
@@ -3116,6 +3135,10 @@ const FeatureEntry kFeatureEntries[] = {
      MULTI_VALUE_TYPE(kForceColorProfileChoices)},
 
 #if defined(OS_CHROMEOS)
+    {"use-monitor-color-space", flag_descriptions::kUseMonitorColorSpaceName,
+     flag_descriptions::kUseMonitorColorSpaceDescription, kOsCrOS,
+     FEATURE_VALUE_TYPE(features::kUseMonitorColorSpace)},
+
     {"quick-unlock-pin-signin", flag_descriptions::kQuickUnlockPinSignin,
      flag_descriptions::kQuickUnlockPinSigninDescription, kOsCrOS,
      FEATURE_VALUE_TYPE(features::kQuickUnlockPinSignin)},
@@ -3146,6 +3169,10 @@ const FeatureEntry kFeatureEntries[] = {
     {"sampling-heap-profiler", flag_descriptions::kSamplingHeapProfilerName,
      flag_descriptions::kSamplingHeapProfilerDescription, kOsAll,
      SINGLE_VALUE_TYPE(switches::kSamplingHeapProfiler)},
+
+    {"enable-heap-profiling", flag_descriptions::kEnableHeapProfilingName,
+     flag_descriptions::kEnableHeapProfilingDescription, kOsAll,
+     MULTI_VALUE_TYPE(kEnableHeapProfilingChoices)},
 
     {"memlog", flag_descriptions::kEnableOutOfProcessHeapProfilingName,
      flag_descriptions::kEnableOutOfProcessHeapProfilingDescription, kOsAll,
@@ -3252,6 +3279,15 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kEnableFloatingVirtualKeyboardName,
      flag_descriptions::kEnableFloatingVirtualKeyboardDescription, kOsCrOS,
      FEATURE_VALUE_TYPE(features::kEnableFloatingVirtualKeyboard)},
+    {"enable-stylus-virtual-keyboard",
+     flag_descriptions::kEnableStylusVirtualKeyboardName,
+     flag_descriptions::kEnableStylusVirtualKeyboardDescription, kOsCrOS,
+     FEATURE_VALUE_TYPE(features::kEnableStylusVirtualKeyboard)},
+    {"enable-fullscreen-handwriting-virtual-keyboard",
+     flag_descriptions::kEnableFullscreenHandwritingVirtualKeyboardName,
+     flag_descriptions::kEnableFullscreenHandwritingVirtualKeyboardDescription,
+     kOsCrOS,
+     FEATURE_VALUE_TYPE(features::kEnableFullscreenHandwritingVirtualKeyboard)},
     {"enable-per-user-timezone", flag_descriptions::kEnablePerUserTimezoneName,
      flag_descriptions::kEnablePerUserTimezoneDescription, kOsCrOS,
      SINGLE_DISABLE_VALUE_TYPE(chromeos::switches::kDisablePerUserTimezone)},
@@ -3443,15 +3479,15 @@ const FeatureEntry kFeatureEntries[] = {
      kOsMac | kOsWin | kOsLinux | kOsAndroid,
      FEATURE_VALUE_TYPE(features::kV8ContextSnapshot)},
 
-#if defined(OS_CHROMEOS)
     {"enable-pixel-canvas-recording",
      flag_descriptions::kEnablePixelCanvasRecordingName,
-     flag_descriptions::kEnablePixelCanvasRecordingDescription, kOsCrOS,
+     flag_descriptions::kEnablePixelCanvasRecordingDescription, kOsDesktop,
      FEATURE_VALUE_TYPE(features::kEnablePixelCanvasRecording)},
 
-    {"disable-tablet-splitview", flag_descriptions::kDisableTabletSplitViewName,
-     flag_descriptions::kDisableTabletSplitViewDescription, kOsCrOS,
-     SINGLE_VALUE_TYPE(ash::switches::kAshDisableTabletSplitView)},
+#if defined(OS_CHROMEOS)
+    {"enable-tablet-splitview", flag_descriptions::kEnableTabletSplitViewName,
+     flag_descriptions::kEnableTabletSplitViewDescription, kOsCrOS,
+     SINGLE_VALUE_TYPE(ash::switches::kAshEnableTabletSplitView)},
 #endif  // defined(OS_CHROMEOS)
 
     {"enable-parallel-downloading", flag_descriptions::kParallelDownloadingName,
@@ -3627,6 +3663,13 @@ const FeatureEntry kFeatureEntries[] = {
      FEATURE_VALUE_TYPE(features::kWebAuth)},
 #endif  // !defined(OS_ANDROID)
 
+#if !defined(OS_ANDROID)
+    {"enable-web-authentication-testing-api",
+     flag_descriptions::kEnableWebAuthenticationTestingAPIName,
+     flag_descriptions::kEnableWebAuthenticationTestingAPIDescription,
+     kOsDesktop, SINGLE_VALUE_TYPE(switches::kEnableWebAuthTestingAPI)},
+#endif  // !defined(OS_ANDROID)
+
 #if defined(OS_ANDROID)
     {"enable-sole-integration", flag_descriptions::kSoleIntegrationName,
      flag_descriptions::kSoleIntegrationDescription, kOsAndroid,
@@ -3653,7 +3696,7 @@ const FeatureEntry kFeatureEntries[] = {
 
     {"unified-consent", flag_descriptions::kUnifiedConsentName,
      flag_descriptions::kUnifiedConsentDescription, kOsAll,
-     FEATURE_VALUE_TYPE(features::kUnifiedConsent)},
+     FEATURE_VALUE_TYPE(signin::kUnifiedConsent)},
 
     {"simplify-https-indicator", flag_descriptions::kSimplifyHttpsIndicatorName,
      flag_descriptions::kSimplifyHttpsIndicatorDescription, kOsDesktop,
@@ -3733,6 +3776,34 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kUsePdfCompositorServiceName,
      flag_descriptions::kUsePdfCompositorServiceDescription, kOsDesktop,
      FEATURE_VALUE_TYPE(printing::features::kUsePdfCompositorServiceForPrint)},
+
+    {"autofill-dynamic-forms", flag_descriptions::kAutofillDynamicFormsName,
+     flag_descriptions::kAutofillDynamicFormsDescription, kOsAll,
+     FEATURE_VALUE_TYPE(autofill::features::kAutofillDynamicForms)},
+
+#if defined(TOOLKIT_VIEWS)
+    {"views-cast-dialog", flag_descriptions::kViewsCastDialogName,
+     flag_descriptions::kViewsCastDialogDescription, kOsDesktop,
+     FEATURE_VALUE_TYPE(features::kViewsCastDialog)},
+#endif  // defined(TOOLKIT_VIEWS)
+
+    {"enable-emoji-context-menu",
+     flag_descriptions::kEnableEmojiContextMenuName,
+     flag_descriptions::kEnableEmojiContextMenuDescription, kOsDesktop,
+     FEATURE_VALUE_TYPE(features::kEnableEmojiContextMenu)},
+
+    {"SupervisedUserCommittedInterstitials",
+     flag_descriptions::kSupervisedUserCommittedInterstitialsName,
+     flag_descriptions::kSupervisedUserCommittedInterstitialsDescription,
+     kOsAll,
+     FEATURE_VALUE_TYPE(features::kSupervisedUserCommittedInterstitials)},
+
+#if defined(OS_ANDROID)
+    {"enable-horizontal-tab-switcher",
+     flag_descriptions::kHorizontalTabSwitcherAndroidName,
+     flag_descriptions::kHorizontalTabSwitcherAndroidDescription, kOsAndroid,
+     FEATURE_VALUE_TYPE(chrome::android::kHorizontalTabSwitcherAndroid)},
+#endif  // OS_ANDROID
 
     // NOTE: Adding a new flag requires adding a corresponding entry to enum
     // "LoginCustomFlags" in tools/metrics/histograms/enums.xml. See "Flag

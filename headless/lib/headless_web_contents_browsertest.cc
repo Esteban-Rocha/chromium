@@ -33,7 +33,7 @@
 #include "headless/public/util/testing/test_in_memory_protocol_handler.h"
 #include "headless/test/headless_browser_test.h"
 #include "headless/test/tab_socket_test.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -322,7 +322,14 @@ IN_PROC_BROWSER_TEST_F(HeadlessNoDevToolsTabSocketTest, Test) {
   RunAsynchronousTest();
 }
 
-IN_PROC_BROWSER_TEST_F(HeadlessWebContentsTest, Focus) {
+#if defined(OS_WIN)
+// crbug.com/828042
+#define MAYBE_Focus DISABLED_Focus
+#else
+#define MAYBE_Focus Focus
+#endif
+
+IN_PROC_BROWSER_TEST_F(HeadlessWebContentsTest, MAYBE_Focus) {
   EXPECT_TRUE(embedded_test_server()->Start());
 
   HeadlessBrowserContext* browser_context =

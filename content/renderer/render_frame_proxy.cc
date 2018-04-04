@@ -33,7 +33,7 @@
 #include "content/renderer/render_widget.h"
 #include "content/renderer/resource_timing_info_conversions.h"
 #include "ipc/ipc_message_macros.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 #include "third_party/WebKit/public/common/frame/frame_policy.h"
 #include "third_party/WebKit/public/platform/URLConversion.h"
@@ -417,6 +417,8 @@ bool RenderFrameProxy::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_DidUpdateOrigin, OnDidUpdateOrigin)
     IPC_MESSAGE_HANDLER(InputMsg_SetFocus, OnSetPageFocus)
     IPC_MESSAGE_HANDLER(FrameMsg_ResizeDueToAutoResize, OnResizeDueToAutoResize)
+    IPC_MESSAGE_HANDLER(FrameMsg_EnableAutoResize, OnEnableAutoResize)
+    IPC_MESSAGE_HANDLER(FrameMsg_DisableAutoResize, OnDisableAutoResize)
     IPC_MESSAGE_HANDLER(FrameMsg_SetFocusedFrame, OnSetFocusedFrame)
     IPC_MESSAGE_HANDLER(FrameMsg_WillEnterFullscreen, OnWillEnterFullscreen)
     IPC_MESSAGE_HANDLER(FrameMsg_SetHasReceivedUserGesture,
@@ -562,7 +564,20 @@ void RenderFrameProxy::OnScrollRectToVisible(
 }
 
 void RenderFrameProxy::OnResizeDueToAutoResize(uint64_t sequence_number) {
-  pending_resize_params_.sequence_number = sequence_number;
+  pending_resize_params_.auto_resize_sequence_number = sequence_number;
+  WasResized();
+}
+
+void RenderFrameProxy::OnEnableAutoResize(const gfx::Size& min_size,
+                                          const gfx::Size& max_size) {
+  pending_resize_params_.auto_resize_enabled = true;
+  pending_resize_params_.min_size_for_auto_resize = min_size;
+  pending_resize_params_.max_size_for_auto_resize = max_size;
+  WasResized();
+}
+
+void RenderFrameProxy::OnDisableAutoResize() {
+  pending_resize_params_.auto_resize_enabled = false;
   WasResized();
 }
 
@@ -579,21 +594,26 @@ void RenderFrameProxy::WasResized() {
 
   bool synchronized_params_changed =
       !sent_resize_params_ ||
+      sent_resize_params_->auto_resize_enabled !=
+          pending_resize_params_.auto_resize_enabled ||
+      sent_resize_params_->min_size_for_auto_resize !=
+          pending_resize_params_.min_size_for_auto_resize ||
+      sent_resize_params_->max_size_for_auto_resize !=
+          pending_resize_params_.max_size_for_auto_resize ||
       sent_resize_params_->local_frame_size !=
           pending_resize_params_.local_frame_size ||
       sent_resize_params_->screen_space_rect.size() !=
           pending_resize_params_.screen_space_rect.size() ||
       sent_resize_params_->screen_info != pending_resize_params_.screen_info ||
-      sent_resize_params_->sequence_number !=
-          pending_resize_params_.sequence_number;
+      sent_resize_params_->auto_resize_sequence_number !=
+          pending_resize_params_.auto_resize_sequence_number;
 
   if (synchronized_params_changed)
     local_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
 
   viz::SurfaceId surface_id(frame_sink_id_, local_surface_id_);
-  if (enable_surface_synchronization_) {
+  if (enable_surface_synchronization_)
     compositing_helper_->SetPrimarySurfaceId(surface_id, local_frame_size());
-  }
 
   bool rect_changed =
       !sent_resize_params_ || sent_resize_params_->screen_space_rect !=
@@ -611,9 +631,8 @@ void RenderFrameProxy::WasResized() {
     return;
 
   // Let the browser know about the updated view rect.
-  Send(new FrameHostMsg_UpdateResizeParams(
-      routing_id_, screen_space_rect(), local_frame_size(), screen_info(),
-      auto_size_sequence_number(), surface_id));
+  Send(new FrameHostMsg_UpdateResizeParams(routing_id_, surface_id,
+                                           pending_resize_params_));
   sent_resize_params_ = pending_resize_params_;
 
   // The visible rect that the OOPIF needs to raster depends partially on
@@ -666,6 +685,10 @@ void RenderFrameProxy::FrameDetached(DetachType type) {
   web_frame_ = nullptr;
 
   delete this;
+}
+
+void RenderFrameProxy::CheckCompleted() {
+  Send(new FrameHostMsg_CheckCompleted(routing_id_));
 }
 
 void RenderFrameProxy::ForwardPostMessage(

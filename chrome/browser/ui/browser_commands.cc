@@ -86,8 +86,8 @@
 #include "content/public/common/user_agent.h"
 #include "extensions/buildflags/buildflags.h"
 #include "net/base/escape.h"
-#include "printing/features/features.h"
-#include "rlz/features/features.h"
+#include "printing/buildflags/buildflags.h"
+#include "rlz/buildflags/buildflags.h"
 #include "ui/base/clipboard/clipboard_types.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -1232,7 +1232,7 @@ bool CanCreateBookmarkApp(const Browser* browser) {
 #if defined(OS_CHROMEOS)
 void QueryAndDisplayArcApps(
     const Browser* browser,
-    const std::vector<arc::ArcNavigationThrottle::AppInfo>& app_info,
+    const std::vector<chromeos::IntentPickerAppInfo>& app_info,
     IntentPickerResponse callback) {
   browser->window()->ShowIntentPickerBubble(app_info, callback);
 }

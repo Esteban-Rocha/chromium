@@ -72,7 +72,6 @@
 #include "platform/network/HTTPParsers.h"
 #include "platform/plugins/PluginData.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/wtf/StringExtras.h"
 #include "platform/wtf/text/CString.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
@@ -522,7 +521,8 @@ NavigationPolicy LocalFrameClientImpl::DecidePolicyForNavigation(
     WebTriggeringEventInfo triggering_event_info,
     HTMLFormElement* form,
     ContentSecurityPolicyDisposition
-        should_check_main_world_content_security_policy) {
+        should_check_main_world_content_security_policy,
+    mojom::blink::BlobURLTokenPtr blob_url_token) {
   if (!web_frame_->Client())
     return kNavigationPolicyIgnore;
 
@@ -549,6 +549,7 @@ NavigationPolicy LocalFrameClientImpl::DecidePolicyForNavigation(
               kCheckContentSecurityPolicy
           ? kWebContentSecurityPolicyDispositionCheck
           : kWebContentSecurityPolicyDispositionDoNotCheck;
+  navigation_info.blob_url_token = blob_url_token.PassInterface().PassHandle();
 
   // Can be null.
   LocalFrame* local_parent_frame = GetLocalParentFrame(web_frame_);
@@ -724,6 +725,14 @@ void LocalFrameClientImpl::DidObserveNewFeatureUsage(
     mojom::WebFeature feature) {
   if (web_frame_->Client())
     web_frame_->Client()->DidObserveNewFeatureUsage(feature);
+}
+
+void LocalFrameClientImpl::DidObserveNewCssPropertyUsage(int css_property,
+                                                         bool is_animated) {
+  if (web_frame_->Client()) {
+    web_frame_->Client()->DidObserveNewCssPropertyUsage(css_property,
+                                                        is_animated);
+  }
 }
 
 bool LocalFrameClientImpl::ShouldTrackUseCounter(const KURL& url) {
@@ -1016,17 +1025,9 @@ KURL LocalFrameClientImpl::OverrideFlashEmbedWithHTML(const KURL& url) {
   return web_frame_->Client()->OverrideFlashEmbedWithHTML(WebURL(url));
 }
 
-void LocalFrameClientImpl::SetHasReceivedUserGesture(bool received_previously) {
-  // The client potentially needs to dispatch the event to other processes only
-  // for the first time.
-  //
-  // TODO(mustaq): Can we remove |received_previously|, specially when
-  // autofill-client below ignores it already? crbug.com/775930
-  if (!received_previously && web_frame_->Client())
-    web_frame_->Client()->SetHasReceivedUserGesture();
-  // WebAutofillClient reacts only to the user gestures for this particular
-  // frame. |received_previously| is ignored because it may be true due to an
-  // event in a child frame.
+void LocalFrameClientImpl::SetHasReceivedUserGesture() {
+  DCHECK(web_frame_->Client());
+  web_frame_->Client()->SetHasReceivedUserGesture();
   if (WebAutofillClient* autofill_client = web_frame_->AutofillClient())
     autofill_client->UserGestureObserved();
 }

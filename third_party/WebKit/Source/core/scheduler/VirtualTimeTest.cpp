@@ -5,7 +5,7 @@
 #include "build/build_config.h"
 #include "core/testing/sim/SimRequest.h"
 #include "core/testing/sim/SimTest.h"
-#include "platform/scheduler/renderer/page_scheduler.h"
+#include "platform/scheduler/public/page_scheduler.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
@@ -59,7 +59,7 @@ class VirtualTimeTest : public SimTest {
   void StopVirtualTimeAndExitRunLoop() {
     WebView().Scheduler()->SetVirtualTimePolicy(
         PageScheduler::VirtualTimePolicy::kPause);
-    testing::ExitRunLoop();
+    test::ExitRunLoop();
   }
 
   // Some task queues may have repeating v8 tasks that run forever so we impose
@@ -70,7 +70,7 @@ class VirtualTimeTest : public SimTest {
         WTF::Bind(&VirtualTimeTest::StopVirtualTimeAndExitRunLoop,
                   WTF::Unretained(this)),
         TimeDelta::FromMillisecondsD(delay_ms));
-    testing::EnterRunLoop();
+    test::EnterRunLoop();
   }
 };
 
@@ -150,7 +150,7 @@ TEST_F(VirtualTimeTest, MAYBE_AllowVirtualTimeToAdvance) {
       "timerFn(10, 'b');"
       "timerFn(1, 'c');");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_EQ("", ExecuteJavaScript("run_order.join(', ')"));
 
   WebView().Scheduler()->SetVirtualTimePolicy(
@@ -247,7 +247,7 @@ TEST_F(VirtualTimeTest, MAYBE_DOMTimersSuspended) {
 
   // The second DOM timer shouldn't have run because the virtual time budget
   // expired.
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_EQ("1, 2", ExecuteJavaScript("run_order.join(', ')"));
 }
 

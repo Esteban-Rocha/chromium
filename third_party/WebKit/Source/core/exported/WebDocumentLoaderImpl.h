@@ -86,6 +86,10 @@ class CORE_EXPORT WebDocumentLoaderImpl final : public DocumentLoader,
   void ResetSourceLocation() override;
   void SetUserActivated() override;
   bool GetIsAdSubframe() const override;
+  void BlockParser() override;
+  void ResumeParser() override;
+  bool IsArchive() const override;
+  WebArchiveInfo GetArchiveInfo() const override;
 
   static WebNavigationType ToWebNavigationType(NavigationType);
 

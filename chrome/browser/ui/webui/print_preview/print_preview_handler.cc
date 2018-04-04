@@ -71,7 +71,7 @@
 #include "net/base/url_util.h"
 #include "printing/backend/print_backend.h"
 #include "printing/backend/print_backend_consts.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "printing/print_settings.h"
 #include "third_party/icu/source/i18n/unicode/ulocdata.h"
 
@@ -1161,7 +1161,12 @@ void PrintPreviewHandler::SendPagePreviewReady(int page_index,
 }
 
 void PrintPreviewHandler::OnPrintPreviewCancelled() {
-  if (preview_callbacks_.empty() || !IsJavascriptAllowed()) {
+  if (!IsJavascriptAllowed()) {
+    BadMessageReceived();
+    return;
+  }
+
+  if (preview_callbacks_.empty()) {
     BadMessageReceived();
     return;
   }

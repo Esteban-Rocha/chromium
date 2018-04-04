@@ -100,7 +100,6 @@
 #include "core/resize_observer/ResizeObserverController.h"
 #include "core/style/ComputedStyle.h"
 #include "core/svg/SVGSVGElement.h"
-#include "platform/FrameScheduler.h"
 #include "platform/Histogram.h"
 #include "platform/Language.h"
 #include "platform/PlatformChromeClient.h"
@@ -121,6 +120,7 @@
 #include "platform/json/JSONValues.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/runtime_enabled_features.h"
+#include "platform/scheduler/public/frame_scheduler.h"
 #include "platform/scroll/ScrollAlignment.h"
 #include "platform/scroll/ScrollAnimatorBase.h"
 #include "platform/scroll/ScrollbarTheme.h"
@@ -3241,6 +3241,9 @@ bool LocalFrameView::UpdateLifecyclePhasesInternal(
   if (target_state == DocumentLifecycle::kPaintClean) {
     ForAllNonThrottledLocalFrameViews(
         [](LocalFrameView& frame_view) { frame_view.NotifyResizeObservers(); });
+
+    if (RuntimeEnabledFeatures::RootLayerScrollingEnabled())
+      NotifyFrameRectsChangedIfNeededRecursive();
   }
 
   if (auto* layout_view = GetLayoutView()) {
@@ -3268,11 +3271,8 @@ bool LocalFrameView::UpdateLifecyclePhasesInternal(
       }
 
       if (target_state >= DocumentLifecycle::kCompositingClean) {
-        if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-          NotifyFrameRectsChangedIfNeededRecursive();
-        } else {
+        if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled())
           ScrollContentsIfNeededRecursive();
-        }
 
         frame_->GetPage()->GlobalRootScrollerController().DidUpdateCompositing(
             *this);
@@ -4051,7 +4051,7 @@ void LocalFrameView::RemoveResizerArea(LayoutBox& resizer_box) {
 
 bool LocalFrameView::FrameIsScrollableDidChange() {
   DCHECK(GetFrame().IsLocalRoot());
-  return GetScrollingContext()->WasScrollable() ==
+  return GetScrollingContext()->WasScrollable() !=
          LayoutViewportScrollableArea()->IsScrollable();
 }
 

@@ -31,7 +31,7 @@ TEST(SerializedScriptValueTest, WireFormatRoundTrip) {
 
   scoped_refptr<SerializedScriptValue> serializedScriptValue =
       SerializedScriptValue::Create(
-          reinterpret_cast<const char*>(wire_data.data()), wire_data.length());
+          reinterpret_cast<const char*>(wire_data.data()), wire_data.size());
   v8::Local<v8::Value> deserialized =
       serializedScriptValue->Deserialize(scope.GetIsolate());
   EXPECT_TRUE(deserialized->IsTrue());
@@ -122,7 +122,7 @@ TEST(SerializedScriptValueTest, WireFormatVersion0ImageData) {
 
 TEST(SerializedScriptValueTest, UserSelectedFile) {
   V8TestingScope scope;
-  String file_path = testing::BlinkRootDir();
+  String file_path = test::BlinkRootDir();
   file_path.append(
       "/Source/bindings/core/v8/serialization/SerializedScriptValueTest.cpp");
   File* original_file = File::Create(file_path);

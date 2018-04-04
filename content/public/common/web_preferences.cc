@@ -30,7 +30,12 @@ STATIC_ASSERT_ENUM(V8_CACHE_OPTIONS_DEFAULT,
                    WebSettings::kV8CacheOptionsDefault);
 STATIC_ASSERT_ENUM(V8_CACHE_OPTIONS_NONE, WebSettings::kV8CacheOptionsNone);
 STATIC_ASSERT_ENUM(V8_CACHE_OPTIONS_CODE, WebSettings::kV8CacheOptionsCode);
-STATIC_ASSERT_ENUM(V8_CACHE_OPTIONS_LAST, WebSettings::kV8CacheOptionsCode);
+STATIC_ASSERT_ENUM(V8_CACHE_OPTIONS_CODE_WITHOUT_HEAT_CHECK,
+                   WebSettings::kV8CacheOptionsCodeWithoutHeatCheck);
+STATIC_ASSERT_ENUM(V8_CACHE_OPTIONS_FULLCODE_WITHOUT_HEAT_CHECK,
+                   WebSettings::kV8CacheOptionsFullCodeWithoutHeatCheck);
+STATIC_ASSERT_ENUM(V8_CACHE_OPTIONS_LAST,
+                   WebSettings::kV8CacheOptionsFullCodeWithoutHeatCheck);
 
 STATIC_ASSERT_ENUM(SavePreviousDocumentResources::NEVER,
                    WebSettings::SavePreviousDocumentResources::kNever);
@@ -195,7 +200,7 @@ WebPreferences::WebPreferences()
       clobber_user_agent_initial_scale_quirk(false),
       ignore_main_frame_overflow_hidden_quirk(false),
       report_screen_size_in_physical_pixels_quirk(false),
-      resue_global_for_unowned_main_frame(false),
+      reuse_global_for_unowned_main_frame(false),
       spellcheck_enabled_by_default(true),
       video_fullscreen_orientation_lock_enabled(false),
       video_rotate_to_fullscreen_enabled(false),

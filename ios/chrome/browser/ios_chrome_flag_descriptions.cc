@@ -53,6 +53,10 @@ const char kExternalSearchDescription[] = "Enable support for External Search.";
 
 const char kFeedbackKitV2Name[] = "FeedbackKit V2";
 const char kFeedbackKitV2Description[] = "Enable use of FeedbackKit V2.";
+const char kFeedbackKitV2WithSSOServiceName[] =
+    "FeedbackKit V2 with SSOService configured for FeedbackKit";
+const char kFeedbackKitV2WithSSOServiceDescription[] =
+    "Send SSOService with configuration for FeedbackKit V2.";
 
 const char kHistoryBatchUpdatesFilterName[] = "History Single Batch Filtering";
 const char kHistoryBatchUpdatesFilterDescription[] =
@@ -65,6 +69,11 @@ const char kInProductHelpDemoModeDescription[] =
     "start. Enabled causes all in-product help promotions to occur. Enabling "
     "an individual promotion causes that promotion but no other promotions to "
     "occur.";
+
+const char kITunesLinksStoreKitHandlingName[] = "Store kit for ITunes links";
+const char kITunesLinksStoreKitHandlingDescription[] =
+    "When enabled, opening itunes product links will be handled using the "
+    "store kit.";
 
 const char kMailtoHandlingWithGoogleUIName[] = "Mailto Handling with Google UI";
 const char kMailtoHandlingWithGoogleUIDescription[] =
@@ -133,6 +142,16 @@ const char kToolbarButtonPositionsDescription[] =
 const char kUIRefreshPhase1Name[] = "UI Refresh Phase 1";
 const char kUIRefreshPhase1Description[] =
     "When enabled, the first phase of the iOS UI refresh will be displayed.";
+
+const char kSearchIconToggleName[] = "Change the icon for the search button";
+const char kSearchIconToggleDescription[] =
+    "Different icons for the search button.";
+
+const char kUnifiedConsentName[] = "Unified Consent";
+const char kUnifiedConsentDescription[] =
+    "Enables a unified management of user consent for privacy-related "
+    "features. This includes new confirmation screens and improved settings "
+    "pages.";
 
 const char kUseDdljsonApiName[] = "Use new ddljson API for Doodles";
 const char kUseDdljsonApiDescription[] =

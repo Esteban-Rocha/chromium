@@ -47,6 +47,7 @@
  *   MANAGE_ACCESSIBILITY: (undefined|!settings.Route),
  *   MANAGE_PASSWORDS: (undefined|!settings.Route),
  *   MANAGE_PROFILE: (undefined|!settings.Route),
+ *   MANAGE_TTS_SETTINGS: (undefined|!settings.Route),
  *   MULTIDEVICE: (undefined|!settings.Route),
  *   NETWORK_DETAIL: (undefined|!settings.Route),
  *   ON_STARTUP: (undefined|!settings.Route),
@@ -89,6 +90,7 @@
  *   SITE_SETTINGS_UNSANDBOXED_PLUGINS: (undefined|!settings.Route),
  *   SITE_SETTINGS_USB_DEVICES: (undefined|!settings.Route),
  *   SITE_SETTINGS_ZOOM_LEVELS: (undefined|!settings.Route),
+ *   SMB_SHARES: (undefined|!settings.Route),
  *   STORAGE: (undefined|!settings.Route),
  *   STYLUS: (undefined|!settings.Route),
  *   SYNC: (undefined|!settings.Route),
@@ -366,6 +368,9 @@ cr.define('settings', function() {
 
       if (pageVisibility.downloads !== false) {
         r.DOWNLOADS = r.ADVANCED.createSection('/downloads', 'downloads');
+        // <if expr="chromeos">
+        r.SMB_SHARES = r.DOWNLOADS.createChild('/smbShares');
+        // </if>
       }
 
       r.PRINTING = r.ADVANCED.createSection('/printing', 'printing');
@@ -380,6 +385,8 @@ cr.define('settings', function() {
       // <if expr="chromeos">
       r.MANAGE_ACCESSIBILITY =
           r.ACCESSIBILITY.createChild('/manageAccessibility');
+      r.MANAGE_TTS_SETTINGS =
+          r.MANAGE_ACCESSIBILITY.createChild('/manageAccessibility/tts');
       // </if>
 
       r.SYSTEM = r.ADVANCED.createSection('/system', 'system');

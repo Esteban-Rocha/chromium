@@ -53,7 +53,7 @@
 #include "media/media_buildflags.h"
 #include "net/http/http_util.h"
 #include "pdf/buildflags.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -112,8 +112,8 @@ const char kPDFPluginExtension[] = "pdf";
 const char kPDFPluginDescription[] = "Portable Document Format";
 const char kPDFPluginOutOfProcessMimeType[] =
     "application/x-google-chrome-pdf";
-const uint32_t kPDFPluginPermissions =
-    ppapi::PERMISSION_PRIVATE | ppapi::PERMISSION_DEV;
+const uint32_t kPDFPluginPermissions = ppapi::PERMISSION_PDF |
+                                       ppapi::PERMISSION_DEV;
 #endif  // BUILDFLAG(ENABLE_PDF)
 
 content::PepperPluginInfo::GetInterfaceFunc g_pdf_get_interface;

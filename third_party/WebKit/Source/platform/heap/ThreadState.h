@@ -33,6 +33,7 @@
 
 #include <memory>
 
+#include "base/atomicops.h"
 #include "base/macros.h"
 #include "platform/PlatformExport.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
@@ -150,10 +151,6 @@ class PLATFORM_EXPORT ThreadState {
     kPreciseGCScheduled,
     kFullGCScheduled,
     kPageNavigationGCScheduled,
-    kGCRunning,
-    kSweeping,
-    kSweepingAndIdleGCScheduled,
-    kSweepingAndPreciseGCScheduled,
   };
 
   // The phase that the GC is in. The GCPhase will not return kNone for mutators
@@ -219,6 +216,14 @@ class PLATFORM_EXPORT ThreadState {
     ThreadState* state_;
   };
 
+  // Returns true if any thread is currently incremental marking its heap and
+  // false otherwise. For an exact check use
+  // ThreadState::IsIncrementalMarking().
+  static bool IsAnyIncrementalMarking() {
+    // Stores use full barrier to allow using the simplest relaxed load here.
+    return base::subtle::NoBarrier_Load(&incremental_marking_counter_) > 0;
+  }
+
   static void AttachMainThread();
 
   // Associate ThreadState object with the current thread. After this
@@ -263,17 +268,13 @@ class PLATFORM_EXPORT ThreadState {
   void SchedulePageNavigationGCIfNeeded(float estimated_removal_ratio);
   void SchedulePageNavigationGC();
   void ScheduleGCIfNeeded();
+  void PostIdleGCTask();
   void WillStartV8GC(BlinkGC::V8GCType);
   void SetGCState(GCState);
   GCState GcState() const { return gc_state_; }
   void SetGCPhase(GCPhase);
-  bool IsInGC() const { return GcState() == kGCRunning; }
   bool IsMarkingInProgress() const { return gc_phase_ == GCPhase::kMarking; }
-  bool IsSweepingInProgress() const {
-    return GcState() == kSweeping ||
-           GcState() == kSweepingAndPreciseGCScheduled ||
-           GcState() == kSweepingAndIdleGCScheduled;
-  }
+  bool IsSweepingInProgress() const { return gc_phase_ == GCPhase::kSweeping; }
 
   // Incremental GC.
 
@@ -285,10 +286,8 @@ class PLATFORM_EXPORT ThreadState {
   void IncrementalMarkingStep();
   void IncrementalMarkingFinalize();
 
-  bool IsIncrementalMarkingInProgress() const {
-    return GcState() == kIncrementalMarkingStepScheduled ||
-           GcState() == kIncrementalMarkingFinalizeScheduled;
-  }
+  void EnableIncrementalMarkingBarrier();
+  void DisableIncrementalMarkingBarrier();
 
   // A GC runs in the following sequence.
   //
@@ -300,12 +299,6 @@ class PLATFORM_EXPORT ThreadState {
   // 4) Lazy sweeping sweeps heaps incrementally. completeSweep() may be called
   //    to complete the sweeping.
   // 5) postSweep() is called.
-  //
-  // Notes:
-  // - The world is stopped between 1) and 3).
-  // - isInGC() returns true between 1) and 3).
-  // - isSweepingInProgress() returns true while any sweeping operation is
-  //   running.
   void MarkPhasePrologue(BlinkGC::StackState,
                          BlinkGC::MarkingType,
                          BlinkGC::GCReason);
@@ -593,6 +586,11 @@ class PLATFORM_EXPORT ThreadState {
   friend class incremental_marking_test::IncrementalMarkingScope;
   template <typename T>
   friend class PrefinalizerRegistration;
+
+  // Number of ThreadState's that are currently in incremental marking. The
+  // counter is incremented by one when some ThreadState enters incremental
+  // marking and decremented upon finishing.
+  static base::subtle::AtomicWord incremental_marking_counter_;
 
   ThreadState();
   ~ThreadState();

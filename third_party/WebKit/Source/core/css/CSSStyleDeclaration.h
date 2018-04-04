@@ -24,7 +24,7 @@
 #include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/css_property_names.h"
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/Noncopyable.h"
@@ -36,6 +36,7 @@ class CSSRule;
 class CSSStyleSheet;
 class CSSValue;
 class ExceptionState;
+class StringOrFloat;
 enum class SecureContextMode;
 
 class CORE_EXPORT CSSStyleDeclaration : public ScriptWrappable {
@@ -89,6 +90,14 @@ class CORE_EXPORT CSSStyleDeclaration : public ScriptWrappable {
 
   virtual bool CssPropertyMatches(CSSPropertyID, const CSSValue&) const = 0;
   virtual CSSStyleSheet* ParentStyleSheet() const { return nullptr; }
+
+  void AnonymousNamedGetter(const AtomicString& name, StringOrFloat&);
+  bool AnonymousNamedSetter(ScriptState*,
+                            const AtomicString& name,
+                            const String& value,
+                            ExceptionState&);
+  void NamedPropertyEnumerator(Vector<String>& names, ExceptionState&);
+  bool NamedPropertyQuery(const AtomicString&, ExceptionState&);
 
  protected:
   CSSStyleDeclaration() = default;

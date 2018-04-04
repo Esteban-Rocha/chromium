@@ -10,7 +10,7 @@ import("//build/config/ui.gni")
 import("//content/public/common/zygote_features.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//third_party/webrtc/webrtc.gni")
 
 # See //content/BUILD.gn for how this works.
@@ -237,6 +237,8 @@ jumbo_source_set("common_sources") {
     "use_zoom_for_dsf_policy.cc",
     "use_zoom_for_dsf_policy.h",
     "user_agent.h",
+    "weak_wrapper_shared_url_loader_factory.cc",
+    "weak_wrapper_shared_url_loader_factory.h",
     "web_preferences.cc",
     "web_preferences.h",
     "webplugininfo.cc",
@@ -281,8 +283,8 @@ jumbo_source_set("common_sources") {
     "//content/common:mojo_bindings",
     "//media",
     "//mojo/common",
+    "//ppapi/buildflags",
     "//ppapi/c",
-    "//ppapi/features",
     "//services/network/public/cpp",
     "//services/service_manager/public/cpp",
     "//skia",
@@ -374,8 +376,8 @@ mojom("interfaces") {
     "appcache_info.mojom",
     "fullscreen_video_element.mojom",
     "push_messaging_status.mojom",
+    "resource_load_info.mojom",
     "resource_usage_reporter.mojom",
-    "subresource_load_info.mojom",
     "transferrable_url_loader.mojom",
     "webplugininfo.mojom",
     "window_container_type.mojom",

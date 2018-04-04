@@ -9,7 +9,7 @@
 #include "core/testing/DummyPageHolder.h"
 #include "core/testing/PageTestBase.h"
 #include "platform/CrossThreadFunctional.h"
-#include "platform/scheduler/renderer/renderer_scheduler_impl.h"
+#include "platform/scheduler/main_thread/main_thread_scheduler.h"
 #include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -40,7 +40,7 @@ struct TaskTiming {
   TaskTiming(double start, double end) : start(start), end(end) {}
 };
 
-class InteractiveDetectorTest : public ::testing::Test {
+class InteractiveDetectorTest : public testing::Test {
  public:
   InteractiveDetectorTest() {
     platform_->AdvanceClockSeconds(1);

@@ -58,8 +58,6 @@
 #include "core/dom/Document.h"
 #include "core/dom/ElementDataCache.h"
 #include "core/dom/ElementRareData.h"
-#include "core/dom/ElementShadow.h"
-#include "core/dom/ElementShadowV0.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/FirstLetterPseudoElement.h"
@@ -73,6 +71,7 @@
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/dom/ShadowRootInit.h"
+#include "core/dom/ShadowRootV0.h"
 #include "core/dom/SlotAssignment.h"
 #include "core/dom/SpaceSplitString.h"
 #include "core/dom/Text.h"
@@ -1510,11 +1509,11 @@ static inline AtomicString MakeIdForStyleResolution(const AtomicString& value,
 DISABLE_CFI_PERF
 void Element::AttributeChanged(const AttributeModificationParams& params) {
   const QualifiedName& name = params.name;
-  if (ElementShadow* parent_element_shadow =
-          ShadowWhereNodeCanBeDistributedForV0(*this)) {
+  if (ShadowRoot* parent_shadow_root =
+          ShadowRootWhereNodeCanBeDistributedForV0(*this)) {
     if (ShouldInvalidateDistributionWhenAttributeChanged(
-            parent_element_shadow, name, params.new_value))
-      parent_element_shadow->SetNeedsDistributionRecalc();
+            *parent_shadow_root, name, params.new_value))
+      parent_shadow_root->SetNeedsDistributionRecalc();
   }
   if (name == HTMLNames::slotAttr && params.old_value != params.new_value) {
     if (ShadowRoot* root = V1ShadowRootOfParent())
@@ -1637,14 +1636,13 @@ void Element::ClassAttributeChanged(const AtomicString& new_class_string) {
 }
 
 bool Element::ShouldInvalidateDistributionWhenAttributeChanged(
-    ElementShadow* element_shadow,
+    ShadowRoot& shadow_root,
     const QualifiedName& name,
     const AtomicString& new_value) {
-  DCHECK(element_shadow);
-  if (element_shadow->IsV1())
+  if (shadow_root.IsV1())
     return false;
   const SelectRuleFeatureSet& feature_set =
-      element_shadow->V0().EnsureSelectFeatureSet();
+      shadow_root.V0().EnsureSelectFeatureSet();
 
   if (name == HTMLNames::idAttr) {
     AtomicString old_id = GetElementData()->IdForStyleResolution();
@@ -1789,7 +1787,7 @@ const AtomicString Element::ImageSourceURL() const {
   return getAttribute(srcAttr);
 }
 
-bool Element::LayoutObjectIsNeeded(const ComputedStyle& style) {
+bool Element::LayoutObjectIsNeeded(const ComputedStyle& style) const {
   return style.Display() != EDisplay::kNone &&
          style.Display() != EDisplay::kContents;
 }
@@ -1959,8 +1957,10 @@ void Element::AttachLayoutTree(AttachContext& context) {
   CreateAndAttachPseudoElementIfNeeded(kPseudoIdBefore, children_context);
 
   // When a shadow root exists, it does the work of attaching the children.
-  if (ElementShadow* shadow = Shadow())
-    shadow->Attach(children_context);
+  if (ShadowRoot* shadow_root = GetShadowRoot()) {
+    if (shadow_root->NeedsAttach())
+      shadow_root->AttachLayoutTree(children_context);
+  }
 
   ContainerNode::AttachLayoutTree(children_context);
   SetNonAttachedStyle(nullptr);
@@ -2012,8 +2012,8 @@ void Element::DetachLayoutTree(const AttachContext& context) {
       element_animations->ClearBaseComputedStyle();
     }
 
-    if (ElementShadow* shadow = data->Shadow())
-      shadow->Detach(context);
+    if (ShadowRoot* shadow_root = data->GetShadowRoot())
+      shadow_root->DetachLayoutTree(context);
   }
 
   ContainerNode::DetachLayoutTree(context);
@@ -2119,8 +2119,6 @@ void Element::RecalcStyle(StyleRecalcChange change) {
         if (ElementAnimations* element_animations =
                 data->GetElementAnimations())
           element_animations->SetAnimationStyleChange(false);
-        if (ComputedStyle* style = MutableComputedStyle())
-          style->SetAnimationPropertiesLocked(false);
       }
     }
     if (ParentComputedStyle()) {
@@ -2198,7 +2196,7 @@ StyleRecalcChange Element::RecalcOwnStyle(StyleRecalcChange change) {
   DCHECK(change >= kIndependentInherit || NeedsStyleRecalc());
   DCHECK(ParentComputedStyle());
 
-  scoped_refptr<ComputedStyle> old_style = MutableComputedStyle();
+  scoped_refptr<const ComputedStyle> old_style = GetComputedStyle();
 
   // When propagating inherited changes, we don't need to do a full style recalc
   // if the only changed properties are independent. In this case, we can simply
@@ -2347,7 +2345,7 @@ void Element::RebuildLayoutTree(WhitespaceAttacher& whitespace_attacher) {
       child_attacher = &whitespace_attacher;
     }
     RebuildPseudoElementLayoutTree(kPseudoIdAfter, *child_attacher);
-    if (Shadow())
+    if (GetShadowRoot())
       RebuildShadowRootLayoutTree(*child_attacher);
     else
       RebuildChildrenLayoutTrees(*child_attacher);
@@ -2409,12 +2407,36 @@ void Element::RemoveCallbackSelectors() {
   UpdateCallbackSelectors(GetComputedStyle(), nullptr);
 }
 
-ElementShadow* Element::Shadow() const {
-  return HasRareData() ? GetElementRareData()->Shadow() : nullptr;
+ShadowRoot& Element::CreateAndAttachShadowRoot(ShadowRootType type) {
+  EventDispatchForbiddenScope assert_no_event_dispatch;
+  ScriptForbiddenScope forbid_script;
+
+  DCHECK(!GetShadowRoot());
+
+  ShadowRoot* shadow_root = ShadowRoot::Create(GetDocument(), type);
+  EnsureElementRareData().SetShadowRoot(*shadow_root);
+  shadow_root->SetParentOrShadowHostNode(this);
+  shadow_root->SetParentTreeScope(GetTreeScope());
+  if (type == ShadowRootType::V0) {
+    shadow_root->SetNeedsDistributionRecalc();
+  } else {
+    for (Node& child : NodeTraversal::ChildrenOf(*this))
+      child.LazyReattachIfAttached();
+  }
+
+  shadow_root->InsertedInto(this);
+  SetChildNeedsStyleRecalc();
+  SetNeedsStyleRecalc(kSubtreeStyleChange, StyleChangeReasonForTracing::Create(
+                                               StyleChangeReason::kShadow));
+
+  probe::didPushShadowRoot(this, shadow_root);
+
+  return *shadow_root;
 }
 
-ElementShadow& Element::EnsureShadow() {
-  return EnsureElementRareData().EnsureShadow();
+// TODO(kochi): inline this.
+ShadowRoot* Element::GetShadowRoot() const {
+  return HasRareData() ? GetElementRareData()->GetShadowRoot() : nullptr;
 }
 
 void Element::PseudoStateChanged(CSSSelector::PseudoType pseudo) {
@@ -2435,8 +2457,6 @@ void Element::SetAnimationStyleChange(bool animation_style_change) {
   if (ElementAnimations* element_animations =
           GetElementRareData()->GetElementAnimations())
     element_animations->SetAnimationStyleChange(animation_style_change);
-  if (ComputedStyle* style = MutableComputedStyle())
-    style->SetAnimationPropertiesLocked(animation_style_change);
 }
 
 void Element::ClearAnimationStyleChange() {
@@ -2445,8 +2465,6 @@ void Element::ClearAnimationStyleChange() {
   if (ElementAnimations* element_animations =
           GetElementRareData()->GetElementAnimations())
     element_animations->SetAnimationStyleChange(false);
-  if (ComputedStyle* style = MutableComputedStyle())
-    style->SetAnimationPropertiesLocked(false);
 }
 
 void Element::SetNeedsAnimationStyleRecalc() {
@@ -2607,23 +2625,25 @@ ShadowRoot& Element::CreateShadowRootInternal() {
   DCHECK(AreAuthorShadowsAllowed());
   DCHECK(!AlwaysCreateUserAgentShadowRoot());
   GetDocument().SetShadowCascadeOrder(ShadowCascadeOrder::kShadowCascadeV0);
-  return EnsureShadow().AddShadowRoot(*this, ShadowRootType::V0);
+  return CreateAndAttachShadowRoot(ShadowRootType::V0);
 }
 
 ShadowRoot& Element::CreateUserAgentShadowRoot() {
   DCHECK(!GetShadowRoot());
-  return EnsureShadow().AddShadowRoot(*this, ShadowRootType::kUserAgent);
+  return CreateAndAttachShadowRoot(ShadowRootType::kUserAgent);
 }
 
 ShadowRoot& Element::AttachShadowRootInternal(ShadowRootType type,
                                               bool delegates_focus) {
-  DCHECK(CanAttachShadowRoot());
+  // SVG <use> is a special case for using this API to create a closed shadow
+  // root.
+  DCHECK(CanAttachShadowRoot() || IsSVGUseElement(*this));
   DCHECK(type == ShadowRootType::kOpen || type == ShadowRootType::kClosed)
       << type;
   DCHECK(!AlwaysCreateUserAgentShadowRoot());
 
   GetDocument().SetShadowCascadeOrder(ShadowCascadeOrder::kShadowCascadeV1);
-  ShadowRoot& shadow_root = EnsureShadow().AddShadowRoot(*this, type);
+  ShadowRoot& shadow_root = CreateAndAttachShadowRoot(type);
   shadow_root.SetDelegatesFocus(delegates_focus);
   return shadow_root;
 }
@@ -2664,7 +2684,7 @@ ShadowRoot& Element::EnsureUserAgentShadowRoot() {
     return *shadow_root;
   }
   ShadowRoot& shadow_root =
-      EnsureShadow().AddShadowRoot(*this, ShadowRootType::kUserAgent);
+      CreateAndAttachShadowRoot(ShadowRootType::kUserAgent);
   DidAddUserAgentShadowRoot(shadow_root);
   return shadow_root;
 }
@@ -2683,22 +2703,41 @@ bool Element::ChildTypeAllowed(NodeType type) const {
   return false;
 }
 
-void Element::CheckForEmptyStyleChange() {
-  const ComputedStyle* style = GetComputedStyle();
+namespace {
 
-  if (!style && !StyleAffectedByEmpty())
-    return;
+bool HasSiblingsForNonEmpty(const Node* sibling,
+                            Node* (*next_func)(const Node&)) {
+  for (; sibling; sibling = next_func(*sibling)) {
+    if (sibling->IsElementNode())
+      return true;
+    if (sibling->IsTextNode() && !ToText(sibling)->data().IsEmpty())
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+void Element::CheckForEmptyStyleChange(const Node* node_before_change,
+                                       const Node* node_after_change) {
   if (!InActiveDocument())
     return;
-  if (!style ||
-      (StyleAffectedByEmpty() && (!style->EmptyState() || HasChildren())))
-    PseudoStateChanged(CSSSelector::kPseudoEmpty);
+  if (!StyleAffectedByEmpty())
+    return;
+  if (HasSiblingsForNonEmpty(node_before_change,
+                             NodeTraversal::PreviousSibling) ||
+      HasSiblingsForNonEmpty(node_after_change, NodeTraversal::NextSibling)) {
+    return;
+  }
+  PseudoStateChanged(CSSSelector::kPseudoEmpty);
 }
 
 void Element::ChildrenChanged(const ChildrenChange& change) {
   ContainerNode::ChildrenChanged(change);
 
-  CheckForEmptyStyleChange();
+  CheckForEmptyStyleChange(change.sibling_before_change,
+                           change.sibling_after_change);
+
   if (!change.by_parser && change.IsChildElementChange())
     CheckForSiblingStyleChanges(
         change.type == kElementRemoved ? kSiblingElementRemoved
@@ -2707,13 +2746,13 @@ void Element::ChildrenChanged(const ChildrenChange& change) {
         change.sibling_after_change);
 
   // TODO(hayato): Confirm that we can skip this if a shadow tree is v1.
-  if (ElementShadow* shadow = Shadow())
-    shadow->SetNeedsDistributionRecalcWillBeSetNeedsAssignmentRecalc();
+  if (ShadowRoot* shadow_root = GetShadowRoot())
+    shadow_root->SetNeedsDistributionRecalcWillBeSetNeedsAssignmentRecalc();
 }
 
 void Element::FinishParsingChildren() {
   SetIsFinishedParsingChildren(true);
-  CheckForEmptyStyleChange();
+  CheckForEmptyStyleChange(this, this);
   CheckForSiblingStyleChanges(kFinishedParsingChildren, nullptr, lastChild(),
                               nullptr);
 }

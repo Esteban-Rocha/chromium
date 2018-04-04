@@ -7,9 +7,9 @@
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
-#include "content/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/url_loader_throttle.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
@@ -54,8 +54,7 @@ class TestURLLoaderFactory : public network::mojom::URLLoaderFactory,
   }
 
   void NotifyClientOnReceiveResponse() {
-    client_ptr_->OnReceiveResponse(network::ResourceResponseHead(),
-                                   base::nullopt, nullptr);
+    client_ptr_->OnReceiveResponse(network::ResourceResponseHead(), nullptr);
   }
 
   void NotifyClientOnReceiveRedirect() {
@@ -148,7 +147,6 @@ class TestURLLoaderClient : public network::mojom::URLLoaderClient {
   // network::mojom::URLLoaderClient implementation:
   void OnReceiveResponse(
       const network::ResourceResponseHead& response_head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override {
     on_received_response_called_++;
     if (on_received_response_callback_)

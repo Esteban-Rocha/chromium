@@ -191,7 +191,8 @@
           "shape_detection::mojom::FaceDetectionProvider",
           "shape_detection::mojom::TextDetection",
           "ui::mojom::Gpu",
-          "webauth::mojom::Authenticator"
+          "webauth::mojom::Authenticator",
+          "webauth::test::mojom::VirtualAuthenticatorManager"
         ]
       },
       "requires": {
@@ -207,6 +208,7 @@
           "blink::mojom::NotificationService",
           "blink::mojom::PermissionService",
           "blink::mojom::QuotaDispatcherHost",
+          "network::mojom::WebSocket",
           "payments::mojom::PaymentManager",
           "shape_detection::mojom::BarcodeDetection",
           "shape_detection::mojom::FaceDetectionProvider",

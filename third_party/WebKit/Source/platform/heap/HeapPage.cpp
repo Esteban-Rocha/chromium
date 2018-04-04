@@ -35,7 +35,6 @@
 #include "platform/MemoryCoordinator.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/heap/BlinkGCMemoryDumpProvider.h"
-#include "platform/heap/CallbackStack.h"
 #include "platform/heap/HeapCompact.h"
 #include "platform/heap/MarkingVerifier.h"
 #include "platform/heap/PageMemory.h"
@@ -227,7 +226,7 @@ size_t BaseArena::ObjectPayloadSizeForTesting() {
 }
 
 void BaseArena::PrepareForSweep() {
-  DCHECK(GetThreadState()->IsInGC());
+  DCHECK(GetThreadState()->InAtomicMarkingPause());
   DCHECK(SweepingCompleted());
 
   ClearFreeLists();
@@ -417,18 +416,6 @@ bool BaseArena::WillObjectBeLazilySwept(BasePage* page,
   return true;
 }
 
-void BaseArena::EnableIncrementalMarkingBarrier() {
-  DCHECK(SweepingCompleted());
-  for (BasePage* page = first_page_; page; page = page->Next())
-    page->SetIncrementalMarking(true);
-}
-
-void BaseArena::DisableIncrementalMarkingBarrier() {
-  DCHECK(SweepingCompleted());
-  for (BasePage* page = first_page_; page; page = page->Next())
-    page->SetIncrementalMarking(false);
-}
-
 NormalPageArena::NormalPageArena(ThreadState* state, int index)
     : BaseArena(state, index),
       current_allocation_point_(nullptr),
@@ -610,6 +597,10 @@ void NormalPageArena::Verify() {
 
 void NormalPageArena::VerifyMarking() {
 #if DCHECK_IS_ON()
+  // We cannot rely on other marking phases to clear the allocation area as
+  // for incremental marking the application is running between steps and
+  // might set up a new area.
+  SetAllocationPoint(nullptr, 0);
   for (NormalPage* page = static_cast<NormalPage*>(first_page_); page;
        page = static_cast<NormalPage*>(page->Next()))
     page->VerifyMarking();
@@ -1273,8 +1264,7 @@ BasePage::BasePage(PageMemory* storage, BaseArena* arena)
       storage_(storage),
       arena_(arena),
       next_(nullptr),
-      swept_(true),
-      incremental_marking_(arena->GetThreadState()->IsIncrementalMarking()) {
+      swept_(true) {
 #if DCHECK_IS_ON()
   DCHECK(IsPageHeaderAddress(reinterpret_cast<Address>(this)));
 #endif
@@ -1792,7 +1782,7 @@ size_t HeapDoesNotContainCache::GetHash(Address address) {
 }
 
 bool HeapDoesNotContainCache::Lookup(Address address) {
-  DCHECK(ThreadState::Current()->IsInGC());
+  DCHECK(ThreadState::Current()->InAtomicMarkingPause());
 
   size_t index = GetHash(address);
   DCHECK(!(index & 1));
@@ -1805,7 +1795,7 @@ bool HeapDoesNotContainCache::Lookup(Address address) {
 }
 
 void HeapDoesNotContainCache::AddEntry(Address address) {
-  DCHECK(ThreadState::Current()->IsInGC());
+  DCHECK(ThreadState::Current()->InAtomicMarkingPause());
 
   has_entries_ = true;
   size_t index = GetHash(address);

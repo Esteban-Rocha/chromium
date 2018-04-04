@@ -34,15 +34,13 @@
 
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/loader/BaseFetchContext.h"
-#include "core/loader/DocumentLoader.h"
-#include "core/loader/FrameLoader.h"
 #include "core/loader/MixedContentChecker.h"
 #include "core/loader/SubresourceFilter.h"
 #include "core/loader/ThreadableLoadingContext.h"
@@ -54,10 +52,10 @@
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "modules/websockets/WebSocketHandleImpl.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
-#include "platform/FrameScheduler.h"
 #include "platform/loader/fetch/UniqueIdentifier.h"
 #include "platform/network/NetworkLog.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
+#include "platform/scheduler/public/frame_scheduler.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Functional.h"
 #include "public/platform/Platform.h"
@@ -208,27 +206,26 @@ bool DocumentWebSocketChannel::Connect(
   if (!handle_)
     return false;
 
-  if (GetDocument()) {
-    if (GetDocument()->GetFrame()) {
-      if (MixedContentChecker::ShouldBlockWebSocket(GetDocument()->GetFrame(),
-                                                    url))
-        return false;
-    }
-    if (MixedContentChecker::IsMixedContent(GetDocument()->GetSecurityOrigin(),
-                                            url)) {
-      String message =
-          "Connecting to a non-secure WebSocket server from a secure origin is "
-          "deprecated.";
-      GetDocument()->AddConsoleMessage(ConsoleMessage::Create(
-          kJSMessageSource, kWarningMessageLevel, message));
-    }
+  // TODO(nhiroki): Remove dependencies on LocalFrame.
+  // (https://crbug.com/825740)
+  LocalFrame* frame = nullptr;
+  if (GetExecutionContext()->IsDocument())
+    frame = ToDocument(GetExecutionContext())->GetFrame();
 
-    if (GetDocument()->GetFrame()) {
-      connection_handle_for_scheduler_ = GetDocument()
-                                             ->GetFrame()
-                                             ->GetFrameScheduler()
-                                             ->OnActiveConnectionCreated();
-    }
+  if (frame) {
+    if (MixedContentChecker::ShouldBlockWebSocket(frame, url))
+      return false;
+    connection_handle_for_scheduler_ =
+        frame->GetFrameScheduler()->OnActiveConnectionCreated();
+  }
+
+  if (MixedContentChecker::IsMixedContent(
+          GetExecutionContext()->GetSecurityOrigin(), url)) {
+    String message =
+        "Connecting to a non-secure WebSocket server from a secure origin is "
+        "deprecated.";
+    GetExecutionContext()->AddConsoleMessage(ConsoleMessage::Create(
+        kJSMessageSource, kWarningMessageLevel, message));
   }
 
   url_ = url;
@@ -245,7 +242,7 @@ bool DocumentWebSocketChannel::Connect(
   // failure blocks the worker thread which should be avoided. Note that
   // returning "true" just indicates that this was not a mixed content error.
   if (ShouldDisallowConnection(url)) {
-    GetDocument()
+    GetExecutionContext()
         ->GetTaskRunner(TaskType::kNetworking)
         ->PostTask(
             FROM_HERE,
@@ -254,22 +251,18 @@ bool DocumentWebSocketChannel::Connect(
     return true;
   }
 
-  handle_->Initialize(std::move(socket_ptr));
-  handle_->Connect(url, protocols,
+  handle_->Connect(std::move(socket_ptr), url, protocols,
                    loading_context_->GetFetchContext()->GetSiteForCookies(),
                    loading_context_->GetExecutionContext()->UserAgent(), this,
                    loading_context_->GetExecutionContext()
                        ->GetTaskRunner(TaskType::kNetworking)
                        .get());
 
-  // TODO(ricea): Maybe lookup GetDocument()->GetFrame() less often?
-  if (handshake_throttle_ && GetDocument() && GetDocument()->GetFrame() &&
-      GetDocument()->GetFrame()->GetPage()) {
+  if (handshake_throttle_ && frame && frame->GetPage()) {
     // TODO(ricea): We may need to do something special here for SharedWorkers
     // and ServiceWorkers
     // TODO(ricea): Figure out who owns this WebFrame object and how long it can
     // be expected to live.
-    LocalFrame* frame = GetDocument()->GetFrame();
     WebLocalFrame* web_frame = WebLocalFrameImpl::FromFrame(frame);
     handshake_throttle_->ThrottleHandshake(url, web_frame, this);
   } else {
@@ -280,8 +273,8 @@ bool DocumentWebSocketChannel::Connect(
   TRACE_EVENT_INSTANT1("devtools.timeline", "WebSocketCreate",
                        TRACE_EVENT_SCOPE_THREAD, "data",
                        InspectorWebSocketCreateEvent::Data(
-                           GetDocument(), identifier_, url, protocol));
-  probe::didCreateWebSocket(GetDocument(), identifier_, url, protocol);
+                           GetExecutionContext(), identifier_, url, protocol));
+  probe::didCreateWebSocket(GetExecutionContext(), identifier_, url, protocol);
   return true;
 }
 
@@ -289,11 +282,10 @@ bool DocumentWebSocketChannel::Connect(const KURL& url,
                                        const String& protocol) {
   network::mojom::blink::WebSocketPtr socket_ptr;
   auto socket_request = mojo::MakeRequest(&socket_ptr);
-  if (GetDocument() && GetDocument()->GetFrame()) {
-    GetDocument()->GetFrame()->GetInterfaceProvider().GetInterface(
-        std::move(socket_request));
-  }
-
+  service_manager::InterfaceProvider* interface_provider =
+      GetExecutionContext()->GetInterfaceProvider();
+  if (interface_provider)
+    interface_provider->GetInterface(std::move(socket_request));
   return Connect(url, protocol, std::move(socket_ptr));
 }
 
@@ -301,7 +293,7 @@ void DocumentWebSocketChannel::Send(const CString& message) {
   NETWORK_DVLOG(1) << this << " Send(" << message << ") (CString argument)";
   // FIXME: Change the inspector API to show the entire message instead
   // of individual frames.
-  probe::didSendWebSocketFrame(GetDocument(), identifier_,
+  probe::didSendWebSocketFrame(GetExecutionContext(), identifier_,
                                WebSocketOpCode::kOpCodeText, true,
                                message.data(), message.length());
   messages_.push_back(new Message(message));
@@ -319,7 +311,7 @@ void DocumentWebSocketChannel::Send(
   // FIXME: We can't access the data here.
   // Since Binary data are not displayed in Inspector, this does not
   // affect actual behavior.
-  probe::didSendWebSocketFrame(GetDocument(), identifier_,
+  probe::didSendWebSocketFrame(GetExecutionContext(), identifier_,
                                WebSocketOpCode::kOpCodeBinary, true, "", 0);
   messages_.push_back(new Message(std::move(blob_data_handle)));
   ProcessSendQueue();
@@ -334,7 +326,7 @@ void DocumentWebSocketChannel::Send(const DOMArrayBuffer& buffer,
   // FIXME: Change the inspector API to show the entire message instead
   // of individual frames.
   probe::didSendWebSocketFrame(
-      GetDocument(), identifier_, WebSocketOpCode::kOpCodeBinary, true,
+      GetExecutionContext(), identifier_, WebSocketOpCode::kOpCodeBinary, true,
       static_cast<const char*>(buffer.Data()) + byte_offset, byte_length);
   // buffer.slice copies its contents.
   // FIXME: Reduce copy by sending the data immediately when we don't need to
@@ -351,7 +343,7 @@ void DocumentWebSocketChannel::SendTextAsCharVector(
                    << ")";
   // FIXME: Change the inspector API to show the entire message instead
   // of individual frames.
-  probe::didSendWebSocketFrame(GetDocument(), identifier_,
+  probe::didSendWebSocketFrame(GetExecutionContext(), identifier_,
                                WebSocketOpCode::kOpCodeText, true, data->data(),
                                data->size());
   messages_.push_back(
@@ -366,7 +358,7 @@ void DocumentWebSocketChannel::SendBinaryAsCharVector(
                    << ")";
   // FIXME: Change the inspector API to show the entire message instead
   // of individual frames.
-  probe::didSendWebSocketFrame(GetDocument(), identifier_,
+  probe::didSendWebSocketFrame(GetExecutionContext(), identifier_,
                                WebSocketOpCode::kOpCodeBinary, true,
                                data->data(), data->size());
   messages_.push_back(
@@ -387,13 +379,12 @@ void DocumentWebSocketChannel::Fail(const String& reason,
                                     MessageLevel level,
                                     std::unique_ptr<SourceLocation> location) {
   NETWORK_DVLOG(1) << this << " Fail(" << reason << ")";
-  if (GetDocument()) {
-    probe::didReceiveWebSocketFrameError(GetDocument(), identifier_, reason);
-    const String message = "WebSocket connection to '" + url_.ElidedString() +
-                           "' failed: " + reason;
-    GetDocument()->AddConsoleMessage(ConsoleMessage::Create(
-        kJSMessageSource, level, message, std::move(location)));
-  }
+  probe::didReceiveWebSocketFrameError(GetExecutionContext(), identifier_,
+                                       reason);
+  const String message =
+      "WebSocket connection to '" + url_.ElidedString() + "' failed: " + reason;
+  GetExecutionContext()->AddConsoleMessage(ConsoleMessage::Create(
+      kJSMessageSource, level, message, std::move(location)));
   // |reason| is only for logging and should not be provided for scripts,
   // hence close reason must be empty in tearDownFailedConnection.
   TearDownFailedConnection();
@@ -404,8 +395,9 @@ void DocumentWebSocketChannel::Disconnect() {
   if (identifier_) {
     TRACE_EVENT_INSTANT1(
         "devtools.timeline", "WebSocketDestroy", TRACE_EVENT_SCOPE_THREAD,
-        "data", InspectorWebSocketEvent::Data(GetDocument(), identifier_));
-    probe::didCloseWebSocket(GetDocument(), identifier_);
+        "data",
+        InspectorWebSocketEvent::Data(GetExecutionContext(), identifier_));
+    probe::didCloseWebSocket(GetExecutionContext(), identifier_);
   }
   connection_handle_for_scheduler_.reset();
   AbortAsyncOperations();
@@ -559,11 +551,8 @@ void DocumentWebSocketChannel::HandleDidClose(bool was_clean,
   // client->DidClose may delete this object.
 }
 
-Document* DocumentWebSocketChannel::GetDocument() {
-  ExecutionContext* context = loading_context_->GetExecutionContext();
-  if (context->IsDocument())
-    return ToDocument(context);
-  return nullptr;
+ExecutionContext* DocumentWebSocketChannel::GetExecutionContext() const {
+  return loading_context_->GetExecutionContext();
 }
 
 void DocumentWebSocketChannel::DidConnect(WebSocketHandle* handle,
@@ -598,14 +587,12 @@ void DocumentWebSocketChannel::DidStartOpeningHandshake(
   DCHECK(handle_);
   DCHECK_EQ(handle, handle_.get());
 
-  if (GetDocument()) {
-    TRACE_EVENT_INSTANT1(
-        "devtools.timeline", "WebSocketSendHandshakeRequest",
-        TRACE_EVENT_SCOPE_THREAD, "data",
-        InspectorWebSocketEvent::Data(GetDocument(), identifier_));
-    probe::willSendWebSocketHandshakeRequest(GetDocument(), identifier_,
-                                             request.get());
-  }
+  TRACE_EVENT_INSTANT1(
+      "devtools.timeline", "WebSocketSendHandshakeRequest",
+      TRACE_EVENT_SCOPE_THREAD, "data",
+      InspectorWebSocketEvent::Data(GetExecutionContext(), identifier_));
+  probe::willSendWebSocketHandshakeRequest(GetExecutionContext(), identifier_,
+                                           request.get());
   handshake_request_ = std::move(request);
 }
 
@@ -617,14 +604,12 @@ void DocumentWebSocketChannel::DidFinishOpeningHandshake(
   DCHECK(handle_);
   DCHECK_EQ(handle, handle_.get());
 
-  if (GetDocument()) {
-    TRACE_EVENT_INSTANT1(
-        "devtools.timeline", "WebSocketReceiveHandshakeResponse",
-        TRACE_EVENT_SCOPE_THREAD, "data",
-        InspectorWebSocketEvent::Data(GetDocument(), identifier_));
-    probe::didReceiveWebSocketHandshakeResponse(
-        GetDocument(), identifier_, handshake_request_.get(), response);
-  }
+  TRACE_EVENT_INSTANT1(
+      "devtools.timeline", "WebSocketReceiveHandshakeResponse",
+      TRACE_EVENT_SCOPE_THREAD, "data",
+      InspectorWebSocketEvent::Data(GetExecutionContext(), identifier_));
+  probe::didReceiveWebSocketHandshakeResponse(
+      GetExecutionContext(), identifier_, handshake_request_.get(), response);
   handshake_request_ = nullptr;
 }
 
@@ -680,16 +665,14 @@ void DocumentWebSocketChannel::DidReceiveData(WebSocketHandle* handle,
   if (!fin) {
     return;
   }
-  if (GetDocument()) {
-    // FIXME: Change the inspector API to show the entire message instead
-    // of individual frames.
-    auto opcode = receiving_message_type_is_text_
-                      ? WebSocketOpCode::kOpCodeText
-                      : WebSocketOpCode::kOpCodeBinary;
-    probe::didReceiveWebSocketFrame(GetDocument(), identifier_, opcode, false,
-                                    receiving_message_data_.data(),
-                                    receiving_message_data_.size());
-  }
+  // FIXME: Change the inspector API to show the entire message instead
+  // of individual frames.
+  auto opcode = receiving_message_type_is_text_
+                    ? WebSocketOpCode::kOpCodeText
+                    : WebSocketOpCode::kOpCodeBinary;
+  probe::didReceiveWebSocketFrame(GetExecutionContext(), identifier_, opcode,
+                                  false, receiving_message_data_.data(),
+                                  receiving_message_data_.size());
   if (receiving_message_type_is_text_) {
     String message = receiving_message_data_.IsEmpty()
                          ? g_empty_string
@@ -724,11 +707,12 @@ void DocumentWebSocketChannel::DidClose(WebSocketHandle* handle,
 
   handle_.reset();
 
-  if (identifier_ && GetDocument()) {
+  if (identifier_) {
     TRACE_EVENT_INSTANT1(
         "devtools.timeline", "WebSocketDestroy", TRACE_EVENT_SCOPE_THREAD,
-        "data", InspectorWebSocketEvent::Data(GetDocument(), identifier_));
-    probe::didCloseWebSocket(GetDocument(), identifier_);
+        "data",
+        InspectorWebSocketEvent::Data(GetExecutionContext(), identifier_));
+    probe::didCloseWebSocket(GetExecutionContext(), identifier_);
     identifier_ = 0;
   }
 
@@ -821,10 +805,8 @@ void DocumentWebSocketChannel::TearDownFailedConnection() {
 
 bool DocumentWebSocketChannel::ShouldDisallowConnection(const KURL& url) {
   DCHECK(handle_);
-  DocumentLoader* loader = GetDocument()->Loader();
-  if (!loader)
-    return false;
-  SubresourceFilter* subresource_filter = loader->GetSubresourceFilter();
+  BaseFetchContext* fetch_context = loading_context_->GetFetchContext();
+  SubresourceFilter* subresource_filter = fetch_context->GetSubresourceFilter();
   if (!subresource_filter)
     return false;
   return !subresource_filter->AllowWebSocketConnection(url);

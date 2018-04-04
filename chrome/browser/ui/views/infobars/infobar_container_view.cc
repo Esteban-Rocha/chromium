@@ -14,50 +14,39 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/skia_paint_util.h"
+#include "ui/views/bubble/bubble_border.h"
 #include "ui/views/view_targeter.h"
 
 namespace {
 
-// The content shadow is drawn in two stages. A darker, shorter shadow is
-// blended with a taller, lighter shadow. The heights are in dp.
-const int kSmallShadowHeight = 1;
-const int kLargeShadowHeight = 3;
-const SkAlpha kSmallShadowAlpha = 0x33;
-const SkAlpha kLargeShadowAlpha = 0x1A;
-
 class ContentShadow : public views::View {
  public:
-  ContentShadow() {
-    SetPaintToLayer();
-    layer()->SetFillsBoundsOpaquely(false);
-  }
-  ~ContentShadow() override {}
+  ContentShadow();
 
  protected:
   // views::View:
-  void OnPaint(gfx::Canvas* canvas) override {
-    // The first shader (small shadow) blurs from 0 to kSmallShadowHeight.
-    cc::PaintFlags flags;
-    flags.setShader(gfx::CreateGradientShader(
-        0, kSmallShadowHeight, SkColorSetA(SK_ColorBLACK, kSmallShadowAlpha),
-        SkColorSetA(SK_ColorBLACK, SK_AlphaTRANSPARENT)));
-    gfx::Rect small_shadow_bounds = GetLocalBounds();
-    small_shadow_bounds.set_height(kSmallShadowHeight);
-    canvas->DrawRect(small_shadow_bounds, flags);
-
-    // The second shader (large shadow) is solid from 0 to kSmallShadowHeight
-    // (blending with the first shader) and then blurs from kSmallShadowHeight
-    // to kLargeShadowHeight.
-    flags.setShader(gfx::CreateGradientShader(
-        kSmallShadowHeight, height(),
-        SkColorSetA(SK_ColorBLACK, kLargeShadowAlpha),
-        SkColorSetA(SK_ColorBLACK, SK_AlphaTRANSPARENT)));
-    canvas->DrawRect(GetLocalBounds(), flags);
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ContentShadow);
+  gfx::Size CalculatePreferredSize() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 };
+
+ContentShadow::ContentShadow() {
+  SetPaintToLayer();
+  layer()->SetFillsBoundsOpaquely(false);
+}
+
+gfx::Size ContentShadow::CalculatePreferredSize() const {
+  return gfx::Size(0, views::BubbleBorder::GetBorderAndShadowInsets().height());
+}
+
+void ContentShadow::OnPaint(gfx::Canvas* canvas) {
+  // Outdent the sides to make the shadow appear uniform in the corners.
+  gfx::RectF container_bounds(parent()->GetLocalBounds());
+  View::ConvertRectToTarget(parent(), this, &container_bounds);
+  container_bounds.Inset(-views::BubbleBorder::kShadowBlur, 0);
+
+  views::BubbleBorder::DrawBorderAndShadow(gfx::RectFToSkRect(container_bounds),
+                                           &cc::PaintCanvas::drawRect, canvas);
+}
 
 }  // namespace
 
@@ -87,6 +76,16 @@ gfx::Size InfoBarContainerView::CalculatePreferredSize() const {
   gfx::Size size(0, total_height);
   for (int i = 0; i < child_count(); ++i)
     size.SetToMax(gfx::Size(child_at(i)->GetPreferredSize().width(), 0));
+
+  // Don't reserve space for the bottom shadow here.  Because the shadow paints
+  // to its own layer and this class doesn't, it can paint outside the size
+  // computed here.  Not including the shadow bounds means the browser will
+  // automatically lay out web content beginning below the bottom infobar
+  // (instead of below the shadow), and clicks in the shadow region will go to
+  // the web content instead of the infobars; both of these effects are
+  // desirable.  On the other hand, it also means the browser doesn't know the
+  // shadow is there and could lay out something atop it or size the window too
+  // small for it; but these are unlikely.
   return size;
 }
 
@@ -97,10 +96,7 @@ const char* InfoBarContainerView::GetClassName() const {
 void InfoBarContainerView::Layout() {
   int top = 0;
 
-  for (int i = 0; i < child_count(); ++i) {
-    if (child_at(i) == content_shadow_)
-      continue;
-
+  for (int i = 0; i < child_count() - 1; ++i) {
     InfoBarView* child = static_cast<InfoBarView*>(child_at(i));
     top -= child->arrow_height();
     int child_height = child->total_height();
@@ -114,20 +110,17 @@ void InfoBarContainerView::Layout() {
     top += child_height;
   }
 
-  content_shadow_->SetBounds(0, top, width(), kLargeShadowHeight);
+  // The shadow is positioned flush with the bottom infobar, with the separator
+  // there drawn by the shadow code (so we don't have to extend our bounds out
+  // to be able to draw it; see comments in CalculatePreferredSize() on why the
+  // shadow is drawn outside the container bounds).
+  content_shadow_->SetBounds(0, top, width(),
+                             content_shadow_->GetPreferredSize().height());
 }
 
 void InfoBarContainerView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   node_data->role = ax::mojom::Role::kGroup;
   node_data->SetName(l10n_util::GetStringUTF8(IDS_ACCNAME_INFOBAR_CONTAINER));
-}
-
-void InfoBarContainerView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
-  // Infobars must be redrawn when the NativeTheme changes because
-  // they have a border with color COLOR_TOOLBAR_BOTTOM_SEPARATOR,
-  // which might have changed.
-  for (int i = 0; i < child_count(); ++i)
-    child_at(i)->SchedulePaint();
 }
 
 void InfoBarContainerView::PlatformSpecificAddInfoBar(

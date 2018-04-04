@@ -1220,12 +1220,6 @@ EVENT_TYPE(HTTP_TRANSACTION_DRAIN_BODY_FOR_AUTH_RESTART)
 // Measures the time taken to look up the key used for Token Binding.
 EVENT_TYPE(HTTP_TRANSACTION_GET_TOKEN_BINDING_KEY)
 
-// Measures the time taken due to throttling by the NetworkThrottleManager.
-EVENT_TYPE(HTTP_TRANSACTION_THROTTLED)
-
-// Record priority changes on the network transaction.
-EVENT_TYPE(HTTP_TRANSACTION_SET_PRIORITY)
-
 // This event is sent when we try to restart a transaction after an error.
 // The following parameters are attached:
 //   {
@@ -2582,6 +2576,25 @@ EVENT_TYPE(CERT_VERIFIER_JOB)
 //      "source_dependency": <Source identifier for the job we are bound to>,
 //   }
 EVENT_TYPE(CERT_VERIFIER_REQUEST_BOUND_TO_JOB)
+
+// This event is created when a TrialComparisonCertVerifier starts a
+// verification using the trial verifier.
+//
+// The event parameters are:
+//   {
+//      "trial_success": <True if the trial verification had the same result>,
+//   }
+EVENT_TYPE(TRIAL_CERT_VERIFIER_JOB)
+
+// This event is created when a TrialComparisonCertVerifier begins a trial
+// comparison job for a regular CertVerifier job.
+//
+// The event parameters are:
+//   {
+//      "source_dependency": <Source identifier for the trial comparison job
+//                            that was started>,
+//   }
+EVENT_TYPE(TRIAL_CERT_VERIFIER_JOB_COMPARISON_STARTED)
 
 // ------------------------------------------------------------------------
 // Download start events.

@@ -129,6 +129,14 @@ void ExtensionPopup::DevToolsAgentHostDetached(
   if (host()->host_contents() != agent_host->GetWebContents())
     return;
   inspect_with_devtools_ = false;
+  // Reset the dismissing logic back to a known state.
+  // The Chrome top-level window often receives activation when devtools is
+  // closed. However, because devtools was shown, ExtensionPopup doesn't have
+  // activation. This means there is no chance for it to dismiss until it
+  // receives activation again. Checking the anchor window for activation and
+  // then dismissing would result in the ExtensionPopup dismissing with
+  // devtools, which is also unexpected.
+  GetWidget()->Activate();
 }
 
 void ExtensionPopup::OnExtensionSizeChanged(ExtensionViewViews* view) {
@@ -154,8 +162,8 @@ void ExtensionPopup::AddedToWidget() {
 
 void ExtensionPopup::OnWidgetActivationChanged(views::Widget* widget,
                                                bool active) {
-  if (active && widget == anchor_widget())
-    OnAnchorWindowActivation();
+  if (!active && widget == GetWidget())
+    CloseUnlessUnderInspection();
 }
 
 void ExtensionPopup::ActiveTabChanged(content::WebContents* old_contents,
@@ -165,7 +173,7 @@ void ExtensionPopup::ActiveTabChanged(content::WebContents* old_contents,
   GetWidget()->Close();
 }
 
-void ExtensionPopup::OnAnchorWindowActivation() {
+void ExtensionPopup::CloseUnlessUnderInspection() {
   if (!inspect_with_devtools_)
     GetWidget()->Close();
 }

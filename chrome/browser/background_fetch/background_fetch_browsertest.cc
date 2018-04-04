@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 #include "chrome/browser/background_fetch/background_fetch_delegate_impl.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/offline_items_collection/offline_content_aggregator_factory.h"
@@ -273,7 +274,6 @@ class BackgroundFetchBrowserTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(BackgroundFetchBrowserTest);
 };
 
-// Flaky. See https://crbug.com/822276
 IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest, DownloadService_Acceptance) {
   // Starts a Background Fetch for a single to-be-downloaded file and waits for
   // that request to be scheduled with the Download Service.
@@ -292,7 +292,6 @@ IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest, DownloadService_Acceptance) {
   EXPECT_FALSE(guid.empty());
 }
 
-// TODO(crbug.com/822944): Disabled since flaky.
 IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest,
                        OfflineItemCollection_SingleFileMetadata) {
   // Starts a Background Fetch for a single to-be-downloaded file and waits for
@@ -323,7 +322,6 @@ IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest,
   EXPECT_FALSE(offline_item.is_resumable);
 }
 
-// Flaky. See https://crbug.com/822276
 IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest,
                        OfflineItemCollection_VerifyIconReceived) {
   // Starts a Background Fetch for a single to-be-downloaded file and waits for
@@ -357,9 +355,13 @@ IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest,
   // Get visuals associated with the newly added offline item.
   std::unique_ptr<OfflineItemVisuals> out_visuals;
   GetVisualsForOfflineItemSync(offline_item.id, &out_visuals);
+#if defined(OS_ANDROID)
   EXPECT_FALSE(out_visuals->icon.IsEmpty());
   EXPECT_EQ(out_visuals->icon.Size().width(), 100);
   EXPECT_EQ(out_visuals->icon.Size().height(), 100);
+#else
+  EXPECT_TRUE(out_visuals->icon.IsEmpty());
+#endif
 }
 
 }  // namespace

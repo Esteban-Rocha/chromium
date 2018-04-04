@@ -5,13 +5,13 @@
 -BackgroundXhrTest.HttpAuth
 -BackgroundXhrTest.TlsClientAuth
 -ChromeSecurityExploitBrowserTest.CreateFilesystemURLInExtensionOrigin
--DevToolsSanityTest.TestRawHeadersWithRedirectAndHSTS
 -DisabledSignInIsolationBrowserTest.SyntheticTrial
 -DomainReliabilityBrowserTest.Upload
 -EnabledSignInIsolationBrowserTest.SyntheticTrial
 -ExpectCTBrowserTest.TestDynamicExpectCTHeaderProcessing
 -ExpectCTBrowserTest.TestDynamicExpectCTReporting
 -ExtensionApiTest.Debugger
+-ExtensionApiTest.XHRFileURLs
 -ExtensionApiTestWithSwitch.ExtensionDebugger
 -ExtensionUnloadBrowserTest.UnloadWithContentScripts
 -LocalNTPVoiceJavascriptTest.TextTests
@@ -41,6 +41,11 @@
 -WebViewTests/WebViewTest.ClearDataCache/1
 -WebViewTests/WebViewTest.WebViewInBackgroundPage/0
 -WebViewTests/WebViewTest.WebViewInBackgroundPage/1
+
+# Redirects to chrome-extension:// should be blocked unless the resource is
+# webaccessible.  https://crbug.com/821586
+-ProcessManagerBrowserTest.ServerRedirectToNonWebAccessibleResource
+-ProcessManagerBrowserTest.CrossExtensionEmbeddingOfWebAccessibleResources
 
 # Need support for blocking cookies via content settings:
 # https://crbug.com/803452.
@@ -333,3 +338,9 @@
 -IOThreadEctCommandLineBrowserTest.ForceECTFromCommandLine
 -IOThreadEctFieldTrialAndCommandLineBrowserTest.ECTFromCommandLineOverridesFieldTrial
 -IOThreadEctFieldTrialBrowserTest.ForceECTUsingFieldTrial
+
+# No certificate_transparency::TreeStateTracker observes the CTVerifier created
+# by the network service, so Certificate Transparency tests fail.
+# https://crbug.com/803871
+-CertificateTransparencyBrowserTest.ProfileRequest
+-CertificateTransparencyBrowserTest.SystemRequest

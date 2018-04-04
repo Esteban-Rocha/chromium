@@ -2,17 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <string>
+#include <utility>
 
+#include "base/callback.h"
+#include "base/callback_forward.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/json/json_reader.h"
+#include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/banners/app_banner_manager_desktop.h"
 #include "chrome/browser/engagement/site_engagement_service.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -29,6 +35,7 @@
 #include "chrome/browser/ui/extensions/hosted_app_browser_controller.h"
 #include "chrome/browser/ui/page_info/page_info_dialog.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/toolbar/app_menu_model.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -133,6 +140,46 @@ void CheckMixedContentFailedToLoad(Browser* browser) {
 
 }  // namespace
 
+class TestAppBannerManagerDesktop : public banners::AppBannerManagerDesktop {
+ public:
+  explicit TestAppBannerManagerDesktop(WebContents* web_contents)
+      : AppBannerManagerDesktop(web_contents) {}
+
+  static TestAppBannerManagerDesktop* CreateForWebContents(
+      WebContents* web_contents) {
+    web_contents->SetUserData(
+        UserDataKey(),
+        std::make_unique<TestAppBannerManagerDesktop>(web_contents));
+    return static_cast<TestAppBannerManagerDesktop*>(
+        web_contents->GetUserData(UserDataKey()));
+  }
+
+  void WaitForInstallableCheck() {
+    DCHECK(IsExperimentalAppBannersEnabled());
+
+    if (got_data_)
+      return;
+
+    base::RunLoop run_loop;
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
+  // AppBannerManager:
+  void OnDidPerformInstallableCheck(const InstallableData& result) override {
+    AppBannerManagerDesktop::OnDidPerformInstallableCheck(result);
+    got_data_ = true;
+    if (quit_closure_)
+      std::move(quit_closure_).Run();
+  }
+
+ private:
+  bool got_data_ = false;
+  base::OnceClosure quit_closure_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestAppBannerManagerDesktop);
+};
+
 // Parameters are {app_type, desktop_pwa_flag}. |app_type| controls whether it
 // is a Hosted or Bookmark app. |desktop_pwa_flag| enables the
 // kDesktopPWAWindowing flag.
@@ -188,8 +235,15 @@ class HostedAppTest
                                   "/ssl/page_displays_insecure_content.html");
   }
 
-  void InstallMixedContentPWA() {
-    GURL app_url = GetMixedContentAppURL();
+  GURL GetSecureAppURL() {
+    return https_server()->GetURL("app.com", "/ssl/google.html");
+  }
+
+  void InstallMixedContentPWA() { return InstallPWA(GetMixedContentAppURL()); }
+
+  void InstallSecurePWA() { return InstallPWA(GetSecureAppURL()); }
+
+  void InstallPWA(const GURL& app_url) {
     WebApplicationInfo web_app_info;
     web_app_info.app_url = app_url;
     web_app_info.scope = app_url.GetWithoutFilename();
@@ -249,6 +303,19 @@ class HostedAppTest
     EXPECT_EQ(target_url, new_tab->GetLastCommittedURL());
   }
 
+  bool IsOpenInAppWindowOptionPresent(Browser* browser) {
+    DCHECK(!browser->hosted_app_controller())
+        << "This only applies to regular browser windows.";
+    auto model =
+        std::make_unique<AppMenuModel>(&empty_accelerator_provider_, browser);
+    model->Init();
+    for (int i = 0; i < model->GetItemCount(); ++i) {
+      if (model->GetCommandIdAt(i) == IDC_OPEN_IN_PWA_WINDOW)
+        return true;
+    }
+    return false;
+  }
+
   Browser* app_browser_;
   const extensions::Extension* app_;
 
@@ -257,6 +324,16 @@ class HostedAppTest
   net::EmbeddedTestServer* https_server() { return &https_server_; }
 
  private:
+  class EmptyAcceleratorProvider : public ui::AcceleratorProvider {
+   public:
+    // Don't handle accelerators.
+    bool GetAcceleratorForCommandId(
+        int command_id,
+        ui::Accelerator* accelerator) const override {
+      return false;
+    }
+  } empty_accelerator_provider_;
+
   base::test::ScopedFeatureList scoped_feature_list_;
   AppType app_type_;
 
@@ -350,8 +427,8 @@ IN_PROC_BROWSER_TEST_P(HostedAppTest, WebContentsPrefsReparentWebContents) {
       browser()->tab_strip_model()->GetActiveWebContents();
   CheckWebContentsDoesNotHaveAppPrefs(current_tab);
 
-  ReparentWebContentsIntoAppBrowser(current_tab, app_);
-  ASSERT_NE(browser(), chrome::FindLastActive());
+  Browser* app_browser = ReparentWebContentsIntoAppBrowser(current_tab, app_);
+  ASSERT_NE(browser(), app_browser);
 
   CheckWebContentsHasAppPrefs(
       chrome::FindLastActive()->tab_strip_model()->GetActiveWebContents());
@@ -574,6 +651,51 @@ IN_PROC_BROWSER_TEST_P(HostedAppTest, MixedContentInBookmarkApp) {
 
 using HostedAppPWAOnlyTest = HostedAppTest;
 
+// Tests that the command for OpenActiveTabInPwaWindow is available for secure
+// pages in an app's scope.
+IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest,
+                       ReparentSecureActiveTabIntoPwaWindow) {
+  ASSERT_TRUE(https_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  InstallSecurePWA();
+
+  NavigateToURLAndWait(browser(), GetSecureAppURL());
+  content::WebContents* tab_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_EQ(tab_contents->GetLastCommittedURL(), GetSecureAppURL());
+
+  EXPECT_TRUE(IsOpenInAppWindowOptionPresent(browser()));
+
+  Browser* app_browser = ReparentSecureActiveTabIntoPwaWindow(browser());
+
+  ASSERT_EQ(app_browser->hosted_app_controller()->GetExtension(), app_);
+}
+
+// Tests that the manifest name of the current installable site is used in the
+// installation menu text.
+IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, InstallToShelfContainsAppName) {
+  auto* manager = TestAppBannerManagerDesktop::CreateForWebContents(
+      browser()->tab_strip_model()->GetActiveWebContents());
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL test_url =
+      embedded_test_server()->GetURL("/banners/manifest_test_page.html");
+  NavigateToURLAndWait(browser(), test_url);
+
+  manager->WaitForInstallableCheck();
+
+  auto app_menu_model = std::make_unique<AppMenuModel>(nullptr, browser());
+  app_menu_model->Init();
+  ui::MenuModel* model = app_menu_model.get();
+  int index = -1;
+  EXPECT_TRUE(app_menu_model->GetModelAndIndexForCommandId(
+      IDC_CREATE_HOSTED_APP, &model, &index));
+  EXPECT_EQ(app_menu_model.get(), model);
+  EXPECT_EQ(model->GetLabelAt(index),
+            base::UTF8ToUTF16("Install Manifest test app\xE2\x80\xA6"));
+}
+
 // Tests that mixed content is not loaded inside PWA windows.
 IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, MixedContentInPWA) {
   ASSERT_TRUE(https_server()->Start());
@@ -603,6 +725,7 @@ IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, MixedContentOpenInChrome) {
 
   // The WebContents is just reparented, so mixed content is still not loaded.
   CheckMixedContentFailedToLoad(browser());
+  EXPECT_TRUE(IsOpenInAppWindowOptionPresent(browser()));
 
   ui_test_utils::UrlLoadObserver url_observer(
       GetMixedContentAppURL(), content::NotificationService::AllSources());
@@ -611,7 +734,10 @@ IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, MixedContentOpenInChrome) {
 
   // After reloading, mixed content should successfully load because the
   // WebContents is no longer in a PWA window.
+
   CheckMixedContentLoaded(browser());
+  EXPECT_FALSE(IsOpenInAppWindowOptionPresent(browser()));
+  EXPECT_EQ(ReparentSecureActiveTabIntoPwaWindow(browser()), nullptr);
 }
 
 // Tests that when calling ReparentWebContentsIntoAppBrowser, mixed content
@@ -630,10 +756,10 @@ IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest,
 
   // A regular tab should be able to load mixed content.
   CheckMixedContentLoaded(browser());
+  EXPECT_FALSE(IsOpenInAppWindowOptionPresent(browser()));
 
-  ReparentWebContentsIntoAppBrowser(tab_contents, app_);
+  Browser* app_browser = ReparentWebContentsIntoAppBrowser(tab_contents, app_);
 
-  Browser* app_browser = chrome::FindLastActive();
   ASSERT_NE(app_browser, browser());
   ASSERT_EQ(GetMixedContentAppURL(), app_browser->tab_strip_model()
                                          ->GetActiveWebContents()

@@ -474,9 +474,6 @@ class BLINK_PLATFORM_EXPORT Platform {
   // renderer was created with threaded rendering desabled.
   virtual WebThread* CompositorThread() const { return 0; }
 
-  // Returns an interface to the file task runner.
-  base::SingleThreadTaskRunner* FileTaskRunner() const;
-  scoped_refptr<base::SingleThreadTaskRunner> BaseFileTaskRunner() const;
 
   // Returns an interface to the IO task runner.
   virtual scoped_refptr<base::SingleThreadTaskRunner> GetIOTaskRunner() const {
@@ -494,7 +491,6 @@ class BLINK_PLATFORM_EXPORT Platform {
   CreateNestedMessageLoopRunner() const {
     return nullptr;
   }
-
   // Testing -------------------------------------------------------------
 
   // Gets a pointer to URLLoaderMockFactory for testing. Will not be available
@@ -519,9 +515,15 @@ class BLINK_PLATFORM_EXPORT Platform {
 
   // GPU ----------------------------------------------------------------
   //
+  enum ContextType {
+    kWebGL1ContextType,  // WebGL 1.0 context, use only for WebGL canvases
+    kWebGL2ContextType,  // WebGL 2.0 context, use only for WebGL canvases
+    kGLES2ContextType,   // GLES 2.0 context, default, good for using skia
+    kGLES3ContextType,   // GLES 3.0 context
+  };
   struct ContextAttributes {
     bool fail_if_major_performance_caveat = false;
-    unsigned web_gl_version = 0;
+    ContextType context_type = kGLES2ContextType;
     // Offscreen contexts usually share a surface for the default frame buffer
     // since they aren't rendering to it. Setting any of the following
     // attributes causes creation of a custom surface owned by the context.
@@ -530,8 +532,12 @@ class BLINK_PLATFORM_EXPORT Platform {
     bool support_antialias = false;
     bool support_stencil = false;
 
-    // Offscreen contexts created for WebGL should not need the RasterInterface.
+    // Offscreen contexts created for WebGL should not need the RasterInterface
+    // or GrContext. If either of these are set to false, it will not be
+    // possible to use the corresponding interface for the lifetime of the
+    // context.
     bool enable_raster_interface = false;
+    bool support_grcontext = false;
   };
   struct GraphicsInfo {
     unsigned vendor_id = 0;
@@ -753,7 +759,6 @@ class BLINK_PLATFORM_EXPORT Platform {
   virtual ~Platform();
 
   WebThread* main_thread_;
-  std::unique_ptr<WebThread> file_thread_;
 };
 
 }  // namespace blink

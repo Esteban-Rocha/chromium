@@ -38,6 +38,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_runner_util.h"
+#include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -158,7 +159,7 @@
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_util.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
@@ -677,17 +678,6 @@ class MHTMLPartsGenerationDelegate
     return false;
   }
 
-  WebString GetContentID(WebFrame* frame) override {
-    int routing_id = RenderFrame::GetRoutingIdForWebFrame(frame);
-
-    auto it = params_.frame_routing_id_to_content_id.find(routing_id);
-    if (it == params_.frame_routing_id_to_content_id.end())
-      return WebString();
-
-    const std::string& content_id = it->second;
-    return WebString::FromUTF8(content_id);
-  }
-
   blink::WebFrameSerializerCacheControlPolicy CacheControlPolicy() override {
     return params_.mhtml_cache_control_policy;
   }
@@ -862,7 +852,7 @@ NOINLINE void ExhaustMemory() {
   } while (ptr);
 }
 
-#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
+#if defined(ADDRESS_SANITIZER)
 NOINLINE void MaybeTriggerAsanError(const GURL& url) {
   // NOTE(rogerm): We intentionally perform an invalid heap access here in
   //     order to trigger an Address Sanitizer (ASAN) error report.
@@ -878,7 +868,7 @@ NOINLINE void MaybeTriggerAsanError(const GURL& url) {
     LOG(ERROR) << "Intentionally causing ASAN heap use-after-free"
                << " because user navigated to " << url.spec();
     base::debug::AsanHeapUseAfterFree();
-#if defined(SYZYASAN)
+#if defined(OS_WIN)
   } else if (url == kChromeUICrashCorruptHeapBlockURL) {
     LOG(ERROR) << "Intentionally causing ASAN corrupt heap block"
                << " because user navigated to " << url.spec();
@@ -887,15 +877,10 @@ NOINLINE void MaybeTriggerAsanError(const GURL& url) {
     LOG(ERROR) << "Intentionally causing ASAN corrupt heap"
                << " because user navigated to " << url.spec();
     base::debug::AsanCorruptHeap();
-  } else if (url == kChromeUICrashDcheckURL) {
-    LOG(ERROR) << "Intentionally DCHECKING because user navigated to "
-               << url.spec();
-
-    DCHECK(false) << "Intentional DCHECK.";
-#endif
+#endif  // OS_WIN
   }
 }
-#endif  // ADDRESS_SANITIZER || SYZYASAN
+#endif  // ADDRESS_SANITIZER
 
 // Returns true if the URL is a debug URL, false otherwise. These URLs do not
 // commit, though they are intentionally left in the address bar above the
@@ -942,9 +927,18 @@ void HandleChromeDebugURL(const GURL& url) {
     CHECK(false);
   }
 
-#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
+#if DCHECK_IS_ON()
+  if (url == kChromeUICrashDcheckURL) {
+    LOG(ERROR) << "Intentionally causing DCHECK because user navigated to "
+               << url.spec();
+
+    DCHECK(false) << "Intentional DCHECK.";
+  }
+#endif
+
+#if defined(ADDRESS_SANITIZER)
   MaybeTriggerAsanError(url);
-#endif  // ADDRESS_SANITIZER || SYZYASAN
+#endif  // ADDRESS_SANITIZER
 }
 
 struct RenderFrameImpl::PendingFileChooser {
@@ -1802,6 +1796,7 @@ bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_SetFocusedFrame, OnSetFocusedFrame)
     IPC_MESSAGE_HANDLER(FrameMsg_SetTextTrackSettings,
                         OnTextTrackSettingsChanged)
+    IPC_MESSAGE_HANDLER(FrameMsg_CheckCompleted, OnCheckCompleted)
     IPC_MESSAGE_HANDLER(FrameMsg_PostMessageEvent, OnPostMessageEvent)
     IPC_MESSAGE_HANDLER(FrameMsg_ReportContentSecurityPolicyViolation,
                         OnReportContentSecurityPolicyViolation)
@@ -1877,7 +1872,9 @@ void RenderFrameImpl::BindFrame(
     const service_manager::BindSourceInfo& browser_info,
     mojom::FrameRequest request) {
   browser_info_ = browser_info;
-  frame_binding_.Bind(std::move(request));
+  frame_binding_.Bind(
+      std::move(request),
+      frame_ ? GetTaskRunner(blink::TaskType::kInternalIPC) : nullptr);
 }
 
 void RenderFrameImpl::BindFrameBindingsControl(
@@ -2498,6 +2495,10 @@ void RenderFrameImpl::OnTextTrackSettingsChanged(
       WebString::FromUTF8(params.text_track_text_size));
 }
 
+void RenderFrameImpl::OnCheckCompleted() {
+  frame_->CheckCompleted();
+}
+
 void RenderFrameImpl::OnPostMessageEvent(
     const FrameMsg_PostMessage_Params& params) {
   // Find the source frame if it exists.
@@ -2527,7 +2528,7 @@ void RenderFrameImpl::OnPostMessageEvent(
     converter.SetDateAllowed(true);
     converter.SetRegExpAllowed(true);
     base::string16 data;
-    data.resize(params.message->data.encoded_message.length() /
+    data.resize(params.message->data.encoded_message.size() /
                 sizeof(base::char16));
     std::memcpy(&data[0], params.message->data.encoded_message.data(),
                 data.length() * sizeof(base::char16));
@@ -2919,13 +2920,14 @@ RenderFrameImpl::GetRemoteAssociatedInterfaces() {
       mojom::AssociatedInterfaceProviderAssociatedPtr remote_interfaces;
       thread->GetRemoteRouteProvider()->GetRoute(
           routing_id_, mojo::MakeRequest(&remote_interfaces));
-      remote_associated_interfaces_.reset(
-          new AssociatedInterfaceProviderImpl(std::move(remote_interfaces)));
+      remote_associated_interfaces_.reset(new AssociatedInterfaceProviderImpl(
+          std::move(remote_interfaces),
+          GetTaskRunner(blink::TaskType::kInternalIPC)));
     } else {
       // In some tests the thread may be null,
       // so set up a self-contained interface provider instead.
-      remote_associated_interfaces_.reset(
-          new AssociatedInterfaceProviderImpl());
+      remote_associated_interfaces_.reset(new AssociatedInterfaceProviderImpl(
+          GetTaskRunner(blink::TaskType::kInternalIPC)));
     }
   }
   return remote_associated_interfaces_.get();
@@ -3743,7 +3745,8 @@ blink::WebLocalFrame* RenderFrameImpl::CreateChildFrame(
   service_manager::mojom::InterfaceProviderPtr child_interface_provider;
   child_interface_provider.Bind(
       service_manager::mojom::InterfaceProviderPtrInfo(
-          mojo::ScopedMessagePipeHandle(child_interface_provider_handle), 0u));
+          mojo::ScopedMessagePipeHandle(child_interface_provider_handle), 0u),
+      GetTaskRunner(blink::TaskType::kInternalIPC));
 
   // This method is always called by local frames, never remote frames.
 
@@ -4141,6 +4144,8 @@ void RenderFrameImpl::DidStartProvisionalLoad(
     info.source_location = pending_navigation_info_->source_location;
     info.devtools_initiator_info =
         pending_navigation_info_->devtools_initiator_info;
+    info.blob_url_token =
+        pending_navigation_info_->blob_url_token.PassInterface().PassHandle();
 
     pending_navigation_info_.reset(nullptr);
     BeginNavigation(info);
@@ -4425,6 +4430,17 @@ void RenderFrameImpl::DidReceiveTitle(const blink::WebString& title,
     base::string16 shortened_title = title16.substr(0, kMaxTitleChars);
     Send(new FrameHostMsg_UpdateTitle(routing_id_,
                                       shortened_title, direction));
+  } else {
+    // Set process title for sub-frames in traces.
+    GURL loading_url = GetLoadingUrl();
+    if (!loading_url.host().empty() &&
+        loading_url.scheme() != url::kFileScheme) {
+      std::string subframe_title = "Subframe: " + loading_url.scheme() +
+                                   url::kStandardSchemeSeparator +
+                                   loading_url.host();
+      base::trace_event::TraceLog::GetInstance()->UpdateProcessLabel(
+          routing_id_, subframe_title);
+    }
   }
 
   // Also check whether we have new encoding name.
@@ -5126,6 +5142,12 @@ void RenderFrameImpl::DidObserveNewFeatureUsage(
     blink::mojom::WebFeature feature) {
   for (auto& observer : observers_)
     observer.DidObserveNewFeatureUsage(feature);
+}
+
+void RenderFrameImpl::DidObserveNewCssPropertyUsage(int css_property,
+                                                    bool is_animated) {
+  for (auto& observer : observers_)
+    observer.DidObserveNewCssPropertyUsage(css_property, is_animated);
 }
 
 bool RenderFrameImpl::ShouldTrackUseCounter(const blink::WebURL& url) {
@@ -6297,8 +6319,8 @@ void RenderFrameImpl::OnSerializeAsMHTML(
       main_thread_use_time);
 
   if (save_status == MhtmlSaveStatus::SUCCESS && has_some_data) {
-    base::PostTaskAndReplyWithResult(
-        RenderThreadImpl::current()->GetFileThreadTaskRunner().get(), FROM_HERE,
+    base::PostTaskWithTraitsAndReplyWithResult(
+        FROM_HERE, {base::MayBlock()},
         base::Bind(&WriteMHTMLToDisk, base::Passed(&mhtml_contents),
                    base::Passed(&file)),
         base::Bind(&RenderFrameImpl::OnWriteMHTMLToDiskComplete,
@@ -6946,6 +6968,15 @@ void RenderFrameImpl::BeginNavigation(const NavigationPolicyInfo& info) {
   if (info.is_client_redirect)
     client_side_redirect_url = frame_->GetDocument().Url();
 
+  blink::mojom::BlobURLTokenPtr blob_url_token;
+  if (info.blob_url_token.is_valid()) {
+    blink::mojom::BlobURLTokenPtr token(blink::mojom::BlobURLTokenPtrInfo(
+        mojo::ScopedMessagePipeHandle(info.blob_url_token.get()),
+        blink::mojom::BlobURLToken::Version_));
+    token->Clone(MakeRequest(&blob_url_token));
+    ignore_result(token.PassInterface().PassHandle().release());
+  }
+
   int load_flags = GetLoadFlagsForWebURLRequest(info.url_request);
   std::unique_ptr<base::DictionaryValue> initiator =
       GetDevToolsInitiator(info.devtools_initiator_info);
@@ -6959,7 +6990,8 @@ void RenderFrameImpl::BeginNavigation(const NavigationPolicyInfo& info) {
           initiator_origin, client_side_redirect_url, std::move(initiator));
 
   GetFrameHost()->BeginNavigation(MakeCommonNavigationParams(info, load_flags),
-                                  std::move(begin_navigation_params));
+                                  std::move(begin_navigation_params),
+                                  std::move(blob_url_token));
 }
 
 void RenderFrameImpl::LoadDataURL(
@@ -7544,7 +7576,17 @@ RenderFrameImpl::PendingNavigationInfo::PendingNavigationInfo(
       triggering_event_info(info.triggering_event_info),
       form(info.form),
       source_location(info.source_location),
-      devtools_initiator_info(info.devtools_initiator_info) {}
+      devtools_initiator_info(info.devtools_initiator_info) {
+  if (info.blob_url_token.is_valid()) {
+    blink::mojom::BlobURLTokenPtr token(blink::mojom::BlobURLTokenPtrInfo(
+        mojo::ScopedMessagePipeHandle(info.blob_url_token.get()),
+        blink::mojom::BlobURLToken::Version_));
+    token->Clone(MakeRequest(&blob_url_token));
+    ignore_result(token.PassInterface().PassHandle().release());
+  }
+}
+
+RenderFrameImpl::PendingNavigationInfo::~PendingNavigationInfo() = default;
 
 void RenderFrameImpl::BindWidget(mojom::WidgetRequest request) {
   GetRenderWidget()->SetWidgetBinding(std::move(request));

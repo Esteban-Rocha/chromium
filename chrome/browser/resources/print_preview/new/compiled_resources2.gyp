@@ -18,6 +18,7 @@
         'scaling_settings',
         'other_options_settings',
         'advanced_options_settings',
+        'link_container',
         'preview_area',
         'model',
         'state',
@@ -25,6 +26,7 @@
         '../compiled_resources2.gyp:native_layer',
         '../data/compiled_resources2.gyp:destination',
         '../data/compiled_resources2.gyp:destination_store',
+        '../data/compiled_resources2.gyp:invitation_store',
         '../data/compiled_resources2.gyp:document_info',
         '../data/compiled_resources2.gyp:measurement_system',
         '../data/compiled_resources2.gyp:user_info',
@@ -50,6 +52,7 @@
       'dependencies': [
         '../data/compiled_resources2.gyp:destination',
         '../data/compiled_resources2.gyp:destination_store',
+        '../data/compiled_resources2.gyp:invitation_store',
         '../data/compiled_resources2.gyp:user_info',
         'destination_dialog',
         'state',
@@ -60,6 +63,7 @@
     {
       'target_name': 'pages_settings',
       'dependencies': [
+        'input_behavior',
         'settings_behavior',
         '../data/compiled_resources2.gyp:document_info',
         '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:load_time_data',
@@ -141,6 +145,7 @@
     {
       'target_name': 'number_settings_section',
       'dependencies': [
+        'input_behavior',
       ],
       'includes': ['../../../../../third_party/closure_compiler/compile_js2.gypi'],
     },
@@ -156,6 +161,22 @@
     {
       'target_name': 'settings_behavior',
       'dependencies': [
+        '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:assert',
+        '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:cr',
+      ],
+      'includes': ['../../../../../third_party/closure_compiler/compile_js2.gypi'],
+    },
+    {
+      'target_name': 'input_behavior',
+      'dependencies': [
+        '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:cr',
+      ],
+      'includes': ['../../../../../third_party/closure_compiler/compile_js2.gypi'],
+    },
+    {
+      'target_name': 'link_container',
+      'dependencies': [
+        '../data/compiled_resources2.gyp:destination',
         '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:assert',
         '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:cr',
       ],
@@ -203,6 +224,7 @@
         '../data/compiled_resources2.gyp:coordinate2d',
         '../data/compiled_resources2.gyp:margins',
         '../data/compiled_resources2.gyp:size',
+        'input_behavior',
       ],
       'includes': ['../../../../../third_party/closure_compiler/compile_js2.gypi'],
     },
@@ -210,9 +232,11 @@
       'target_name': 'destination_dialog',
       'dependencies': [
         '<(DEPTH)/ui/webui/resources/cr_elements/cr_dialog/compiled_resources2.gyp:cr_dialog',
-        '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:load_time_data',
+        '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:i18n_behavior',
         '../data/compiled_resources2.gyp:destination',
         '../data/compiled_resources2.gyp:destination_store',
+        '../data/compiled_resources2.gyp:invitation',
+        '../data/compiled_resources2.gyp:invitation_store',
         '../data/compiled_resources2.gyp:user_info',
         'destination_list',
         'print_preview_search_box',

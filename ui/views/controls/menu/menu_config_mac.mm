@@ -10,17 +10,10 @@
 
 namespace views {
 
-namespace {
-
-// The height of the menu separator in pixels.
-const int kMenuSeparatorHeight = 2;
-const int kMenuSeparatorHeightMavericks = 1;
-
-}  // namespace
-
 void MenuConfig::Init() {
   font_list = gfx::FontList(gfx::Font([NSFont menuFontOfSize:0.0]));
   menu_vertical_border_size = 4;
+  menu_horizontal_border_size = 0;
   item_top_margin = item_no_icon_top_margin = 1;
   item_bottom_margin = item_no_icon_bottom_margin = 1;
   item_left_margin = 2;
@@ -31,8 +24,7 @@ void MenuConfig::Init() {
   separator_height = 13;
   separator_upper_height = 7;
   separator_lower_height = 6;
-  separator_thickness = base::mac::IsOS10_9() ? kMenuSeparatorHeightMavericks
-                                              : kMenuSeparatorHeight;
+  separator_thickness = 2;
   align_arrow_and_shortcut = true;
   icons_in_label = true;
   check_selected_combobox_item = true;

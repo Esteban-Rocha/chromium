@@ -19,8 +19,8 @@
 #include "base/single_thread_task_runner.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
-#include "content/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/renderer/fixed_received_data.h"
 #include "content/public/renderer/request_peer.h"
 #include "content/renderer/loader/request_extra_data.h"
@@ -77,7 +77,8 @@ class TestResourceDispatcher : public ResourceDispatcher {
       SyncLoadResponse* response,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-      double timeout) override {
+      double timeout,
+      blink::mojom::BlobRegistryPtrInfo download_to_blob_registry) override {
     *response = std::move(sync_load_response_);
   }
 
@@ -87,6 +88,7 @@ class TestResourceDispatcher : public ResourceDispatcher {
       scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
       bool is_sync,
+      bool pass_response_pipe_to_peer,
       std::unique_ptr<RequestPeer> peer,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
@@ -699,11 +701,14 @@ TEST_F(WebURLLoaderImplTest, ResponseCert) {
   base::StringPiece cert1_der =
       net::x509_util::CryptoBufferAsStringPiece(certs[1]->cert_buffer());
 
-  network::ResourceResponseInfo info;
+  net::SSLInfo ssl_info;
+  ssl_info.cert =
+      net::X509Certificate::CreateFromDERCertChain({cert0_der, cert1_der});
   net::SSLConnectionStatusSetVersion(net::SSL_CONNECTION_VERSION_TLS1_2,
-                                     &info.ssl_connection_status);
-  info.certificate.emplace_back(cert0_der);
-  info.certificate.emplace_back(cert1_der);
+                                     &ssl_info.connection_status);
+
+  network::ResourceResponseInfo info;
+  info.ssl_info = ssl_info;
   blink::WebURLResponse web_url_response;
   WebURLLoaderImpl::PopulateURLResponse(url, info, &web_url_response, true);
 
@@ -735,10 +740,12 @@ TEST_F(WebURLLoaderImplTest, ResponseCertWithNoSANs) {
   base::StringPiece cert0_der =
       net::x509_util::CryptoBufferAsStringPiece(certs[0]->cert_buffer());
 
-  network::ResourceResponseInfo info;
+  net::SSLInfo ssl_info;
   net::SSLConnectionStatusSetVersion(net::SSL_CONNECTION_VERSION_TLS1_2,
-                                     &info.ssl_connection_status);
-  info.certificate.emplace_back(cert0_der);
+                                     &ssl_info.connection_status);
+  ssl_info.cert = certs[0];
+  network::ResourceResponseInfo info;
+  info.ssl_info = ssl_info;
   blink::WebURLResponse web_url_response;
   WebURLLoaderImpl::PopulateURLResponse(url, info, &web_url_response, true);
 
@@ -781,13 +788,15 @@ TEST_F(WebURLLoaderImplTest, SyncLengths) {
   int64_t encoded_data_length = 0;
   int64_t encoded_body_length = 0;
   base::Optional<int64_t> downloaded_file_length;
+  blink::WebBlobInfo downloaded_blob;
   client()->loader()->LoadSynchronously(
       request, response, error, data, encoded_data_length, encoded_body_length,
-      downloaded_file_length);
+      downloaded_file_length, downloaded_blob);
 
   EXPECT_EQ(kEncodedBodyLength, encoded_body_length);
   EXPECT_EQ(kEncodedDataLength, encoded_data_length);
   EXPECT_FALSE(downloaded_file_length);
+  EXPECT_TRUE(downloaded_blob.Uuid().IsNull());
 }
 
 }  // namespace

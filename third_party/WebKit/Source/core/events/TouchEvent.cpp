@@ -261,10 +261,9 @@ void TouchEvent::preventDefault() {
   UIEventWithKeyState::preventDefault();
 
   // A common developer error is to wait too long before attempting to stop
-  // scrolling by consuming a touchmove event. Generate a warning if this
+  // scrolling by consuming a touchmove event. Generate an error if this
   // event is uncancelable.
-  MessageSource message_source = kJSMessageSource;
-  String warning_message;
+  String message;
   switch (HandlingPassive()) {
     case PassiveMode::kNotPassive:
     case PassiveMode::kNotPassiveDefault:
@@ -286,18 +285,17 @@ void TouchEvent::preventDefault() {
                 WebFeature::
                     kUncancelableTouchEventDueToMainThreadResponsivenessPreventDefaulted);
           }
-          message_source = kInterventionMessageSource;
-          warning_message =
+          message =
               "Ignored attempt to cancel a " + type() +
               " event with cancelable=false. This event was forced to be "
               "non-cancellable because the page was too busy to handle the "
               "event promptly.";
         } else {
           // Non blocking for any other reason.
-          warning_message = "Ignored attempt to cancel a " + type() +
-                            " event with cancelable=false, for example "
-                            "because scrolling is in progress and "
-                            "cannot be interrupted.";
+          message = "Ignored attempt to cancel a " + type() +
+                    " event with cancelable=false, for example "
+                    "because scrolling is in progress and "
+                    "cannot be interrupted.";
         }
       }
       break;
@@ -306,8 +304,7 @@ void TouchEvent::preventDefault() {
       // an author may use touch action but call preventDefault for interop with
       // browsers that don't support touch-action.
       if (current_touch_action_ == TouchAction::kTouchActionAuto) {
-        message_source = kInterventionMessageSource;
-        warning_message =
+        message =
             "Unable to preventDefault inside passive event listener due to "
             "target being treated as passive. See "
             "https://www.chromestatus.com/features/5093566007214080";
@@ -317,10 +314,9 @@ void TouchEvent::preventDefault() {
       break;
   }
 
-  if (!warning_message.IsEmpty() && view() && view()->IsLocalDOMWindow() &&
+  if (!message.IsEmpty() && view() && view()->IsLocalDOMWindow() &&
       view()->GetFrame()) {
-    Intervention::GenerateReport(ToLocalDOMWindow(view())->GetFrame(),
-                                 warning_message);
+    Intervention::GenerateReport(ToLocalDOMWindow(view())->GetFrame(), message);
   }
 
   if ((type() == EventTypeNames::touchstart ||

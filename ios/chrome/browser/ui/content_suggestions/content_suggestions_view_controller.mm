@@ -19,7 +19,6 @@
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_commands.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_header_synchronizing.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_layout.h"
-#import "ios/chrome/browser/ui/content_suggestions/content_suggestions_layout_handset.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_metrics_recording.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_view_controller_audience.h"
 #import "ios/chrome/browser/ui/content_suggestions/ntp_home_constant.h"
@@ -73,12 +72,7 @@ BOOL ShouldCellsBeFullWidth(UITraitCollection* collection) {
 #pragma mark - Lifecycle
 
 - (instancetype)initWithStyle:(CollectionViewControllerStyle)style {
-  UICollectionViewLayout* layout = nil;
-  if (IsIPadIdiom()) {
-    layout = [[ContentSuggestionsLayout alloc] init];
-  } else {
-    layout = [[ContentSuggestionsLayoutHandset alloc] init];
-  }
+  UICollectionViewLayout* layout = [[ContentSuggestionsLayout alloc] init];
   self = [super initWithLayout:layout style:style];
   if (self) {
     _collectionUpdater = [[ContentSuggestionsCollectionUpdater alloc] init];
@@ -220,9 +214,7 @@ BOOL ShouldCellsBeFullWidth(UITraitCollection* collection) {
 - (void)viewDidLoad {
   [super viewDidLoad];
 
-  if (@available(iOS 10, *)) {
-    self.collectionView.prefetchingEnabled = NO;
-  }
+  self.collectionView.prefetchingEnabled = NO;
   if (@available(iOS 11, *)) {
     // Use automatic behavior as each element takes the safe area into account
     // separately and the overscroll action does not work well with content
@@ -254,12 +246,19 @@ BOOL ShouldCellsBeFullWidth(UITraitCollection* collection) {
   longPressRecognizer.delegate = self;
   [self.collectionView addGestureRecognizer:longPressRecognizer];
 
-  if (!IsIPadIdiom()) {
-    self.overscrollActionsController = [[OverscrollActionsController alloc]
-        initWithScrollView:self.collectionView];
-    [self.overscrollActionsController
-        setStyle:OverscrollStyle::NTP_NON_INCOGNITO];
-    self.overscrollActionsController.delegate = self.overscrollDelegate;
+  self.overscrollActionsController = [[OverscrollActionsController alloc]
+      initWithScrollView:self.collectionView];
+  [self.overscrollActionsController
+      setStyle:OverscrollStyle::NTP_NON_INCOGNITO];
+  self.overscrollActionsController.delegate = self.overscrollDelegate;
+  [self updateOverscrollActionsState];
+}
+
+- (void)updateOverscrollActionsState {
+  if (IsRegularXRegularSizeClass(self)) {
+    [self.overscrollActionsController disableOverscrollActions];
+  } else {
+    [self.overscrollActionsController enableOverscrollActions];
   }
 }
 
@@ -312,6 +311,11 @@ BOOL ShouldCellsBeFullWidth(UITraitCollection* collection) {
   } else {
     self.styler.cellStyle = MDCCollectionViewCellStyleCard;
   }
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
+  [super traitCollectionDidChange:previousTraitCollection];
+  [self updateOverscrollActionsState];
 }
 
 #pragma mark - UICollectionViewDelegate
@@ -627,8 +631,8 @@ BOOL ShouldCellsBeFullWidth(UITraitCollection* collection) {
   CGFloat toolbarHeight = ntp_header::ToolbarHeight();
   CGFloat targetY = targetContentOffset->y;
 
-  if (IsIPadIdiom() || targetY <= 0 || targetY >= toolbarHeight ||
-      !self.containsToolbar)
+  if (content_suggestions::IsRegularXRegularSizeClass(self) || targetY <= 0 ||
+      targetY >= toolbarHeight || !self.containsToolbar)
     return;
 
   CGFloat xOffset = self.collectionView.contentOffset.x;
@@ -727,7 +731,7 @@ BOOL ShouldCellsBeFullWidth(UITraitCollection* collection) {
       break;
   }
 
-  if (IsIPadIdiom())
+  if (content_suggestions::IsRegularXRegularSizeClass(self))
     [self.headerSynchronizer unfocusOmnibox];
 }
 

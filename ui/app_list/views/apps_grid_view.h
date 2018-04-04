@@ -165,6 +165,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Stops the timer that triggers a page flip during a drag.
   void StopPageFlipTimer();
 
+  // Returns the ideal bounds of an AppListItemView in AppsGridView coordinates.
+  const gfx::Rect& GetIdealBounds(AppListItemView* view) const;
+
   // Returns the item view of the item at |index|.
   AppListItemView* GetItemViewAt(int index) const;
 
@@ -422,6 +425,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Returns true if |point| lies within the bounds of this grid view plus a
   // buffer area surrounding it that can trigger page flip.
   bool IsPointWithinPageFlipBuffer(const gfx::Point& point) const;
+
+  // Returns whether |point| is in the bottom drag buffer, and not over the
+  // shelf.
+  bool IsPointWithinBottomDragBuffer(const gfx::Point& point) const;
 
   // Overridden from views::ButtonListener:
   void ButtonPressed(views::Button* sender, const ui::Event& event) override;

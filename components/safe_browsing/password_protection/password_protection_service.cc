@@ -98,13 +98,13 @@ const char kSyncPasswordChromeSettingsHistogram[] =
 
 PasswordProtectionService::PasswordProtectionService(
     const scoped_refptr<SafeBrowsingDatabaseManager>& database_manager,
-    scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     HistoryService* history_service,
     HostContentSettingsMap* host_content_settings_map)
     : stored_verdict_count_password_on_focus_(-1),
       stored_verdict_count_password_entry_(-1),
       database_manager_(database_manager),
-      request_context_getter_(request_context_getter),
+      url_loader_factory_(url_loader_factory),
       history_service_observer_(this),
       content_settings_(host_content_settings_map),
       weak_factory_(this) {
@@ -841,16 +841,12 @@ bool PasswordProtectionService::IsModalWarningShowingInWebContents(
 
 bool PasswordProtectionService::IsWarningEnabled() {
   return base::FeatureList::IsEnabled(kGoogleBrandedPhishingWarning) &&
-         GetSyncAccountType() !=
-             LoginReputationClientRequest::PasswordReuseEvent::NOT_SIGNED_IN &&
          GetPasswordProtectionTriggerPref(
              prefs::kPasswordProtectionWarningTrigger) == PHISHING_REUSE;
 }
 
 bool PasswordProtectionService::IsEventLoggingEnabled() {
   return base::FeatureList::IsEnabled(kGaiaPasswordReuseReporting) &&
-         GetSyncAccountType() !=
-             LoginReputationClientRequest::PasswordReuseEvent::NOT_SIGNED_IN &&
          GetPasswordProtectionTriggerPref(
              prefs::kPasswordProtectionRiskTrigger) == PHISHING_REUSE;
 }

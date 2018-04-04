@@ -72,7 +72,8 @@ class DesktopCommonSystemHealth(_CommonSystemHealthBenchmark):
     return 'system_health.common_desktop'
 
 
-@benchmark.Owner(emails=['charliea@chromium.org', 'nednguyen@chromium.org'])
+@benchmark.Owner(emails=['charliea@chromium.org', 'nednguyen@chromium.org',
+                         'perezju@chromium.org'])
 class MobileCommonSystemHealth(_CommonSystemHealthBenchmark):
   """Mobile Chrome Energy System Health Benchmark."""
   PLATFORM = 'mobile'
@@ -125,6 +126,14 @@ class DesktopMemorySystemHealth(_MemorySystemHealthBenchmark):
   @classmethod
   def Name(cls):
     return 'system_health.memory_desktop'
+
+  def SetExtraBrowserOptions(self, options):
+    super(DesktopMemorySystemHealth, self).SetExtraBrowserOptions(
+          options)
+    # Heap profiling is disabled because of crbug.com/757847.
+    #options.AppendExtraBrowserArgs([
+    #  '--enable-heap-profiling=native',
+    #])
 
 
 @benchmark.Owner(emails=['perezju@chromium.org'])

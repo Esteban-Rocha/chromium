@@ -118,11 +118,13 @@ _READELF_SIZES_METRICS = {
   'text': ['.text'],
   'data': ['.data', '.rodata', '.data.rel.ro', '.data.rel.ro.local'],
   'relocations': ['.rel.dyn', '.rel.plt', '.rela.dyn', '.rela.plt'],
-  'unwind': ['.ARM.extab', '.ARM.exidx', '.eh_frame', '.eh_frame_hdr',],
+  'unwind': ['.ARM.extab', '.ARM.exidx', '.eh_frame', '.eh_frame_hdr',
+             '.ARM.exidxsentinel_section_after_text'],
   'symbols': ['.dynsym', '.dynstr', '.dynamic', '.shstrtab', '.got', '.plt',
-              '.got.plt', '.hash'],
+              '.got.plt', '.hash', '.gnu.hash'],
   'bss': ['.bss'],
   'other': ['.init_array', '.fini_array', '.comment', '.note.gnu.gold-version',
+            '.note.crashpad.info', '.note.android.ident',
             '.ARM.attributes', '.note.gnu.build-id', '.gnu.version',
             '.gnu.version_d', '.gnu.version_r', '.interp', '.gcc_except_table']
 }
@@ -370,6 +372,7 @@ def PrintApkAnalysis(apk_filename, tool_prefix, out_dir, chartjson=None):
   metadata = make_group('Package metadata')
   unknown = make_group('Unknown files')
   notices = make_group('licenses.notice file')
+  unwind_cfi = make_group('unwind_cfi (dev and canary only)')
 
   apk = zipfile.ZipFile(apk_filename, 'r')
   try:
@@ -412,6 +415,8 @@ def PrintApkAnalysis(apk_filename, tool_prefix, out_dir, chartjson=None):
       metadata.AddZipInfo(member)
     elif filename.endswith('.notice'):
       notices.AddZipInfo(member)
+    elif filename.startswith('assets/unwind_cfi'):
+      unwind_cfi.AddZipInfo(member)
     else:
       unknown.AddZipInfo(member)
 
@@ -492,6 +497,8 @@ def PrintApkAnalysis(apk_filename, tool_prefix, out_dir, chartjson=None):
 
   # Main metric that we want to monitor for jumps.
   normalized_apk_size = total_apk_size
+  # unwind_cfi exists only in dev, canary, and non-channel builds.
+  normalized_apk_size -= unwind_cfi.ComputeZippedSize()
   # Always look at uncompressed .so.
   normalized_apk_size -= native_code.ComputeZippedSize()
   normalized_apk_size += native_code.ComputeUncompressedSize()

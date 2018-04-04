@@ -179,14 +179,6 @@ SourceEventType EventTypeToLatencySourceEventType(EventType type) {
   return SourceEventType::UNKNOWN;
 }
 
-bool IsX11SendEventTrue(const PlatformEvent& event) {
-#if defined(USE_X11)
-  return event && event->xany.send_event;
-#else
-  return false;
-#endif
-}
-
 #if defined(USE_X11)
 bool X11EventHasNonStandardState(const PlatformEvent& event) {
   const unsigned int kAllStateMask =
@@ -640,9 +632,8 @@ MouseEvent::MouseEvent(const MouseEvent& other) = default;
 MouseEvent::~MouseEvent() = default;
 
 // static
-bool MouseEvent::IsRepeatedClickEvent(
-    const MouseEvent& event1,
-    const MouseEvent& event2) {
+bool MouseEvent::IsRepeatedClickEvent(const MouseEvent& event1,
+                                      const MouseEvent& event2) {
   // These values match the Windows defaults.
   static const int kDoubleClickTimeMS = 500;
   static const int kDoubleClickWidth = 4;
@@ -682,7 +673,6 @@ int MouseEvent::GetRepeatCount(const MouseEvent& event) {
     if (event.type() == ui::ET_MOUSE_RELEASED) {
       if (event.changed_button_flags() ==
               last_click_event_->changed_button_flags()) {
-        last_click_complete_ = true;
         return last_click_event_->GetClickCount();
       } else {
         // If last_click_event_ has changed since this button was pressed
@@ -690,18 +680,15 @@ int MouseEvent::GetRepeatCount(const MouseEvent& event) {
         return click_count;
       }
     }
-    if (event.time_stamp() != last_click_event_->time_stamp())
-      last_click_complete_ = true;
-    if (!last_click_complete_ ||
-        IsX11SendEventTrue(event.native_event())) {
-      click_count = last_click_event_->GetClickCount();
-    } else if (IsRepeatedClickEvent(*last_click_event_, event)) {
+    // Return the prior click count and do not update |last_click_event_| when
+    // re-processing a native event, or when proccesing a reposted event.
+    if (event.time_stamp() == last_click_event_->time_stamp())
+      return last_click_event_->GetClickCount();
+    if (IsRepeatedClickEvent(*last_click_event_, event))
       click_count = last_click_event_->GetClickCount() + 1;
-    }
     delete last_click_event_;
   }
   last_click_event_ = new MouseEvent(event);
-  last_click_complete_ = false;
   if (click_count > 3)
     click_count = 3;
   last_click_event_->SetClickCount(click_count);
@@ -712,13 +699,11 @@ void MouseEvent::ResetLastClickForTest() {
   if (last_click_event_) {
     delete last_click_event_;
     last_click_event_ = NULL;
-    last_click_complete_ = false;
   }
 }
 
 // static
 MouseEvent* MouseEvent::last_click_event_ = NULL;
-bool MouseEvent::last_click_complete_ = false;
 
 int MouseEvent::GetClickCount() const {
   if (type() != ET_MOUSE_PRESSED && type() != ET_MOUSE_RELEASED)

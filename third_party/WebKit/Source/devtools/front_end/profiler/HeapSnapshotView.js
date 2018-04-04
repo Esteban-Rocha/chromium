@@ -167,6 +167,8 @@ Profiler.HeapSnapshotView = class extends UI.SimpleView {
     this._populate();
     this._searchThrottler = new Common.Throttler(0);
 
+    this.element.addEventListener('contextmenu', this._handleContextMenuEvent.bind(this), true);
+
     for (const existingProfile of this._profiles())
       existingProfile.addEventListener(Profiler.ProfileHeader.Events.ProfileTitleChanged, this._updateControls, this);
   }
@@ -298,6 +300,16 @@ Profiler.HeapSnapshotView = class extends UI.SimpleView {
   }
 
   /**
+   * @param {!Event} event
+   */
+  _handleContextMenuEvent(event) {
+    const contextMenu = new UI.ContextMenu(event);
+    if (this._dataGrid)
+      this._dataGrid.populateContextMenu(contextMenu, event);
+    contextMenu.show();
+  }
+
+  /**
    * @override
    * @param {!UI.SearchableView.SearchConfig} searchConfig
    * @param {boolean} shouldJump
@@ -342,7 +354,7 @@ Profiler.HeapSnapshotView = class extends UI.SimpleView {
     this._searchableView.updateSearchMatchesCount(this._searchResults.length);
     if (this._searchResults.length)
       this._currentSearchResultIndex = nextQuery.jumpBackwards ? this._searchResults.length - 1 : 0;
-    return this._jumpToSearchResult(this._currentSearchResultIndex);
+    await this._jumpToSearchResult(this._currentSearchResultIndex);
   }
 
   /**
@@ -372,6 +384,8 @@ Profiler.HeapSnapshotView = class extends UI.SimpleView {
    */
   async _jumpToSearchResult(searchResultIndex) {
     this._searchableView.updateCurrentMatchIndex(searchResultIndex);
+    if (searchResultIndex === -1)
+      return;
     const node = await this._dataGrid.revealObjectByHeapSnapshotId(String(this._searchResults[searchResultIndex]));
     this._selectRevealedNode(node);
   }
@@ -423,15 +437,6 @@ Profiler.HeapSnapshotView = class extends UI.SimpleView {
    */
   _profiles() {
     return this._profile.profileType().getProfiles();
-  }
-
-  /**
-   * @param {!UI.ContextMenu} contextMenu
-   * @param {!Event} event
-   */
-  populateContextMenu(contextMenu, event) {
-    if (this._dataGrid)
-      this._dataGrid.populateContextMenu(contextMenu, event);
   }
 
   /**

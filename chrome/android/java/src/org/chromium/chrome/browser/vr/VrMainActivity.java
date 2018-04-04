@@ -15,6 +15,7 @@ import org.chromium.base.TraceEvent;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.LaunchIntentDispatcher;
 import org.chromium.chrome.browser.document.ChromeLauncherActivity;
+import org.chromium.chrome.browser.util.IntentUtils;
 import org.chromium.chrome.browser.vr_shell.VrIntentUtils;
 import org.chromium.chrome.browser.vr_shell.VrShellDelegate;
 
@@ -38,6 +39,11 @@ public class VrMainActivity extends Activity {
         try {
             super.onCreate(savedInstanceState);
 
+            if (!VrShellDelegate.isDaydreamReadyDevice(this)) {
+                finish();
+                return;
+            }
+
             // If the launcher was launched from a 2D context (without calling
             // DaydreamApi#launchInVr), then we need to relaunch the launcher in VR to allow
             // downstream Activities to make assumptions about whether they're in VR or not, and
@@ -54,10 +60,15 @@ public class VrMainActivity extends Activity {
             // The check for relaunching does not work properly if the DON flow is skipped, which
             // is the case during tests. So, allow intents to specify that relaunching is not
             // necessary.
-            if (getIntent().getBooleanExtra(VrIntentUtils.AVOID_RELAUNCH_EXTRA, false)) {
+            if (IntentUtils.safeGetBooleanExtra(
+                        getIntent(), VrIntentUtils.AVOID_RELAUNCH_EXTRA, false)) {
                 needsRelaunch = false;
             }
             if (needsRelaunch) {
+                // Under some situations, like with the skip DON flow developer setting on, we can
+                // get stuck in a relaunch loop as the VR Headset configuration won't get set. Add
+                // an extra to never relaunch more than once.
+                getIntent().putExtra(VrIntentUtils.AVOID_RELAUNCH_EXTRA, true);
                 VrIntentUtils.launchInVr(getIntent(), this);
                 finish();
                 return;
@@ -66,7 +77,7 @@ public class VrMainActivity extends Activity {
             // We don't set VrMode for the launcher in the manifest because that causes weird things
             // to happen when you send a VR intent to Chrome from a non-VR app, so we need to set it
             // here.
-            VrShellDelegate.setVrModeEnabled(this);
+            VrShellDelegate.setVrModeEnabled(this, true);
 
             // Daydream likes to remove the Daydream category from explicit intents for some reason.
             // Since only implicit intents with the Daydream category can be routed here, it's safe

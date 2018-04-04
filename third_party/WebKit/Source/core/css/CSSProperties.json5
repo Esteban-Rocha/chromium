@@ -355,6 +355,8 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       custom_apply_functions_all: true,
       priority: "Animation",
+      typedom_types: ["Time"],
+      separator: ",",
     },
     {
       name: "animation-direction",
@@ -364,6 +366,7 @@
       separator: ",",
       custom_apply_functions_all: true,
       priority: "Animation",
+      separator: ",",
     },
     {
       name: "animation-duration",
@@ -371,12 +374,17 @@
       separator: ",",
       custom_apply_functions_all: true,
       priority: "Animation",
+      typedom_types: ["Time"],
+      separator: ",",
     },
     {
       name: "animation-fill-mode",
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       custom_apply_functions_all: true,
       priority: "Animation",
+      keywords: ["none", "forwards", "backwards", "both"],
+      typedom_types: ["Keyword"],
+      separator: ",",
     },
     {
       name: "animation-iteration-count",
@@ -385,6 +393,9 @@
       separator: ",",
       custom_apply_functions_all: true,
       priority: "Animation",
+      keywords: ["infinite"],
+      typedom_types: ["Keyword", "Number"],
+      separator: ",",
     },
     {
       name: "animation-name",
@@ -397,18 +408,26 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       custom_apply_functions_all: true,
       priority: "Animation",
+      keywords: ["running", "paused"],
+      typedom_types: ["Keyword"],
+      separator: ",",
     },
     {
       name: "animation-timing-function",
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       custom_apply_functions_all: true,
       priority: "Animation",
+      keywords: ["linear", "ease", "ease-in", "ease-out", "ease-in-out", "step-start", "step-end"],
+      typedom_types: ["Keyword"],
+      separator: ",",
     },
     {
       name: "transition-delay",
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       custom_apply_functions_all: true,
       priority: "Animation",
+      typedom_types: ["Time"],
+      separator: ",",
     },
     {
       name: "transition-duration",
@@ -429,6 +448,9 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       custom_apply_functions_all: true,
       priority: "Animation",
+      keywords: ["linear", "ease", "ease-in", "ease-out", "ease-in-out", "step-start", "step-end"],
+      typedom_types: ["Keyword"],
+      separator: ",",
     },
 
     // High Priority and all other font properties.
@@ -673,6 +695,8 @@
       inherited: true,
       font: true,
       type_name: "TextRenderingMode",
+      keywords: ["auto", "optimizeSpeed", "optimizeLegibility", "geometricPrecision"],
+      typedom_types: ["Keyword"],
       priority: "High",
     },
     {
@@ -1297,6 +1321,7 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       svg: true,
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -1304,6 +1329,7 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       svg: true,
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -1584,6 +1610,7 @@
         "auto", "optimizeSpeed", "optimizeQuality",
         "-webkit-optimize-contrast", "pixelated"
       ],
+      typedom_types: ["Keyword"],
       default_value: "auto",
     },
     {
@@ -1791,6 +1818,8 @@
       svg: true,
       name_for_methods: "MarkerEndResource",
       converter: "ConvertFragmentIdentifier",
+      keywords: ["none"],
+      typedom_types: ["Keyword"]
     },
     {
       name: "marker-mid",
@@ -1799,6 +1828,8 @@
       svg: true,
       name_for_methods: "MarkerMidResource",
       converter: "ConvertFragmentIdentifier",
+      keywords: ["none"],
+      typedom_types: ["Keyword"]
     },
     {
       name: "marker-start",
@@ -1807,6 +1838,8 @@
       svg: true,
       name_for_methods: "MarkerStartResource",
       converter: "ConvertFragmentIdentifier",
+      keywords: ["none"],
+      typedom_types: ["Keyword"]
     },
     {
       name: "mask",
@@ -2256,6 +2289,7 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       svg: true,
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -2263,6 +2297,8 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       svg: true,
+      keywords: ["auto"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLengthOrAuto",
     },
     {
@@ -2270,6 +2306,8 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       svg: true,
+      keywords: ["auto"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLengthOrAuto",
     },
     {
@@ -2692,6 +2730,8 @@
       property_methods: ["CSSValueFromComputedStyleInternal"],
       inherited: true,
       svg: true,
+      keywords: ["start", "middle", "end"],
+      typedom_types: ["Keyword"]
     },
     {
       name: "text-combine-upright",
@@ -2700,6 +2740,7 @@
       field_group: "*",
       field_template: "keyword",
       keywords: ["none", "all"],
+      typedom_types: ["Keyword"],
       default_value: "none",
       name_for_methods: "TextCombine",
     },
@@ -2722,6 +2763,7 @@
       field_group: "visual",
       field_template: "multi_keyword",
       keywords: ["none", "underline", "overline", "line-through", "blink"],
+      typedom_types: ["Keyword"],
       default_value: "none",
       name_for_methods: "TextDecoration",
       type_name: "TextDecoration",
@@ -2734,6 +2776,7 @@
       field_group: "*",
       field_template: "keyword",
       keywords: ["none", "auto"],
+      typedom_types: ["Keyword"],
       default_value: "auto",
     },
     {
@@ -2774,6 +2817,7 @@
       field_group: "*",
       field_template: "keyword",
       keywords: ["clip", "ellipsis"],
+      typedom_types: ["Keyword"],
       default_value: "clip",
     },
     {
@@ -2889,6 +2933,7 @@
       field_template: "keyword",
       keywords: ["flat", "preserve-3d"],
       default_value: "flat",
+      typedom_types: ["Keyword"],
       name_for_methods: "TransformStyle3D",
     },
     {
@@ -2978,6 +3023,7 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       svg: true,
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -2985,6 +3031,7 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       svg: true,
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -3203,6 +3250,8 @@
       computed_style_custom_functions: ["setter"],
       converter: "ConvertComputedLength<float>",
       custom_apply_functions_all: true,
+      keywords: ["auto"],
+      typedom_types: ["Keyword", "Length"],
     },
     {
       name: "-webkit-highlight",
@@ -3531,6 +3580,7 @@
       field_group: "*",
       field_template: "keyword",
       keywords: ["auto", "none", "text", "all"],
+      typedom_types: ["Keyword"],
       default_value: "auto",
     },
     {

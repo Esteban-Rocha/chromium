@@ -166,6 +166,11 @@ int MockRenderProcessHost::VisibleClientCount() const {
   return count;
 }
 
+unsigned int MockRenderProcessHost::GetFrameDepthForTesting() const {
+  NOTIMPLEMENTED();
+  return 0u;
+}
+
 bool MockRenderProcessHost::IsForGuestsOnly() const {
   return is_for_guests_only_;
 }
@@ -336,11 +341,13 @@ size_t MockRenderProcessHost::GetKeepAliveRefCount() const {
   return keep_alive_ref_count_;
 }
 
-void MockRenderProcessHost::IncrementKeepAliveRefCount() {
+void MockRenderProcessHost::IncrementKeepAliveRefCount(
+    KeepAliveClientType client) {
   ++keep_alive_ref_count_;
 }
 
-void MockRenderProcessHost::DecrementKeepAliveRefCount() {
+void MockRenderProcessHost::DecrementKeepAliveRefCount(
+    KeepAliveClientType client) {
   --keep_alive_ref_count_;
 }
 

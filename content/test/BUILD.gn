@@ -12,7 +12,7 @@ import("//build/config/ui.gni")
 import("//media/media_options.gni")
 import("//net/features.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//services/catalog/public/tools/catalog.gni")
 import("//services/service_manager/public/service_manifest.gni")
 import("//testing/test.gni")
@@ -44,12 +44,8 @@ jumbo_static_library("test_support") {
     "../browser/background_fetch/background_fetch_test_browser_context.h",
     "../browser/background_fetch/mock_background_fetch_delegate.cc",
     "../browser/background_fetch/mock_background_fetch_delegate.h",
-    "../browser/download/mock_download_file.cc",
-    "../browser/download/mock_download_file.h",
     "../browser/download/mock_download_item_impl.cc",
     "../browser/download/mock_download_item_impl.h",
-    "../browser/download/mock_download_job.cc",
-    "../browser/download/mock_download_job.h",
     "../browser/media/session/mock_media_session_observer.cc",
     "../browser/media/session/mock_media_session_observer.h",
     "../browser/service_worker/embedded_worker_test_helper.cc",
@@ -93,8 +89,6 @@ jumbo_static_library("test_support") {
     "../public/test/memory_coordinator_test_utils.h",
     "../public/test/mock_browsing_data_remover_delegate.cc",
     "../public/test/mock_browsing_data_remover_delegate.h",
-    "../public/test/mock_download_item.cc",
-    "../public/test/mock_download_item.h",
     "../public/test/mock_download_manager.cc",
     "../public/test/mock_download_manager.h",
     "../public/test/mock_notification_observer.cc",
@@ -409,6 +403,8 @@ jumbo_static_library("test_support") {
       "../renderer/media/webrtc/mock_peer_connection_impl.h",
       "../renderer/media/webrtc/mock_web_rtc_peer_connection_handler_client.cc",
       "../renderer/media/webrtc/mock_web_rtc_peer_connection_handler_client.h",
+      "../renderer/media/webrtc/test/webrtc_stats_report_obtainer.cc",
+      "../renderer/media/webrtc/test/webrtc_stats_report_obtainer.h",
     ]
 
     deps += [
@@ -542,6 +538,10 @@ jumbo_static_library("browsertest_support") {
     deps += [ "//content/public/app:both" ]
   } else {
     deps += [ "//content/public/browser" ]
+  }
+
+  if (use_aura && toolkit_views) {
+    deps += [ "//ui/views" ]
   }
 
   configs += [ "//v8:external_startup_data" ]
@@ -743,7 +743,7 @@ test("content_browsertests") {
     "../browser/frame_host/render_frame_host_impl_browsertest.cc",
     "../browser/frame_host/render_frame_host_manager_browsertest.cc",
     "../browser/frame_host/render_frame_message_filter_browsertest.cc",
-    "../browser/generic_sensor_browsertest.cc",
+    "../browser/generic_sensor/generic_sensor_browsertest.cc",
     "../browser/gpu/gpu_ipc_browsertests.cc",
     "../browser/gpu/in_process_gpu_thread_browsertests.cc",
     "../browser/indexed_db/indexed_db_browsertest.cc",
@@ -903,11 +903,12 @@ test("content_browsertests") {
     "//mojo/edk",
     "//mojo/public/cpp/bindings",
     "//net:test_support",
-    "//ppapi/features",
+    "//ppapi/buildflags",
     "//services/audio/public/cpp",
     "//services/catalog:lib",
     "//services/device/public/cpp:device_features",
     "//services/device/public/cpp/generic_sensor",
+    "//services/device/public/cpp/test:test_support",
     "//services/device/public/mojom",
     "//services/device/public/mojom:generic_sensor",
     "//services/network:test_support",
@@ -1272,8 +1273,6 @@ test("content_unittests") {
     "../browser/download/download_item_impl_unittest.cc",
     "../browser/download/download_manager_impl_unittest.cc",
     "../browser/download/download_request_core_unittest.cc",
-    "../browser/download/parallel_download_job_unittest.cc",
-    "../browser/download/parallel_download_utils_unittest.cc",
     "../browser/download/save_package_unittest.cc",
     "../browser/fileapi/browser_file_system_helper_unittest.cc",
     "../browser/fileapi/file_system_operation_runner_unittest.cc",
@@ -1497,6 +1496,7 @@ test("content_unittests") {
     "../browser/tracing/background_memory_tracing_observer_unittest.cc",
     "../browser/tracing/background_tracing_config_unittest.cc",
     "../browser/tracing/tracing_ui_unittest.cc",
+    "../browser/web_contents/aura/gesture_nav_simple_unittest.cc",
     "../browser/web_contents/aura/overscroll_navigation_overlay_unittest.cc",
     "../browser/web_contents/aura/overscroll_window_animation_unittest.cc",
     "../browser/web_contents/aura/overscroll_window_delegate_unittest.cc",
@@ -1571,8 +1571,6 @@ test("content_unittests") {
     "../renderer/child_frame_compositing_helper_unittest.cc",
     "../renderer/device_sensors/device_motion_event_pump_unittest.cc",
     "../renderer/device_sensors/device_orientation_event_pump_unittest.cc",
-    "../renderer/device_sensors/fake_sensor_and_provider.cc",
-    "../renderer/device_sensors/fake_sensor_and_provider.h",
     "../renderer/dom_storage/dom_storage_cached_area_unittest.cc",
     "../renderer/dom_storage/local_storage_cached_area_unittest.cc",
     "../renderer/dom_storage/local_storage_cached_areas_unittest.cc",
@@ -1717,11 +1715,12 @@ test("content_unittests") {
     "//mojo/public/cpp/test_support:test_utils",
     "//net:extras",
     "//net:test_support",
+    "//ppapi/buildflags",
     "//ppapi/c",
-    "//ppapi/features",
     "//printing",
     "//services/catalog:lib",
     "//services/device/public/cpp/generic_sensor",
+    "//services/device/public/cpp/test:test_support",
     "//services/device/public/mojom",
     "//services/file:lib",
     "//services/file/public/mojom",
@@ -1854,6 +1853,7 @@ test("content_unittests") {
       "../renderer/media/webrtc/rtc_data_channel_handler_unittest.cc",
       "../renderer/media/webrtc/rtc_peer_connection_handler_unittest.cc",
       "../renderer/media/webrtc/rtc_rtp_parameters_unittest.cc",
+      "../renderer/media/webrtc/rtc_rtp_receiver_unittest.cc",
       "../renderer/media/webrtc/rtc_rtp_sender_unittest.cc",
       "../renderer/media/webrtc/rtc_stats_unittest.cc",
       "../renderer/media/webrtc/rtc_video_decoder_unittest.cc",
@@ -2024,6 +2024,7 @@ test("content_unittests") {
   } else {
     sources -= [
       "../browser/renderer_host/render_widget_host_view_aura_unittest.cc",
+      "../browser/web_contents/aura/gesture_nav_simple_unittest.cc",
       "../browser/web_contents/aura/overscroll_navigation_overlay_unittest.cc",
       "../browser/web_contents/aura/overscroll_window_animation_unittest.cc",
       "../browser/web_contents/aura/overscroll_window_delegate_unittest.cc",

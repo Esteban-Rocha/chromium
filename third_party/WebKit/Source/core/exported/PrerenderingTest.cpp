@@ -159,7 +159,7 @@ class TestPrerenderingSupport : public WebPrerenderingSupport {
   Vector<WebPrerender> abandoned_prerenders_;
 };
 
-class PrerenderingTest : public ::testing::Test {
+class PrerenderingTest : public testing::Test {
  public:
   ~PrerenderingTest() override {
     Platform::Current()
@@ -169,7 +169,7 @@ class PrerenderingTest : public ::testing::Test {
 
   void Initialize(const char* base_url, const char* file_name) {
     URLTestHelpers::RegisterMockedURLLoadFromBase(
-        WebString::FromUTF8(base_url), blink::testing::CoreTestDataPath(),
+        WebString::FromUTF8(base_url), blink::test::CoreTestDataPath(),
         WebString::FromUTF8(file_name));
     web_view_helper_.Initialize();
     web_view_helper_.GetWebView()->SetPrerendererClient(&prerenderer_client_);

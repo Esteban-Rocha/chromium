@@ -75,6 +75,10 @@
 #include "content/public/common/content_descriptors.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "base/allocator/allocator_interception_mac.h"
+#endif
+
 namespace content {
 namespace {
 
@@ -553,6 +557,14 @@ void ChildThreadImpl::Init(const Options& options) {
       connection_timeout = temp;
   }
 
+#if defined(OS_MACOSX)
+  if (base::CommandLine::InitializedForCurrentProcess() &&
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableHeapProfiling)) {
+    base::allocator::PeriodicallyShimNewMallocZones();
+  }
+#endif
+
   message_loop_->task_runner()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&ChildThreadImpl::EnsureConnected,
@@ -664,11 +676,10 @@ mojom::FontCacheWin* ChildThreadImpl::GetFontCacheWin() {
 #elif defined(OS_MACOSX)
 bool ChildThreadImpl::LoadFont(const base::string16& font_name,
                                float font_point_size,
-                               uint32_t* out_buffer_size,
                                mojo::ScopedSharedBufferHandle* out_font_data,
                                uint32_t* out_font_id) {
-  return GetFontLoaderMac()->LoadFont(
-      font_name, font_point_size, out_buffer_size, out_font_data, out_font_id);
+  return GetFontLoaderMac()->LoadFont(font_name, font_point_size, out_font_data,
+                                      out_font_id);
 }
 
 mojom::FontLoaderMac* ChildThreadImpl::GetFontLoaderMac() {
@@ -742,7 +753,9 @@ void ChildThreadImpl::OnAssociatedInterfaceRequest(
   if (interface_name == mojom::RouteProvider::Name_) {
     DCHECK(!route_provider_binding_.is_bound());
     route_provider_binding_.Bind(
-        mojom::RouteProviderAssociatedRequest(std::move(handle)));
+        mojom::RouteProviderAssociatedRequest(std::move(handle)),
+        ipc_task_runner_ ? ipc_task_runner_
+                         : base::ThreadTaskRunnerHandle::Get());
   } else {
     LOG(ERROR) << "Request for unknown Channel-associated interface: "
                << interface_name;

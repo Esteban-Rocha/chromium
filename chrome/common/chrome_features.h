@@ -14,8 +14,8 @@
 #include "chrome/common/buildflags.h"
 #include "device/vr/buildflags/buildflags.h"
 #include "extensions/buildflags/buildflags.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 #include "ui/base/ui_features.h"
 
 namespace features {
@@ -75,6 +75,10 @@ extern const base::Feature kBundledConnectionHelpFeature;
 extern const base::Feature kDialogTouchBar;
 extern const base::Feature kTabStripKeyboardFocus;
 #endif  // defined(OS_MACOSX)
+
+#if (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
+extern const base::Feature kCertDualVerificationTrialFeature;
+#endif
 
 extern const base::Feature kChangePictureVideoMode;
 
@@ -165,6 +169,10 @@ extern const base::Feature kGrantNotificationsToDSE;
 
 #if defined(OS_CHROMEOS)
 extern const base::Feature kHappinessTrackingSystem;
+#endif
+
+#if !defined(OS_ANDROID)
+extern const base::Feature kViewsCastDialog;
 #endif
 
 extern const base::Feature kImportantSitesInCbd;
@@ -278,6 +286,10 @@ extern const base::Feature kSecurityKeyAttestationPrompt;
 extern const base::Feature kShowAllDialogsWithViewsToolkit;
 #endif
 
+#if defined(OS_ANDROID)
+extern const base::Feature kShowTrustedPublisherURL;
+#endif
+
 extern const base::Feature kSimplifiedFullscreenUI;
 
 #if defined(OS_ANDROID)
@@ -300,17 +312,11 @@ extern const base::Feature kSupervisedUserCommittedInterstitials;
 extern const base::Feature kSysInternals;
 #endif
 
-#if defined(SYZYASAN)
-extern const base::Feature kSyzyasanDeferredFree;
-#endif
-
 #if !defined(OS_ANDROID)
 extern const base::Feature kTabMetricsLogging;
 #endif
 
 extern const base::Feature kTopSitesFromSiteEngagement;
-
-extern const base::Feature kUnifiedConsent;
 
 extern const base::Feature kUseGoogleLocalNtp;
 

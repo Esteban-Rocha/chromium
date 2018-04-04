@@ -66,7 +66,7 @@
 
 namespace blink {
 
-using testing::ScopedMockedURLLoad;
+using test::ScopedMockedURLLoad;
 
 namespace {
 
@@ -165,7 +165,7 @@ constexpr char kSvgImage2[] =
 constexpr char kTestURL[] = "http://www.test.com/cancelTest.html";
 
 String GetTestFilePath() {
-  return testing::CoreTestDataPath("cancelTest.html");
+  return test::CoreTestDataPath("cancelTest.html");
 }
 
 constexpr char kSvgImageWithSubresource[] =
@@ -507,7 +507,7 @@ class MockFinishObserver : public GarbageCollectedFinalized<MockFinishObserver>,
   static MockFinishObserver* Create() {
     return
 
-        new ::testing::StrictMock<MockFinishObserver>;
+        new testing::StrictMock<MockFinishObserver>;
   }
   MOCK_METHOD0(NotifyFinished, void());
   String DebugName() const override { return "MockFinishObserver"; }
@@ -553,7 +553,7 @@ TEST(ImageResourceTest, CancelWithImageAndFinishObserver) {
 
   // ResourceFinishObserver is notified asynchronously.
   EXPECT_CALL(*finish_observer, NotifyFinished());
-  blink::testing::RunPendingTasks();
+  blink::test::RunPendingTasks();
 }
 
 TEST(ImageResourceTest, DecodedDataRemainsWhileHasClients) {
@@ -620,7 +620,7 @@ TEST(ImageResourceTest, UpdateBitmapImages) {
 }
 
 class ImageResourceReloadTest
-    : public ::testing::TestWithParam<bool>,
+    : public testing::TestWithParam<bool>,
       private ScopedClientPlaceholdersForServerLoFiForTest {
  public:
   ImageResourceReloadTest()
@@ -952,7 +952,7 @@ TEST_P(ImageResourceReloadTest, ReloadLoFiImagesWithDuplicateURLs) {
 
 INSTANTIATE_TEST_CASE_P(/* no prefix */,
                         ImageResourceReloadTest,
-                        ::testing::Bool());
+                        testing::Bool());
 
 TEST(ImageResourceTest, SVGImage) {
   KURL url("http://127.0.0.1:8000/foo");
@@ -1003,7 +1003,7 @@ TEST(ImageResourceTest, SVGImageWithSubresource) {
 
   // After asynchronous tasks are executed, the loading of SVG document is
   // completed and ImageNotifyFinished() is called.
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_EQ(ResourceStatus::kCached,
             image_resource->GetContent()->GetContentStatus());
   EXPECT_EQ(2, observer->ImageChangedCount());
@@ -1244,7 +1244,7 @@ TEST(ImageResourceTest, Prune) {
 
   EXPECT_TRUE(image_resource->GetContent()->HasImage());
 
-  blink::testing::RunPendingTasks();
+  blink::test::RunPendingTasks();
   ASSERT_TRUE(image_resource->GetContent()->HasImage());
   EXPECT_FALSE(image_resource->GetContent()->GetImage()->IsNull());
   EXPECT_EQ(kJpegImageWidth, image_resource->GetContent()->GetImage()->width());
@@ -1932,7 +1932,7 @@ TEST(ImageResourceTest, DeferredInvalidation) {
 
 }  // namespace
 
-class ImageResourceCounterTest : public ::testing::Test {
+class ImageResourceCounterTest : public testing::Test {
  public:
   ImageResourceCounterTest() = default;
   ~ImageResourceCounterTest() = default;

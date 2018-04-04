@@ -91,12 +91,6 @@ static const char kLifecycleEventsEnabled[] = "lifecycleEventsEnabled";
 
 namespace {
 
-KURL UrlWithoutFragment(const KURL& url) {
-  KURL result = url;
-  result.RemoveFragmentIdentifier();
-  return result;
-}
-
 String ScheduledNavigationReasonToProtocol(ScheduledNavigation::Reason reason) {
   using ReasonEnum =
       protocol::Page::FrameScheduledNavigationNotification::ReasonEnum;
@@ -277,6 +271,13 @@ static void MaybeEncodeTextContent(const String& text_content,
   const SharedBuffer::DeprecatedFlatData flat_buffer(std::move(buffer));
   return MaybeEncodeTextContent(text_content, flat_buffer.Data(),
                                 flat_buffer.size(), result, base64_encoded);
+}
+
+// static
+KURL InspectorPageAgent::UrlWithoutFragment(const KURL& url) {
+  KURL result = url;
+  result.RemoveFragmentIdentifier();
+  return result;
 }
 
 // static
@@ -936,15 +937,13 @@ std::unique_ptr<protocol::Page::Frame> InspectorPageAgent::BuildObjectForFrame(
           .setSecurityOrigin(SecurityOrigin::Create(url)->ToRawString())
           .build();
   Frame* parent_frame = frame->Tree().Parent();
-  if (parent_frame)
+  if (parent_frame) {
     frame_object->setParentId(IdentifiersFactory::FrameId(parent_frame));
-  if (frame->DeprecatedLocalOwner()) {
-    AtomicString name = frame->DeprecatedLocalOwner()->GetNameAttribute();
-    if (name.IsEmpty())
+    AtomicString name = frame->Tree().GetName();
+    if (name.IsEmpty() && frame->DeprecatedLocalOwner())
       name = frame->DeprecatedLocalOwner()->getAttribute(HTMLNames::idAttr);
     frame_object->setName(name);
   }
-
   if (loader && !loader->UnreachableURL().IsEmpty())
     frame_object->setUnreachableUrl(loader->UnreachableURL().GetString());
   return frame_object;

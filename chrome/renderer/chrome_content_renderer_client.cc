@@ -105,10 +105,10 @@
 #include "media/base/media_switches.h"
 #include "media/media_buildflags.h"
 #include "net/base/net_errors.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "ppapi/c/private/ppb_pdf.h"
-#include "ppapi/features/features.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/public/cpp/service_context.h"
@@ -550,8 +550,7 @@ void ChromeContentRendererClient::RenderFrameCreated(
   SandboxStatusExtension::Create(render_frame);
 #endif
 
-  new NetErrorHelper(render_frame,
-                     chrome_observer_ ? chrome_observer_->is_online() : true);
+  new NetErrorHelper(render_frame);
 
   new page_load_metrics::MetricsRenderFrameObserver(render_frame);
 

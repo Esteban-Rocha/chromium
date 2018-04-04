@@ -104,7 +104,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void InitAsChild(gfx::NativeView parent_view) override;
   void SetSize(const gfx::Size& size) override;
   void SetBounds(const gfx::Rect& rect) override;
-  gfx::Vector2dF GetLastScrollOffset() const override;
   gfx::NativeView GetNativeView() const override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   ui::TextInputClient* GetTextInputClient() override;
@@ -314,13 +313,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       std::unique_ptr<OverscrollController> controller);
 
   void SnapToPhysicalPixelBoundary();
-
-  // Called when the context menu is about to be displayed.
-  // Returns true if the context menu should be displayed. We only return false
-  // on Windows if the context menu is being displayed in response to a long
-  // press gesture. On Windows we should be consistent like other apps and
-  // display the menu when the touch is released.
-  bool OnShowContextMenu(const ContextMenuParams& params);
 
   // Used in tests to set a mock client for touch selection controller. It will
   // create a new touch selection controller for the new client.
@@ -533,6 +525,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // color to new views on navigation.
   void UpdateBackgroundColorFromRenderer(SkColor color);
 
+  // Called when the window title is changed.
+  void WindowTitleChanged();
+
   const bool is_mus_browser_plugin_guest_;
 
   // NOTE: this is null if |is_mus_browser_plugin_guest_| is true.
@@ -625,9 +620,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 #endif
 
   bool has_snapped_to_boundary_;
-
-  // The last scroll offset of the view.
-  gfx::Vector2dF last_scroll_offset_;
 
   // The last selection bounds reported to the view.
   gfx::SelectionBound selection_start_;

@@ -63,8 +63,6 @@ class SimpleMHTMLPartsGenerationDelegate
  private:
   bool ShouldSkipResource(const WebURL&) final { return false; }
 
-  WebString GetContentID(WebFrame*) final { return WebString("<cid>"); }
-
   WebFrameSerializerCacheControlPolicy CacheControlPolicy() final {
     return WebFrameSerializerCacheControlPolicy::kNone;
   }
@@ -92,7 +90,7 @@ int MatchSubstring(const String& str, const char* pattern, size_t size) {
 
 }  // namespace
 
-class WebFrameSerializerSanitizationTest : public ::testing::Test {
+class WebFrameSerializerSanitizationTest : public testing::Test {
  protected:
   WebFrameSerializerSanitizationTest() { helper_.Initialize(); }
 
@@ -185,7 +183,7 @@ class WebFrameSerializerSanitizationTest : public ::testing::Test {
                                  const String& file_path,
                                  const String& mime_type = "image/png") {
     URLTestHelpers::RegisterMockedURLLoad(
-        url, testing::CoreTestDataPath(file_path.Utf8().data()), mime_type);
+        url, test::CoreTestDataPath(file_path.Utf8().data()), mime_type);
   }
 
   WebViewImpl* WebView() { return helper_.GetWebView(); }

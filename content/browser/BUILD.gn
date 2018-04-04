@@ -11,8 +11,8 @@ import("//content/public/common/zygote_features.gni")
 import("//gpu/vulkan/features.gni")
 import("//media/media_options.gni")
 import("//net/features.gni")
-import("//ppapi/features/features.gni")
-import("//printing/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
+import("//printing/buildflags/buildflags.gni")
 import("//third_party/WebKit/public/public_features.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 
@@ -115,8 +115,8 @@ jumbo_source_set("browser") {
     "//net",
     "//net:extras",
     "//net:http_server",
-    "//ppapi/features",
-    "//printing/features",
+    "//ppapi/buildflags",
+    "//printing/buildflags",
     "//services/audio:lib",
     "//services/audio/public/cpp",
     "//services/audio/public/mojom:constants",
@@ -440,6 +440,8 @@ jumbo_source_set("browser") {
     "background_fetch/storage/get_registration_task.h",
     "background_fetch/storage/mark_registration_for_deletion_task.cc",
     "background_fetch/storage/mark_registration_for_deletion_task.h",
+    "background_fetch/storage/update_registration_ui_task.cc",
+    "background_fetch/storage/update_registration_ui_task.h",
     "background_sync/background_sync_context.cc",
     "background_sync/background_sync_context.h",
     "background_sync/background_sync_manager.cc",
@@ -693,13 +695,7 @@ jumbo_source_set("browser") {
     "download/byte_stream_input_stream.cc",
     "download/byte_stream_input_stream.h",
     "download/download_item_factory.h",
-    "download/download_item_impl.cc",
-    "download/download_item_impl.h",
-    "download/download_item_impl_delegate.cc",
-    "download/download_item_impl_delegate.h",
     "download/download_item_utils.cc",
-    "download/download_job_factory.cc",
-    "download/download_job_factory.h",
     "download/download_manager_impl.cc",
     "download/download_manager_impl.h",
     "download/download_request_core.cc",
@@ -719,10 +715,6 @@ jumbo_source_set("browser") {
     "download/mhtml_extra_parts_impl.h",
     "download/mhtml_generation_manager.cc",
     "download/mhtml_generation_manager.h",
-    "download/parallel_download_job.cc",
-    "download/parallel_download_job.h",
-    "download/parallel_download_utils.cc",
-    "download/parallel_download_utils.h",
     "download/save_file.cc",
     "download/save_file.h",
     "download/save_file_manager.cc",
@@ -731,8 +723,6 @@ jumbo_source_set("browser") {
     "download/save_item.h",
     "download/save_package.cc",
     "download/save_package.h",
-    "download/save_package_download_job.cc",
-    "download/save_package_download_job.h",
     "download/save_types.cc",
     "download/save_types.h",
     "download/url_downloader.cc",
@@ -2035,8 +2025,6 @@ jumbo_source_set("browser") {
       "accessibility/captioning_controller.h",
       "accessibility/web_contents_accessibility_android.cc",
       "accessibility/web_contents_accessibility_android.h",
-      "android/composited_touch_handle_drawable.cc",
-      "android/composited_touch_handle_drawable.h",
       "android/content_view_core.cc",
       "android/content_view_core.h",
       "android/content_view_render_view.cc",
@@ -2081,10 +2069,12 @@ jumbo_source_set("browser") {
       "android/render_widget_host_connector.h",
       "android/select_popup.cc",
       "android/select_popup.h",
-      "android/selection_popup_controller.cc",
-      "android/selection_popup_controller.h",
-      "android/smart_selection_client.cc",
-      "android/smart_selection_client.h",
+      "android/selection/composited_touch_handle_drawable.cc",
+      "android/selection/composited_touch_handle_drawable.h",
+      "android/selection/selection_popup_controller.cc",
+      "android/selection/selection_popup_controller.h",
+      "android/selection/smart_selection_client.cc",
+      "android/selection/smart_selection_client.h",
       "android/synchronous_compositor_browser_filter.cc",
       "android/synchronous_compositor_browser_filter.h",
       "android/synchronous_compositor_host.cc",
@@ -2187,6 +2177,14 @@ jumbo_source_set("browser") {
       # Most webauth code is non-Android
       "webauth/authenticator_impl.cc",
       "webauth/authenticator_impl.h",
+      "webauth/authenticator_type_converters.cc",
+      "webauth/authenticator_type_converters.h",
+      "webauth/scoped_virtual_authenticator_environment.cc",
+      "webauth/scoped_virtual_authenticator_environment.h",
+      "webauth/virtual_authenticator.cc",
+      "webauth/virtual_authenticator.h",
+      "webauth/virtual_discovery.cc",
+      "webauth/virtual_discovery.h",
     ]
     deps += [ "//third_party/flac" ]
   }
@@ -2203,6 +2201,8 @@ jumbo_source_set("browser") {
       "IOSurface.framework",
     ]
     sources += [
+      "renderer_host/popup_window_mac.h",
+      "renderer_host/popup_window_mac.mm",
       "renderer_host/render_widget_host_ns_view_bridge.h",
       "renderer_host/render_widget_host_ns_view_bridge.mm",
       "renderer_host/render_widget_host_ns_view_client.h",

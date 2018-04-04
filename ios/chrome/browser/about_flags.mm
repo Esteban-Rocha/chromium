@@ -35,12 +35,14 @@
 #include "components/payments/core/features.h"
 #include "components/search_provider_logos/switches.h"
 #include "components/security_state/core/features.h"
+#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/signin_switches.h"
 #include "components/strings/grit/components_strings.h"
 #include "ios/chrome/browser/browsing_data/browsing_data_features.h"
 #include "ios/chrome/browser/chrome_switches.h"
 #include "ios/chrome/browser/drag_and_drop/drag_and_drop_flag.h"
 #include "ios/chrome/browser/ios_chrome_flag_descriptions.h"
+#include "ios/chrome/browser/itunes_links/itunes_links_flag.h"
 #include "ios/chrome/browser/mailto/features.h"
 #include "ios/chrome/browser/ssl/captive_portal_features.h"
 #include "ios/chrome/browser/ui/external_search/features.h"
@@ -129,6 +131,14 @@ const FeatureEntry::Choice kToolbarButtonPositionsChoices[] = {
     {"Bottom navigation, no top", kToolbarButtonPositionsSwitch, "0"},
     {"Bottom navigation, share on top", kToolbarButtonPositionsSwitch, "1"},
     {"Top navigation", kToolbarButtonPositionsSwitch, "2"},
+};
+
+const FeatureEntry::Choice kSearchButtonIconChoices[] = {
+    {flags_ui::kGenericExperimentChoiceDefault, "", ""},
+    {"Grey search engine logo", kIconSearchButtonSwitch, kIconSearchButtonGrey},
+    {"Colorful search engine logo", kIconSearchButtonSwitch,
+     kIconSearchButtonColorful},
+    {"Magnifying glass", kIconSearchButtonSwitch, kIconSearchButtonMagnifying},
 };
 
 // To add a new entry, add to the end of kFeatureEntries. There are four
@@ -247,6 +257,10 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
     {"feedback-kit-v2", flag_descriptions::kFeedbackKitV2Name,
      flag_descriptions::kFeedbackKitV2Description, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(kFeedbackKitV2)},
+    {"feedback-kit-v2-sso-service",
+     flag_descriptions::kFeedbackKitV2WithSSOServiceName,
+     flag_descriptions::kFeedbackKitV2WithSSOServiceDescription,
+     flags_ui::kOsIos, FEATURE_VALUE_TYPE(kFeedbackKitV2WithSSOService)},
     {"new-clear-browsing-data-ui",
      flag_descriptions::kNewClearBrowsingDataUIName,
      flag_descriptions::kNewClearBrowsingDataUIDescription, flags_ui::kOsIos,
@@ -257,6 +271,16 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
     {"toolbar-button-positions", flag_descriptions::kToolbarButtonPositionsName,
      flag_descriptions::kToolbarButtonPositionsDescription, flags_ui::kOsIos,
      MULTI_VALUE_TYPE(kToolbarButtonPositionsChoices)},
+    {"search-icon-toggle", flag_descriptions::kSearchIconToggleName,
+     flag_descriptions::kSearchIconToggleDescription, flags_ui::kOsIos,
+     MULTI_VALUE_TYPE(kSearchButtonIconChoices)},
+    {"itunes-links-store-kit-handling",
+     flag_descriptions::kITunesLinksStoreKitHandlingName,
+     flag_descriptions::kITunesLinksStoreKitHandlingDescription,
+     flags_ui::kOsIos, FEATURE_VALUE_TYPE(kITunesLinksStoreKitHandling)},
+    {"unified-consent", flag_descriptions::kUnifiedConsentName,
+     flag_descriptions::kUnifiedConsentDescription, flags_ui::kOsIos,
+     FEATURE_VALUE_TYPE(signin::kUnifiedConsent)},
 };
 
 // Add all switches from experimental flags to |command_line|.

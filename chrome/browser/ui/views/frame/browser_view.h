@@ -79,7 +79,6 @@ enum class Channel;
 }
 
 namespace views {
-class AccessiblePaneView;
 class ExternalFocusTracker;
 class WebView;
 }
@@ -334,7 +333,7 @@ class BrowserView : public BrowserWindow,
   void ShowUpdateChromeDialog() override;
 #if defined(OS_CHROMEOS)
   void ShowIntentPickerBubble(
-      std::vector<IntentPickerBubbleView::AppInfo> app_info,
+      const std::vector<IntentPickerBubbleView::AppInfo>& app_info,
       IntentPickerResponse callback) override;
   void SetIntentPickerViewVisibility(bool visible) override;
 #endif  //  defined(OS_CHROMEOS)
@@ -446,7 +445,6 @@ class BrowserView : public BrowserWindow,
   gfx::Size GetMinimumSize() const override;
 
   // InfoBarContainerDelegate:
-  SkColor GetInfoBarSeparatorColor() const override;
   void InfoBarContainerStateChanged(bool is_animating) override;
   bool DrawInfoBarArrows(int* x) const override;
 
@@ -518,10 +516,6 @@ class BrowserView : public BrowserWindow,
   // tab navigations and need to give users a visual clue as to what tabs are
   // affected.
   void RevealTabStripIfNeeded();
-
-  // Appends to |toolbars| a pointer to each AccessiblePaneView that
-  // can be traversed using F6, in the order they should be traversed.
-  void GetAccessiblePanes(std::vector<views::AccessiblePaneView*>* panes);
 
   // Constructs and initializes the child views.
   void InitViews();

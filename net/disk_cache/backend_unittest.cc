@@ -1930,6 +1930,45 @@ TEST_F(DiskCacheBackendTest, DoomAllSparse) {
   EXPECT_EQ(0, cache_->GetEntryCount());
 }
 
+// This test is for https://crbug.com/827492.
+TEST_F(DiskCacheBackendTest, InMemorySparseEvict) {
+  const int kMaxSize = 512;
+
+  SetMaxSize(kMaxSize);
+  SetMemoryOnlyMode();
+  InitCache();
+
+  scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(64));
+  CacheTestFillBuffer(buffer->data(), 64, false /* no_nulls */);
+
+  std::vector<disk_cache::ScopedEntryPtr> entries;
+
+  disk_cache::Entry* entry = nullptr;
+  // Create a bunch of entries
+  for (size_t i = 0; i < 14; i++) {
+    std::string name = "http://www." + std::to_string(i) + ".com/";
+    ASSERT_THAT(CreateEntry(name, &entry), IsOk());
+    entries.push_back(disk_cache::ScopedEntryPtr(entry));
+  }
+
+  // Create several sparse entries and fill with enough data to
+  // pass eviction threshold
+  ASSERT_EQ(64, WriteSparseData(entries[0].get(), 0, buffer.get(), 64));
+  ASSERT_EQ(net::ERR_FAILED,
+            WriteSparseData(entries[0].get(), 10000, buffer.get(), 4));
+  ASSERT_EQ(63, WriteSparseData(entries[1].get(), 0, buffer.get(), 63));
+  ASSERT_EQ(64, WriteSparseData(entries[2].get(), 0, buffer.get(), 64));
+  ASSERT_EQ(64, WriteSparseData(entries[3].get(), 0, buffer.get(), 64));
+
+  // Close all the entries, leaving a populated LRU list
+  // with all entries having refcount 0 (doom implies deletion)
+  entries.clear();
+
+  // Create a new entry, triggering buggy eviction
+  ASSERT_THAT(CreateEntry("http://www.14.com/", &entry), IsOk());
+  entry->Close();
+}
+
 void DiskCacheBackendTest::BackendDoomBetween() {
   InitCache();
 
@@ -4310,4 +4349,37 @@ TEST_F(DiskCacheBackendTest, SimpleFdLimit) {
       kLargeNumEntries - 64 + 1 + kLargeNumEntries - 1 + 2 + 1);
   histogram_tester.ExpectBucketCount("SimpleCache.FileDescriptorLimiterAction",
                                      disk_cache::FD_LIMIT_FAIL_REOPEN_FILE, 0);
+}
+
+TEST_F(DiskCacheBackendTest, SparseEvict) {
+  const int kMaxSize = 512;
+
+  SetMaxSize(kMaxSize);
+  InitCache();
+
+  scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(64));
+  CacheTestFillBuffer(buffer->data(), 64, false);
+
+  disk_cache::Entry* entry0 = nullptr;
+  ASSERT_THAT(CreateEntry("http://www.0.com/", &entry0), IsOk());
+
+  disk_cache::Entry* entry1 = nullptr;
+  ASSERT_THAT(CreateEntry("http://www.1.com/", &entry1), IsOk());
+
+  disk_cache::Entry* entry2 = nullptr;
+  // This strange looking domain name affects cache trim order
+  // due to hashing
+  ASSERT_THAT(CreateEntry("http://www.15360.com/", &entry2), IsOk());
+
+  // Write sparse data to put us over the eviction threshold
+  ASSERT_EQ(64, WriteSparseData(entry0, 0, buffer.get(), 64));
+  ASSERT_EQ(1, WriteSparseData(entry0, 67108923, buffer.get(), 1));
+  ASSERT_EQ(1, WriteSparseData(entry1, 53, buffer.get(), 1));
+  ASSERT_EQ(1, WriteSparseData(entry2, 0, buffer.get(), 1));
+
+  // Closing these in a special order should not lead to buggy reentrant
+  // eviction.
+  entry1->Close();
+  entry2->Close();
+  entry0->Close();
 }

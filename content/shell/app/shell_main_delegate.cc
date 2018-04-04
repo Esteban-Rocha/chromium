@@ -40,7 +40,7 @@
 #include "ipc/ipc_buildflags.h"
 #include "media/base/media_switches.h"
 #include "net/cookies/cookie_monster.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
@@ -134,8 +134,8 @@ void InitLogging(const base::CommandLine& command_line) {
 
 namespace content {
 
-ShellMainDelegate::ShellMainDelegate() {
-}
+ShellMainDelegate::ShellMainDelegate(bool is_browsertest)
+    : is_browsertest_(is_browsertest) {}
 
 ShellMainDelegate::~ShellMainDelegate() {
 }
@@ -227,6 +227,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
                                    "MAP *.test 127.0.0.1");
 
     command_line.AppendSwitch(switches::kEnablePartialRaster);
+    command_line.AppendSwitch(switches::kEnableWebAuthTestingAPI);
 
     if (!command_line.HasSwitch(switches::kForceGpuRasterization) &&
         !command_line.HasSwitch(switches::kEnableGpuRasterization)) {
@@ -400,7 +401,7 @@ ContentRendererClient* ShellMainDelegate::CreateContentRendererClient() {
 }
 
 ContentUtilityClient* ShellMainDelegate::CreateContentUtilityClient() {
-  utility_client_.reset(new ShellContentUtilityClient);
+  utility_client_.reset(new ShellContentUtilityClient(is_browsertest_));
   return utility_client_.get();
 }
 

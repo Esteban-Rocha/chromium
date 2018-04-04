@@ -44,7 +44,6 @@ import org.chromium.chrome.browser.toolbar.ViewShiftingActionBarDelegate;
 import org.chromium.chrome.browser.util.AccessibilityUtil;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.util.MathUtils;
-import org.chromium.chrome.browser.widget.FadingBackgroundView;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.SelectionPopupController;
 import org.chromium.content_public.browser.WebContents;
@@ -66,9 +65,8 @@ import java.util.List;
  * All the computation in this file is based off of the bottom of the screen instead of the top
  * for simplicity. This means that the bottom of the screen is 0 on the Y axis.
  */
-public class BottomSheet
-        extends FrameLayout implements BottomSheetSwipeDetector.SwipeableBottomSheet,
-                                       FadingBackgroundView.FadingViewObserver, NativePageHost {
+public class BottomSheet extends FrameLayout
+        implements BottomSheetSwipeDetector.SwipeableBottomSheet, NativePageHost {
     /** The different states that the bottom sheet can have. */
     @IntDef({SHEET_STATE_NONE, SHEET_STATE_HIDDEN, SHEET_STATE_PEEK, SHEET_STATE_HALF,
             SHEET_STATE_FULL, SHEET_STATE_SCROLLING})
@@ -256,9 +254,6 @@ public class BottomSheet
     /** Whether or not scroll events are currently being blocked for the 'velocity' swipe logic. */
     private boolean mVelocityLogicBlockSwipe;
 
-    /** The speed of the swipe the last time the sheet was opened. */
-    private long mLastSheetOpenMicrosPerDp;
-
     /**
      * An interface defining content that can be displayed inside of the bottom sheet for Chrome
      * Home.
@@ -289,11 +284,6 @@ public class BottomSheet
          * Called to destroy the {@link BottomSheetContent} when it is no longer in use.
          */
         void destroy();
-
-        /**
-         * @return Whether the default top padding should be applied to the content view.
-         */
-        boolean applyDefaultTopPadding();
 
         /**
          * @return The priority of this content.
@@ -346,8 +336,6 @@ public class BottomSheet
                                          currentEvent.getX(), currentEvent.getY())
                 / mDpToPx;
         long timeDeltaMs = currentEvent.getEventTime() - initialEvent.getDownTime();
-        mLastSheetOpenMicrosPerDp =
-                Math.round(scrollDistanceDp > 0f ? timeDeltaMs * 1000 / scrollDistanceDp : 0f);
 
         String logicType = FeatureUtilities.getChromeHomeSwipeLogicType();
 
@@ -521,7 +509,7 @@ public class BottomSheet
                 (TouchRestrictingFrameLayout) findViewById(R.id.bottom_sheet_toolbar_container);
         mDefaultToolbarView = mToolbarHolder.findViewById(R.id.bottom_sheet_toolbar);
         mToolbarHeight = activity.getResources().getDimensionPixelSize(
-                R.dimen.bottom_control_container_height);
+                R.dimen.bottom_control_container_peek_height);
 
         mActivity = activity;
         mActionBarDelegate = new ViewShiftingActionBarDelegate(mActivity, this);
@@ -1144,26 +1132,28 @@ public class BottomSheet
     /**
      * Sends notifications if the sheet is transitioning from the peeking to half expanded state and
      * from the peeking to fully expanded state. The peek to half events are only sent when the
-     * sheet is between the peeking and half states. Events are not sent for states less than
-     * peeking (i.e. hidden).
+     * sheet is between the peeking and half states.
      */
     private void sendOffsetChangeEvents() {
-        // Do not send events for states less than the peeking state unless 0 has not been sent.
-        if (getCurrentOffsetPx() < getSheetHeightForState(SHEET_STATE_PEEK)
+        float offsetWithBrowserControls = getCurrentOffsetPx() - getOffsetFromBrowserControls();
+
+        // Do not send events for states less than the hidden state unless 0 has not been sent.
+        if (offsetWithBrowserControls < getSheetHeightForState(SHEET_STATE_HIDDEN)
                 && mLastOffsetRatioSent <= 0) {
             return;
         }
 
-        float screenRatio = mContainerHeight > 0 ? getCurrentOffsetPx() / mContainerHeight : 0;
+        float screenRatio = mContainerHeight > 0 ? offsetWithBrowserControls / mContainerHeight : 0;
 
         // This ratio is relative to the peek and full positions of the sheet.
-        float peekFullRatio = MathUtils.clamp(
-                (screenRatio - getPeekRatio()) / (getFullRatio() - getPeekRatio()), 0, 1);
+        float hiddenFullRatio = MathUtils.clamp(
+                (screenRatio - getHiddenRatio()) / (getFullRatio() - getHiddenRatio()), 0, 1);
 
-        if (getCurrentOffsetPx() < getSheetHeightForState(SHEET_STATE_PEEK)) {
+        if (offsetWithBrowserControls < getSheetHeightForState(SHEET_STATE_HIDDEN)) {
             mLastOffsetRatioSent = 0;
         } else {
-            mLastOffsetRatioSent = MathUtils.areFloatsEqual(peekFullRatio, 0) ? 0 : peekFullRatio;
+            mLastOffsetRatioSent =
+                    MathUtils.areFloatsEqual(hiddenFullRatio, 0) ? 0 : hiddenFullRatio;
         }
 
         for (BottomSheetObserver o : mObservers) o.onSheetOffsetChanged(mLastOffsetRatioSent);
@@ -1399,15 +1389,6 @@ public class BottomSheet
         float fullToHalfDiff = (getFullRatio() - getHalfRatio()) * mContainerHeight;
         return fullToHalfDiff < mMinHalfFullDistance;
     }
-
-    @Override
-    public void onFadingViewClick() {
-        if (!mIsSheetOpen) return;
-        setSheetState(SHEET_STATE_PEEK, true, StateChangeReason.TAP_SCRIM);
-    }
-
-    @Override
-    public void onFadingViewVisibilityChanged(boolean visible) {}
 
     /**
      * @return The default toolbar view.

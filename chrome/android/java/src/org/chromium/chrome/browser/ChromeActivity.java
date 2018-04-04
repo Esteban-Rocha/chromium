@@ -304,7 +304,7 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
         // We need to explicitly enable VR mode here so that the system doesn't kick us out of VR
         // mode while we prepare for VR rendering.
         if (VrIntentUtils.isVrIntent(getIntent())) {
-            VrShellDelegate.setVrModeEnabled(this);
+            VrShellDelegate.setVrModeEnabled(this, true);
         }
 
         // Force a partner customizations refresh if it has yet to be initialized.  This can happen
@@ -341,12 +341,16 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
             mAssistStatusHandler.updateAssistState();
         }
 
-        // If a user had ALLOW_LOW_END_DEVICE_UI explicitly set to false then we manually override
-        // SysUtils.isLowEndDevice() with a switch so that they continue to see the normal UI. This
-        // is only the case for grandfathered-in svelte users. We no longer do so for newer users.
-        if (!ChromePreferenceManager.getInstance().getAllowLowEndDeviceUi()) {
-            CommandLine.getInstance().appendSwitch(
-                    BaseSwitches.DISABLE_LOW_END_DEVICE_MODE);
+        // This check is only applicable for JB since in KK svelte was supported from the start.
+        // See https://crbug.com/826460 for context.
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            // If a user had ALLOW_LOW_END_DEVICE_UI explicitly set to false then we manually
+            // override SysUtils.isLowEndDevice() with a switch so that they continue to see the
+            // normal UI. This is only the case for grandfathered-in svelte users. We no longer do
+            // so for newer users.
+            if (!ChromePreferenceManager.getInstance().getAllowLowEndDeviceUi()) {
+                CommandLine.getInstance().appendSwitch(BaseSwitches.DISABLE_LOW_END_DEVICE_MODE);
+            }
         }
 
         AccessibilityManager manager = (AccessibilityManager)
@@ -938,6 +942,13 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
     }
 
     /**
+     * @return Whether the given activity can show the publisher URL from a trusted CDN.
+     */
+    public boolean canShowTrustedCdnPublisherUrl() {
+        return false;
+    }
+
+    /**
      * Actions that may be run at some point after startup. Place tasks that are not critical to the
      * startup path here.  This method will be called automatically.
      */
@@ -1249,24 +1260,21 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
         VrShellDelegate.onNativeLibraryAvailable();
         super.finishNativeInitialization();
 
-        if (FeatureUtilities.isChromeDuplexEnabled()) {
+        if (FeatureUtilities.isContextualSuggestionsBottomSheetEnabled(isTablet())) {
             ViewGroup coordinator = (ViewGroup) findViewById(R.id.coordinator);
             getLayoutInflater().inflate(R.layout.bottom_sheet, coordinator);
             mBottomSheet = coordinator.findViewById(R.id.bottom_sheet);
             mBottomSheet.init(coordinator, this);
+
+            ((BottomContainer) findViewById(R.id.bottom_container)).setBottomSheet(mBottomSheet);
 
             mFadingBackgroundView = (FadingBackgroundView) findViewById(R.id.fading_focus_target);
             mBottomSheetController = new BottomSheetController(getTabModelSelector(),
                     getCompositorViewHolder().getLayoutManager(), mFadingBackgroundView,
                     mBottomSheet);
 
-            mFadingBackgroundView.addObserver(mBottomSheet);
-
-            if (ChromeFeatureList.isEnabled(
-                        ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BOTTOM_SHEET)) {
-                mContextualSuggestionsCoordinator = new ContextualSuggestionsCoordinator(
-                        this, mBottomSheet, getTabModelSelector());
-            }
+            mContextualSuggestionsCoordinator = new ContextualSuggestionsCoordinator(
+                    this, mBottomSheetController, getTabModelSelector());
         }
     }
 
@@ -2194,16 +2202,15 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
      * is in Android N multi-window mode.
      */
     protected void recordMultiWindowModeScreenWidth() {
-        if (!DeviceFormFactor.isTablet()) return;
+        if (!isTablet()) return;
 
         RecordHistogram.recordBooleanHistogram(
                 "Android.MultiWindowMode.IsTabletScreenWidthBelow600",
                 mScreenWidthDp < DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP);
 
         if (mScreenWidthDp < DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP) {
-            RecordHistogram.recordLinearCountHistogram(
-                    "Android.MultiWindowMode.TabletScreenWidth", mScreenWidthDp, 1,
-                    DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP, 50);
+            RecordHistogram.recordLinearCountHistogram("Android.MultiWindowMode.TabletScreenWidth",
+                    mScreenWidthDp, 1, DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP, 50);
         }
     }
 

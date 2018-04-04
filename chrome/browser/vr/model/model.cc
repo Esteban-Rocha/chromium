@@ -26,9 +26,8 @@ bool IsOpaqueUiMode(UiMode mode) {
 
 }  // namespace
 
-Model::Model() {}
-
-Model::~Model() {}
+Model::Model() = default;
+Model::~Model() = default;
 
 const ColorScheme& Model::color_scheme() const {
   ColorScheme::Mode mode = ColorScheme::kModeNormal;
@@ -123,7 +122,7 @@ bool Model::reposition_window_enabled() const {
 bool Model::reposition_window_permitted() const {
   return !editing_input && !editing_web_input &&
          active_modal_prompt_type == kModalPromptTypeNone &&
-         !native_ui.hosted_ui_enabled;
+         !hosted_platform_ui.hosted_ui_enabled;
 }
 
 }  // namespace vr

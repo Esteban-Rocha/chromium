@@ -23,7 +23,7 @@ class IdleTimeEstimatorForTest : public IdleTimeEstimator {
  public:
   IdleTimeEstimatorForTest(
       const scoped_refptr<TaskQueue>& compositor_task_runner,
-      base::TickClock* clock,
+      const base::TickClock* clock,
       int sample_count,
       double estimation_percentile)
       : IdleTimeEstimator(compositor_task_runner,
@@ -32,7 +32,7 @@ class IdleTimeEstimatorForTest : public IdleTimeEstimator {
                           estimation_percentile) {}
 };
 
-class IdleTimeEstimatorTest : public ::testing::Test {
+class IdleTimeEstimatorTest : public testing::Test {
  public:
   IdleTimeEstimatorTest()
       : frame_length_(base::TimeDelta::FromMilliseconds(16)) {}

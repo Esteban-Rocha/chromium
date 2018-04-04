@@ -9,7 +9,9 @@
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
 #import "ios/chrome/browser/ui/commands/open_new_tab_command.h"
+#import "ios/chrome/browser/ui/popup_menu/cells/popup_menu_footer_item.h"
 #import "ios/chrome/browser/ui/popup_menu/cells/popup_menu_item.h"
+#import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -17,20 +19,36 @@
 
 using base::UserMetricsAction;
 
+namespace {
+const CGFloat kFooterHeight = 21;
+const CGFloat kPopupMenuVerticalInsets = 7;
+const CGFloat kScrollIndicatorVerticalInsets = 11;
+}  // namespace
+
 @implementation PopupMenuTableViewController
 
 @dynamic tableViewModel;
 @synthesize baseViewController = _baseViewController;
+@synthesize commandHandler = _commandHandler;
 @synthesize dispatcher = _dispatcher;
 
 #pragma mark - UIViewController
 
 - (void)viewDidLoad {
+  self.styler.tableViewBackgroundColor = nil;
   [super viewDidLoad];
+  self.tableView.contentInset = UIEdgeInsetsMake(kPopupMenuVerticalInsets, 0,
+                                                 kPopupMenuVerticalInsets, 0);
+  self.tableView.scrollIndicatorInsets = UIEdgeInsetsMake(
+      kScrollIndicatorVerticalInsets, 0, kScrollIndicatorVerticalInsets, 0);
   self.tableView.rowHeight = UITableViewAutomaticDimension;
   self.tableView.sectionHeaderHeight = 0;
-  self.tableView.sectionFooterHeight = 0;
   self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
+  // Adding a tableHeaderView is needed to prevent a wide inset on top of the
+  // collection.
+  self.tableView.tableHeaderView = [[UIView alloc]
+      initWithFrame:CGRectMake(0.0f, 0.0f, self.tableView.bounds.size.width,
+                               0.01f)];
 }
 
 - (void)setPopupMenuItems:
@@ -42,6 +60,14 @@ using base::UserMetricsAction;
     for (TableViewItem<PopupMenuItem>* item in items[section]) {
       [self.tableViewModel addItem:item
            toSectionWithIdentifier:sectionIdentifier];
+    }
+
+    if (section != items.count - 1) {
+      // Add a footer for all sections except the last one.
+      TableViewHeaderFooterItem* footer =
+          [[PopupMenuFooterItem alloc] initWithType:kItemTypeEnumZero];
+      [self.tableViewModel setFooter:footer
+            forSectionWithIdentifier:sectionIdentifier];
     }
   }
   [self.tableView reloadData];
@@ -61,6 +87,8 @@ using base::UserMetricsAction;
       height += ceil(sizeForCell.height);
     }
   }
+  height +=
+      self.tableView.contentInset.top + self.tableView.contentInset.bottom;
   return CGSizeMake(width, height);
 }
 
@@ -73,6 +101,13 @@ using base::UserMetricsAction;
   UIView* cell = [self.tableView cellForRowAtIndexPath:indexPath];
   CGPoint center = [cell convertPoint:cell.center toView:nil];
   [self executeActionForIdentifier:item.actionIdentifier origin:center];
+}
+
+- (CGFloat)tableView:(UITableView*)tableView
+    heightForFooterInSection:(NSInteger)section {
+  if (section == self.tableViewModel.numberOfSections - 1)
+    return 0;
+  return kFooterHeight;
 }
 
 #pragma mark - Private
@@ -104,8 +139,7 @@ using base::UserMetricsAction;
       break;
     case PopupMenuActionReadLater:
       base::RecordAction(UserMetricsAction("MobileMenuReadLater"));
-      // TODO(crbug.com/822703): Add action.
-      [self showNotImplementedAlert];
+      [self.commandHandler readPageLater];
       break;
     case PopupMenuActionFindInPage:
       base::RecordAction(UserMetricsAction("MobileMenuFindInPage"));
@@ -121,8 +155,8 @@ using base::UserMetricsAction;
       break;
     case PopupMenuActionSiteInformation:
       base::RecordAction(UserMetricsAction("MobileMenuSiteInformation"));
-      // TODO(crbug.com/822703): Add action.
-      [self showNotImplementedAlert];
+      [self.dispatcher
+          showPageInfoForOriginPoint:self.baseViewController.view.center];
       break;
     case PopupMenuActionReportIssue:
       base::RecordAction(UserMetricsAction("MobileMenuReportAnIssue"));
@@ -153,29 +187,18 @@ using base::UserMetricsAction;
       base::RecordAction(UserMetricsAction("MobileMenuSettings"));
       [self.dispatcher showSettingsFromViewController:self.baseViewController];
       break;
+    case PopupMenuActionCloseTab:
+      base::RecordAction(UserMetricsAction("MobileMenuCloseTab"));
+      [self.dispatcher closeCurrentTab];
+      break;
+    case PopupMenuActionCloseAllIncognitoTabs:
+      base::RecordAction(UserMetricsAction("MobileMenuCloseAllIncognitoTabs"));
+      [self.dispatcher closeAllIncognitoTabs];
+      break;
   }
 
   // Close the tools menu.
   [self.dispatcher dismissPopupMenu];
-}
-
-#pragma mark - Private
-
-// TODO(crbug.com/822703): Remove this.
-- (void)showNotImplementedAlert {
-  UIAlertController* alertController =
-      [UIAlertController alertControllerWithTitle:@"Not implemented yet."
-                                          message:nil
-                                   preferredStyle:UIAlertControllerStyleAlert];
-  UIAlertAction* alertAction =
-      [UIAlertAction actionWithTitle:@"OK"
-                               style:UIAlertActionStyleCancel
-                             handler:nil];
-
-  [alertController addAction:alertAction];
-  [self.baseViewController presentViewController:alertController
-                                        animated:YES
-                                      completion:nil];
 }
 
 @end

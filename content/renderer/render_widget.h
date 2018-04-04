@@ -46,7 +46,7 @@
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "third_party/WebKit/public/platform/WebDisplayMode.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -415,6 +415,19 @@ class CONTENT_EXPORT RenderWidget
   uint32_t GetContentSourceId();
   void DidNavigate();
 
+  bool auto_resize_mode() const { return auto_resize_mode_; }
+
+  uint64_t auto_resize_sequence_number() const {
+    return auto_resize_sequence_number_;
+  }
+
+  const gfx::Size& min_size_for_auto_resize() const {
+    return min_size_for_auto_resize_;
+  }
+
+  const gfx::Size& max_size_for_auto_resize() const {
+    return max_size_for_auto_resize_;
+  }
   // MainThreadEventQueueClient overrides.
 
   // Requests a BeginMainFrame callback from the compositor.
@@ -537,12 +550,6 @@ class CONTENT_EXPORT RenderWidget
       RenderWidgetScreenMetricsEmulator* emulator);
 #endif
 
-  void SetLocalSurfaceIdForAutoResize(
-      uint64_t sequence_number,
-      const content::ScreenInfo& screen_info,
-      uint32_t content_source_id,
-      const viz::LocalSurfaceId& local_surface_id);
-
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(
       const blink::WebInputEvent* event,
@@ -552,13 +559,6 @@ class CONTENT_EXPORT RenderWidget
   void OnClose();
   void OnCreatingNewAck();
   virtual void OnResize(const ResizeParams& params);
-  void OnSetLocalSurfaceIdForAutoResize(
-      uint64_t sequence_number,
-      const gfx::Size& min_size,
-      const gfx::Size& max_size,
-      const content::ScreenInfo& screen_info,
-      uint32_t content_source_id,
-      const viz::LocalSurfaceId& local_surface_id);
   void OnEnableDeviceEmulation(const blink::WebDeviceEmulationParams& params);
   void OnDisableDeviceEmulation();
   virtual void OnWasHidden();
@@ -735,6 +735,12 @@ class CONTENT_EXPORT RenderWidget
 
   // The sequence number used for the auto-resize request.
   uint64_t auto_resize_sequence_number_ = 0;
+
+  // The minimum size to use for auto-resize.
+  gfx::Size min_size_for_auto_resize_;
+
+  // The maximum size to use for auto-resize.
+  gfx::Size max_size_for_auto_resize_;
 
   // A pending ResizeOrRepaintAck callback in response to an auto-resize
   // initiated by Blink. If auto-resize mode is canceled with an in-flight
@@ -980,13 +986,13 @@ class CONTENT_EXPORT RenderWidget
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  // Keep track of whether we committed after the latest resize that needs to be
-  // acked was received. This helps us make sure we don't ack a resize before
-  // it's committed.
-  bool did_commit_after_resize_ = false;
-
   gfx::Rect viewport_intersection_;
   gfx::Rect compositor_visible_rect_;
+
+  // Cache whether or not we have touch handlers, to reduce IPCs sent.
+  // Different consumers in the browser process makes different assumptions, so
+  // must always send the first IPC regardless of value.
+  base::Optional<bool> has_touch_handlers_;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

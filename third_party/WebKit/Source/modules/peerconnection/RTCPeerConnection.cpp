@@ -51,7 +51,7 @@
 #include "core/dom/DOMTimeStamp.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/HostsUsingFeatures.h"
 #include "core/frame/LocalFrame.h"
@@ -83,6 +83,7 @@
 #include "modules/peerconnection/RTCTrackEvent.h"
 #include "modules/peerconnection/RTCVoidRequestImpl.h"
 #include "modules/peerconnection/RTCVoidRequestPromiseImpl.h"
+#include "modules/peerconnection/WebRTCStatsReportCallbackResolver.h"
 #include "modules/peerconnection/testing/InternalsRTCPeerConnection.h"
 #include "platform/InstanceCounters.h"
 #include "platform/bindings/Microtask.h"
@@ -118,12 +119,6 @@ namespace {
 
 const char kSignalingStateClosedMessage[] =
     "The RTCPeerConnection's signalingState is 'closed'.";
-const char kSignalingStatePreventsOfferMessage[] =
-    "The RTCPeerConnection's signalingState must be 'stable' or "
-    "'have-local-offer' to apply an offer";
-const char kSignalingStatePreventsAnswerMessage[] =
-    "The RTCPeerConnection's signalingState must be 'have-remote-offer' or "
-    "'have-local-pranswer' to apply an answer";
 const char kModifiedSdpMessage[] =
     "The SDP does not match the previously generated SDP for this type";
 
@@ -416,53 +411,30 @@ RTCOfferOptionsPlatform* ParseOfferOptions(const Dictionary& options,
   return rtc_offer_options;
 }
 
-// Helper class for
-// |RTCPeerConnection::getStats(ScriptState*, MediaStreamTrack*)|
-class WebRTCStatsReportCallbackResolver : public WebRTCStatsReportCallback {
- public:
-  // Takes ownership of |resolver|.
-  static std::unique_ptr<WebRTCStatsReportCallback> Create(
-      ScriptPromiseResolver* resolver) {
-    return std::unique_ptr<WebRTCStatsReportCallback>(
-        new WebRTCStatsReportCallbackResolver(resolver));
-  }
-
-  ~WebRTCStatsReportCallbackResolver() override {
-    DCHECK(
-        ExecutionContext::From(resolver_->GetScriptState())->IsContextThread());
-  }
-
- private:
-  explicit WebRTCStatsReportCallbackResolver(ScriptPromiseResolver* resolver)
-      : resolver_(resolver) {}
-
-  void OnStatsDelivered(std::unique_ptr<WebRTCStatsReport> report) override {
-    DCHECK(
-        ExecutionContext::From(resolver_->GetScriptState())->IsContextThread());
-    resolver_->Resolve(new RTCStatsReport(std::move(report)));
-  }
-
-  Persistent<ScriptPromiseResolver> resolver_;
-};
-
 bool FingerprintMismatch(String old_sdp, String new_sdp) {
   // Check special case of externally generated SDP without fingerprints.
   // It's impossible to generate a valid fingerprint without createOffer
   // or createAnswer, so this only applies when there are no fingerprints.
   // This is allowed.
   const size_t new_fingerprint_pos = new_sdp.Find("\na=fingerprint:");
-  if (new_fingerprint_pos == kNotFound)
+  if (new_fingerprint_pos == kNotFound) {
     return false;
+  }
   // Look for fingerprint having been added. Not allowed.
   const size_t old_fingerprint_pos = old_sdp.Find("\na=fingerprint:");
   if (old_fingerprint_pos == kNotFound) {
     return true;
   }
-  // Look for fingerprint being modified. Not allowed.
-  const size_t old_fingerprint_end =
-      old_sdp.Find("\n", old_fingerprint_pos + 1);
-  const size_t new_fingerprint_end =
-      new_sdp.Find("\n", new_fingerprint_pos + 1);
+  // Look for fingerprint being modified. Not allowed.  Handle differences in
+  // line endings ('\r\n' vs, '\n' when looking for the end of the fingerprint).
+  size_t old_fingerprint_end = old_sdp.Find("\r\n", old_fingerprint_pos + 1);
+  if (old_fingerprint_end == WTF::kNotFound) {
+    old_fingerprint_end = old_sdp.Find("\n", old_fingerprint_pos + 1);
+  }
+  size_t new_fingerprint_end = new_sdp.Find("\r\n", new_fingerprint_pos + 1);
+  if (new_fingerprint_end == WTF::kNotFound) {
+    new_fingerprint_end = new_sdp.Find("\n", new_fingerprint_pos + 1);
+  }
   return old_sdp.Substring(old_fingerprint_pos,
                            old_fingerprint_end - old_fingerprint_pos) !=
          new_sdp.Substring(new_fingerprint_pos,
@@ -778,11 +750,6 @@ DOMException* RTCPeerConnection::checkSdpForStateErrors(
 
   *sdp = session_description_init.sdp();
   if (session_description_init.type() == "offer") {
-    if (signaling_state_ != kSignalingStateStable &&
-        signaling_state_ != kSignalingStateHaveLocalOffer) {
-      return DOMException::Create(kInvalidStateError,
-                                  kSignalingStatePreventsOfferMessage);
-    }
     if (sdp->IsNull() || sdp->IsEmpty()) {
       *sdp = last_offer_;
     } else if (session_description_init.sdp() != last_offer_) {
@@ -797,11 +764,6 @@ DOMException* RTCPeerConnection::checkSdpForStateErrors(
     }
   } else if (session_description_init.type() == "answer" ||
              session_description_init.type() == "pranswer") {
-    if (signaling_state_ != kSignalingStateHaveRemoteOffer &&
-        signaling_state_ != kSignalingStateHaveLocalPrAnswer) {
-      return DOMException::Create(kInvalidStateError,
-                                  kSignalingStatePreventsAnswerMessage);
-    }
     if (sdp->IsNull() || sdp->IsEmpty()) {
       *sdp = last_answer_;
     } else if (session_description_init.sdp() != last_answer_) {
@@ -1553,8 +1515,9 @@ void RTCPeerConnection::NoteSdpCreated(const RTCSessionDescription& desc) {
 
 void RTCPeerConnection::OnStreamAddTrack(MediaStream* stream,
                                          MediaStreamTrack* track) {
-  ExceptionState exception_state(nullptr, ExceptionState::kUnknownContext,
-                                 nullptr, nullptr);
+  ExceptionState exception_state(v8::Isolate::GetCurrent(),
+                                 ExceptionState::kExecutionContext, nullptr,
+                                 nullptr);
   MediaStreamVector streams;
   streams.push_back(stream);
   addTrack(track, streams, exception_state);
@@ -1568,8 +1531,9 @@ void RTCPeerConnection::OnStreamRemoveTrack(MediaStream* stream,
                                             MediaStreamTrack* track) {
   auto sender = FindSenderForTrackAndStream(track, stream);
   if (sender) {
-    ExceptionState exception_state(nullptr, ExceptionState::kUnknownContext,
-                                   nullptr, nullptr);
+    ExceptionState exception_state(v8::Isolate::GetCurrent(),
+                                   ExceptionState::kExecutionContext, nullptr,
+                                   nullptr);
     removeTrack(sender, exception_state);
     // If removeTracl() failed most likely the connection is closed. The
     // exception can be suppressed, there is nothing to do.

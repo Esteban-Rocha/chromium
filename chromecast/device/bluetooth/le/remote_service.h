@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,11 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/weak_ptr.h"
-#include "base/single_thread_task_runner.h"
-#include "chromecast/internal/public/bluetooth_v2_shlib/gatt.h"
+#include "chromecast/public/bluetooth/gatt.h"
 
 namespace chromecast {
 namespace bluetooth {
 
-class GattClientManager;
 class RemoteCharacteristic;
 class RemoteDevice;
 
@@ -27,43 +24,19 @@ class RemoteDevice;
 class RemoteService : public base::RefCountedThreadSafe<RemoteService> {
  public:
   // Returns a list of characteristics in this service.
-  void GetCharacteristics(
-      base::OnceCallback<void(std::vector<scoped_refptr<RemoteCharacteristic>>)>
-          cb);
+  virtual std::vector<scoped_refptr<RemoteCharacteristic>>
+  GetCharacteristics() = 0;
 
-  std::vector<scoped_refptr<RemoteCharacteristic>> GetCharacteristics();
+  virtual scoped_refptr<RemoteCharacteristic> GetCharacteristicByUuid(
+      const bluetooth_v2_shlib::Uuid& uuid) = 0;
 
-  scoped_refptr<RemoteCharacteristic> GetCharacteristicByUuid(
-      const bluetooth_v2_shlib::Uuid& uuid);
+  virtual const bluetooth_v2_shlib::Uuid& uuid() const = 0;
+  virtual uint16_t handle() const = 0;
+  virtual bool primary() const = 0;
 
-  const bluetooth_v2_shlib::Uuid& uuid() const { return service_.uuid; }
-  uint16_t handle() const { return service_.handle; }
-  bool primary() const { return service_.primary; }
-
- private:
-  friend class RemoteDevice;
+ protected:
   friend class base::RefCountedThreadSafe<RemoteService>;
-
-  static std::map<bluetooth_v2_shlib::Uuid, scoped_refptr<RemoteCharacteristic>>
-  CreateCharMap(RemoteDevice* remote_device,
-                base::WeakPtr<GattClientManager> gatt_client_manager,
-                const bluetooth_v2_shlib::Gatt::Service& service,
-                scoped_refptr<base::SingleThreadTaskRunner> io_task_runner);
-
-  // May only be constructed by RemoteDevice.
-  explicit RemoteService(
-      RemoteDevice* remote_device,
-      base::WeakPtr<GattClientManager> gatt_client_manager,
-      const bluetooth_v2_shlib::Gatt::Service& service,
-      scoped_refptr<base::SingleThreadTaskRunner> io_task_runner);
-  ~RemoteService();
-
-  const bluetooth_v2_shlib::Gatt::Service service_;
-
-  const std::map<bluetooth_v2_shlib::Uuid, scoped_refptr<RemoteCharacteristic>>
-      uuid_to_characteristic_;
-
-  DISALLOW_COPY_AND_ASSIGN(RemoteService);
+  virtual ~RemoteService() = default;
 };
 
 }  // namespace bluetooth

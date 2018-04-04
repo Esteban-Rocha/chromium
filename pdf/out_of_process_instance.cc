@@ -112,6 +112,8 @@ const char kJSPreviewPageIndex[] = "index";
 const char kJSSetScrollPositionType[] = "setScrollPosition";
 const char kJSPositionX[] = "x";
 const char kJSPositionY[] = "y";
+// Scroll by (Plugin -> Page)
+const char kJSScrollByType[] = "scrollBy";
 // Cancel the stream URL request (Plugin -> Page)
 const char kJSCancelStreamUrlType[] = "cancelStreamUrl";
 // Navigate to the given URL (Plugin -> Page)
@@ -1242,6 +1244,14 @@ void OutOfProcessInstance::ScrollToY(int y_in_screen_coords,
   PostMessage(position);
 }
 
+void OutOfProcessInstance::ScrollBy(const pp::Point& point) {
+  pp::VarDictionary position;
+  position.Set(kType, kJSScrollByType);
+  position.Set(kJSPositionX, pp::Var(point.x() / device_scale_));
+  position.Set(kJSPositionY, pp::Var(point.y() / device_scale_));
+  PostMessage(position);
+}
+
 void OutOfProcessInstance::ScrollToPage(int page) {
   if (engine_->GetNumberOfPages() == 0)
     return;
@@ -1490,7 +1500,8 @@ OutOfProcessInstance::SearchString(const base::char16* string,
 void OutOfProcessInstance::DocumentPaintOccurred() {}
 
 void OutOfProcessInstance::DocumentLoadComplete(
-    const PDFEngine::DocumentFeatures& document_features) {
+    const PDFEngine::DocumentFeatures& document_features,
+    uint32_t file_size) {
   // Clear focus state for OSK.
   FormTextFieldFocusChange(false);
 
@@ -1555,6 +1566,9 @@ void OutOfProcessInstance::DocumentLoadComplete(
   }
 
   pp::PDF::SetContentRestriction(this, content_restrictions);
+  static const int32_t kMaxFileSizeInKB = 12 * 1024 * 1024;
+  HistogramCustomCounts("PDF.FileSizeInKB", file_size / 1024, 0,
+                        kMaxFileSizeInKB, 50);
   HistogramCustomCounts("PDF.PageCount", document_features.page_count, 1,
                         1000000, 50);
   HistogramEnumeration("PDF.HasAttachment",

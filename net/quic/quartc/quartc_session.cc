@@ -185,7 +185,7 @@ void QuartcSession::CloseStream(QuicStreamId stream_id) {
     return;
   }
   if (!register_streams_early()) {
-    write_blocked_streams()->UnregisterStream(stream_id);
+    write_blocked_streams()->UnregisterStream(stream_id, /*is_static=*/false);
   }
   QuicSession::CloseStream(stream_id);
 }
@@ -284,6 +284,11 @@ void QuartcSession::SetDelegate(
   DCHECK(session_delegate_);
 }
 
+void QuartcSession::SetSessionVisitor(QuartcSessionVisitor* debug_visitor) {
+  debug_visitor->SetQuicConnection(connection_.get());
+  connection_->set_debug_visitor(debug_visitor->GetConnectionVisitor());
+}
+
 void QuartcSession::OnTransportCanWrite() {
   connection()->writer()->SetWritable();
   if (HasDataToWrite()) {
@@ -335,7 +340,8 @@ std::unique_ptr<QuartcStream> QuartcSession::CreateDataStream(
     // between 0 and 7, with 0 being the highest priority and 7 the lowest
     // priority.
     if (!register_streams_early()) {
-      write_blocked_streams()->RegisterStream(stream->id(), priority);
+      write_blocked_streams()->RegisterStream(
+          stream->id(), /* is_static_stream= */ false, priority);
     } else {
       write_blocked_streams()->UpdateStreamPriority(stream->id(), priority);
     }

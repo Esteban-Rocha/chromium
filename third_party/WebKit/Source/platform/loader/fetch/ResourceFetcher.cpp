@@ -384,6 +384,9 @@ void ResourceFetcher::DidLoadResourceFromMemoryCache(
   resource_request.SetFrameType(original_resource_request.GetFrameType());
   resource_request.SetRequestContext(
       original_resource_request.GetRequestContext());
+  if (original_resource_request.IsAdResource())
+    resource_request.SetIsAdResource();
+
   Context().DispatchDidLoadResourceFromMemoryCache(identifier, resource_request,
                                                    resource->GetResponse());
   Context().DispatchWillSendRequest(
@@ -969,7 +972,8 @@ void ResourceFetcher::RecordResourceTimingOnRedirect(
 static bool IsDownloadOrStreamRequest(const ResourceRequest& request) {
   // Never use cache entries for DownloadToFile / UseStreamOnResponse requests.
   // The data will be delivered through other paths.
-  return request.DownloadToFile() || request.UseStreamOnResponse();
+  return request.DownloadToFile() || request.DownloadToBlob() ||
+         request.UseStreamOnResponse();
 }
 
 Resource* ResourceFetcher::MatchPreload(const FetchParameters& params,
@@ -991,7 +995,7 @@ Resource* ResourceFetcher::MatchPreload(const FetchParameters& params,
   }
 
   const ResourceRequest& request = params.GetResourceRequest();
-  if (request.DownloadToFile())
+  if (request.DownloadToFile() || request.DownloadToBlob())
     return nullptr;
 
   if (IsImageResourceDisallowedToBeReused(*resource) ||

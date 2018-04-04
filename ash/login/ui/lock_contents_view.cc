@@ -239,7 +239,7 @@ LockContentsView::LockContentsView(
       keyboard_observer_(this) {
   data_dispatcher_->AddObserver(this);
   display_observer_.Add(display::Screen::GetScreen());
-  Shell::Get()->login_screen_controller()->AddLockScreenAppsFocusObserver(this);
+  Shell::Get()->login_screen_controller()->AddObserver(this);
   Shell::Get()->system_tray_notifier()->AddSystemTrayFocusObserver(this);
   auth_error_bubble_ = std::make_unique<LoginBubble>();
   detachable_base_error_bubble_ = std::make_unique<LoginBubble>();
@@ -282,8 +282,7 @@ LockContentsView::LockContentsView(
 
 LockContentsView::~LockContentsView() {
   data_dispatcher_->RemoveObserver(this);
-  Shell::Get()->login_screen_controller()->RemoveLockScreenAppsFocusObserver(
-      this);
+  Shell::Get()->login_screen_controller()->RemoveObserver(this);
   Shell::Get()->system_tray_notifier()->RemoveSystemTrayFocusObserver(this);
 
   if (unlock_attempt_ > 0) {
@@ -760,11 +759,11 @@ void LockContentsView::AddRotationAction(const OnRotate& on_rotate) {
 
 void LockContentsView::SwapActiveAuthBetweenPrimaryAndSecondary(
     bool is_primary) {
-  if (is_primary && !primary_big_view_->auth_enabled()) {
+  if (is_primary && !primary_big_view_->IsAuthEnabled()) {
     LayoutAuth(primary_big_view_, opt_secondary_big_view_, true /*animate*/);
     OnBigUserChanged();
   } else if (!is_primary && opt_secondary_big_view_ &&
-             !opt_secondary_big_view_->auth_enabled()) {
+             !opt_secondary_big_view_->IsAuthEnabled()) {
     LayoutAuth(opt_secondary_big_view_, primary_big_view_, true /*animate*/);
     OnBigUserChanged();
   }
@@ -907,8 +906,8 @@ void LockContentsView::UpdateEasyUnlockIconForUser(const AccountId& user) {
 }
 
 LoginBigUserView* LockContentsView::CurrentBigUserView() {
-  if (opt_secondary_big_view_ && opt_secondary_big_view_->auth_enabled()) {
-    DCHECK(!primary_big_view_->auth_enabled());
+  if (opt_secondary_big_view_ && opt_secondary_big_view_->IsAuthEnabled()) {
+    DCHECK(!primary_big_view_->IsAuthEnabled());
     return opt_secondary_big_view_;
   }
 
@@ -1040,7 +1039,7 @@ LoginBigUserView* LockContentsView::TryToFindBigUser(const AccountId& user,
   }
 
   // Make sure auth instance is active if required.
-  if (require_auth_active && view && !view->auth_enabled())
+  if (require_auth_active && view && !view->IsAuthEnabled())
     view = nullptr;
 
   return view;

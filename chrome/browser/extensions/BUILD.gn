@@ -9,7 +9,7 @@ import("//components/nacl/features.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//rlz/features/features.gni")
+import("//rlz/buildflags/buildflags.gni")
 
 assert(enable_extensions)
 
@@ -163,10 +163,6 @@ static_library("extensions") {
     "api/developer_private/inspectable_views_finder.h",
     "api/developer_private/show_permissions_dialog_helper.cc",
     "api/developer_private/show_permissions_dialog_helper.h",
-    "api/dial/dial_api.cc",
-    "api/dial/dial_api.h",
-    "api/dial/dial_api_factory.cc",
-    "api/dial/dial_api_factory.h",
     "api/downloads/downloads_api.cc",
     "api/downloads/downloads_api.h",
     "api/downloads_internal/downloads_internal_api.cc",
@@ -808,7 +804,6 @@ static_library("extensions") {
     "//components/bubble",
     "//components/content_settings/core/browser",
     "//components/crx_file",
-    "//components/cryptauth",
     "//components/data_reduction_proxy/core/browser",
     "//components/dom_distiller/core",
     "//components/download/content/public",
@@ -872,9 +867,9 @@ static_library("extensions") {
     "//google_apis",
     "//media:media_buildflags",
     "//net",
-    "//ppapi/features",
-    "//printing/features",
-    "//rlz/features",
+    "//ppapi/buildflags",
+    "//printing/buildflags",
+    "//rlz/buildflags",
     "//services/audio/public/cpp",
     "//services/data_decoder/public/cpp",
     "//services/device/public/mojom",
@@ -986,12 +981,13 @@ static_library("extensions") {
     deps += [
       "//ash",
       "//ash/public/cpp",
+      "//chromeos/components/proximity_auth",
+      "//chromeos/components/proximity_auth/logging",
       "//components/arc",
       "//components/chrome_apps",
       "//components/constrained_window",
+      "//components/cryptauth",
       "//components/drive",
-      "//components/proximity_auth",
-      "//components/proximity_auth/logging",
       "//components/user_manager",
       "//remoting/base",
       "//remoting/host",

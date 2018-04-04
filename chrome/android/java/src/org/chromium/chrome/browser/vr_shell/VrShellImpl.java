@@ -477,20 +477,25 @@ public class VrShellImpl
         mDelegate.showDoff(false);
     }
 
-    // Called because showing PageInfo isn't supported in VR. This happens when the user clicks on
-    // the security icon in the URL bar.
+    // Called when the user clicks on the security icon in the URL bar.
     @CalledByNative
-    public void onUnhandledPageInfo() {
-        VrShellDelegate.requestToExitVr(new OnExitVrRequestListener() {
-            @Override
-            public void onSucceeded() {
-                PageInfoPopup.show(
-                        mActivity, mActivity.getActivityTab(), null, PageInfoPopup.OPENED_FROM_VR);
-            }
+    public void showPageInfo() {
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.VR_BROWSING_NATIVE_ANDROID_UI)) {
+            VrShellDelegate.requestToExitVr(new OnExitVrRequestListener() {
+                @Override
+                public void onSucceeded() {
+                    PageInfoPopup.show(mActivity, mActivity.getActivityTab(), null,
+                            PageInfoPopup.OPENED_FROM_VR);
+                }
 
-            @Override
-            public void onDenied() {}
-        }, UiUnsupportedMode.UNHANDLED_PAGE_INFO);
+                @Override
+                public void onDenied() {}
+            }, UiUnsupportedMode.UNHANDLED_PAGE_INFO);
+            return;
+        }
+
+        PageInfoPopup.show(
+                mActivity, mActivity.getActivityTab(), null, PageInfoPopup.OPENED_FROM_VR);
     }
 
     // Called because showing audio permission dialog isn't supported in VR. This happens when
@@ -727,7 +732,6 @@ public class VrShellImpl
      */
     @Override
     public void setDialogView(View view) {
-        if (getWebVrModeEnabled()) return;
         if (view == null) return;
         assert mVrUiViewContainer.getChildCount() == 0;
         mVrUiViewContainer.addView(view);
@@ -747,8 +751,24 @@ public class VrShellImpl
      */
     @Override
     public void setDialogSize(int width, int height) {
+        nativeSetDialogBufferSize(mNativeVrShell, width, height);
+        float scale = mContentVrWindowAndroid.getDisplay().getAndroidUIScaling();
+        nativeSetAlertDialogSize(mNativeVrShell, width * scale, height * scale);
+    }
+
+    /**
+     * Set size of the Dialog location in VR.
+     */
+    @Override
+    public void setDialogLocation(int x, int y) {
         if (getWebVrModeEnabled()) return;
-        nativeSetAlertDialogSize(mNativeVrShell, width, height);
+        float scale = mContentVrWindowAndroid.getDisplay().getAndroidUIScaling();
+        nativeSetDialogLocation(mNativeVrShell, x * scale, y * scale);
+    }
+
+    @Override
+    public void setDialogFloating() {
+        nativeSetDialogFloating(mNativeVrShell);
     }
 
     /**
@@ -756,33 +776,33 @@ public class VrShellImpl
      */
     @Override
     public void initVrDialog(int width, int height) {
-        if (getWebVrModeEnabled()) {
-            if (mVrBrowsingEnabled) {
-                mDelegate.exitWebVRPresent();
-            } else {
-                // TODO (asimjour): We should be able to show the dialogs in webvr. But for now,
-                // we close the dialog. Closing the dialog cannot happen in the show() method,
-                // therefore we have to post task the call to Presenter to close the dialog.
-                ThreadUtils.postOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        mVrModalPresenter.closeCurrentDialog();
-                    }
-                });
-                return;
-            }
-        }
-
-        nativeSetAlertDialog(mNativeVrShell, width, height);
+        float scale = mContentVrWindowAndroid.getDisplay().getAndroidUIScaling();
+        nativeSetAlertDialog(mNativeVrShell, width * scale, height * scale);
         mAndroidDialogGestureTarget =
-                new AndroidUiGestureTarget(mVrUiViewContainer.getInputTarget(), 1.0f,
+                new AndroidUiGestureTarget(mVrUiViewContainer.getInputTarget(), 1.0f / scale,
                         getNativePageScrollRatio(), getTouchSlop());
         nativeSetDialogGestureTarget(mNativeVrShell, mAndroidDialogGestureTarget);
     }
 
+    /**
+     * Show a text only Toast.
+     */
     @Override
-    public void setWebVrModeEnabled(boolean enabled, boolean showToast) {
-        if (mNativeVrShell != 0) nativeSetWebVrMode(mNativeVrShell, enabled, showToast);
+    public void showToast(CharSequence text) {
+        nativeShowToast(mNativeVrShell, text.toString());
+    }
+
+    /**
+     * Cancel a Toast.
+     */
+    @Override
+    public void cancelToast() {
+        nativeCancelToast(mNativeVrShell);
+    }
+
+    @Override
+    public void setWebVrModeEnabled(boolean enabled) {
+        if (mNativeVrShell != 0) nativeSetWebVrMode(mNativeVrShell, enabled);
         if (!enabled) {
             mContentVrWindowAndroid.setVSyncPaused(false);
             mPendingVSyncPause = false;
@@ -1085,7 +1105,7 @@ public class VrShellImpl
     private native void nativeOnLoadProgressChanged(long nativeVrShell, double progress);
     private native void nativeBufferBoundsChanged(long nativeVrShell, int contentWidth,
             int contentHeight, int overlayWidth, int overlayHeight);
-    private native void nativeSetWebVrMode(long nativeVrShell, boolean enabled, boolean showToast);
+    private native void nativeSetWebVrMode(long nativeVrShell, boolean enabled);
     private native boolean nativeGetWebVrMode(long nativeVrShell);
     private native boolean nativeIsDisplayingUrlForTesting(long nativeVrShell);
     private native void nativeOnTabListCreated(long nativeVrShell, Tab[] mainTabs,
@@ -1094,8 +1114,13 @@ public class VrShellImpl
             String title);
     private native void nativeOnTabRemoved(long nativeVrShell, boolean incognito, int id);
     private native void nativeCloseAlertDialog(long nativeVrShell);
-    private native void nativeSetAlertDialog(long nativeVrShell, int width, int height);
-    private native void nativeSetAlertDialogSize(long nativeVrShell, int width, int height);
+    private native void nativeSetAlertDialog(long nativeVrShell, float width, float height);
+    private native void nativeSetDialogBufferSize(long nativeVrShell, float width, float height);
+    private native void nativeSetAlertDialogSize(long nativeVrShell, float width, float height);
+    private native void nativeSetDialogLocation(long nativeVrShell, float x, float y);
+    private native void nativeSetDialogFloating(long nativeVrShell);
+    private native void nativeShowToast(long nativeVrShell, String text);
+    private native void nativeCancelToast(long nativeVrShell);
     private native void nativeSetHistoryButtonsEnabled(
             long nativeVrShell, boolean canGoBack, boolean canGoForward);
     private native void nativeRequestToExitVr(long nativeVrShell, @UiUnsupportedMode int reason);

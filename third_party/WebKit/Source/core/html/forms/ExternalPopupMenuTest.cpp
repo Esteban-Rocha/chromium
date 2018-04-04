@@ -91,7 +91,7 @@ class ExternalPopupMenuWebFrameClient
   MockWebExternalPopupMenu mock_web_external_popup_menu_;
 };
 
-class ExternalPopupMenuTest : public ::testing::Test {
+class ExternalPopupMenuTest : public testing::Test {
  public:
   ExternalPopupMenuTest() : base_url_("http://www.test.com") {}
 
@@ -108,7 +108,7 @@ class ExternalPopupMenuTest : public ::testing::Test {
 
   void RegisterMockedURLLoad(const std::string& file_name) {
     URLTestHelpers::RegisterMockedURLLoadFromBase(
-        WebString::FromUTF8(base_url_), testing::CoreTestDataPath("popup"),
+        WebString::FromUTF8(base_url_), test::CoreTestDataPath("popup"),
         WebString::FromUTF8(file_name), WebString::FromUTF8("text/html"));
   }
 

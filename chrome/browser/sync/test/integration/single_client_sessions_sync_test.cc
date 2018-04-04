@@ -375,7 +375,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientSessionsSyncTest, SourceTabIDSet) {
   sync_sessions::SyncSessionsRouterTabHelper* new_tab_helper =
       sync_sessions::SyncSessionsRouterTabHelper::FromWebContents(
           new_tab_contents);
-  EXPECT_EQ(new_tab_helper->source_tab_id(), source_tab_id);
+  EXPECT_EQ(new_tab_helper->source_tab_id().id(), source_tab_id);
 }
 
 void DumpSessionsOnServer(fake_server::FakeServer* fake_server) {
@@ -428,7 +428,8 @@ IN_PROC_BROWSER_TEST_F(SingleClientSessionsSyncTest,
   // want to block here and not create the HistogramTester below until we know
   // the cookie jar stats have been updated.
   UpdateCookieJarAccountsAndWait(
-      {GetClient(0)->service()->signin()->GetAuthenticatedAccountId()}, false);
+      {GetClient(0)->service()->GetAuthenticatedAccountInfo().account_id},
+      false);
 
   {
     HistogramTester histogram_tester;

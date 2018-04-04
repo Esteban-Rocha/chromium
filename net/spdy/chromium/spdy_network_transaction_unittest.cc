@@ -4613,10 +4613,9 @@ TEST_F(SpdyNetworkTransactionTest, ProxyConnect) {
       CreateMockRead(resp, 3), CreateMockRead(body, 4),
       MockRead(ASYNC, 0, 0, 5),
   };
-  auto data = std::make_unique<SequencedSocketData>(reads, arraysize(reads),
-                                                    writes, arraysize(writes));
+  SequencedSocketData data(reads, arraysize(reads), writes, arraysize(writes));
 
-  helper.AddData(data.get());
+  helper.AddData(&data);
   TestCompletionCallback callback;
 
   int rv = trans->Start(&request_, callback.callback(), log_);
@@ -4723,8 +4722,8 @@ TEST_F(SpdyNetworkTransactionTest, DirectConnectProxyReconnect) {
       MockRead(ASYNC, 0, 5)  // EOF
   };
 
-  auto data_proxy = std::make_unique<SequencedSocketData>(
-      reads2, arraysize(reads2), writes2, arraysize(writes2));
+  SequencedSocketData data_proxy(reads2, arraysize(reads2), writes2,
+                                 arraysize(writes2));
 
   // Create another request to www.example.org, but this time through a proxy.
   request_.method = "GET";
@@ -4736,7 +4735,7 @@ TEST_F(SpdyNetworkTransactionTest, DirectConnectProxyReconnect) {
                                            std::move(session_deps_proxy));
 
   helper_proxy.RunPreTestSetup();
-  helper_proxy.AddData(data_proxy.get());
+  helper_proxy.AddData(&data_proxy);
 
   HttpNetworkTransaction* trans_proxy = helper_proxy.trans();
   TestCompletionCallback callback_proxy;
@@ -7213,6 +7212,167 @@ TEST_F(SpdyNetworkTransactionTest, WebSocketOverHTTP2) {
   ASSERT_THAT(rv, IsOk());
 
   ASSERT_TRUE(spdy_session);
+
+  base::RunLoop().RunUntilIdle();
+  helper.VerifyDataConsumed();
+}
+
+// Plaintext WebSocket over HTTP/2 is not implemented, see
+// https://crbug.com/684681.
+TEST_F(SpdyNetworkTransactionTest, PlaintextWebSocketOverHttp2Proxy) {
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyConnect(
+      nullptr, 0, 1, LOWEST, HostPortPair("www.example.org", 80)));
+  MockWrite writes[] = {CreateMockWrite(req, 0)};
+
+  SpdySerializedFrame resp(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
+  MockRead reads[] = {CreateMockRead(resp, 1), MockRead(ASYNC, 0, 2)};
+
+  SequencedSocketData data(reads, arraysize(reads), writes, arraysize(writes));
+
+  request_.url = GURL("ws://www.example.org/");
+  auto session_deps = std::make_unique<SpdySessionDependencies>(
+      ProxyResolutionService::CreateFixed("https://proxy:70",
+                                          TRAFFIC_ANNOTATION_FOR_TESTS));
+  NormalSpdyTransactionHelper helper(request_, DEFAULT_PRIORITY, log_,
+                                     std::move(session_deps));
+  helper.RunPreTestSetup();
+  helper.AddData(&data);
+
+  HttpNetworkTransaction* trans = helper.trans();
+  TestWebSocketHandshakeStreamCreateHelper websocket_stream_create_helper;
+  trans->SetWebSocketHandshakeStreamCreateHelper(
+      &websocket_stream_create_helper);
+
+  EXPECT_TRUE(helper.StartDefaultTest());
+  helper.WaitForCallbackToComplete();
+  EXPECT_THAT(helper.output().rv, IsError(ERR_NOT_IMPLEMENTED));
+
+  helper.VerifyDataConsumed();
+}
+
+// Regression test for https://crbug.com/819101.  Open two identical plaintext
+// websocket requests over proxy.  The HttpStreamFactoryImpl::Job for the second
+// request should reuse the first connection.
+TEST_F(SpdyNetworkTransactionTest, TwoWebSocketRequestsOverHttp2Proxy) {
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyConnect(
+      nullptr, 0, 1, LOWEST, HostPortPair("www.example.org", 80)));
+  MockWrite writes[] = {CreateMockWrite(req, 0)};
+
+  SpdySerializedFrame resp(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
+  MockRead reads[] = {CreateMockRead(resp, 1),
+                      MockRead(ASYNC, ERR_IO_PENDING, 2),
+                      MockRead(ASYNC, 0, 3)};
+
+  SequencedSocketData data(reads, arraysize(reads), writes, arraysize(writes));
+
+  request_.url = GURL("ws://www.example.org/");
+  auto session_deps = std::make_unique<SpdySessionDependencies>(
+      ProxyResolutionService::CreateFixed("https://proxy:70",
+                                          TRAFFIC_ANNOTATION_FOR_TESTS));
+  NormalSpdyTransactionHelper helper(request_, DEFAULT_PRIORITY, log_,
+                                     std::move(session_deps));
+  helper.RunPreTestSetup();
+  helper.AddData(&data);
+
+  HttpNetworkTransaction* trans1 = helper.trans();
+  TestWebSocketHandshakeStreamCreateHelper websocket_stream_create_helper;
+  trans1->SetWebSocketHandshakeStreamCreateHelper(
+      &websocket_stream_create_helper);
+
+  EXPECT_TRUE(helper.StartDefaultTest());
+  helper.WaitForCallbackToComplete();
+  EXPECT_THAT(helper.output().rv, IsError(ERR_NOT_IMPLEMENTED));
+
+  HttpNetworkTransaction trans2(DEFAULT_PRIORITY, helper.session());
+  trans2.SetWebSocketHandshakeStreamCreateHelper(
+      &websocket_stream_create_helper);
+
+  TestCompletionCallback callback2;
+  int rv = trans2.Start(&request_, callback2.callback(), log_);
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+
+  rv = callback2.WaitForResult();
+  EXPECT_THAT(rv, IsError(ERR_NOT_IMPLEMENTED));
+
+  data.Resume();
+  base::RunLoop().RunUntilIdle();
+
+  helper.VerifyDataConsumed();
+}
+
+TEST_F(SpdyNetworkTransactionTest, SecureWebSocketOverHttp2Proxy) {
+  SpdySerializedFrame connect_request(spdy_util_.ConstructSpdyConnect(
+      nullptr, 0, 1, LOWEST, HostPortPair("www.example.org", 443)));
+  const char kWebSocketRequest[] =
+      "GET / HTTP/1.1\r\n"
+      "Host: www.example.org\r\n"
+      "Connection: Upgrade\r\n"
+      "Upgrade: websocket\r\n"
+      "Origin: http://www.example.org\r\n"
+      "Sec-WebSocket-Version: 13\r\n"
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+      "Sec-WebSocket-Extensions: permessage-deflate; "
+      "client_max_window_bits\r\n\r\n";
+  SpdySerializedFrame websocket_request(
+      spdy_util_.ConstructSpdyDataFrame(1, kWebSocketRequest, false));
+  MockWrite writes[] = {CreateMockWrite(connect_request, 0),
+                        CreateMockWrite(websocket_request, 2)};
+
+  SpdySerializedFrame connect_response(
+      spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
+  const char kWebSocketResponse[] =
+      "HTTP/1.1 101 Switching Protocols\r\n"
+      "Upgrade: websocket\r\n"
+      "Connection: Upgrade\r\n"
+      "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
+  SpdySerializedFrame websocket_response(
+      spdy_util_.ConstructSpdyDataFrame(1, kWebSocketResponse, false));
+  MockRead reads[] = {CreateMockRead(connect_response, 1),
+                      CreateMockRead(websocket_response, 3),
+                      MockRead(ASYNC, 0, 4)};
+
+  SequencedSocketData data(reads, arraysize(reads), writes, arraysize(writes));
+
+  request_.url = GURL("wss://www.example.org/");
+  request_.extra_headers.SetHeader("Connection", "Upgrade");
+  request_.extra_headers.SetHeader("Upgrade", "websocket");
+  request_.extra_headers.SetHeader("Origin", "http://www.example.org");
+  request_.extra_headers.SetHeader("Sec-WebSocket-Version", "13");
+  auto session_deps = std::make_unique<SpdySessionDependencies>(
+      ProxyResolutionService::CreateFixed("https://proxy:70",
+                                          TRAFFIC_ANNOTATION_FOR_TESTS));
+  NormalSpdyTransactionHelper helper(request_, DEFAULT_PRIORITY, log_,
+                                     std::move(session_deps));
+  helper.RunPreTestSetup();
+  helper.AddData(&data);
+
+  // Add SSL data for the tunneled connection.
+  SSLSocketDataProvider ssl_provider(ASYNC, OK);
+  ssl_provider.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
+  // This test uses WebSocket over HTTP/1.1.
+  ssl_provider.next_proto = kProtoHTTP11;
+  helper.session_deps()->socket_factory->AddSSLSocketDataProvider(
+      &ssl_provider);
+
+  HttpNetworkTransaction* trans = helper.trans();
+  TestWebSocketHandshakeStreamCreateHelper websocket_stream_create_helper;
+  trans->SetWebSocketHandshakeStreamCreateHelper(
+      &websocket_stream_create_helper);
+
+  EXPECT_TRUE(helper.StartDefaultTest());
+  helper.WaitForCallbackToComplete();
+  EXPECT_THAT(helper.output().rv, IsOk());
+  const HttpResponseInfo* response = trans->GetResponseInfo();
+  ASSERT_TRUE(response);
+  EXPECT_EQ(HttpResponseInfo::CONNECTION_INFO_HTTP1_1,
+            response->connection_info);
+  EXPECT_TRUE(response->was_alpn_negotiated);
+  EXPECT_FALSE(response->was_fetched_via_spdy);
+  EXPECT_EQ(70, response->socket_address.port());
+  ASSERT_TRUE(response->headers);
+  EXPECT_EQ("HTTP/1.1 101 Switching Protocols",
+            response->headers->GetStatusLine());
 
   base::RunLoop().RunUntilIdle();
   helper.VerifyDataConsumed();

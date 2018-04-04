@@ -9,14 +9,14 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::blink::testing::CreateOpacityOnlyEffect;
-using ::blink::testing::DefaultPaintChunkProperties;
-using ::testing::ElementsAre;
+using ::blink::test::CreateOpacityOnlyEffect;
+using ::blink::test::DefaultPaintChunkProperties;
+using testing::ElementsAre;
 
 namespace blink {
 namespace {
 
-class PaintChunkerTest : public ::testing::Test,
+class PaintChunkerTest : public testing::Test,
                          private ScopedSlimmingPaintV175ForTest {
  public:
   PaintChunkerTest() : ScopedSlimmingPaintV175ForTest(true) {}

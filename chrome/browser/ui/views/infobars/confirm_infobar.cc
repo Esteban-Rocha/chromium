@@ -15,7 +15,6 @@
 #include "chrome/browser/ui/views_mode_controller.h"
 #include "ui/base/material_design/material_design_controller.h"
 #include "ui/base/window_open_disposition.h"
-#include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/md_text_button.h"
 #include "ui/views/controls/label.h"
@@ -37,15 +36,7 @@ std::unique_ptr<infobars::InfoBar> InfoBarService::CreateConfirmInfoBar(
 // ConfirmInfoBar -------------------------------------------------------------
 
 ConfirmInfoBar::ConfirmInfoBar(std::unique_ptr<ConfirmInfoBarDelegate> delegate)
-    : InfoBarView(std::move(delegate)),
-      label_(nullptr),
-      ok_button_(nullptr),
-      cancel_button_(nullptr),
-      link_(nullptr) {
-  // Always use the standard theme for the platform on infobars (infobars in
-  // incognito should have the same appearance as normal infobars).
-  SetNativeTheme(ui::NativeTheme::GetInstanceForNativeUi());
-}
+    : InfoBarView(std::move(delegate)) {}
 
 ConfirmInfoBar::~ConfirmInfoBar() {
   // Ensure |elevation_icon_setter_| is destroyed before |ok_button_|.
@@ -87,7 +78,7 @@ void ConfirmInfoBar::ViewHierarchyChanged(
   if (details.is_add && details.child == this && (label_ == nullptr)) {
     ConfirmInfoBarDelegate* delegate = GetDelegate();
     label_ = CreateLabel(delegate->GetMessageText());
-    AddViewToContentArea(label_);
+    AddChildView(label_);
 
     if (delegate->GetButtons() & ConfirmInfoBarDelegate::BUTTON_OK) {
       ok_button_ = CreateButton(ConfirmInfoBarDelegate::BUTTON_OK);
@@ -95,7 +86,7 @@ void ConfirmInfoBar::ViewHierarchyChanged(
       if (delegate->OKButtonTriggersUACPrompt()) {
         elevation_icon_setter_.reset(new ElevationIconSetter(
             ok_button_,
-            base::Bind(&ConfirmInfoBar::Layout, base::Unretained(this))));
+            base::BindOnce(&ConfirmInfoBar::Layout, base::Unretained(this))));
       }
     }
 
@@ -107,7 +98,7 @@ void ConfirmInfoBar::ViewHierarchyChanged(
 
     base::string16 link_text(delegate->GetLinkText());
     link_ = CreateLink(link_text, this);
-    AddViewToContentArea(link_);
+    AddChildView(link_);
   }
 
   // This must happen after adding all other children so InfoBarView can ensure
@@ -157,7 +148,7 @@ views::MdTextButton* ConfirmInfoBar::CreateButton(
       new gfx::Insets(ChromeLayoutProvider::Get()->GetDistanceMetric(
                           DISTANCE_TOAST_CONTROL_VERTICAL),
                       0));
-  AddViewToContentArea(button);
+  AddChildView(button);
   button->SizeToPreferredSize();
   return button;
 }

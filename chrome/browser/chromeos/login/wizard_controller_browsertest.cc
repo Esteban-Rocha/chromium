@@ -4,7 +4,6 @@
 
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 
-#include "ash/public/cpp/accessibility_types.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/macros.h"
@@ -170,10 +169,10 @@ void SetUpCrasAndEnableChromeVox(int volume_percent, bool mute_on) {
   // is disabled.
   cras->SetOutputVolumePercent(volume_percent);
   cras->SetOutputMute(mute_on);
-  a11y->EnableSpokenFeedback(false, ash::A11Y_NOTIFICATION_NONE);
+  a11y->EnableSpokenFeedback(false);
 
   // Spoken feedback is enabled.
-  a11y->EnableSpokenFeedback(true, ash::A11Y_NOTIFICATION_NONE);
+  a11y->EnableSpokenFeedback(true);
   base::RunLoop().RunUntilIdle();
 }
 
@@ -1054,8 +1053,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerBrokenLocalStateTest,
   // Emulates user click on the "Restart and Powerwash" button.
   ASSERT_EQ(0, fake_session_manager_client()->start_device_wipe_call_count());
   ASSERT_TRUE(content::ExecuteScript(
-      GetWebContents(),
-      "$('error-message-restart-and-powerwash-button').click();"));
+      GetWebContents(), "$('error-message-md-powerwash-button').click();"));
   ASSERT_EQ(1, fake_session_manager_client()->start_device_wipe_call_count());
 }
 

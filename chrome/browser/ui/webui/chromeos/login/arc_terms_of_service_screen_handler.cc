@@ -6,6 +6,7 @@
 
 #include "base/i18n/timezone.h"
 #include "chrome/browser/chromeos/arc/arc_support_host.h"
+#include "chrome/browser/chromeos/arc/arc_util.h"
 #include "chrome/browser/chromeos/arc/optin/arc_optin_preference_handler.h"
 #include "chrome/browser/chromeos/login/screens/arc_terms_of_service_screen_view_observer.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
@@ -99,15 +100,26 @@ void ArcTermsOfServiceScreenHandler::DeclareLocalizedValues(
   builder->Add("arcTermsOfServiceRetryButton", IDS_ARC_OOBE_TERMS_BUTTON_RETRY);
   builder->Add("arcTermsOfServiceAcceptButton",
                IDS_ARC_OOBE_TERMS_BUTTON_ACCEPT);
+  builder->Add("arcTermsOfServiceNextButton",
+               IDS_ARC_OPT_IN_DIALOG_BUTTON_NEXT);
   builder->Add("arcPolicyLink", IDS_ARC_OPT_IN_PRIVACY_POLICY_LINK);
   builder->Add("arcTextBackupRestore", IDS_ARC_OPT_IN_DIALOG_BACKUP_RESTORE);
   builder->Add("arcTextLocationService", IDS_ARC_OPT_IN_LOCATION_SETTING);
+  builder->Add("arcTextPaiService", IDS_ARC_OPT_IN_PAI);
+  builder->Add("arcTextGoogleServiceConfirmation",
+               IDS_ARC_OPT_IN_GOOGLE_SERVICE_CONFIRMATION);
   builder->Add("arcLearnMoreStatistics", IDS_ARC_OPT_IN_LEARN_MORE_STATISTICS);
   builder->Add("arcLearnMoreLocationService",
       IDS_ARC_OPT_IN_LEARN_MORE_LOCATION_SERVICES);
   builder->Add("arcLearnMoreBackupAndRestore",
       IDS_ARC_OPT_IN_LEARN_MORE_BACKUP_AND_RESTORE);
+  builder->Add("arcLearnMorePaiService", IDS_ARC_OPT_IN_LEARN_MORE_PAI_SERVICE);
   builder->Add("arcOverlayClose", IDS_ARC_OOBE_TERMS_POPUP_HELP_CLOSE_BUTTON);
+}
+
+void ArcTermsOfServiceScreenHandler::SendArcManagedStatus(Profile* profile) {
+  CallJS("setArcManaged",
+         arc::IsArcPlayStoreEnabledPreferenceManagedForProfile(profile));
 }
 
 void ArcTermsOfServiceScreenHandler::OnMetricsModeChanged(bool enabled,
@@ -127,12 +139,16 @@ void ArcTermsOfServiceScreenHandler::OnMetricsModeChanged(bool enabled,
   // managed flag.
   const bool owner_profile = !owner.is_valid() || user->GetAccountId() == owner;
 
-  if (owner_profile && !managed) {
+  if (owner_profile && !managed && !enabled) {
     CallJS("setMetricsMode", base::string16(), false);
   } else {
-    int message_id = enabled ?
-        IDS_ARC_OOBE_TERMS_DIALOG_METRICS_MANAGED_ENABLED :
-        IDS_ARC_OOBE_TERMS_DIALOG_METRICS_MANAGED_DISABLED;
+    int message_id;
+    if (owner_profile && !managed) {
+      message_id = IDS_ARC_OOBE_TERMS_DIALOG_METRICS_ENABLED;
+    } else {
+      message_id = enabled ? IDS_ARC_OOBE_TERMS_DIALOG_METRICS_MANAGED_ENABLED
+                           : IDS_ARC_OOBE_TERMS_DIALOG_METRICS_MANAGED_DISABLED;
+    }
     CallJS("setMetricsMode", l10n_util::GetStringUTF16(message_id), true);
   }
 }
@@ -209,6 +225,7 @@ void ArcTermsOfServiceScreenHandler::DoShow() {
 
   ShowScreen(kScreenId);
 
+  SendArcManagedStatus(profile);
   MaybeLoadPlayStoreToS(true);
   StartNetworkAndTimeZoneObserving();
 

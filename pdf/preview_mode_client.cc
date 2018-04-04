@@ -31,6 +31,10 @@ void PreviewModeClient::ScrollToY(int y_in_screen_coords,
   NOTREACHED();
 }
 
+void PreviewModeClient::ScrollBy(const pp::Point& point) {
+  NOTREACHED();
+}
+
 void PreviewModeClient::ScrollToPage(int page) {
   NOTREACHED();
 }
@@ -132,7 +136,8 @@ void PreviewModeClient::DocumentPaintOccurred() {
 }
 
 void PreviewModeClient::DocumentLoadComplete(
-    const PDFEngine::DocumentFeatures& document_features) {
+    const PDFEngine::DocumentFeatures& document_features,
+    uint32_t file_size) {
   client_->PreviewDocumentLoadComplete();
 }
 

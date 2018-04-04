@@ -130,7 +130,8 @@
 #include "third_party/boringssl/src/include/openssl/cpu.h"
 #endif
 
-#if defined(OS_ANDROID) || defined(OS_FUCHSIA)
+#if defined(OS_ANDROID) || defined(OS_FUCHSIA) || \
+    (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
 #include "net/cert/cert_net_fetcher.h"
 #include "net/cert_net/cert_net_fetcher_impl.h"
 #endif
@@ -143,6 +144,36 @@ class SafeBrowsingURLRequestContext;
 // Quit task, so base::Bind() calls are not refcounted.
 
 namespace {
+
+net::CertVerifier* g_cert_verifier_for_io_thread_testing = nullptr;
+
+// A CertVerifier that forwards all requests to
+// |g_cert_verifier_for_io_thread_testing|. This is used to allow IOThread to
+// have its own std::unique_ptr<net::CertVerifier> while forwarding calls to the
+// static verifier.
+class WrappedCertVerifierForIOThreadTesting : public net::CertVerifier {
+ public:
+  ~WrappedCertVerifierForIOThreadTesting() override = default;
+
+  // CertVerifier implementation
+  int Verify(const RequestParams& params,
+             net::CRLSet* crl_set,
+             net::CertVerifyResult* verify_result,
+             const net::CompletionCallback& callback,
+             std::unique_ptr<Request>* out_req,
+             const net::NetLogWithSource& net_log) override {
+    verify_result->Reset();
+    if (!g_cert_verifier_for_io_thread_testing)
+      return net::ERR_FAILED;
+    return g_cert_verifier_for_io_thread_testing->Verify(
+        params, crl_set, verify_result, callback, out_req, net_log);
+  }
+  bool SupportsOCSPStapling() override {
+    if (!g_cert_verifier_for_io_thread_testing)
+      return false;
+    return g_cert_verifier_for_io_thread_testing->SupportsOCSPStapling();
+  }
+};
 
 #if defined(OS_MACOSX)
 void ObserveKeychainEvents() {
@@ -448,10 +479,6 @@ void IOThread::Init() {
   TRACE_EVENT0("startup", "IOThread::InitAsync");
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-#if defined(USE_NSS_CERTS)
-  net::SetMessageLoopForNSSHttpIO();
-#endif
-
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
 
@@ -539,10 +566,6 @@ void IOThread::Init() {
 void IOThread::CleanUp() {
   base::debug::LeakTracker<SafeBrowsingURLRequestContext>::CheckForLeaks();
 
-#if defined(USE_NSS_CERTS)
-  net::ShutdownNSSHttpIO();
-#endif
-
   system_url_request_context_getter_ = nullptr;
 
   // Unlink the ct_tree_tracker_ from the global cert_transparency_verifier
@@ -559,7 +582,8 @@ void IOThread::CleanUp() {
   net::SetURLRequestContextForNSSHttpIO(nullptr);
 #endif
 
-#if defined(OS_ANDROID) || defined(OS_FUCHSIA)
+#if defined(OS_ANDROID) || defined(OS_FUCHSIA) || \
+    (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
   net::ShutdownGlobalCertNetFetcher();
 #endif
 
@@ -600,6 +624,11 @@ void IOThread::RegisterPrefs(PrefRegistrySimple* registry) {
 #if defined(OS_POSIX)
   registry->RegisterBooleanPref(prefs::kNtlmV2Enabled, true);
 #endif
+}
+
+// static
+void IOThread::SetCertVerifierForTesting(net::CertVerifier* cert_verifier) {
+  g_cert_verifier_for_io_thread_testing = cert_verifier;
 }
 
 void IOThread::UpdateServerWhitelist() {
@@ -767,16 +796,20 @@ void IOThread::ConstructSystemRequestContext() {
   builder->set_host_resolver(std::move(host_resolver));
 
   std::unique_ptr<net::CertVerifier> cert_verifier;
+  if (g_cert_verifier_for_io_thread_testing) {
+    cert_verifier = std::make_unique<WrappedCertVerifierForIOThreadTesting>();
+  } else {
 #if defined(OS_CHROMEOS)
-  // Creates a CertVerifyProc that doesn't allow any profile-provided certs.
-  cert_verifier = std::make_unique<net::CachingCertVerifier>(
-      std::make_unique<net::MultiThreadedCertVerifier>(
-          base::MakeRefCounted<chromeos::CertVerifyProcChromeOS>()));
+    // Creates a CertVerifyProc that doesn't allow any profile-provided certs.
+    cert_verifier = std::make_unique<net::CachingCertVerifier>(
+        std::make_unique<net::MultiThreadedCertVerifier>(
+            base::MakeRefCounted<chromeos::CertVerifyProcChromeOS>()));
 #else
-  cert_verifier = std::make_unique<net::CachingCertVerifier>(
-      std::make_unique<net::MultiThreadedCertVerifier>(
-          net::CertVerifyProc::CreateDefault()));
+    cert_verifier = std::make_unique<net::CachingCertVerifier>(
+        std::make_unique<net::MultiThreadedCertVerifier>(
+            net::CertVerifyProc::CreateDefault()));
 #endif
+  }
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
   builder->SetCertVerifier(
@@ -826,7 +859,8 @@ void IOThread::ConstructSystemRequestContext() {
 #if defined(USE_NSS_CERTS)
   net::SetURLRequestContextForNSSHttpIO(globals_->system_request_context);
 #endif
-#if defined(OS_ANDROID) || defined(OS_FUCHSIA)
+#if defined(OS_ANDROID) || defined(OS_FUCHSIA) || \
+    (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
   net::SetGlobalCertNetFetcher(
       net::CreateCertNetFetcher(globals_->system_request_context));
 #endif

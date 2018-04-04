@@ -60,7 +60,7 @@
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
 #include "third_party/WebKit/public/platform/WebConnectionType.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "third_party/WebKit/public/platform/scheduler/web_main_thread_scheduler.h"
 #include "third_party/WebKit/public/web/WebMemoryStatistics.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -402,11 +402,6 @@ class CONTENT_EXPORT RenderThreadImpl
   // Get the GPU channel. Returns NULL if the channel is not established or
   // has been lost.
   gpu::GpuChannelHost* GetGpuChannel();
-
-  // Returns a SingleThreadTaskRunner instance corresponding to the message loop
-  // of the thread on which file operations should be run. Must be called
-  // on the renderer's main thread.
-  scoped_refptr<base::TaskRunner> GetFileThreadTaskRunner();
 
   // Returns a SingleThreadTaskRunner instance corresponding to the message loop
   // of the thread on which media operations should be run. Must be called

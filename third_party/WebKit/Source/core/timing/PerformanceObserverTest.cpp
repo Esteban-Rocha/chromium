@@ -6,7 +6,7 @@
 
 #include "bindings/core/v8/V8BindingForTesting.h"
 #include "bindings/core/v8/v8_performance_observer_callback.h"
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/timing/Performance.h"
 #include "core/timing/PerformanceMark.h"
 #include "core/timing/PerformanceObserverInit.h"
@@ -28,7 +28,7 @@ class MockPerformance : public Performance {
   ExecutionContext* GetExecutionContext() const override { return nullptr; }
 };
 
-class PerformanceObserverTest : public ::testing::Test {
+class PerformanceObserverTest : public testing::Test {
  protected:
   void Initialize(ScriptState* script_state) {
     v8::Local<v8::Function> callback =

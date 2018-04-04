@@ -12,8 +12,9 @@
 #include "bindings/core/v8/V8FragmentResultOptions.h"
 #include "bindings/core/v8/V8LayoutFragmentRequest.h"
 #include "core/css/cssom/PrepopulatedComputedStylePropertyMap.h"
-#include "core/dom/ExecutionContext.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/layout/custom/CustomLayoutConstraints.h"
 #include "core/layout/custom/CustomLayoutFragment.h"
 #include "core/layout/custom/FragmentResultOptions.h"
 #include "core/layout/custom/LayoutCustom.h"
@@ -91,6 +92,9 @@ bool CSSLayoutDefinition::Instance::Layout(
       return false;
   }
 
+  CustomLayoutConstraints* constraints =
+      new CustomLayoutConstraints(layout_custom.LogicalWidth());
+
   // TODO(ikilpatrick): Instead of creating a new style_map each time here,
   // store on LayoutCustom, and update when the style changes.
   StylePropertyMapReadOnly* style_map =
@@ -103,8 +107,8 @@ bool CSSLayoutDefinition::Instance::Layout(
   Vector<v8::Local<v8::Value>> argv = {
       children,
       v8::Undefined(isolate),  // edges
-      v8::Undefined(isolate),  // constraints
-      ToV8(style_map, script_state->GetContext()->Global(), isolate),
+      ToV8(constraints, context->Global(), isolate),
+      ToV8(style_map, context->Global(), isolate),
   };
 
   v8::Local<v8::Value> generator_value;
@@ -268,11 +272,6 @@ CSSLayoutDefinition::Instance* CSSLayoutDefinition::CreateInstance() {
 
 void CSSLayoutDefinition::Instance::Trace(blink::Visitor* visitor) {
   visitor->Trace(definition_);
-}
-
-void CSSLayoutDefinition::Instance::TraceWrappers(
-    const ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(instance_.Cast<v8::Value>());
 }
 
 void CSSLayoutDefinition::TraceWrappers(

@@ -12,6 +12,7 @@ import org.chromium.base.annotations.JNINamespace;
 import org.chromium.chrome.browser.ntp.snippets.KnownCategories;
 import org.chromium.chrome.browser.ntp.snippets.SnippetArticle;
 import org.chromium.chrome.browser.profiles.Profile;
+import org.chromium.content_public.browser.WebContents;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,6 +40,17 @@ public class ContextualSuggestionsBridge {
         mNativeContextualSuggestionsBridge = 0;
     }
 
+    /**
+     * Fetches suggestions for a given URL.
+     * @param url URL for which to fetch suggestions.
+     * @param callback Callback used to return suggestions for a given URL.
+     */
+    public void fetchSuggestions(
+            String url, Callback<List<ContextualSuggestionsCluster>> callback) {
+        assert mNativeContextualSuggestionsBridge != 0;
+        nativeFetchSuggestions(mNativeContextualSuggestionsBridge, url, callback);
+    }
+
     /** Fetches a thumbnail for the suggestion. */
     public void fetchSuggestionImage(SnippetArticle suggestion, Callback<Bitmap> callback) {
         assert mNativeContextualSuggestionsBridge != 0;
@@ -53,14 +65,23 @@ public class ContextualSuggestionsBridge {
                 mNativeContextualSuggestionsBridge, suggestion.mIdWithinCategory, callback);
     }
 
+    /** Requests the backend to clear state related to this bridge. */
+    public void clearState() {
+        assert mNativeContextualSuggestionsBridge != 0;
+        nativeClearState(mNativeContextualSuggestionsBridge);
+    }
+
     /**
      * Reports an event happening in the context of the current URL.
      *
+     * @param webContents Web contents with the document for which event is reported.
      * @param eventId Id of the reported event.
      */
-    public void reportEvent(int eventId) {
+    public void reportEvent(WebContents webContents, int eventId) {
         assert mNativeContextualSuggestionsBridge != 0;
-        nativeReportEvent(mNativeContextualSuggestionsBridge, eventId);
+        assert webContents != null && !webContents.isDestroyed();
+
+        nativeReportEvent(mNativeContextualSuggestionsBridge, webContents, eventId);
     }
 
     @CalledByNative
@@ -86,21 +107,15 @@ public class ContextualSuggestionsBridge {
                         thumbnailDominantColor == 0 ? null : thumbnailDominantColor));
     }
 
-    @CalledByNative
-    private void onSuggestionsAvailable(List<ContextualSuggestionsCluster> clusters) {
-        // Pass this to UI (could be through observer).
-    }
-
-    @CalledByNative
-    private void onStateCleared() {
-        // Pass this to UI (could be through observer).
-    }
-
     private native long nativeInit(Profile profile);
     private native void nativeDestroy(long nativeContextualSuggestionsBridge);
+    private native void nativeFetchSuggestions(long nativeContextualSuggestionsBridge, String url,
+            Callback<List<ContextualSuggestionsCluster>> callback);
     private native void nativeFetchSuggestionImage(
             long nativeContextualSuggestionsBridge, String suggestionId, Callback<Bitmap> callback);
     private native void nativeFetchSuggestionFavicon(
             long nativeContextualSuggestionsBridge, String suggestionId, Callback<Bitmap> callback);
-    private native void nativeReportEvent(long nativeContextualSuggestionsBridge, int eventId);
+    private native void nativeClearState(long nativeContextualSuggestionsBridge);
+    private native void nativeReportEvent(
+            long nativeContextualSuggestionsBridge, WebContents webContents, int eventId);
 }

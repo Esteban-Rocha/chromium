@@ -113,6 +113,9 @@ declare_args() {
   # clang_sample_profile_path is empty, we'll fall back to the default.
   clang_use_default_sample_profile =
       is_official_build && defined(clang_default_afdo_profile)
+
+  # Turn this on to have the compiler output extra timing information.
+  compiler_timing = false
 }
 
 declare_args() {
@@ -243,6 +246,15 @@ config("compiler") {
         # Not available on aix.
         cflags += [ "-fstack-protector" ]
       }
+    }
+  } else {
+    cflags += [
+      # Assume UTF-8 by default to avoid code page dependencies.
+      "/utf-8",
+    ]
+    if (is_clang) {
+      # Don't look for includes in %INCLUDE%.
+      cflags += [ "/X" ]
     }
   }
 
@@ -596,6 +608,21 @@ config("compiler") {
     # -march flag passed at compile time (see llvm.org/pr36291).
     if (current_cpu == "arm") {
       ldflags += [ "-march=$arm_arch" ]
+    }
+  }
+
+  if (compiler_timing) {
+    if (is_clang) {
+      if (is_win) {
+        cflags += [ "-Xclang" ]
+      }
+      cflags += [ "-ftime-report" ]
+    } else if (is_win) {
+      cflags += [
+        # "Documented" here:
+        # http://aras-p.info/blog/2017/10/23/Best-unknown-MSVC-flag-d2cgsummary/
+        "/d2cgsummary",
+      ]
     }
   }
 
@@ -1102,11 +1129,6 @@ config("default_warnings") {
     }
 
     cflags += [
-      # Assume UTF-8 by default to avoid code page dependencies.
-      "/utf-8",
-    ]
-
-    cflags += [
       # Warnings permanently disabled:
 
       # C4091: 'typedef ': ignored on left of 'X' when no variable is
@@ -1229,13 +1251,6 @@ config("default_warnings") {
         exec_script("../../win_is_xtree_patched.py", [], "value") == 0) {
       cflags += [ "/wd4702" ]  # Unreachable code.
     }
-
-    if (is_clang) {
-      cflags += [
-        # TODO(hans): Enable these, http://crbug.com/504657
-        "-Wno-unknown-pragmas",  # http://crbug.com/505314
-      ]
-    }
   } else {
     if ((is_mac || is_ios) && !is_nacl) {
       # When compiling Objective-C, warns if a method is used whose
@@ -1345,13 +1360,11 @@ config("default_warnings") {
 
         # TODO(hans): https://crbug.com/766891
         "-Wno-null-pointer-arithmetic",
+
+        # Ignore warnings about MSVC optimization pragmas.
+        # TODO(thakis): Only for no_chromium_code? http://crbug.com/505314
+        "-Wno-ignored-pragma-optimize",
       ]
-      if (llvm_force_head_revision) {
-        cflags += [
-          # TODO(crbug.com/823655): Enable by default in next clang roll.
-          "-Wno-ignored-pragma-optimize",
-        ]
-      }
     } else if (use_xcode_clang) {
       cflags += [
         # TODO(thakis): https://crbug.com/604888
@@ -2099,9 +2112,6 @@ config("minimal_symbols") {
       # TODO(thakis): Consider making clang emit DW_AT_linkage_name in -g1 mode;
       #               failing that consider doing this on non-Android too.
       cflags += [ "-fdebug-info-for-profiling" ]
-      if (strip_debug_info) {
-        ldflags += [ "-Wl,--strip-debug" ]
-      }
     }
 
     # Note: -gsplit-dwarf implicitly turns on -g2 with clang, so don't pass it.
@@ -2128,6 +2138,18 @@ config("default_symbols") {
   } else {
     assert(false)
   }
+
+  # This config is removed by base unittests apk.
+  if (is_android && is_clang && strip_debug_info) {
+    configs += [ ":strip_debug" ]
+  }
+}
+
+config("strip_debug") {
+  if (!defined(ldflags)) {
+    ldflags = []
+  }
+  ldflags += [ "-Wl,--strip-debug" ]
 }
 
 if (is_ios || is_mac) {

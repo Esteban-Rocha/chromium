@@ -21,7 +21,6 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/common/content_export.h"
-#include "content/common/cursors/webcursor.h"
 #include "ipc/ipc_sender.h"
 #include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #include "ui/accelerated_widget_mac/display_link_mac.h"
@@ -33,13 +32,13 @@ class RenderWidgetHost;
 class RenderWidgetHostNSViewBridge;
 class RenderWidgetHostViewMac;
 class WebContents;
+class WebCursor;
 }
 
 namespace ui {
 class ScopedPasswordInputEnabler;
 }
 
-@class FullscreenWindowManager;
 @protocol RenderWidgetHostViewMacDelegate;
 
 @class RenderWidgetHostViewCocoa;
@@ -94,7 +93,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void InitAsChild(gfx::NativeView parent_view) override;
   void SetSize(const gfx::Size& size) override;
   void SetBounds(const gfx::Rect& rect) override;
-  gfx::Vector2dF GetLastScrollOffset() const override;
   gfx::NativeView GetNativeView() const override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   bool HasFocus() const override;
@@ -202,13 +200,15 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       RenderWidgetHostViewBase* updated_view) override;
   void OnTextSelectionChanged(TextInputManager* text_input_manager,
                               RenderWidgetHostViewBase* updated_view) override;
+
+  // RenderFrameMetadataProvider::Observer
+  void OnRenderFrameMetadataChanged() override;
+
   // IPC::Sender implementation.
   bool Send(IPC::Message* message) override;
 
   // Forwards the mouse event to the renderer.
   void ForwardMouseEvent(const blink::WebMouseEvent& event);
-
-  void KillSelf();
 
   void SetTextInputActive(bool active);
 
@@ -266,14 +266,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
     mouse_wheel_phase_handler_.set_mouse_wheel_end_dispatch_timeout(timeout);
   }
 
-  NSWindow* pepper_fullscreen_window() const {
-    return pepper_fullscreen_window_;
-  }
-
-  CONTENT_EXPORT void release_pepper_fullscreen_window_for_testing();
-
-  int window_number() const;
-
   // Update the size, scale factor, color profile, vsync parameters, and any
   // other properties of the NSView or its NSScreen. Propagate these to the
   // RenderWidgetHostImpl as well.
@@ -283,18 +275,30 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // RenderWidgetHostNSViewClient implementation.
   RenderWidgetHostViewMac* GetRenderWidgetHostViewMac() override;
+  void OnNSViewRequestShutdown() override;
+  void OnNSViewIsFirstResponderChanged(bool is_first_responder) override;
+  void OnNSViewWindowIsKeyChanged(bool is_key) override;
   void OnNSViewBoundsInWindowChanged(const gfx::Rect& view_bounds_in_window_dip,
                                      bool attached_to_window) override;
   void OnNSViewWindowFrameInScreenChanged(
       const gfx::Rect& window_frame_in_screen_dip) override;
   void OnNSViewDisplayChanged(const display::Display& display) override;
+  void OnNSViewRouteOrProcessMouseEvent(
+      const blink::WebMouseEvent& web_event) override;
+  void OnNSViewRouteOrProcessWheelEvent(
+      const blink::WebMouseWheelEvent& web_event) override;
+  void OnNSViewForwardMouseEvent(
+      const blink::WebMouseEvent& web_event) override;
+  void OnNSViewForwardWheelEvent(
+      const blink::WebMouseWheelEvent& web_event) override;
 
   // BrowserCompositorMacClient implementation.
   SkColor BrowserCompositorMacGetGutterColor() const override;
-  void BrowserCompositorMacOnBeginFrame() override;
+  void BrowserCompositorMacOnBeginFrame(base::TimeTicks frame_time) override;
   void OnFrameTokenChanged(uint32_t frame_token) override;
   void DidReceiveFirstFrameAfterNavigation() override;
   void DestroyCompositorForShutdown() override;
+  void WasResized() override;
 
   // AcceleratedWidgetMacNSView implementation.
   NSView* AcceleratedWidgetGetNSView() const override;
@@ -344,9 +348,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // collide with FrameSinkIds used by RenderWidgetHostImpls.
   static viz::FrameSinkId AllocateFrameSinkIdForGuestViewHack();
 
-  // Returns whether this render view is a popup (autocomplete window).
-  bool IsPopup() const;
-
   // Shuts down the render_widget_host_.  This is a separate function so we can
   // invoke it from the message loop.
   void ShutdownHost();
@@ -386,30 +387,18 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Cached copy of the display information pushed to us from the NSView.
   display::Display display_;
 
+  // Whether or not the NSView is first responder.
+  bool is_first_responder_ = false;
+
   // Indicates if the page is loading.
   bool is_loading_;
 
   // Whether it's allowed to pause waiting for a new frame.
   bool allow_pause_for_resize_or_repaint_;
 
-  // The last scroll offset of the view.
-  gfx::Vector2dF last_scroll_offset_;
-
-  // The text to be shown in the tooltip, supplied by the renderer.
-  base::string16 tooltip_text_;
-
   // True when this view acts as a platform view hack for a
   // RenderWidgetHostViewGuest.
   bool is_guest_view_hack_;
-
-  // The window used for popup widgets.
-  base::scoped_nsobject<NSWindow> popup_window_;
-
-  // The fullscreen window used for pepper flash.
-  base::scoped_nsobject<NSWindow> pepper_fullscreen_window_;
-  base::scoped_nsobject<FullscreenWindowManager> fullscreen_window_manager_;
-  // Our parent host view, if this is fullscreen.  NULL otherwise.
-  RenderWidgetHostViewMac* fullscreen_parent_host_view_;
 
   // Display link for getting vsync info.
   scoped_refptr<ui::DisplayLinkMac> display_link_;

@@ -153,9 +153,9 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
       StringKeyframeEffectModel& effect,
       Vector<std::unique_ptr<CompositorKeyframeModel>>& keyframe_models,
       double animation_playback_rate) {
-    CompositorAnimations::GetAnimationOnCompositor(
-        timing, 0, std::numeric_limits<double>::quiet_NaN(), 0, effect,
-        keyframe_models, animation_playback_rate);
+    CompositorAnimations::GetAnimationOnCompositor(timing, 0, WTF::nullopt, 0,
+                                                   effect, keyframe_models,
+                                                   animation_playback_rate);
   }
 
   bool DuplicateSingleKeyframeAndTestIsCandidateOnResult(
@@ -313,7 +313,7 @@ class AnimationCompositorAnimationsTest : public RenderingTest {
   }
 
   void LoadTestData(const std::string& file_name) {
-    String testing_path = testing::BlinkRootDir();
+    String testing_path = test::BlinkRootDir();
     testing_path.append("/Source/core/animation/test_data/");
     WebURL url = URLTestHelpers::RegisterMockedURLLoadFromBase(
         WebString::FromUTF8(base_url_), testing_path,

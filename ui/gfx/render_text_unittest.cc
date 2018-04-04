@@ -962,10 +962,6 @@ TEST_P(RenderTextTest, ObscuredEmoji) {
   render_text->Draw(canvas());
 }
 
-// TODO(PORT): Fails for RenderTextMac.
-// Crashes on Mac with RenderTextHarfBuzz. See http://crbug.com/640068.
-#if !defined(OS_MACOSX)
-
 TEST_P(RenderTextTest, ElidedText) {
   // TODO(skanuj) : Add more test cases for following
   // - RenderText styles.
@@ -1066,8 +1062,6 @@ TEST_P(RenderTextTest, ElidedObscuredText) {
   EXPECT_EQ(UTF8ToUTF16("abcdef"), render_text->text());
   EXPECT_EQ(elided_obscured_text, render_text->GetDisplayText());
 }
-
-#endif  // !defined(OS_MACOSX)
 
 // TODO(PORT): Fails for RenderTextMac.
 TEST_P(RenderTextHarfBuzzTest, MultilineElide) {
@@ -1814,9 +1808,6 @@ TEST_P(RenderTextHarfBuzzTest, MoveCursorLeftRight_ComplexScript) {
   EXPECT_EQ(0U, render_text->cursor_position());
 }
 
-// TODO(asvitkine): RenderTextMac cursor movements. http://crbug.com/131618
-// Crashes on Mac with RenderTextHarfBuzz. See http://crbug.com/640068.
-#if !defined(OS_MACOSX)
 TEST_P(RenderTextHarfBuzzTest, MoveCursorLeftRight_MeiryoUILigatures) {
   RenderText* render_text = GetRenderText();
   // Meiryo UI uses single-glyph ligatures for 'ff' and 'ffi', but each letter
@@ -1841,7 +1832,6 @@ TEST_P(RenderTextHarfBuzzTest, MoveCursorLeftRight_MeiryoUILigatures) {
   }
   EXPECT_EQ(6U, render_text->cursor_position());
 }
-#endif  // !defined(OS_MACOSX)
 
 TEST_P(RenderTextHarfBuzzTest, GraphemePositions) {
   // LTR कि (DEVANAGARI KA with VOWEL I) (2-char grapheme), LTR abc, and LTR कि.
@@ -4251,11 +4241,17 @@ TEST_P(RenderTextTest, StringFitsOwnWidth) {
 // Ensure that RenderText examines all of the fonts in its FontList before
 // falling back to other fonts.
 TEST_P(RenderTextHarfBuzzTest, HarfBuzz_FontListFallback) {
+#if defined(OS_LINUX)
+  const char kTestFont[] = "Arimo";
+#else
+  const char kTestFont[] = "Arial";
+#endif
   // Double-check that the requested fonts are present.
-  FontList font_list(base::StringPrintf("Arial, %s, 12px", kSymbolFontName));
+  std::string format = std::string(kTestFont) + ", %s, 12px";
+  FontList font_list(base::StringPrintf(format.c_str(), kSymbolFontName));
   const std::vector<Font>& fonts = font_list.GetFonts();
   ASSERT_EQ(2u, fonts.size());
-  ASSERT_EQ("arial",
+  ASSERT_EQ(base::ToLowerASCII(kTestFont),
             base::ToLowerASCII(fonts[0].GetActualFontNameForTesting()));
   ASSERT_EQ(base::ToLowerASCII(kSymbolFontName),
             base::ToLowerASCII(fonts[1].GetActualFontNameForTesting()));

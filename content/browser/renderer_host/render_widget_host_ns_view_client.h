@@ -23,6 +23,15 @@ class RenderWidgetHostNSViewClient {
   // RenderWidgetHostNSViewBridge, this method is to be removed.
   virtual RenderWidgetHostViewMac* GetRenderWidgetHostViewMac() = 0;
 
+  // Indicates that the RenderWidgetHost is to shut down.
+  virtual void OnNSViewRequestShutdown() = 0;
+
+  // Indicates whether or not the NSView is its NSWindow's first responder.
+  virtual void OnNSViewIsFirstResponderChanged(bool is_first_responder) = 0;
+
+  // Indicates whether or not the NSView's NSWindow is key.
+  virtual void OnNSViewWindowIsKeyChanged(bool is_key) = 0;
+
   // Indicates the NSView's bounds in its NSWindow's DIP coordinate system (with
   // the origin at the upper-left corner), and indicate if the the NSView is
   // attached to an NSWindow (if it is not, then |view_bounds_in_window_dip|'s
@@ -39,6 +48,18 @@ class RenderWidgetHostNSViewClient {
 
   // Indicate the NSView's NSScreen's properties.
   virtual void OnNSViewDisplayChanged(const display::Display& display) = 0;
+
+  // Forward events to the renderer or the input router, as appropriate.
+  virtual void OnNSViewRouteOrProcessMouseEvent(
+      const blink::WebMouseEvent& web_event) = 0;
+  virtual void OnNSViewRouteOrProcessWheelEvent(
+      const blink::WebMouseWheelEvent& web_event) = 0;
+
+  // Special case forwarding of synthetic events to the renderer.
+  virtual void OnNSViewForwardMouseEvent(
+      const blink::WebMouseEvent& web_event) = 0;
+  virtual void OnNSViewForwardWheelEvent(
+      const blink::WebMouseWheelEvent& web_event) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostNSViewClient);

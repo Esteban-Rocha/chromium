@@ -5,8 +5,8 @@
 #include "core/exported/WebRemoteFrameImpl.h"
 
 #include "bindings/core/v8/WindowProxy.h"
-#include "core/dom/RemoteSecurityContext.h"
-#include "core/dom/SecurityContext.h"
+#include "core/execution_context/RemoteSecurityContext.h"
+#include "core/execution_context/SecurityContext.h"
 #include "core/exported/WebViewImpl.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/RemoteFrameClientImpl.h"
@@ -293,11 +293,6 @@ void WebRemoteFrameImpl::DidStartLoading() {
 
 void WebRemoteFrameImpl::DidStopLoading() {
   GetFrame()->SetIsLoading(false);
-  if (Parent() && Parent()->IsWebLocalFrame()) {
-    WebLocalFrameImpl* parent_frame =
-        ToWebLocalFrameImpl(Parent()->ToWebLocalFrame());
-    parent_frame->GetFrame()->GetDocument()->CheckCompleted();
-  }
 }
 
 bool WebRemoteFrameImpl::IsIgnoredForHitTest() const {

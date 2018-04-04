@@ -14,11 +14,11 @@
 #include "chrome/browser/chromeos/arc/fileapi/arc_documents_provider_root_map.h"
 #include "chrome/browser/chromeos/arc/fileapi/arc_documents_provider_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/services/filesystem/public/interfaces/types.mojom.h"
 #include "content/public/browser/browser_thread.h"
 #include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
-#include "storage/common/fileapi/directory_entry.h"
 
 using content::BrowserThread;
 
@@ -27,12 +27,12 @@ namespace arc {
 namespace {
 
 void OnGetFileInfoOnUIThread(
-    const ArcDocumentsProviderRoot::GetFileInfoCallback& callback,
+    ArcDocumentsProviderRoot::GetFileInfoCallback callback,
     base::File::Error result,
     const base::File::Info& info) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                          base::BindOnce(callback, result, info));
+                          base::BindOnce(std::move(callback), result, info));
 }
 
 void OnReadDirectoryOnUIThread(
@@ -43,10 +43,12 @@ void OnReadDirectoryOnUIThread(
 
   storage::AsyncFileUtil::EntryList entries;
   entries.reserve(files.size());
-  for (const auto& file : files)
-    entries.emplace_back(file.name, file.is_directory
-                                        ? storage::DirectoryEntry::DIRECTORY
-                                        : storage::DirectoryEntry::FILE);
+  for (const auto& file : files) {
+    entries.emplace_back(base::FilePath(file.name),
+                         file.is_directory
+                             ? filesystem::mojom::FsFileType::DIRECTORY
+                             : filesystem::mojom::FsFileType::REGULAR_FILE);
+  }
 
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::BindOnce(std::move(callback), result, entries,
@@ -56,13 +58,14 @@ void OnReadDirectoryOnUIThread(
 void GetFileInfoOnUIThread(
     const storage::FileSystemURL& url,
     int fields,
-    const ArcDocumentsProviderRoot::GetFileInfoCallback& callback) {
+    ArcDocumentsProviderRoot::GetFileInfoCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ArcDocumentsProviderRootMap* roots =
       ArcDocumentsProviderRootMap::GetForArcBrowserContext();
   if (!roots) {
-    OnGetFileInfoOnUIThread(callback, base::File::FILE_ERROR_SECURITY,
+    OnGetFileInfoOnUIThread(std::move(callback),
+                            base::File::FILE_ERROR_SECURITY,
                             base::File::Info());
     return;
   }
@@ -70,12 +73,14 @@ void GetFileInfoOnUIThread(
   base::FilePath path;
   ArcDocumentsProviderRoot* root = roots->ParseAndLookup(url, &path);
   if (!root) {
-    OnGetFileInfoOnUIThread(callback, base::File::FILE_ERROR_NOT_FOUND,
+    OnGetFileInfoOnUIThread(std::move(callback),
+                            base::File::FILE_ERROR_NOT_FOUND,
                             base::File::Info());
     return;
   }
 
-  root->GetFileInfo(path, base::Bind(&OnGetFileInfoOnUIThread, callback));
+  root->GetFileInfo(
+      path, base::BindOnce(&OnGetFileInfoOnUIThread, std::move(callback)));
 }
 
 void ReadDirectoryOnUIThread(

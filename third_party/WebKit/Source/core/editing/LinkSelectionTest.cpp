@@ -19,7 +19,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::_;
+using testing::_;
 
 namespace blink {
 
@@ -28,7 +28,7 @@ IntSize Scaled(IntSize p, float scale) {
   return p;
 }
 
-class LinkSelectionTestBase : public ::testing::Test {
+class LinkSelectionTestBase : public testing::Test {
  protected:
   enum DragFlag { kSendDownEvent = 1, kSendUpEvent = 1 << 1 };
   using DragFlags = unsigned;
@@ -187,7 +187,7 @@ TEST_F(LinkSelectionTest, HandCursorDuringLinkDrag) {
       ->LocalFrameRoot()
       .GetEventHandler()
       .ScheduleCursorUpdate();
-  testing::RunDelayedTasks(TimeDelta::FromMilliseconds(50));
+  test::RunDelayedTasks(TimeDelta::FromMilliseconds(50));
   const auto& cursor =
       main_frame_->GetFrame()->GetChromeClient().LastSetCursorForTesting();
   EXPECT_EQ(Cursor::kHand, cursor.GetType());
@@ -199,7 +199,7 @@ TEST_F(LinkSelectionTest, DragOnNothingShowsPointer) {
       ->LocalFrameRoot()
       .GetEventHandler()
       .ScheduleCursorUpdate();
-  testing::RunDelayedTasks(TimeDelta::FromMilliseconds(50));
+  test::RunDelayedTasks(TimeDelta::FromMilliseconds(50));
   const auto& cursor =
       main_frame_->GetFrame()->GetChromeClient().LastSetCursorForTesting();
   EXPECT_EQ(Cursor::kPointer, cursor.GetType());
@@ -212,7 +212,7 @@ TEST_F(LinkSelectionTest, CaretCursorOverLinkDuringSelection) {
       ->LocalFrameRoot()
       .GetEventHandler()
       .ScheduleCursorUpdate();
-  testing::RunDelayedTasks(TimeDelta::FromMilliseconds(50));
+  test::RunDelayedTasks(TimeDelta::FromMilliseconds(50));
   const auto& cursor =
       main_frame_->GetFrame()->GetChromeClient().LastSetCursorForTesting();
   EXPECT_EQ(Cursor::kIBeam, cursor.GetType());
@@ -231,7 +231,7 @@ TEST_F(LinkSelectionTest, HandCursorOverLinkAfterContextMenu) {
   frame->GetPage()->GetContextMenuController().ClearContextMenu();
 
   frame->LocalFrameRoot().GetEventHandler().ScheduleCursorUpdate();
-  testing::RunDelayedTasks(TimeDelta::FromMilliseconds(50));
+  test::RunDelayedTasks(TimeDelta::FromMilliseconds(50));
   const auto& cursor =
       main_frame_->GetFrame()->GetChromeClient().LastSetCursorForTesting();
   EXPECT_EQ(Cursor::kHand, cursor.GetType());
@@ -314,7 +314,7 @@ class LinkSelectionClickEventsTest : public LinkSelectionTestBase {
         double_click_event ? EventTypeNames::dblclick : EventTypeNames::click,
         event_handler);
 
-    ::testing::InSequence s;
+    testing::InSequence s;
     EXPECT_CALL(*event_handler, handleEvent(_, _)).Times(1);
 
     const auto& elem_bounds = element.BoundsInViewport();

@@ -114,6 +114,13 @@ void BackgroundFetchContext::StartFetch(
                      std::move(callback)));
 }
 
+void BackgroundFetchContext::GetIconDisplaySize(
+    blink::mojom::BackgroundFetchService::GetIconDisplaySizeCallback callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  delegate_proxy_.GetIconDisplaySize(std::move(callback));
+}
+
 void BackgroundFetchContext::DidCreateRegistration(
     const BackgroundFetchRegistrationId& registration_id,
     const BackgroundFetchOptions& options,
@@ -142,6 +149,8 @@ void BackgroundFetchContext::AddRegistrationObserver(
 }
 
 void BackgroundFetchContext::UpdateUI(
+    int64_t service_worker_registration_id,
+    const url::Origin& origin,
     const std::string& unique_id,
     const std::string& title,
     blink::mojom::BackgroundFetchService::UpdateUICallback callback) {
@@ -155,7 +164,7 @@ void BackgroundFetchContext::UpdateUI(
   }
 
   data_manager_.UpdateRegistrationUI(
-      unique_id, title,
+      service_worker_registration_id, origin, unique_id, title,
       base::BindOnce(&BackgroundFetchContext::DidUpdateStoredUI,
                      weak_factory_.GetWeakPtr(), unique_id, title,
                      std::move(callback)));

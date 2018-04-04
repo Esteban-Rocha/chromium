@@ -125,6 +125,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
       public mojom::AssociatedInterfaceProvider,
       public mojom::RendererHost {
  public:
+  // Special depth used when there are no PriorityClients.
+  static const unsigned int kMaxFrameDepthForPriority;
+
   // Use the spare RenderProcessHost if it exists, or create a new one. This
   // should be the usual way to get a new RenderProcessHost.
   // If |storage_partition_impl| is null, the default partition from the
@@ -161,6 +164,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void ShutdownForBadMessage(CrashReportMode crash_report_mode) override;
   void UpdateClientPriority(PriorityClient* client) override;
   int VisibleClientCount() const override;
+  unsigned int GetFrameDepthForTesting() const override;
   bool IsForGuestsOnly() const override;
   StoragePartition* GetStoragePartition() const override;
   bool Shutdown(int exit_code) override;
@@ -209,8 +213,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
       override;
   const base::TimeTicks& GetInitTimeForNavigationMetrics() const override;
   bool IsProcessBackgrounded() const override;
-  void IncrementKeepAliveRefCount() override;
-  void DecrementKeepAliveRefCount() override;
+  void IncrementKeepAliveRefCount(
+      RenderProcessHost::KeepAliveClientType) override;
+  void DecrementKeepAliveRefCount(
+      RenderProcessHost::KeepAliveClientType) override;
   void DisableKeepAliveRefCount() override;
   bool IsKeepAliveRefCountDisabled() override;
   void PurgeAndSuspend() override;
@@ -521,6 +527,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // GpuSwitchingObserver implementation.
   void OnGpuSwitched() override;
 
+  void RecordKeepAliveDuration(RenderProcessHost::KeepAliveClientType,
+                               base::TimeTicks start,
+                               base::TimeTicks end);
+
   // Returns the default subframe RenderProcessHost to use for |site_instance|.
   static RenderProcessHost* GetDefaultSubframeProcessHost(
       BrowserContext* browser_context,
@@ -598,6 +608,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   size_t keep_alive_ref_count_;
 
+  // TODO(panicker): Remove these after investigation in
+  // https://crbug.com/823482.
+  static const size_t kNumKeepAliveClients = 3;
+  size_t keep_alive_client_count_[kNumKeepAliveClients];
+  base::TimeTicks keep_alive_client_start_time_[kNumKeepAliveClients];
+
   // Set in DisableKeepAliveRefCount(). When true, |keep_alive_ref_count_| must
   // no longer be modified.
   bool is_keep_alive_ref_count_disabled_;
@@ -622,8 +638,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // These fields are cached values that are updated in
   // UpdateProcessPriorityInputs, and are used to compute priority sent to
   // ChildProcessLauncher.
-  // |visible_clients_|is the count of currently visible clients.
+  // |visible_clients_| is the count of currently visible clients.
   int32_t visible_clients_;
+  // |frame_depth_| can be used to rank processes of the same visibility, ie it
+  // is the lowest depth of all visible clients, or if there are no visible
+  // widgets the lowest depth of all hidden clients. Initialized to max depth
+  // when there are no clients.
+  unsigned int frame_depth_ = kMaxFrameDepthForPriority;
 #if defined(OS_ANDROID)
   // Highest importance of all clients that contribute priority.
   ChildProcessImportance effective_importance_ = ChildProcessImportance::NORMAL;

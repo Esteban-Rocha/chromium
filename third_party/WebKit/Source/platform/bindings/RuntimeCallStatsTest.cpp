@@ -20,7 +20,7 @@ RuntimeCallStats::CounterId test_counter_2_id =
 
 }  // namespace
 
-class RuntimeCallStatsTest : public ::testing::Test {
+class RuntimeCallStatsTest : public testing::Test {
  public:
   void SetUp() override {
     // Add one millisecond because RuntimeCallTimer uses |start_ticks_| =
@@ -36,7 +36,7 @@ class RuntimeCallStatsTest : public ::testing::Test {
     clock_.Advance(TimeDelta::FromMilliseconds(milliseconds));
   }
 
-  base::TickClock* clock() { return &clock_; }
+  const base::TickClock* clock() { return &clock_; }
 
  private:
   RuntimeEnabledFeatures::Backup features_backup_;

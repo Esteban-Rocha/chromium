@@ -14,10 +14,10 @@
 namespace blink {
 
 void PaintPropertyTreeBuilderTest::LoadTestData(const char* file_name) {
-  String full_path = testing::BlinkRootDir();
+  String full_path = test::BlinkRootDir();
   full_path.append("/Source/core/paint/test_data/");
   full_path.append(file_name);
-  const Vector<char> input_buffer = testing::ReadFromFile(full_path)->Copy();
+  const Vector<char> input_buffer = test::ReadFromFile(full_path)->Copy();
   SetBodyInnerHTML(String(input_buffer.data(), input_buffer.size()));
 }
 
@@ -123,10 +123,9 @@ void PaintPropertyTreeBuilderTest::SetUp() {
 #define CHECK_EXACT_VISUAL_RECT(expected, source_object, ancestor) \
   CHECK_VISUAL_RECT(expected, source_object, ancestor, 0)
 
-INSTANTIATE_TEST_CASE_P(
-    All,
-    PaintPropertyTreeBuilderTest,
-    ::testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
+INSTANTIATE_TEST_CASE_P(All,
+                        PaintPropertyTreeBuilderTest,
+                        testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
 
 TEST_P(PaintPropertyTreeBuilderTest, FixedPosition) {
   LoadTestData("fixed-position.html");

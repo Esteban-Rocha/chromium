@@ -48,7 +48,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/safe_browsing/chrome_cleaner/chrome_cleaner_controller_win.h"
@@ -85,6 +85,7 @@
 #include "chrome/browser/ui/webui/settings/chromeos/fingerprint_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/google_assistant_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/internet_handler.h"
+#include "chrome/browser/ui/webui/settings/chromeos/smb_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/arc/arc_util.h"
@@ -185,6 +186,8 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
       std::make_unique<chromeos::settings::KeyboardHandler>());
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::PointerHandler>());
+  AddSettingsPageUIHandler(
+      std::make_unique<chromeos::settings::SmbHandler>(profile));
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::StorageHandler>());
   AddSettingsPageUIHandler(

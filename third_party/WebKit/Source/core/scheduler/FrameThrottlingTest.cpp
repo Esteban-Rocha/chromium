@@ -30,7 +30,7 @@
 #include "public/web/WebSettings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::_;
+using testing::_;
 
 namespace blink {
 
@@ -48,7 +48,7 @@ class FrameThrottlingTest : public SimTest, public PaintTestConfigurations {
   SimCanvas::Commands CompositeFrame() {
     auto commands = Compositor().BeginFrame();
     // Ensure intersection observer notifications get delivered.
-    testing::RunPendingTasks();
+    test::RunPendingTasks();
     return commands;
   }
 
@@ -73,10 +73,9 @@ class FrameThrottlingTest : public SimTest, public PaintTestConfigurations {
   }
 };
 
-INSTANTIATE_TEST_CASE_P(
-    All,
-    FrameThrottlingTest,
-    ::testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
+INSTANTIATE_TEST_CASE_P(All,
+                        FrameThrottlingTest,
+                        testing::ValuesIn(kAllSlimmingPaintTestConfigurations));
 
 TEST_P(FrameThrottlingTest, ThrottleInvisibleFrames) {
   SimRequest main_resource("https://example.com/", "text/html");
@@ -609,7 +608,7 @@ TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledFrame) {
   // and should not cause assert failure about
   // isAllowedToQueryCompositingState() in the throttled frame.
   GetDocument().View()->UpdateAllLifecyclePhases();
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
   // The fixed background in the throttled sub frame should not cause main
@@ -678,7 +677,7 @@ TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledLayer) {
   // and should not cause assert failure about
   // isAllowedToQueryCompositingState() in the throttled frame.
   GetDocument().View()->UpdateAllLifecyclePhases();
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
 }

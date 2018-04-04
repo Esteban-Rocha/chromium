@@ -9,8 +9,8 @@ import("//build/config/ui.gni")
 import("//build/split_static_library.gni")
 import("//content/common/features.gni")
 import("//media/media_options.gni")
-import("//ppapi/features/features.gni")
-import("//printing/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
+import("//printing/buildflags/buildflags.gni")
 import("//third_party/webrtc/webrtc.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 
@@ -27,6 +27,7 @@ target(link_target_type, "renderer") {
     ":for_content_tests",
     "//content/app:*",
     "//content/public/renderer:renderer_sources",
+    "//content/renderer:audio_decoder_fuzzer",
   ]
 
   sources = [
@@ -565,8 +566,8 @@ target(link_target_type, "renderer") {
     "//mojo/common",
     "//mojo/public/cpp/bindings",
     "//net",
-    "//ppapi/features",
-    "//printing/features",
+    "//ppapi/buildflags",
+    "//printing/buildflags",
     "//sandbox",
     "//services/device/public/cpp/generic_sensor",
     "//services/device/public/mojom",
@@ -1119,4 +1120,16 @@ group("for_content_tests") {
       ":renderer",
     ]
   }
+}
+
+fuzzer_test("audio_decoder_fuzzer") {
+  sources = [
+    "media/audio_decoder_fuzzer.cpp",
+  ]
+  deps = [
+    "//content/public/renderer:renderer_sources",
+    "//content/renderer:renderer",
+    "//content/test:test_support",
+  ]
+  seed_corpus = "//media/test/data"
 }

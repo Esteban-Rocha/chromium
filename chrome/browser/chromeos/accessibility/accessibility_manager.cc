@@ -35,6 +35,7 @@
 #include "chrome/browser/chromeos/accessibility/accessibility_extension_loader.h"
 #include "chrome/browser/chromeos/accessibility/dictation_chromeos.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
+#include "chrome/browser/chromeos/accessibility/select_to_speak_event_handler.h"
 #include "chrome/browser/chromeos/accessibility/switch_access_event_handler.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/ash_config.h"
@@ -150,9 +151,8 @@ class ChromeVoxPanelWidgetObserver : public views::WidgetObserver {
 
 AccessibilityStatusEventDetails::AccessibilityStatusEventDetails(
     AccessibilityNotificationType notification_type,
-    bool enabled,
-    ash::AccessibilityNotificationVisibility notify)
-    : notification_type(notification_type), enabled(enabled), notify(notify) {}
+    bool enabled)
+    : notification_type(notification_type), enabled(enabled) {}
 
 ///////////////////////////////////////////////////////////////////////////////
 // AccessibilityManager::PrefHandler
@@ -245,7 +245,6 @@ AccessibilityManager::AccessibilityManager()
       spoken_feedback_enabled_(false),
       select_to_speak_enabled_(false),
       switch_access_enabled_(false),
-      spoken_feedback_notification_(ash::A11Y_NOTIFICATION_NONE),
       braille_display_connected_(false),
       scoped_braille_observer_(this),
       braille_ime_current_(false),
@@ -326,8 +325,8 @@ AccessibilityManager::AccessibilityManager()
 
 AccessibilityManager::~AccessibilityManager() {
   CHECK(this == g_accessibility_manager);
-  AccessibilityStatusEventDetails details(ACCESSIBILITY_MANAGER_SHUTDOWN, false,
-                                          ash::A11Y_NOTIFICATION_NONE);
+  AccessibilityStatusEventDetails details(ACCESSIBILITY_MANAGER_SHUTDOWN,
+                                          false);
   NotifyAccessibilityStatusChanged(details);
   input_method::InputMethodManager::Get()->RemoveObserver(this);
   session_manager::SessionManager::Get()->RemoveObserver(this);
@@ -393,8 +392,7 @@ void AccessibilityManager::EnableLargeCursor(bool enabled) {
 
 void AccessibilityManager::OnLargeCursorChanged() {
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_LARGE_CURSOR,
-                                          IsLargeCursorEnabled(),
-                                          ash::A11Y_NOTIFICATION_NONE);
+                                          IsLargeCursorEnabled());
   NotifyAccessibilityStatusChanged(details);
 }
 
@@ -419,25 +417,18 @@ bool AccessibilityManager::IsStickyKeysEnabled() const {
 
 void AccessibilityManager::OnStickyKeysChanged() {
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_STICKY_KEYS,
-                                          IsStickyKeysEnabled(),
-                                          ash::A11Y_NOTIFICATION_NONE);
+                                          IsStickyKeysEnabled());
   NotifyAccessibilityStatusChanged(details);
 }
 
-void AccessibilityManager::EnableSpokenFeedback(
-    bool enabled,
-    ash::AccessibilityNotificationVisibility notify) {
+void AccessibilityManager::EnableSpokenFeedback(bool enabled) {
   if (!profile_)
     return;
-
-  spoken_feedback_notification_ = notify;
 
   PrefService* pref_service = profile_->GetPrefs();
   pref_service->SetBoolean(ash::prefs::kAccessibilitySpokenFeedbackEnabled,
                            enabled);
   pref_service->CommitPendingWrite();
-
-  spoken_feedback_notification_ = ash::A11Y_NOTIFICATION_NONE;
 }
 
 void AccessibilityManager::OnSpokenFeedbackChanged() {
@@ -459,9 +450,7 @@ void AccessibilityManager::OnSpokenFeedbackChanged() {
   spoken_feedback_enabled_ = enabled;
 
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
-                                          enabled,
-                                          spoken_feedback_notification_);
-
+                                          enabled);
   NotifyAccessibilityStatusChanged(details);
 
   if (enabled) {
@@ -496,8 +485,7 @@ bool AccessibilityManager::IsHighContrastEnabled() const {
 
 void AccessibilityManager::OnHighContrastChanged() {
   AccessibilityStatusEventDetails details(
-      ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE, IsHighContrastEnabled(),
-      ash::A11Y_NOTIFICATION_NONE);
+      ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE, IsHighContrastEnabled());
   NotifyAccessibilityStatusChanged(details);
 }
 
@@ -511,8 +499,8 @@ void AccessibilityManager::OnLocaleChanged() {
   // If the system locale changes and spoken feedback is enabled,
   // reload ChromeVox so that it switches its internal translations
   // to the new language.
-  EnableSpokenFeedback(false, ash::A11Y_NOTIFICATION_NONE);
-  EnableSpokenFeedback(true, ash::A11Y_NOTIFICATION_NONE);
+  EnableSpokenFeedback(false);
+  EnableSpokenFeedback(true);
 }
 
 void AccessibilityManager::OnViewFocusedInArc(
@@ -653,8 +641,7 @@ bool AccessibilityManager::IsVirtualKeyboardEnabled() const {
 
 void AccessibilityManager::OnVirtualKeyboardChanged() {
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
-                                          IsVirtualKeyboardEnabled(),
-                                          ash::A11Y_NOTIFICATION_NONE);
+                                          IsVirtualKeyboardEnabled());
   NotifyAccessibilityStatusChanged(details);
 }
 
@@ -674,8 +661,7 @@ bool AccessibilityManager::IsMonoAudioEnabled() const {
 
 void AccessibilityManager::OnMonoAudioChanged() {
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_MONO_AUDIO,
-                                          IsMonoAudioEnabled(),
-                                          ash::A11Y_NOTIFICATION_NONE);
+                                          IsMonoAudioEnabled());
   NotifyAccessibilityStatusChanged(details);
 }
 
@@ -700,8 +686,7 @@ bool AccessibilityManager::IsCaretHighlightEnabled() const {
 
 void AccessibilityManager::OnCaretHighlightChanged() {
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_CARET_HIGHLIGHT,
-                                          IsCaretHighlightEnabled(),
-                                          ash::A11Y_NOTIFICATION_NONE);
+                                          IsCaretHighlightEnabled());
   NotifyAccessibilityStatusChanged(details);
 }
 
@@ -722,8 +707,7 @@ bool AccessibilityManager::IsCursorHighlightEnabled() const {
 
 void AccessibilityManager::OnCursorHighlightChanged() {
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_CURSOR_HIGHLIGHT,
-                                          IsCursorHighlightEnabled(),
-                                          ash::A11Y_NOTIFICATION_NONE);
+                                          IsCursorHighlightEnabled());
   NotifyAccessibilityStatusChanged(details);
 }
 
@@ -750,7 +734,7 @@ void AccessibilityManager::OnFocusHighlightChanged() {
   if (IsSpokenFeedbackEnabled())
     enabled = false;
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_FOCUS_HIGHLIGHT,
-                                          enabled, ash::A11Y_NOTIFICATION_NONE);
+                                          enabled);
   NotifyAccessibilityStatusChanged(details);
 }
 
@@ -780,13 +764,17 @@ void AccessibilityManager::OnSelectToSpeakChanged() {
   select_to_speak_enabled_ = enabled;
 
   AccessibilityStatusEventDetails details(ACCESSIBILITY_TOGGLE_SELECT_TO_SPEAK,
-                                          enabled, ash::A11Y_NOTIFICATION_NONE);
+                                          enabled);
   NotifyAccessibilityStatusChanged(details);
 
-  if (enabled)
+  if (enabled) {
     select_to_speak_loader_->Load(profile_, base::Closure() /* done_cb */);
-  else
+    select_to_speak_event_handler_.reset(
+        new chromeos::SelectToSpeakEventHandler());
+  } else {
     select_to_speak_loader_->Unload();
+    select_to_speak_event_handler_.reset(nullptr);
+  }
 }
 
 void AccessibilityManager::SetSwitchAccessEnabled(bool enabled) {

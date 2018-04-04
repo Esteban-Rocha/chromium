@@ -154,6 +154,10 @@
 #include "chrome/browser/ui/views/profiles/profile_chooser_view.h"
 #endif  // !defined(OS_CHROMEOS)
 
+#if defined(OS_MACOSX)
+#include "chrome/browser/ui/views/frame/browser_view_commands_mac.h"
+#endif
+
 #if defined(USE_AURA)
 #include "chrome/browser/ui/views/theme_profile_key.h"
 #include "ui/aura/client/window_parenting_client.h"
@@ -1180,7 +1184,7 @@ void BrowserView::ShowUpdateChromeDialog() {
 
 #if defined(OS_CHROMEOS)
 void BrowserView::ShowIntentPickerBubble(
-    std::vector<IntentPickerBubbleView::AppInfo> app_info,
+    const std::vector<IntentPickerBubbleView::AppInfo>& app_info,
     IntentPickerResponse callback) {
   toolbar_->ShowIntentPickerBubble(app_info, callback);
 }
@@ -1412,6 +1416,9 @@ void BrowserView::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
 // won't do anything. We'll need something like an overall clipboard command
 // manager to do that.
 void BrowserView::CutCopyPaste(int command_id) {
+#if defined(OS_MACOSX)
+  ForwardCutCopyPasteToNSApp(command_id);
+#else
   // If a WebContents is focused, call its member method.
   //
   // We could make WebContents register accelerators and then just use the
@@ -1449,6 +1456,7 @@ void BrowserView::CutCopyPaste(int command_id) {
   ui::Accelerator accelerator;
   GetAccelerator(command_id, &accelerator);
   GetFocusManager()->ProcessAccelerator(accelerator);
+#endif  // defined(OS_MACOSX)
 }
 
 WindowOpenDisposition BrowserView::GetDispositionForPopupBounds(
@@ -2141,22 +2149,12 @@ void BrowserView::OnOmniboxPopupShownOrHidden() {
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, InfoBarContainerDelegate overrides:
 
-SkColor BrowserView::GetInfoBarSeparatorColor() const {
-  return GetThemeProvider()->GetColor(
-      ThemeProperties::COLOR_TOOLBAR_BOTTOM_SEPARATOR);
-}
-
 void BrowserView::InfoBarContainerStateChanged(bool is_animating) {
   ToolbarSizeChanged(is_animating);
 }
 
 bool BrowserView::DrawInfoBarArrows(int* x) const {
-  if (x) {
-    gfx::Point anchor(toolbar_->location_bar()->GetInfoBarAnchorPoint());
-    ConvertPointToTarget(toolbar_->location_bar(), this, &anchor);
-    *x = anchor.x();
-  }
-  return true;
+  return false;
 }
 
 void BrowserView::InitViews() {
@@ -2628,8 +2626,11 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton(
     signin_metrics::AccessPoint access_point,
     bool focus_first_profile_button) {
 #if !defined(OS_CHROMEOS)
+  views::Button* avatar_button = toolbar_->avatar_button();
+  if (!avatar_button)
+    avatar_button = frame_->GetNewAvatarMenuButton();
   // Do not show avatar bubble if there is no avatar menu button.
-  if (!frame_->GetNewAvatarMenuButton())
+  if (!avatar_button)
     return;
 
   profiles::BubbleViewMode bubble_view_mode;
@@ -2639,9 +2640,8 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton(
         bubble_view_mode, browser_.get(), access_point);
   } else {
     ProfileChooserView::ShowBubble(
-        bubble_view_mode, manage_accounts_params, access_point,
-        frame_->GetNewAvatarMenuButton(), nullptr, gfx::Rect(), browser(),
-        focus_first_profile_button);
+        bubble_view_mode, manage_accounts_params, access_point, avatar_button,
+        nullptr, gfx::Rect(), browser(), focus_first_profile_button);
     ProfileMetrics::LogProfileOpenMethod(ProfileMetrics::ICON_AVATAR_BUBBLE);
   }
 #else

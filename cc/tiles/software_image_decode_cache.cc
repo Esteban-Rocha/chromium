@@ -303,8 +303,7 @@ void SoftwareImageDecodeCache::UnrefImage(const CacheKey& key) {
   auto decoded_image_it = decoded_images_.Peek(key);
   DCHECK(decoded_image_it != decoded_images_.end());
   auto* entry = decoded_image_it->second.get();
-  // TODO(khushalsagar): Temp CHECK to diagnose crbug.com/802976.
-  CHECK_GT(entry->ref_count, 0);
+  DCHECK_GT(entry->ref_count, 0);
   if (--entry->ref_count == 0) {
     if (entry->is_budgeted)
       RemoveBudgetForImage(key, entry);
@@ -510,8 +509,12 @@ DecodedDrawImage SoftwareImageDecodeCache::GetDecodedImageForDrawInternal(
   cache_entry->mark_used();
 
   DecodeImageIfNecessary(key, paint_image, cache_entry);
+  auto decoded_image = cache_entry->image();
+  if (!decoded_image)
+    return DecodedDrawImage();
+
   auto decoded_draw_image =
-      DecodedDrawImage(cache_entry->image(), cache_entry->src_rect_offset(),
+      DecodedDrawImage(std::move(decoded_image), cache_entry->src_rect_offset(),
                        GetScaleAdjustment(key), GetDecodedFilterQuality(key),
                        cache_entry->is_budgeted);
   return decoded_draw_image;

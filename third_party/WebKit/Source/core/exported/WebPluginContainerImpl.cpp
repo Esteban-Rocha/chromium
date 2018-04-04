@@ -38,7 +38,6 @@
 #include "build/build_config.h"
 #include "core/clipboard/DataObject.h"
 #include "core/clipboard/DataTransfer.h"
-#include "core/dom/ExecutionContext.h"
 #include "core/dom/UserGestureIndicator.h"
 #include "core/dom/events/EventQueue.h"
 #include "core/events/DragEvent.h"
@@ -50,6 +49,7 @@
 #include "core/events/TouchEvent.h"
 #include "core/events/WebInputEventConversion.h"
 #include "core/events/WheelEvent.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/exported/WebDocumentLoaderImpl.h"
 #include "core/exported/WebViewImpl.h"
 #include "core/frame/EventHandlerRegistry.h"
@@ -936,11 +936,9 @@ WebTouchEvent WebPluginContainerImpl::TransformTouchEvent(
     // Translate the root frame position to content coordinates.
     absolute_location = parent.RootFrameToContents(absolute_location);
 
-    IntPoint local_point =
-        RoundedIntPoint(element_->GetLayoutObject()->AbsoluteToLocal(
-            absolute_location, kUseTransforms));
-    transformed_event.touches[i].SetPositionInWidget(local_point.X(),
-                                                     local_point.Y());
+    FloatPoint local_point = element_->GetLayoutObject()->AbsoluteToLocal(
+        absolute_location, kUseTransforms);
+    transformed_event.touches[i].SetPositionInWidget(local_point);
   }
   return transformed_event;
 }

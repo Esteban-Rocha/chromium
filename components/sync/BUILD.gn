@@ -783,6 +783,7 @@ static_library("test_support_driver") {
   deps = [
     ":sync",
     ":test_support_engine",
+    "//components/signin/core/browser:account_info",
     "//components/sync_preferences:test_support",
     "//components/version_info",
     "//google_apis",
@@ -853,6 +854,7 @@ source_set("unit_tests") {
     "engine_impl/model_type_registry_unittest.cc",
     "engine_impl/model_type_worker_unittest.cc",
     "engine_impl/net/sync_server_connection_manager_unittest.cc",
+    "engine_impl/non_blocking_type_commit_contribution_unittest.cc",
     "engine_impl/sync_encryption_handler_impl_unittest.cc",
     "engine_impl/sync_manager_impl_unittest.cc",
     "engine_impl/sync_scheduler_impl_unittest.cc",

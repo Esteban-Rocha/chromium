@@ -71,12 +71,20 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Tells the View to size itself to the specified size.
   virtual void SetSize(const gfx::Size& size) = 0;
 
+  // Instructs the View to automatically resize and send back updates
+  // for the new size.
+  virtual void EnableAutoResize(const gfx::Size& min_size,
+                                const gfx::Size& max_size) = 0;
+
+  // Turns off auto-resize and gives a new size that the view should be.
+  virtual void DisableAutoResize(const gfx::Size& new_size) = 0;
+
   // Tells the View to size and move itself to the specified size and point in
   // screen space.
   virtual void SetBounds(const gfx::Rect& rect) = 0;
 
-  // Retrieves the last known scroll position.
-  virtual gfx::Vector2dF GetLastScrollOffset() const = 0;
+  // Indicates whether the scroll offset of the view is at top.
+  virtual bool IsScrollOffsetAtTop() const = 0;
 
   // Sets a flag that indicates if it is in virtual reality mode.
   virtual void SetIsInVR(bool is_in_vr) = 0;
@@ -128,9 +136,7 @@ class CONTENT_EXPORT RenderWidgetHostView {
 
   // Indicates if the view is currently occluded (e.g, not visible because it's
   // covered up by other windows), and as a result the view's renderer may be
-  // suspended. If Show() is called on a view then its state should be re-set to
-  // being un-occluded (an explicit WasUnOccluded call will not be made for
-  // that). These calls are not necessarily made in pairs.
+  // suspended. Calling Show()/Hide() overrides the state set by these methods.
   virtual void WasUnOccluded() = 0;
   virtual void WasOccluded() = 0;
 

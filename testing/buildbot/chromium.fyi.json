@@ -303,6 +303,15 @@
       },
       {
         "args": [
+          "--shared-prefs-file=//chrome/android/shared_preference_files/test/vr_ddview_skipdon_setupcomplete_o2.json",
+          "--additional-apk=src/third_party/gvr-android-sdk/test-apks/vr_services/vr_services_current.apk",
+          "--additional-apk=src/third_party/gvr-android-sdk/test-apks/daydream_home/daydream_home_current.apk"
+        ],
+        "name": "chrome_public_test_vr_apk (daydream, O2)",
+        "test": "chrome_public_test_vr_apk"
+      },
+      {
+        "args": [
           "--shared-prefs-file=src/chrome/android/shared_preference_files/test/vr_ddview_don_setupcomplete.json",
           "--additional-apk=src/third_party/gvr-android-sdk/test-apks/vr_services/vr_services_current.apk",
           "--additional-apk=src/third_party/gvr-android-sdk/test-apks/daydream_home/daydream_home_current.apk",
@@ -2699,6 +2708,18 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
+        "test": "app_shell_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "aura_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
         "test": "base_unittests"
       },
       {
@@ -2730,6 +2751,12 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
+        "test": "chrome_elf_import_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
         "test": "chrome_elf_unittests"
       },
       {
@@ -2737,6 +2764,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "components_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "compositor_unittests"
       },
       {
         "swarming": {
@@ -2791,6 +2824,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "gpu_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "install_static_unittests"
       },
       {
         "swarming": {
@@ -2938,6 +2977,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "views_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "wm_unittests"
       },
       {
         "swarming": {
@@ -2959,6 +3004,18 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
+        "test": "app_shell_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "aura_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
         "test": "base_unittests"
       },
       {
@@ -2990,6 +3047,12 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
+        "test": "chrome_elf_import_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
         "test": "chrome_elf_unittests"
       },
       {
@@ -2997,6 +3060,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "components_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "compositor_unittests"
       },
       {
         "swarming": {
@@ -3051,6 +3120,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "gpu_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "install_static_unittests"
       },
       {
         "swarming": {
@@ -3203,6 +3278,12 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
+        "test": "wm_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
         "test": "zucchini_unittests"
       }
     ]
@@ -3214,6 +3295,18 @@
           "can_use_on_swarming_builders": true
         },
         "test": "angle_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "app_shell_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "aura_unittests"
       },
       {
         "swarming": {
@@ -3243,6 +3336,12 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
+        "test": "chrome_elf_import_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
         "test": "chrome_elf_unittests"
       },
       {
@@ -3250,6 +3349,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "components_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "compositor_unittests"
       },
       {
         "swarming": {
@@ -3304,6 +3409,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "gpu_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "install_static_unittests"
       },
       {
         "swarming": {
@@ -3439,6 +3550,12 @@
           "can_use_on_swarming_builders": true
         },
         "test": "views_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "wm_unittests"
       },
       {
         "swarming": {
@@ -3620,7 +3737,8 @@
       },
       {
         "args": [
-          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.service_manager_unittests.filter"
+          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.service_manager_unittests.filter",
+          "--use-new-test-runner"
         ],
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3664,8 +3782,7 @@
       },
       {
         "args": [
-          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.ui_base_unittests.filter",
-          "--use-new-test-runner"
+          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.ui_base_unittests.filter"
         ],
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4075,8 +4192,7 @@
         "args": [
           "--xvfb",
           "--extra-browser-args=--enable-features=VizDisplayCompositor",
-          "--skip=contrib.cluster_telemetry.screenshot_unittest.ScreenshotUnitTest.testScreenshot",
-          "--skip=measurements.tab_switching_unittest.TabSwitchingUnittest.testTabSwitching"
+          "--skip=contrib.cluster_telemetry.screenshot_unittest.ScreenshotUnitTest.testScreenshot"
         ],
         "isolate_name": "telemetry_perf_unittests",
         "name": "telemetry_perf_unittests_viz",
@@ -4097,11 +4213,8 @@
       {
         "args": [
           "--extra-browser-args=--enable-features=VizDisplayCompositor",
-          "--skip=telemetry.internal.actions.scroll_unittest.ScrollActionTest.testWheelScrollDistanceWhileZoomed",
           "--skip=telemetry.internal.backends.chrome_inspector.inspector_page_unittest.InspectorPageTest.testCaptureScreenshot",
-          "--skip=telemetry.internal.backends.chrome.tab_list_backend_unittest.TabListBackendTest.testNewTab",
-          "--skip=telemetry.internal.browser.tab_unittest.GpuTabTest.testScreenshot",
-          "--skip=telemetry.page.cache_temperature_unittest.CacheTemperatureTests.testEnsureHotAfterColdRun"
+          "--skip=telemetry.internal.browser.tab_unittest.GpuTabTest.testScreenshot"
         ],
         "isolate_name": "telemetry_unittests",
         "name": "telemetry_unittests_viz",
@@ -4247,8 +4360,7 @@
       },
       {
         "args": [
-          "--site-per-process",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/site-per-process.browser_tests.filter"
+          "--site-per-process"
         ],
         "name": "site_per_process_browser_tests",
         "swarming": {
@@ -4919,6 +5031,17 @@
           ]
         },
         "test": "mojo_common_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "os": "Ubuntu-16.04"
+            }
+          ]
+        },
+        "test": "mojo_core_unittests"
       },
       {
         "swarming": {
@@ -7697,8 +7820,7 @@
       },
       {
         "args": [
-          "--site-per-process",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/site-per-process.browser_tests.filter"
+          "--site-per-process"
         ],
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -8181,7 +8303,6 @@
       {
         "args": [
           "--additional-driver-flag=--enable-blink-features=LayoutNG",
-          "--additional-driver-flag=--enable-blink-features=LayoutNGPaintFragments",
           "--additional-driver-flag=--enable-slimming-paint-v175"
         ],
         "isolate_name": "webkit_layout_tests_exparchive",

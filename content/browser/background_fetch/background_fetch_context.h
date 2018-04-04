@@ -74,6 +74,11 @@ class CONTENT_EXPORT BackgroundFetchContext
                   const SkBitmap& icon,
                   blink::mojom::BackgroundFetchService::FetchCallback callback);
 
+  // Gets display size for the icon for Background Fetch UI.
+  void GetIconDisplaySize(
+      blink::mojom::BackgroundFetchService::GetIconDisplaySizeCallback
+          callback);
+
   // Aborts the Background Fetch for the |registration_id|. The callback will be
   // invoked with INVALID_ID if the registration has already completed or
   // aborted, STORAGE_ERROR if an I/O error occurs, or NONE for success.
@@ -87,10 +92,13 @@ class CONTENT_EXPORT BackgroundFetchContext
       const std::string& unique_id,
       blink::mojom::BackgroundFetchRegistrationObserverPtr observer);
 
-  // Updates the title of the Background Fetch identified by |unique_id|. The
-  // |callback| will be invoked when the title has been updated, or an error
-  // occurred that prevents it from doing so.
+  // Updates the title of the Background Fetch identified by |unique_id| and
+  // |service_worker_registration_id| contained. The |callback| will be invoked
+  // when the title has been updated, or an error occurred that prevents it from
+  // doing so.
   void UpdateUI(
+      int64_t service_worker_registration_id,
+      const url::Origin& origin,
       const std::string& unique_id,
       const std::string& title,
       blink::mojom::BackgroundFetchService::UpdateUICallback callback);

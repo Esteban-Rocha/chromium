@@ -23,6 +23,7 @@
 <translation id="1484102317210609525"><ph name="DEVICE_NAME" /> (HDMI/DP)</translation>
 <translation id="1510238584712386396">Lanceur d'applications</translation>
 <translation id="1525508553941733066">IGNORER</translation>
+<translation id="1537254971476575106">Loupe plein écran</translation>
 <translation id="15373452373711364">Grand curseur</translation>
 <translation id="1550523713251050646">Cliquez pour obtenir plus d'options.</translation>
 <translation id="1567387640189251553">Un clavier différent a été branché depuis la dernière fois où vous avez saisi votre mot de passe. Il est possible que ce soit pour enregistrer les touches sur lesquelles vous appuyez et vous soutirer ainsi des informations.</translation>
@@ -51,10 +52,11 @@
 <translation id="2049639323467105390">Cet appareil est géré par <ph name="DOMAIN" />.</translation>
 <translation id="2050339315714019657">Portrait</translation>
 <translation id="2067602449040652523">Luminosité du clavier</translation>
+<translation id="2081529251031312395">$1 pourra toujours se connecter plus tard.</translation>
 <translation id="2122028596993374965">Arrêter de diffuser <ph name="TAB_NAME" /> sur "<ph name="RECEIVER_NAME" />"</translation>
 <translation id="2127372758936585790">Chargeur de faible puissance</translation>
+<translation id="2135456203358955318">Loupe ancrée</translation>
 <translation id="2144487987174258011">Redémarrez pour mettre Adobe Flash Player à jour</translation>
-<translation id="2191905770366256395">Votre clavier amovible nécessite une mise à jour critique</translation>
 <translation id="2208323208084708176">Mode bureau unifié</translation>
 <translation id="2220572644011485463">Code ou mot de passe</translation>
 <translation id="225680501294068881">Recherche d'appareils…</translation>
@@ -248,6 +250,7 @@ N'utilisez cette fonctionnalité qu'avec des comptes fiables.</translation>
 <translation id="6650933572246256093">L'appareil Bluetooth "<ph name="DEVICE_NAME" />" demande l'autorisation de s'associer. Veuillez saisir le code d'authentification suivant sur l'appareil : <ph name="PASSKEY" />.</translation>
 <translation id="6657585470893396449">Mot de passe</translation>
 <translation id="6691659475504239918">Recherche+Maj+H</translation>
+<translation id="6696025732084565524">Votre clavier amovible nécessite une mise à jour critique</translation>
 <translation id="6700713906295497288">Bouton de menu IME</translation>
 <translation id="6713285437468012787">L'appareil Bluetooth "<ph name="DEVICE_NAME" />" a été associé et tous les utilisateurs peuvent désormais y accéder. Vous pouvez supprimer cette association dans les paramètres.</translation>
 <translation id="6715542151869432661">Aucun appareil mobile détecté.</translation>

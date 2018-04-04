@@ -50,6 +50,7 @@
 #include "core/editing/SetSelectionOptions.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/WritingDirection.h"
 #include "core/editing/commands/ApplyStyleCommand.h"
 #include "core/editing/commands/DeleteSelectionCommand.h"
 #include "core/editing/commands/IndentOutdentCommand.h"
@@ -93,8 +94,6 @@
 namespace blink {
 
 using namespace HTMLNames;
-using namespace WTF;
-using namespace Unicode;
 
 namespace {
 
@@ -117,12 +116,11 @@ SelectionInDOMTree Editor::SelectionForCommand(Event* event) {
     return selection;
   // If the target is a text control, and the current selection is outside of
   // its shadow tree, then use the saved selection for that text control.
-  if (!IsTextControlElement(*event->target()->ToNode()))
+  if (!IsTextControl(*event->target()->ToNode()))
     return selection;
-  TextControlElement* text_control_of_selection_start =
+  auto* text_control_of_selection_start =
       EnclosingTextControl(selection.Base());
-  TextControlElement* text_control_of_target =
-      ToTextControlElement(event->target()->ToNode());
+  auto* text_control_of_target = ToTextControl(event->target()->ToNode());
   if (!selection.IsNone() &&
       text_control_of_target == text_control_of_selection_start)
     return selection;
@@ -647,11 +645,11 @@ void Editor::Redo() {
 
 void Editor::SetBaseWritingDirection(WritingDirection direction) {
   Element* focused_element = GetFrame().GetDocument()->FocusedElement();
-  if (IsTextControlElement(focused_element)) {
-    if (direction == NaturalWritingDirection)
+  if (IsTextControl(focused_element)) {
+    if (direction == WritingDirection::kNatural)
       return;
     focused_element->setAttribute(
-        dirAttr, direction == LeftToRightWritingDirection ? "ltr" : "rtl");
+        dirAttr, direction == WritingDirection::kLeftToRight ? "ltr" : "rtl");
     focused_element->DispatchInputEvent();
     return;
   }
@@ -660,9 +658,9 @@ void Editor::SetBaseWritingDirection(WritingDirection direction) {
       MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(
       CSSPropertyDirection,
-      direction == LeftToRightWritingDirection
+      direction == WritingDirection::kLeftToRight
           ? "ltr"
-          : direction == RightToLeftWritingDirection ? "rtl" : "inherit",
+          : direction == WritingDirection::kRightToLeft ? "rtl" : "inherit",
       /* important */ false, GetFrame().GetDocument()->GetSecureContextMode());
   ApplyParagraphStyleToSelection(
       style, InputEvent::InputType::kFormatSetBlockTextDirection);
@@ -746,24 +744,27 @@ void Editor::ComputeAndSetTypingStyle(CSSPropertyValueSet* style,
   }
 }
 
-bool Editor::FindString(const String& target, FindOptions options) {
+bool Editor::FindString(LocalFrame& frame,
+                        const String& target,
+                        FindOptions options) {
   VisibleSelection selection =
-      GetFrameSelection().ComputeVisibleSelectionInDOMTreeDeprecated();
+      frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated();
 
   // TODO(yosin) We should make |findRangeOfString()| to return
   // |EphemeralRange| rather than|Range| object.
-  Range* result_range = FindRangeOfString(
-      target, EphemeralRange(selection.Start(), selection.End()),
-      static_cast<FindOptions>(options | kFindAPICall));
+  Range* const result_range =
+      FindRangeOfString(*frame.GetDocument(), target,
+                        EphemeralRange(selection.Start(), selection.End()),
+                        static_cast<FindOptions>(options | kFindAPICall));
 
   if (!result_range)
     return false;
 
-  GetFrameSelection().SetSelectionAndEndTyping(
+  frame.Selection().SetSelectionAndEndTyping(
       SelectionInDOMTree::Builder()
           .SetBaseAndExtent(EphemeralRange(result_range))
           .Build());
-  GetFrameSelection().RevealSelection();
+  frame.Selection().RevealSelection();
   return true;
 }
 
@@ -874,18 +875,20 @@ static Range* FindRangeOfStringAlgorithm(
   return result_range;
 }
 
-Range* Editor::FindRangeOfString(const String& target,
+Range* Editor::FindRangeOfString(Document& document,
+                                 const String& target,
                                  const EphemeralRange& reference,
                                  FindOptions options) {
-  return FindRangeOfStringAlgorithm<EditingStrategy>(
-      *GetFrame().GetDocument(), target, reference, options);
+  return FindRangeOfStringAlgorithm<EditingStrategy>(document, target,
+                                                     reference, options);
 }
 
-Range* Editor::FindRangeOfString(const String& target,
+Range* Editor::FindRangeOfString(Document& document,
+                                 const String& target,
                                  const EphemeralRangeInFlatTree& reference,
                                  FindOptions options) {
   return FindRangeOfStringAlgorithm<EditingInFlatTreeStrategy>(
-      *GetFrame().GetDocument(), target, reference, options);
+      document, target, reference, options);
 }
 
 void Editor::SetMarkedTextMatchesAreHighlighted(bool flag) {

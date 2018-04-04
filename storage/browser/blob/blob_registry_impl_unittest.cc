@@ -14,12 +14,13 @@
 #include "base/test/bind_test_util.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_restrictions.h"
-#include "mojo/common/data_pipe_utils.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "mojo/public/cpp/system/data_pipe_utils.h"
 #include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/test/fake_progress_client.h"
 #include "storage/browser/test/mock_blob_registry_delegate.h"
 #include "storage/browser/test/mock_bytes_provider.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
@@ -63,6 +64,8 @@ class MockBlob : public blink::mojom::Blob {
                blink::mojom::BlobReaderClientPtr) override {
     NOTREACHED();
   }
+
+  void ReadSideData(ReadSideDataCallback) override { NOTREACHED(); }
 
   void GetInternalUUID(GetInternalUUIDCallback callback) override {
     std::move(callback).Run(uuid_);
@@ -1035,17 +1038,22 @@ TEST_F(BlobRegistryImplTest, RegisterFromStream) {
   const std::string kContentType = "content/type";
   const std::string kContentDisposition = "disposition";
 
+  FakeProgressClient progress_client;
+  blink::mojom::ProgressClientAssociatedPtrInfo progress_client_ptr;
+  mojo::AssociatedBinding<blink::mojom::ProgressClient> progress_binding(
+      &progress_client, MakeRequest(&progress_client_ptr));
+
   mojo::DataPipe pipe;
   blink::mojom::SerializedBlobPtr blob;
   base::RunLoop loop;
   registry_->RegisterFromStream(
       kContentType, kContentDisposition, kData.length(),
-      std::move(pipe.consumer_handle),
+      std::move(pipe.consumer_handle), std::move(progress_client_ptr),
       base::BindLambdaForTesting([&](blink::mojom::SerializedBlobPtr result) {
         blob = std::move(result);
         loop.Quit();
       }));
-  mojo::common::BlockingCopyFromString(kData, pipe.producer_handle);
+  mojo::BlockingCopyFromString(kData, pipe.producer_handle);
   pipe.producer_handle.reset();
   loop.Run();
 
@@ -1056,6 +1064,9 @@ TEST_F(BlobRegistryImplTest, RegisterFromStream) {
   ASSERT_TRUE(blob->blob);
   blink::mojom::BlobPtr blob_ptr(std::move(blob->blob));
   EXPECT_EQ(blob->uuid, UUIDFromBlob(blob_ptr.get()));
+
+  EXPECT_EQ(kData.length(), progress_client.total_size);
+  EXPECT_GE(progress_client.call_count, 1);
 }
 
 }  // namespace storage

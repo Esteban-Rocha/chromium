@@ -45,7 +45,6 @@
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/browser/app_window/app_window.h"
 #include "extensions/browser/app_window/app_window_registry.h"
@@ -60,7 +59,7 @@
 #include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/result_catcher.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
@@ -471,9 +470,6 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, DisallowStorage) {
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Restrictions) {
-  // Flaky with NavigationMojoResponse. See https://crbug.com/822650.
-  if (content::IsNavigationMojoResponseEnabled())
-    return;
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/restrictions")) << message_;
 }
 
@@ -1401,6 +1397,10 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppsIgnoreDefaultZoom) {
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWindowIframe) {
   LoadAndLaunchPlatformApp("app_window_send_message",
                            "APP_WINDOW_CREATE_CALLBACK");
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, SandboxedLocalFile) {
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/sandboxed_local_file"));
 }
 
 }  // namespace extensions

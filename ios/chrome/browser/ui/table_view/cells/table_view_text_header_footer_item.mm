@@ -27,6 +27,8 @@ const CGFloat kVerticalSpacing = 2.0;
   self = [super initWithType:type];
   if (self) {
     self.cellClass = [TableViewTextHeaderFooterView class];
+    self.accessibilityTraits |=
+        UIAccessibilityTraitButton | UIAccessibilityTraitHeader;
   }
   return self;
 }
@@ -42,13 +44,20 @@ const CGFloat kVerticalSpacing = 2.0;
       base::mac::ObjCCastStrict<TableViewTextHeaderFooterView>(headerFooter);
   header.textLabel.text = self.text;
   header.subtitleLabel.text = self.subtitleText;
+  header.accessibilityLabel = self.text;
 }
 
 @end
 
 #pragma mark - TableViewTextHeaderFooter
 
+@interface TableViewTextHeaderFooterView ()
+// Animator that handles all cell animations.
+@property(strong, nonatomic) UIViewPropertyAnimator* cellAnimator;
+@end
+
 @implementation TableViewTextHeaderFooterView
+@synthesize cellAnimator = _cellAnimator;
 @synthesize subtitleLabel = _subtitleLabel;
 @synthesize textLabel = _textLabel;
 
@@ -106,6 +115,28 @@ const CGFloat kVerticalSpacing = 2.0;
     ]];
   }
   return self;
+}
+
+- (void)animateHighlight {
+  UIColor* originalBackgroundColor = self.contentView.backgroundColor;
+  self.cellAnimator = [[UIViewPropertyAnimator alloc]
+      initWithDuration:0.15
+                 curve:UIViewAnimationCurveLinear
+            animations:^{
+              self.contentView.backgroundColor =
+                  [[UIColor lightGrayColor] colorWithAlphaComponent:0.5];
+            }];
+  __weak TableViewTextHeaderFooterView* weakSelf = self;
+  [self.cellAnimator addCompletion:^(UIViewAnimatingPosition finalPosition) {
+    weakSelf.contentView.backgroundColor = originalBackgroundColor;
+  }];
+  [self.cellAnimator startAnimation];
+}
+
+- (void)prepareForReuse {
+  [super prepareForReuse];
+  if (self.cellAnimator.isRunning)
+    [self.cellAnimator stopAnimation:YES];
 }
 
 @end

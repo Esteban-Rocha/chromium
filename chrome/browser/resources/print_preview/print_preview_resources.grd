@@ -19,7 +19,8 @@
                  type="chrome_html" />
       <structure name="IDR_PRINT_PREVIEW_NEW_APP_HTML"
                  file="new/app.html"
-                 type="chrome_html" />
+                 type="chrome_html"
+                 preprocess="true" />
       <structure name="IDR_PRINT_PREVIEW_NEW_APP_JS"
                  file="new/app.js"
                  type="chrome_html" />
@@ -76,6 +77,12 @@
                  type="chrome_html" />
       <structure name="IDR_PRINT_PREVIEW_DATA_INVITATION_JS"
                  file="data/invitation.js"
+                 type="chrome_html" />
+      <structure name="IDR_PRINT_PREVIEW_DATA_INVITATION_STORE_HTML"
+                 file="data/invitation_store.html"
+                 type="chrome_html" />
+      <structure name="IDR_PRINT_PREVIEW_DATA_INVITATION_STORE_JS"
+                 file="data/invitation_store.js"
                  type="chrome_html" />
       <structure name="IDR_PRINT_PREVIEW_DATA_MARGINS_HTML"
                  file="data/margins.html"
@@ -160,6 +167,12 @@
                  type="chrome_html" />
       <structure name="IDR_PRINT_PREVIEW_NEW_SETTINGS_BEHAVIOR_JS"
                  file="new/settings_behavior.js"
+                 type="chrome_html" />
+      <structure name="IDR_PRINT_PREVIEW_NEW_INPUT_BEHAVIOR_HTML"
+                 file="new/input_behavior.html"
+                 type="chrome_html" />
+      <structure name="IDR_PRINT_PREVIEW_NEW_INPUT_BEHAVIOR_JS"
+                 file="new/input_behavior.js"
                  type="chrome_html" />
       <structure name="IDR_PRINT_PREVIEW_NEW_STATE_HTML"
                  file="new/state.html"
@@ -263,6 +276,16 @@
       <structure name="IDR_PRINT_PREVIEW_NEW_NUMBER_SETTINGS_SECTION_JS"
                  file="new/number_settings_section.js"
                  type="chrome_html" />
+      <if expr="not chromeos">
+        <structure name="IDR_PRINT_PREVIEW_NEW_LINK_CONTAINER_HTML"
+                   file="new/link_container.html"
+                   type="chrome_html"
+                   preprocess="true" />
+        <structure name="IDR_PRINT_PREVIEW_NEW_LINK_CONTAINER_JS"
+                   file="new/link_container.js"
+                   type="chrome_html"
+                   preprocess="true" />
+      </if>
       <structure name="IDR_PRINT_PREVIEW_NEW_DESTINATION_DIALOG_HTML"
                  file="new/destination_dialog.html"
                  type="chrome_html" />

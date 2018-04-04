@@ -36,7 +36,7 @@
 #include "headless/lib/browser/headless_browser_main_parts.h"
 #include "headless/lib/browser/headless_tab_socket_impl.h"
 #include "headless/public/internal/headless_devtools_client_impl.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/switches.h"
@@ -473,6 +473,8 @@ void HeadlessWebContentsImpl::DelegateRequestsClose() {
   if (quit_closure_) {
     quit_closure_.Run();
     quit_closure_ = base::Closure();
+  } else {
+    browser_context()->DestroyWebContents(this);
   }
 }
 

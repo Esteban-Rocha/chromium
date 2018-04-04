@@ -43,8 +43,8 @@
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketHandle.h"
 #include "modules/websockets/WebSocketHandleClient.h"
-#include "platform/FrameScheduler.h"
 #include "platform/heap/Handle.h"
+#include "platform/scheduler/public/frame_scheduler.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/Deque.h"
 #include "platform/wtf/Vector.h"
@@ -70,11 +70,11 @@ class MODULES_EXPORT DocumentWebSocketChannel final
   // In the usual case, they are set automatically and you don't have to
   // pass it.
   static DocumentWebSocketChannel* Create(
-      Document* document,
+      ExecutionContext* context,
       WebSocketChannelClient* client,
       std::unique_ptr<SourceLocation> location) {
-    DCHECK(document);
-    return Create(ThreadableLoadingContext::Create(*document), client,
+    DCHECK(context);
+    return Create(ThreadableLoadingContext::Create(*context), client,
                   std::move(location));
   }
   static DocumentWebSocketChannel* Create(ThreadableLoadingContext*,
@@ -154,9 +154,7 @@ class MODULES_EXPORT DocumentWebSocketChannel final
                       unsigned short code,
                       const String& reason);
 
-  // This may return nullptr.
-  // TODO(kinuko): Remove dependency to document.
-  Document* GetDocument();
+  ExecutionContext* GetExecutionContext() const;
 
   // WebSocketHandleClient functions.
   void DidConnect(WebSocketHandle*,

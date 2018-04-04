@@ -49,7 +49,7 @@ class UiSceneCreator {
   void CreateCloseButton();
   void CreateExitPrompt();
   void CreatePrompts();
-  void CreateFullscreenToast();
+  void CreateToasts();
   void CreateVoiceSearchUiGroup();
   void CreateContentRepositioningAffordance();
   void CreateExitWarning();
@@ -59,7 +59,7 @@ class UiSceneCreator {
   void CreateWebVrTimeoutScreen();
   void CreateController();
   void CreateKeyboard();
-  void CreateHostedUi();
+  void Create2dBrowsingHostedUi();
 
   UiBrowserInterface* browser_;
   UiScene* scene_;

@@ -758,6 +758,7 @@ PDFiumEngine::PDFiumEngine(PDFEngine::Client* client)
       in_form_text_area_(false),
       editable_form_text_area_(false),
       mouse_left_button_down_(false),
+      mouse_middle_button_down_(false),
       permissions_(0),
       permissions_handler_revision_(-1),
       fpdf_availability_(nullptr),
@@ -1308,14 +1309,14 @@ void PDFiumEngine::OnPendingRequestComplete() {
 }
 
 void PDFiumEngine::OnNewDataReceived() {
-  client_->DocumentLoadProgress(doc_loader_->count_of_bytes_received(),
+  client_->DocumentLoadProgress(doc_loader_->bytes_received(),
                                 doc_loader_->GetDocumentSize());
 }
 
 void PDFiumEngine::OnDocumentComplete() {
-  if (doc_) {
+  if (doc_)
     return FinishLoadingDocument();
-  }
+
   file_access_.m_FileLen = doc_loader_->GetDocumentSize();
   if (!fpdf_availability_) {
     fpdf_availability_ = FPDFAvail_Create(&file_availability_, &file_access_);
@@ -1336,7 +1337,8 @@ void PDFiumEngine::CancelBrowserDownload() {
 }
 
 void PDFiumEngine::FinishLoadingDocument() {
-  DCHECK(doc_loader_->IsDocumentComplete() && doc_);
+  DCHECK(doc_);
+  DCHECK(doc_loader_->IsDocumentComplete());
 
   LoadBody();
 
@@ -1376,7 +1378,8 @@ void PDFiumEngine::FinishLoadingDocument() {
         (FPDFAvail_IsLinearized(fpdf_availability_) == PDF_LINEARIZED);
     document_features.is_tagged = FPDFCatalog_IsTagged(doc_);
     document_features.form_type = static_cast<FormType>(FPDF_GetFormType(doc_));
-    client_->DocumentLoadComplete(document_features);
+    client_->DocumentLoadComplete(document_features,
+                                  doc_loader_->bytes_received());
   }
 }
 
@@ -1447,6 +1450,9 @@ bool PDFiumEngine::HandleEvent(const pp::InputEvent& event) {
       break;
     case PP_INPUTEVENT_TYPE_MOUSEMOVE:
       rv = OnMouseMove(pp::MouseInputEvent(event));
+      break;
+    case PP_INPUTEVENT_TYPE_MOUSEENTER:
+      OnMouseEnter(pp::MouseInputEvent(event));
       break;
     case PP_INPUTEVENT_TYPE_KEYDOWN:
       rv = OnKeyDown(pp::KeyboardInputEvent(event));
@@ -1947,6 +1953,8 @@ bool PDFiumEngine::OnLeftMouseDown(const pp::MouseInputEvent& event) {
 
 bool PDFiumEngine::OnMiddleMouseDown(const pp::MouseInputEvent& event) {
   SetMouseLeftButtonDown(false);
+  mouse_middle_button_down_ = true;
+  mouse_middle_button_last_position_ = event.GetPosition();
 
   SelectionChangeInvalidator selection_invalidator(this);
   selection_.clear();
@@ -2047,6 +2055,8 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
 
   if (event.GetButton() == PP_INPUTEVENT_MOUSEBUTTON_LEFT)
     SetMouseLeftButtonDown(false);
+  else if (event.GetButton() == PP_INPUTEVENT_MOUSEBUTTON_MIDDLE)
+    mouse_middle_button_down_ = false;
 
   int page_index = -1;
   int char_index = -1;
@@ -2121,48 +2131,7 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
     mouse_down_state_.Reset();
 
   if (!selecting_) {
-    PP_CursorType_Dev cursor;
-    switch (area) {
-      case PDFiumPage::TEXT_AREA:
-        cursor = PP_CURSORTYPE_IBEAM;
-        break;
-      case PDFiumPage::WEBLINK_AREA:
-      case PDFiumPage::DOCLINK_AREA:
-        cursor = PP_CURSORTYPE_HAND;
-        break;
-      case PDFiumPage::NONSELECTABLE_AREA:
-      case PDFiumPage::FORM_TEXT_AREA:
-      default:
-        switch (form_type) {
-          case FPDF_FORMFIELD_PUSHBUTTON:
-          case FPDF_FORMFIELD_CHECKBOX:
-          case FPDF_FORMFIELD_RADIOBUTTON:
-          case FPDF_FORMFIELD_COMBOBOX:
-          case FPDF_FORMFIELD_LISTBOX:
-            cursor = PP_CURSORTYPE_HAND;
-            break;
-          case FPDF_FORMFIELD_TEXTFIELD:
-            cursor = PP_CURSORTYPE_IBEAM;
-            break;
-#if defined(PDF_ENABLE_XFA)
-          case FPDF_FORMFIELD_XFA_CHECKBOX:
-          case FPDF_FORMFIELD_XFA_COMBOBOX:
-          case FPDF_FORMFIELD_XFA_IMAGEFIELD:
-          case FPDF_FORMFIELD_XFA_LISTBOX:
-          case FPDF_FORMFIELD_XFA_PUSHBUTTON:
-          case FPDF_FORMFIELD_XFA_SIGNATURE:
-            cursor = PP_CURSORTYPE_HAND;
-            break;
-          case FPDF_FORMFIELD_XFA_TEXTFIELD:
-            cursor = PP_CURSORTYPE_IBEAM;
-            break;
-#endif
-          default:
-            cursor = PP_CURSORTYPE_POINTER;
-            break;
-        }
-        break;
-    }
+    client_->UpdateCursor(DetermineCursorType(area, form_type));
 
     if (page_index != -1) {
       double page_x;
@@ -2171,7 +2140,6 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
       FORM_OnMouseMove(form_, pages_[page_index]->GetPage(), 0, page_x, page_y);
     }
 
-    client_->UpdateCursor(cursor);
     std::string url = GetLinkAtPosition(event.GetPosition());
     if (url != link_under_cursor_) {
       link_under_cursor_ = url;
@@ -2183,6 +2151,19 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
     if (mouse_left_button_down_ && area == PDFiumPage::FORM_TEXT_AREA &&
         last_page_mouse_down_ != -1) {
       SetFormSelectedText(form_, pages_[last_page_mouse_down_]->GetPage());
+    }
+
+    if (mouse_middle_button_down_) {
+      // Subtract (origin - destination) so delta is already the delta for
+      // moving the page, rather than the delta the mouse moved.
+      // GetMovement() does not work here, as small mouse movements are
+      // considered zero.
+      pp::Point page_position_delta =
+          mouse_middle_button_last_position_ - event.GetPosition();
+      if (page_position_delta.x() != 0 || page_position_delta.y() != 0) {
+        client_->ScrollBy(page_position_delta);
+        mouse_middle_button_last_position_ = event.GetPosition();
+      }
     }
 
     // No need to swallow the event, since this might interfere with the
@@ -2197,6 +2178,60 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
 
   SelectionChangeInvalidator selection_invalidator(this);
   return ExtendSelection(page_index, char_index);
+}
+
+PP_CursorType_Dev PDFiumEngine::DetermineCursorType(PDFiumPage::Area area,
+                                                    int form_type) const {
+  if (mouse_middle_button_down_) {
+    return PP_CURSORTYPE_HAND;
+  }
+
+  switch (area) {
+    case PDFiumPage::TEXT_AREA:
+      return PP_CURSORTYPE_IBEAM;
+    case PDFiumPage::WEBLINK_AREA:
+    case PDFiumPage::DOCLINK_AREA:
+      return PP_CURSORTYPE_HAND;
+    case PDFiumPage::NONSELECTABLE_AREA:
+    case PDFiumPage::FORM_TEXT_AREA:
+    default:
+      switch (form_type) {
+        case FPDF_FORMFIELD_PUSHBUTTON:
+        case FPDF_FORMFIELD_CHECKBOX:
+        case FPDF_FORMFIELD_RADIOBUTTON:
+        case FPDF_FORMFIELD_COMBOBOX:
+        case FPDF_FORMFIELD_LISTBOX:
+          return PP_CURSORTYPE_HAND;
+        case FPDF_FORMFIELD_TEXTFIELD:
+          return PP_CURSORTYPE_IBEAM;
+#if defined(PDF_ENABLE_XFA)
+        case FPDF_FORMFIELD_XFA_CHECKBOX:
+        case FPDF_FORMFIELD_XFA_COMBOBOX:
+        case FPDF_FORMFIELD_XFA_IMAGEFIELD:
+        case FPDF_FORMFIELD_XFA_LISTBOX:
+        case FPDF_FORMFIELD_XFA_PUSHBUTTON:
+        case FPDF_FORMFIELD_XFA_SIGNATURE:
+          return PP_CURSORTYPE_HAND;
+        case FPDF_FORMFIELD_XFA_TEXTFIELD:
+          return PP_CURSORTYPE_IBEAM;
+#endif
+        default:
+          return PP_CURSORTYPE_POINTER;
+      }
+  }
+}
+
+void PDFiumEngine::OnMouseEnter(const pp::MouseInputEvent& event) {
+  if (event.GetModifiers() & PP_INPUTEVENT_MODIFIER_MIDDLEBUTTONDOWN) {
+    if (!mouse_middle_button_down_) {
+      mouse_middle_button_down_ = true;
+      mouse_middle_button_last_position_ = event.GetPosition();
+    }
+  } else {
+    if (mouse_middle_button_down_) {
+      mouse_middle_button_down_ = false;
+    }
+  }
 }
 
 bool PDFiumEngine::ExtendSelection(int page_index, int char_index) {
@@ -3058,7 +3093,8 @@ bool PDFiumEngine::TryLoadingDoc(const std::string& password,
 
 void PDFiumEngine::GetPasswordAndLoad() {
   getting_password_ = true;
-  DCHECK(!doc_ && FPDF_GetLastError() == FPDF_ERR_PASSWORD);
+  DCHECK(!doc_);
+  DCHECK_EQ(static_cast<unsigned long>(FPDF_ERR_PASSWORD), FPDF_GetLastError());
   client_->GetDocumentPassword(password_factory_.NewCallbackWithOutput(
       &PDFiumEngine::OnGetPasswordComplete));
 }

@@ -17,11 +17,14 @@
 #include "ash/shell_port.h"
 #include "ash/shutdown_reason.h"
 #include "ash/system/power/power_button_display_controller.h"
+#include "ash/system/power/power_button_menu_item_view.h"
 #include "ash/system/power/power_button_menu_screen_view.h"
+#include "ash/system/power/power_button_menu_view.h"
 #include "ash/system/power/power_button_screenshot_controller.h"
 #include "ash/wm/lock_state_controller.h"
 #include "ash/wm/session_state_animator.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
+#include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/time/default_tick_clock.h"
@@ -29,6 +32,7 @@
 #include "chromeos/dbus/power_manager/backlight.pb.h"
 #include "ui/display/types/display_snapshot.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_observer.h"
 
 namespace ash {
 namespace {
@@ -41,9 +45,10 @@ constexpr base::TimeDelta kShowMenuWhenScreenOnTimeout =
 constexpr base::TimeDelta kShowMenuWhenScreenOffTimeout =
     base::TimeDelta::FromMilliseconds(2000);
 
-// Time that power button should be pressed before starting to shutdown.
-constexpr base::TimeDelta kStartShutdownTimeout =
-    base::TimeDelta::FromSeconds(3);
+// Time that power button should be pressed after power menu is shown before
+// starting the cancellable pre-shutdown animation.
+constexpr base::TimeDelta kStartShutdownAnimationTimeout =
+    base::TimeDelta::FromMilliseconds(650);
 
 // Creates a fullscreen widget responsible for showing the power button menu.
 std::unique_ptr<views::Widget> CreateMenuWidget() {
@@ -53,7 +58,6 @@ std::unique_ptr<views::Widget> CreateMenuWidget() {
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.keep_on_top = true;
   params.accept_events = true;
-  params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.name = "PowerButtonMenuWindow";
   params.layer_type = ui::LAYER_SOLID_COLOR;
@@ -83,6 +87,53 @@ constexpr const char* PowerButtonController::kLeftPosition;
 constexpr const char* PowerButtonController::kRightPosition;
 constexpr const char* PowerButtonController::kTopPosition;
 constexpr const char* PowerButtonController::kBottomPosition;
+
+// Maintain active state of the given |widget|. Sets |widget| to always render
+// as active if it's not already initially configured that way. Resets the
+// setting if |widget| still exists when this class is destroyed.
+class PowerButtonController::ActiveWindowWidgetController
+    : public views::WidgetObserver {
+ public:
+  static std::unique_ptr<ActiveWindowWidgetController> Create(
+      views::Widget* widget) {
+    if (!widget || widget->IsAlwaysRenderAsActive())
+      return nullptr;
+
+    widget->SetAlwaysRenderAsActive(true);
+    return std::unique_ptr<ActiveWindowWidgetController>(
+        base::WrapUnique(new ActiveWindowWidgetController(widget)));
+  }
+
+  ~ActiveWindowWidgetController() override {
+    if (!widget_)
+      return;
+    widget_->SetAlwaysRenderAsActive(false);
+    widget_->RemoveObserver(this);
+  }
+
+  // views::WidgetObserver:
+  void OnWidgetClosing(views::Widget* widget) override {
+    DCHECK_EQ(widget_, widget);
+    widget_ = nullptr;
+    widget->RemoveObserver(this);
+  }
+
+  // views::WidgetObserver:
+  void OnWidgetDestroying(views::Widget* widget) override {
+    OnWidgetClosing(widget);
+  }
+
+ private:
+  explicit ActiveWindowWidgetController(views::Widget* widget)
+      : widget_(widget) {
+    if (widget)
+      widget->AddObserver(this);
+  }
+
+  views::Widget* widget_ = nullptr;  // Not owned.
+
+  DISALLOW_COPY_AND_ASSIGN(ActiveWindowWidgetController);
+};
 
 PowerButtonController::PowerButtonController(
     BacklightsForcedOffSetter* backlights_forced_off_setter)
@@ -186,16 +237,16 @@ void PowerButtonController::OnPowerButtonEvent(
           FROM_HERE, timeout, this,
           &PowerButtonController::StartPowerMenuAnimation);
     }
-
-    shutdown_timer_.Start(FROM_HERE, kStartShutdownTimeout, this,
-                          &PowerButtonController::OnShutdownTimeout);
   } else {
+    if (lock_state_controller_->CanCancelShutdownAnimation())
+      lock_state_controller_->CancelShutdownAnimation();
+
     const base::TimeTicks previous_up_time = last_button_up_time_;
     last_button_up_time_ = timestamp;
 
     const bool menu_timer_was_running = power_button_menu_timer_.IsRunning();
     power_button_menu_timer_.Stop();
-    shutdown_timer_.Stop();
+    pre_shutdown_timer_.Stop();
 
     // Ignore the event if it comes too soon after the last one.
     if (timestamp - previous_up_time <= kIgnoreRepeatedButtonUpDelay)
@@ -209,7 +260,8 @@ void PowerButtonController::OnPowerButtonEvent(
 
     // Cancel the menu animation if it's still ongoing when the button is
     // released on a clamshell device.
-    if (!ShouldTurnScreenOffForTap() && !show_menu_animation_done_) {
+    if (!ShouldTurnScreenOffForTap() && IsMenuOpened() &&
+        !show_menu_animation_done_) {
       static_cast<PowerButtonMenuScreenView*>(menu_widget_->GetContentsView())
           ->ScheduleShowHideAnimation(false);
     }
@@ -253,6 +305,8 @@ bool PowerButtonController::IsMenuOpened() const {
 void PowerButtonController::DismissMenu() {
   if (IsMenuOpened())
     menu_widget_->Hide();
+
+  active_window_widget_controller_.reset();
 }
 
 void PowerButtonController::OnDisplayModeChanged(
@@ -366,12 +420,19 @@ bool PowerButtonController::ShouldTurnScreenOffForTap() const {
 }
 
 void PowerButtonController::StopTimersAndDismissMenu() {
-  shutdown_timer_.Stop();
+  pre_shutdown_timer_.Stop();
   power_button_menu_timer_.Stop();
   DismissMenu();
 }
 
 void PowerButtonController::StartPowerMenuAnimation() {
+  // Avoid a distracting deactivation animation on the formerly-active
+  // window when the menu is activated.
+  views::Widget* active_toplevel_widget =
+      views::Widget::GetTopLevelWidgetForNativeView(wm::GetActiveWindow());
+  active_window_widget_controller_ =
+      ActiveWindowWidgetController::Create(active_toplevel_widget);
+
   if (!menu_widget_)
     menu_widget_ = CreateMenuWidget();
   menu_widget_->SetContentsView(new PowerButtonMenuScreenView(
@@ -387,11 +448,6 @@ void PowerButtonController::StartPowerMenuAnimation() {
 
   static_cast<PowerButtonMenuScreenView*>(menu_widget_->GetContentsView())
       ->ScheduleShowHideAnimation(true);
-}
-
-void PowerButtonController::OnShutdownTimeout() {
-  display_controller_->SetBacklightsForcedOff(true);
-  lock_state_controller_->RequestShutdown(ShutdownReason::POWER_BUTTON);
 }
 
 void PowerButtonController::ProcessCommandLine() {
@@ -429,6 +485,21 @@ void PowerButtonController::LockScreenIfRequired() {
 
 void PowerButtonController::SetShowMenuAnimationDone() {
   show_menu_animation_done_ = true;
+
+  DCHECK(menu_widget_->GetContentsView());
+  // Focus on 'Power off' when menu is shown.
+  static_cast<PowerButtonMenuScreenView*>(menu_widget_->GetContentsView())
+      ->power_button_menu_view()
+      ->power_off_item()
+      ->RequestFocus();
+
+  pre_shutdown_timer_.Start(
+      FROM_HERE, kStartShutdownAnimationTimeout,
+      base::BindRepeating(
+          [](LockStateController* controller) {
+            controller->StartShutdownAnimation(ShutdownReason::POWER_BUTTON);
+          },
+          lock_state_controller_));
 }
 
 void PowerButtonController::ParsePowerButtonPositionSwitch() {

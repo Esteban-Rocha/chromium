@@ -13,7 +13,7 @@
 namespace blink {
 namespace scheduler {
 
-class TaskCostEstimatorTest : public ::testing::Test {
+class TaskCostEstimatorTest : public testing::Test {
  public:
   TaskCostEstimatorTest() = default;
   ~TaskCostEstimatorTest() override = default;
@@ -23,7 +23,7 @@ class TaskCostEstimatorTest : public ::testing::Test {
 
 class TaskCostEstimatorForTest : public TaskCostEstimator {
  public:
-  TaskCostEstimatorForTest(base::TickClock* clock,
+  TaskCostEstimatorForTest(const base::TickClock* clock,
                            int sample_count,
                            double estimation_percentile)
       : TaskCostEstimator(clock, sample_count, estimation_percentile) {}

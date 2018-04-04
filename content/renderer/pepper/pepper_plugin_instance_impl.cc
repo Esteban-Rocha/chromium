@@ -94,7 +94,7 @@
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/URLConversion.h"
 #include "third_party/WebKit/public/platform/WebCoalescedInputEvent.h"
@@ -1571,7 +1571,7 @@ void PepperPluginInstanceImpl::StopFind() {
 }
 
 bool PepperPluginInstanceImpl::LoadFindInterface() {
-  if (!module_->permissions().HasPermission(ppapi::PERMISSION_PRIVATE))
+  if (!module_->permissions().HasPermission(ppapi::PERMISSION_PDF))
     return false;
   if (!plugin_find_interface_) {
     plugin_find_interface_ = static_cast<const PPP_Find_Private*>(
@@ -2201,12 +2201,13 @@ void PepperPluginInstanceImpl::UpdateLayer(bool force_creation) {
 }
 
 bool PepperPluginInstanceImpl::PrepareTransferableResource(
+    cc::SharedBitmapIdRegistrar* bitmap_registrar,
     viz::TransferableResource* transferable_resource,
     std::unique_ptr<viz::SingleReleaseCallback>* release_callback) {
   if (!bound_graphics_2d_platform_)
     return false;
   return bound_graphics_2d_platform_->PrepareTransferableResource(
-      transferable_resource, release_callback);
+      bitmap_registrar, transferable_resource, release_callback);
 }
 
 void PepperPluginInstanceImpl::AccessibilityModeChanged() {
@@ -2559,120 +2560,6 @@ PP_Var PepperPluginInstanceImpl::GetDefaultCharSet(PP_Instance instance) {
     return PP_MakeUndefined();
   return StringVar::StringToPPVar(
       render_frame_->render_view()->webkit_preferences().default_encoding);
-}
-
-// These PPB_ContentDecryptor_Private calls are responses to
-// PPP_ContentDecryptor_Private calls, which should never be made since pepper
-// CDM is deprecated.
-// TODO(crbug.com/772160): Remove these after ppapi/ is updated.
-void PepperPluginInstanceImpl::PromiseResolved(PP_Instance instance,
-                                               uint32_t promise_id) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::PromiseResolvedWithKeyStatus(
-    PP_Instance instance,
-    uint32_t promise_id,
-    PP_CdmKeyStatus key_status) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::PromiseResolvedWithSession(
-    PP_Instance instance,
-    uint32_t promise_id,
-    PP_Var session_id_var) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::PromiseRejected(
-    PP_Instance instance,
-    uint32_t promise_id,
-    PP_CdmExceptionCode exception_code,
-    uint32_t system_code,
-    PP_Var error_description_var) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::SessionMessage(PP_Instance instance,
-                                              PP_Var session_id_var,
-                                              PP_CdmMessageType message_type,
-                                              PP_Var message_var,
-                                              PP_Var legacy_destination_url) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::SessionKeysChange(
-    PP_Instance instance,
-    PP_Var session_id_var,
-    PP_Bool has_additional_usable_key,
-    uint32_t key_count,
-    const struct PP_KeyInformation key_information[]) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::SessionExpirationChange(
-    PP_Instance instance,
-    PP_Var session_id_var,
-    PP_Time new_expiry_time) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::SessionClosed(PP_Instance instance,
-                                             PP_Var session_id_var) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::LegacySessionError(
-    PP_Instance instance,
-    PP_Var session_id_var,
-    PP_CdmExceptionCode exception_code,
-    uint32_t system_code,
-    PP_Var error_description_var) {
-  // Obsolete.
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::DeliverBlock(
-    PP_Instance instance,
-    PP_Resource decrypted_block,
-    const PP_DecryptedBlockInfo* block_info) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::DecoderInitializeDone(
-    PP_Instance instance,
-    PP_DecryptorStreamType decoder_type,
-    uint32_t request_id,
-    PP_Bool success) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::DecoderDeinitializeDone(
-    PP_Instance instance,
-    PP_DecryptorStreamType decoder_type,
-    uint32_t request_id) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::DecoderResetDone(
-    PP_Instance instance,
-    PP_DecryptorStreamType decoder_type,
-    uint32_t request_id) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::DeliverFrame(
-    PP_Instance instance,
-    PP_Resource decrypted_frame,
-    const PP_DecryptedFrameInfo* frame_info) {
-  NOTREACHED();
-}
-
-void PepperPluginInstanceImpl::DeliverSamples(
-    PP_Instance instance,
-    PP_Resource audio_frames,
-    const PP_DecryptedSampleInfo* sample_info) {
-  NOTREACHED();
 }
 
 void PepperPluginInstanceImpl::SetPluginToHandleFindRequests(

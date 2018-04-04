@@ -1,5 +1,6 @@
 include_rules = [
   "-content",
+  "+components/download/downloader/in_progress",
   "+components/download/public/common",
   "+components/download/quarantine",
   "+components/ukm/test_ukm_recorder.h",
@@ -14,6 +15,7 @@ include_rules = [
   "+net/http/http_response_headers.h",
   "+net/http/http_status_code.h",
   "+net/http/http_util.h",
+  "+net/traffic_annotation/network_traffic_annotation.h",
   "+services/metrics/public/cpp",
   "+services/network/public/cpp",
 ]

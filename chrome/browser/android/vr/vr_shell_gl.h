@@ -114,11 +114,16 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   void OnSwapContents(int new_content_id);
 
   void EnableAlertDialog(ContentInputForwarder* input_forwarder,
-                         int width,
-                         int height);
+                         float width,
+                         float height);
   void DisableAlertDialog();
 
-  void SetAlertDialogSize(int width, int height);
+  void SetAlertDialogSize(float width, float height);
+  void SetDialogLocation(float x, float y);
+  void SetDialogFloating();
+
+  void ShowToast(const base::string16& text);
+  void CancelToast();
 
   void AcceptDoffPromptForTesting();
 
@@ -184,8 +189,32 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
 
   void ForceExitVr();
 
-  bool ShouldSkipVSync();
-  void SendVSync(base::TimeTicks time, GetVSyncCallback callback);
+  // Sends a GetVSync response to the presentation client.
+  void SendVSync();
+
+  // Heuristics to avoid excessive backlogged frames.
+  bool WebVrHasSlowRenderingFrame();
+  bool WebVrHasOverstuffedBuffers();
+
+  // Checks if we're in a valid state for starting animation of a new frame.
+  // Invalid states include a previous animating frame that's not complete
+  // yet (including deferred processing not having started yet), or timing
+  // heuristics indicating that it should be retried later.
+  bool WebVrCanAnimateFrame(bool is_from_onvsync);
+  // Call this after state changes that could result in WebVrCanAnimateFrame
+  // becoming true.
+  void WebVrTryStartAnimatingFrame(bool is_from_onvsync);
+
+  // Checks if we're in a valid state for processing the current animating
+  // frame. Invalid states include mailbox_bridge_ready_ being false, or an
+  // already existing processing frame that's not done yet.
+  bool WebVrCanProcessFrame();
+  // Call this after state changes that could result in WebVrCanProcessFrame
+  // becoming true.
+  void WebVrTryDeferredProcessing();
+  // Transition a frame from animating to processing.
+  void ProcessWebVrFrame(int16_t frame_index,
+                         const gpu::MailboxHolder& mailbox);
 
   void ClosePresentationBindings();
 
@@ -217,7 +246,6 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   std::unique_ptr<gvr::SwapChain> swap_chain_;
   gvr::Frame acquired_frame_;
   base::queue<std::pair<uint8_t, WebVrBounds>> pending_bounds_;
-  int premature_received_frames_ = 0;
   base::queue<uint16_t> pending_frames_;
   std::unique_ptr<MailboxToSurfaceBridge> mailbox_bridge_;
   bool mailbox_bridge_ready_ = false;
@@ -268,25 +296,26 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // Attributes tracking WebVR rAF/VSync animation loop state. Blink schedules
-  // a callback using the GetVSync mojo call, and the callback is either passed
-  // to SendVSync immediately, or deferred until the next OnVSync call.
+  // a callback using the GetVSync mojo call which is stored in
+  // get_vsync_callback_. The callback is executed by SendVSync once
+  // WebVrCanAnimateFrame returns true.
   //
-  // pending_vsync_ is set to true in OnVSync if there is no current
-  // outstanding callback, and this means that a future GetVSync is permitted
-  // to execute SendVSync immediately. If it is false, GetVSync must store the
-  // pending callback in callback_ for later execution.
+  // pending_vsync_ is set to true in OnVSync and false in SendVSync. It
+  // throttles animation to no faster than the VSync rate. The pending_time_ is
+  // updated in OnVSync and used as the rAF animation timer in SendVSync.
   base::TimeTicks pending_time_;
   bool pending_vsync_ = false;
-  GetVSyncCallback callback_;
+  GetVSyncCallback get_vsync_callback_;
 
   mojo::Binding<device::mojom::VRPresentationProvider> binding_;
   device::mojom::VRSubmitFrameClientPtr submit_client_;
 
   GlBrowserInterface* browser_;
 
-  uint8_t frame_index_ = 0;
-  // Larger than frame_index_ so it can be initialized out-of-band.
-  uint16_t last_frame_index_ = -1;
+  // Index of the next WebXR frame, wrapping from 255 back to 0. Elsewhere we
+  // use -1 to indicate a non-WebXR frame, so most internal APIs use int16_t to
+  // store the -1..255 range.
+  uint8_t next_frame_index_ = 0;
 
   uint64_t webvr_frames_received_ = 0;
 
@@ -323,9 +352,22 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
 
   base::CancelableOnceCallback<void()> webvr_frame_timeout_;
   base::CancelableOnceCallback<void()> webvr_spinner_timeout_;
+
+  // WebVR defers submitting a frame to GVR by scheduling a closure
+  // for later. If we exit WebVR before it is executed, we need to
+  // cancel it to avoid inconsistent state.
   base::CancelableCallback<
       void(int16_t, const gfx::Transform&, std::unique_ptr<gl::GLFenceEGL>)>
-      webvr_delayed_frame_submit_;
+      webvr_delayed_gvr_submit_;
+
+  // We only want one frame at a time in the lifecycle from
+  // mojo SubmitFrame until we submit to GVR. This flag is true
+  // for that timespan.
+  bool webvr_frame_processing_ = false;
+
+  // If we receive a new SubmitFrame when we're not ready, defer start of
+  // processing for later.
+  base::OnceClosure webvr_deferred_start_processing_;
 
   std::vector<gvr::BufferSpec> specs_;
 
@@ -335,8 +377,12 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   ControllerModel controller_model_;
 
   std::unique_ptr<VrDialog> vr_dialog_;
+  bool showing_vr_dialog_ = false;
 
-  bool last_should_send_webvr_vsync_ = false;
+  // Used by WebVrCanAnimateFrame() to detect when ui_->CanSendWebVrVSync()
+  // transitions from false to true, as part of starting the incoming frame
+  // timeout.
+  bool last_ui_allows_sending_webvr_vsync_ = false;
 
   base::WeakPtrFactory<VrShellGl> weak_ptr_factory_;
 

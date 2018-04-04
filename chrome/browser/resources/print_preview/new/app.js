@@ -36,6 +36,13 @@ Polymer({
       notify: true,
     },
 
+    /** @private {?print_preview.InvitationStore} */
+    invitationStore_: {
+      type: Object,
+      notify: true,
+      value: null,
+    },
+
     /** @private {!Array<print_preview.RecentDestination>} */
     recentDestinations_: {
       type: Array,
@@ -75,6 +82,13 @@ Polymer({
       notify: true,
       value: null,
     },
+
+    /** @private {boolean} */
+    isInAppKioskMode_: {
+      type: Boolean,
+      notify: true,
+      value: false,
+    },
   },
 
   /** @private {?WebUIListenerTracker} */
@@ -93,7 +107,10 @@ Polymer({
   cancelled_: false,
 
   /** @private {boolean} */
-  isInAppKioskMode_: false,
+  showSystemDialogBeforePrint_: false,
+
+  /** @private {boolean} */
+  openPdfInPreview_: false,
 
   /** @override */
   attached: function() {
@@ -105,6 +122,7 @@ Polymer({
         'use-cloud-print', this.onCloudPrintEnable_.bind(this));
     this.destinationStore_ = new print_preview.DestinationStore(
         this.userInfo_, this.listenerTracker_);
+    this.invitationStore_ = new print_preview.InvitationStore(this.userInfo_);
     this.tracker_.add(
         this.destinationStore_,
         print_preview.DestinationStore.EventType.DESTINATION_SELECT,
@@ -153,6 +171,7 @@ Polymer({
         settings.isInAppKioskMode, settings.printerName,
         settings.serializedDefaultDestinationSelectionRulesStr,
         this.recentDestinations_);
+    this.isInAppKioskMode_ = settings.isInAppKioskMode;
   },
 
   /**
@@ -183,8 +202,11 @@ Polymer({
     });
 
     this.destinationStore_.setCloudPrintInterface(this.cloudPrintInterface_);
-    if (this.$.destinationSettings.isDialogOpen())
+    this.invitationStore_.setCloudPrintInterface(this.cloudPrintInterface_);
+    if (this.$.destinationSettings.isDialogOpen()) {
       this.destinationStore_.startLoadCloudDestinations();
+      this.invitationStore_.startLoadingInvitations();
+    }
   },
 
   /** @private */
@@ -222,7 +244,9 @@ Polymer({
     } else if (this.state == print_preview_new.State.PRINTING) {
       const destination = assert(this.destinationStore_.selectedDestination);
       const whenPrintDone =
-          this.nativeLayer_.print(this.$.model.createPrintTicket(destination));
+          this.nativeLayer_.print(this.$.model.createPrintTicket(
+              destination, this.openPdfInPreview_,
+              this.showSystemDialogBeforePrint_));
       if (destination.isLocal) {
         const onError = destination.id ==
                 print_preview.Destination.GooglePromotedId.SAVE_AS_PDF ?
@@ -288,6 +312,29 @@ Polymer({
         destination, this.$.model.createCloudJobTicket(destination),
         assert(this.documentInfo_), data);
   },
+
+  // <if expr="not chromeos">
+  /** @private */
+  onPrintWithSystemDialog_: function() {
+    assert(!cr.isChromeOS);
+    if (cr.isWindows) {
+      this.showSystemDialogBeforePrint_ = true;
+      this.onPrintRequested_();
+      return;
+    }
+    this.nativeLayer_.showSystemDialog();
+    this.$.state.transitTo(print_preview_new.State.SYSTEM_DIALOG);
+  },
+  // </if>
+
+  // <if expr="is_macosx">
+  /** @private */
+  onOpenPdfInPreview_: function() {
+    this.openPdfInPreview_ = true;
+    this.$.previewArea.setOpeningPdfInPreview();
+    this.onPrintRequested_();
+  },
+  // </if>
 
   /**
    * Called when printing to a privet, cloud, or extension printer fails.

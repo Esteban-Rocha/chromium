@@ -31,8 +31,8 @@ U2fRequest::U2fRequest(service_manager::Connector* connector,
   for (const auto transport : transports) {
     auto discovery = FidoDiscovery::Create(transport, connector);
     if (discovery == nullptr) {
-      // This can occur in tests when a ScopedVirtualFidoDevice is in effect and
-      // non-HID transports are configured.
+      // This can occur if the given transport is not supported, or in tests
+      // when the given transport is not configured.
       continue;
     }
     discovery->set_observer(this);
@@ -97,6 +97,7 @@ base::Optional<std::vector<uint8_t>> U2fRequest::GetU2fSignApduCommand(
   command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kSign));
   command.set_p1(is_check_only_sign ? kP1CheckOnly : kP1TupRequiredConsumed);
   command.set_data(data);
+  command.set_response_length(apdu::ApduCommand::kApduMaxResponseLength);
   return command.GetEncodedCommand();
 }
 
@@ -114,6 +115,7 @@ base::Optional<std::vector<uint8_t>> U2fRequest::GetU2fRegisterApduCommand(
   command.set_p1(kP1TupRequiredConsumed |
                  (is_individual_attestation ? kP1IndividualAttestation : 0));
   command.set_data(data);
+  command.set_response_length(apdu::ApduCommand::kApduMaxResponseLength);
   return command.GetEncodedCommand();
 }
 

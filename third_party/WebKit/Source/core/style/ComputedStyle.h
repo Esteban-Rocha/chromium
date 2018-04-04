@@ -1043,7 +1043,7 @@ class ComputedStyle : public ComputedStyleBase,
   bool InheritedDataShared(const ComputedStyle&) const;
 
   bool HasChildDependentFlags() const {
-    return EmptyState() || HasExplicitlyInheritedProperties();
+    return HasExplicitlyInheritedProperties();
   }
   void CopyChildDependentFlagsFrom(const ComputedStyle&);
 
@@ -1111,11 +1111,6 @@ class ComputedStyle : public ComputedStyleBase,
   void AddCallbackSelector(const String& selector);
 
   // Non-property flags.
-  void SetEmptyState(bool b) {
-    SetUnique();
-    SetEmptyStateInternal(b);
-  }
-
   CORE_EXPORT void SetTextAutosizingMultiplier(float);
 
   // Column utility functions.
@@ -2529,6 +2524,9 @@ class ComputedStyle : public ComputedStyleBase,
   FRIEND_TEST_ALL_PREFIXES(
       ComputedStyleTest,
       UpdatePropertySpecificDifferencesCompositingReasonsWillChange);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsUsedStylePreserve3D);
 };
 
 inline bool ComputedStyle::SetZoom(float f) {

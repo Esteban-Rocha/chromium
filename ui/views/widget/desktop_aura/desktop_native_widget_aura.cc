@@ -348,7 +348,8 @@ void DesktopNativeWidgetAura::OnDesktopWindowTreeHostDestroyed(
 }
 
 void DesktopNativeWidgetAura::HandleActivationChanged(bool active) {
-  native_widget_delegate_->OnNativeWidgetActivationChanged(active);
+  if (!native_widget_delegate_->OnNativeWidgetActivationChanged(active))
+    return;
   wm::ActivationClient* activation_client =
       wm::GetActivationClient(host_->window());
   if (!activation_client)
@@ -432,7 +433,7 @@ void DesktopNativeWidgetAura::InitNativeWidget(
     }
     host_.reset(desktop_window_tree_host_->AsWindowTreeHost());
   }
-  desktop_window_tree_host_->Init(content_window_, params);
+  desktop_window_tree_host_->Init(params);
 
   host_->window()->AddChild(content_window_);
   host_->window()->SetProperty(kDesktopNativeWidgetAuraKey, this);
@@ -473,6 +474,8 @@ void DesktopNativeWidgetAura::InitNativeWidget(
     aura::client::SetCursorClient(host_->window(), cursor_manager_);
   }
 
+  host_->window()->SetName(params.name);
+  content_window_->SetName("DesktopNativeWidgetAura - content window");
   desktop_window_tree_host_->OnNativeWidgetCreated(params);
 
   UpdateWindowTransparency();

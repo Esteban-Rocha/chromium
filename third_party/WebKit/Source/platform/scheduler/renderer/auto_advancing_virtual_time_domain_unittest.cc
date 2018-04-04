@@ -20,7 +20,7 @@ namespace scheduler {
 // Namespace to avoid symbol collisions in jumbo builds.
 namespace auto_advancing_virtual_time_domain_unittest {
 
-class AutoAdvancingVirtualTimeDomainTest : public ::testing::Test {
+class AutoAdvancingVirtualTimeDomainTest : public testing::Test {
  public:
   AutoAdvancingVirtualTimeDomainTest() = default;
   ~AutoAdvancingVirtualTimeDomainTest() override = default;
@@ -223,6 +223,24 @@ TEST_F(AutoAdvancingVirtualTimeDomainTest, BaseTimeTicksOverriden) {
   mock_task_runner_->RunUntilIdle();
 
   EXPECT_EQ(base::TimeTicks::Now(), initial_time + delay);
+}
+
+TEST_F(AutoAdvancingVirtualTimeDomainTest,
+       DelayTillNextTaskHandlesPastRunTime) {
+  base::TimeTicks initial_time = clock_.NowTicks();
+
+  // Post a task for t+10ms.
+  bool task_run = false;
+  task_queue_->PostDelayedTask(FROM_HERE, base::BindOnce(NopTask, &task_run),
+                               base::TimeDelta::FromMilliseconds(10));
+
+  // Advance virtual time past task time to t+100ms.
+  auto_advancing_time_domain_->MaybeAdvanceVirtualTime(
+      initial_time + base::TimeDelta::FromMilliseconds(100));
+
+  // Task at t+10ms should be run immediately.
+  EXPECT_EQ(base::TimeDelta(),
+            auto_advancing_time_domain_->DelayTillNextTask(nullptr));
 }
 
 }  // namespace auto_advancing_virtual_time_domain_unittest

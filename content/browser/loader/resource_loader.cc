@@ -35,7 +35,6 @@
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/cert/symantec_certs.h"
-#include "net/cert/x509_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/nqe/effective_connection_type.h"
 #include "net/nqe/network_quality_estimator.h"
@@ -65,6 +64,7 @@ void PopulateResourceResponse(
   request->GetCharset(&response->head.charset);
   response->head.content_length = request->GetExpectedContentSize();
   request->GetMimeType(&response->head.mime_type);
+  response->head.priority = request->priority();
   net::HttpResponseInfo response_info = request->response_info();
   response->head.was_fetched_via_spdy = response_info.was_fetched_via_spdy;
   response->head.was_alpn_negotiated = response_info.was_alpn_negotiated;
@@ -72,6 +72,7 @@ void PopulateResourceResponse(
       response_info.alpn_negotiated_protocol;
   response->head.connection_info = response_info.connection_info;
   response->head.socket_address = response_info.socket_address;
+  response->head.network_accessed = response_info.network_accessed;
   const content::ResourceRequestInfo* request_info =
       content::ResourceRequestInfo::ForRequest(request);
   if (request_info) {
@@ -116,25 +117,9 @@ void PopulateResourceResponse(
         (!net::IsCertStatusError(response->head.cert_status) ||
          net::IsCertStatusMinorError(response->head.cert_status)) &&
         net::IsLegacySymantecCert(request->ssl_info().public_key_hashes);
-    if (info->ShouldReportRawHeaders()) {
-      // Only pass these members when the network panel of the DevTools is open,
-      // i.e. ShouldReportRawHeaders() is set. These data are used to populate
-      // the requests in the security panel too.
-      response->head.ssl_connection_status =
-          request->ssl_info().connection_status;
-      response->head.ssl_key_exchange_group =
-          request->ssl_info().key_exchange_group;
-      response->head.signed_certificate_timestamps =
-          request->ssl_info().signed_certificate_timestamps;
-      response->head.certificate.emplace_back(
-          net::x509_util::CryptoBufferAsStringPiece(
-              request->ssl_info().cert->cert_buffer()));
-      for (const auto& cert :
-           request->ssl_info().cert->intermediate_buffers()) {
-        response->head.certificate.emplace_back(
-            net::x509_util::CryptoBufferAsStringPiece(cert.get()));
-      }
-    }
+
+    if (info->ShouldReportRawHeaders())
+      response->head.ssl_info = request->ssl_info();
   } else {
     // We should not have any SSL state.
     DCHECK(!request->ssl_info().cert_status);

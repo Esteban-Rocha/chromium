@@ -766,6 +766,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   FRIEND_TEST_ALL_PREFIXES(SecurityExploitBrowserTest,
                            AttemptDuplicateRenderViewHost);
 
+  class DroppedInterfaceRequestLogger;
+
   // IPC Message handlers.
   void OnDidAddMessageToConsole(int32_t level,
                                 const base::string16& message,
@@ -895,11 +897,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
       std::unique_ptr<FrameHostMsg_DidCommitProvisionalLoad_Params>
           validated_params) override;
   void BeginNavigation(const CommonNavigationParams& common_params,
-                       mojom::BeginNavigationParamsPtr begin_params) override;
+                       mojom::BeginNavigationParamsPtr begin_params,
+                       blink::mojom::BlobURLTokenPtr blob_url_token) override;
   void SubresourceResponseStarted(const GURL& url,
                                   net::CertStatus cert_status) override;
-  void SubresourceLoadComplete(
-      mojom::SubresourceLoadInfoPtr subresource_load_info) override;
+  void ResourceLoadComplete(
+      mojom::ResourceLoadInfoPtr resource_load_info) override;
   void DidChangeName(const std::string& name,
                      const std::string& unique_name) override;
   void EnforceInsecureRequestPolicy(
@@ -1379,8 +1382,16 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // If true then this frame's document has a focused element which is editable.
   bool has_focused_editable_element_;
 
-  typedef std::pair<CommonNavigationParams, mojom::BeginNavigationParamsPtr>
-      PendingNavigation;
+  struct PendingNavigation {
+    PendingNavigation(
+        const CommonNavigationParams& common_params,
+        mojom::BeginNavigationParamsPtr begin_params,
+        scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory);
+    ~PendingNavigation();
+    CommonNavigationParams common_params;
+    mojom::BeginNavigationParamsPtr begin_params;
+    scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory;
+  };
   std::unique_ptr<PendingNavigation> pending_navigate_;
 
   // A collection of non-network URLLoaderFactory implementations which are used
@@ -1479,6 +1490,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // interfaces.
   mojo::Binding<service_manager::mojom::InterfaceProvider>
       document_scoped_interface_provider_binding_;
+
+  // Logs interface requests that arrive after the frame has already committed a
+  // non-same-document navigation, and has already unbound
+  // |document_scoped_interface_provider_binding_| from the interface connection
+  // that had been used to service RenderFrame::GetRemoteInterface for the
+  // previously active document in the frame.
+  std::unique_ptr<DroppedInterfaceRequestLogger>
+      dropped_interface_request_logger_;
 
   // IPC-friendly token that represents this host for AndroidOverlays, if we
   // have created one yet.

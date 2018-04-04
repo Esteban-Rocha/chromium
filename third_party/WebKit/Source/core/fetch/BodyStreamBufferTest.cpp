@@ -24,18 +24,18 @@ namespace blink {
 
 namespace {
 
-using ::testing::ByMove;
-using ::testing::InSequence;
-using ::testing::Return;
-using ::testing::_;
-using ::testing::SaveArg;
-using Checkpoint = ::testing::StrictMock<::testing::MockFunction<void(int)>>;
+using testing::ByMove;
+using testing::InSequence;
+using testing::Return;
+using testing::_;
+using testing::SaveArg;
+using Checkpoint = testing::StrictMock<testing::MockFunction<void(int)>>;
 using BytesConsumerCommand = BytesConsumerTestUtil::Command;
 using ReplayingBytesConsumer = BytesConsumerTestUtil::ReplayingBytesConsumer;
 using MockFetchDataLoaderClient =
     BytesConsumerTestUtil::MockFetchDataLoaderClient;
 
-class BodyStreamBufferTest : public ::testing::Test {
+class BodyStreamBufferTest : public testing::Test {
  protected:
   ScriptValue Eval(ScriptState* script_state, const char* s) {
     v8::Local<v8::String> source;
@@ -74,8 +74,8 @@ class MockFetchDataLoader : public FetchDataLoader {
   // Cancel() gets called during garbage collection after the test is
   // finished. Since most tests don't care about this, use NiceMock so that the
   // calls to Cancel() are ignored.
-  static ::testing::NiceMock<MockFetchDataLoader>* Create() {
-    return new ::testing::NiceMock<MockFetchDataLoader>();
+  static testing::NiceMock<MockFetchDataLoader>* Create() {
+    return new testing::NiceMock<MockFetchDataLoader>();
   }
 
   MOCK_METHOD2(Start, void(BytesConsumer*, FetchDataLoader::Client*));
@@ -119,12 +119,12 @@ TEST_F(BodyStreamBufferTest, Tee) {
   checkpoint.Call(0);
   new1->StartLoading(FetchDataLoader::CreateLoaderAsString(), client1);
   checkpoint.Call(1);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   checkpoint.Call(2);
 
   new2->StartLoading(FetchDataLoader::CreateLoaderAsString(), client2);
   checkpoint.Call(3);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   checkpoint.Call(4);
 }
 
@@ -172,12 +172,12 @@ TEST_F(BodyStreamBufferTest, TeeFromHandleMadeFromStream) {
 
   new1->StartLoading(FetchDataLoader::CreateLoaderAsString(), client1);
   checkpoint.Call(1);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   checkpoint.Call(2);
 
   new2->StartLoading(FetchDataLoader::CreateLoaderAsString(), client2);
   checkpoint.Call(3);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   checkpoint.Call(4);
 }
 
@@ -337,7 +337,7 @@ TEST_F(BodyStreamBufferTest, LoadBodyStreamBufferAsArrayBuffer) {
   EXPECT_TRUE(buffer->HasPendingActivity());
 
   checkpoint.Call(1);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   checkpoint.Call(2);
 
   EXPECT_TRUE(buffer->IsStreamLocked());
@@ -375,7 +375,7 @@ TEST_F(BodyStreamBufferTest, LoadBodyStreamBufferAsBlob) {
   EXPECT_TRUE(buffer->HasPendingActivity());
 
   checkpoint.Call(1);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   checkpoint.Call(2);
 
   EXPECT_TRUE(buffer->IsStreamLocked());
@@ -408,7 +408,7 @@ TEST_F(BodyStreamBufferTest, LoadBodyStreamBufferAsString) {
   EXPECT_TRUE(buffer->HasPendingActivity());
 
   checkpoint.Call(1);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   checkpoint.Call(2);
 
   EXPECT_TRUE(buffer->IsStreamLocked());
@@ -494,7 +494,7 @@ TEST_F(BodyStreamBufferTest, LoaderShouldBeKeptAliveByBodyStreamBuffer) {
 
   ThreadState::Current()->CollectAllGarbage();
   checkpoint.Call(1);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   checkpoint.Call(2);
 }
 
@@ -538,7 +538,7 @@ TEST_F(BodyStreamBufferTest, NestedPull) {
   EvalWithPrintingError(scope.GetScriptState(), "reader.read();");
   EvalWithPrintingError(scope.GetScriptState(), "reader.read();");
 
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   v8::MicrotasksScope::PerformCheckpoint(scope.GetScriptState()->GetIsolate());
 }
 
@@ -663,7 +663,7 @@ TEST_F(BodyStreamBufferTest,
 
   checkpoint.Call(1);
   buffer->StartLoading(loader, client);
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
 
   checkpoint.Call(2);
   signal->SignalAbort();

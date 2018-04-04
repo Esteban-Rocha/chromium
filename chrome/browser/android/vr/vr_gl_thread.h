@@ -94,9 +94,10 @@ class VrGLThread : public base::android::JavaHandlerThread,
   void SetVoiceSearchActive(bool active) override;
   void StartAutocomplete(const AutocompleteRequest& request) override;
   void StopAutocomplete() override;
+  void ShowPageInfo() override;
 
   // BrowserUiInterface implementation (Browser calling to UI).
-  void SetWebVrMode(bool enabled, bool show_toast) override;
+  void SetWebVrMode(bool enabled) override;
   void SetFullscreen(bool enabled) override;
   void SetToolbarState(const ToolbarState& state) override;
   void SetIncognito(bool incognito) override;

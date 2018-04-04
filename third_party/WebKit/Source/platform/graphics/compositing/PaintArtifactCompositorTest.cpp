@@ -32,8 +32,8 @@
 
 namespace blink {
 
-using ::blink::testing::CreateOpacityOnlyEffect;
-using ::testing::Pointee;
+using ::blink::test::CreateOpacityOnlyEffect;
+using testing::Pointee;
 
 PaintChunk::Id DefaultId() {
   DEFINE_STATIC_LOCAL(FakeDisplayItemClient, fake_client, ());
@@ -84,7 +84,7 @@ class FakeScrollClient : public WebLayerScrollClient {
   unsigned did_scroll_count;
 };
 
-class PaintArtifactCompositorTest : public ::testing::Test,
+class PaintArtifactCompositorTest : public testing::Test,
                                     private ScopedSlimmingPaintV2ForTest {
  protected:
   PaintArtifactCompositorTest()

@@ -109,6 +109,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   void DispatchDidDownloadData(unsigned long identifier,
                                int data_length,
                                int encoded_data_length) override;
+  void DispatchDidDownloadToBlob(unsigned long identifier,
+                                 BlobDataHandle*) override;
   void DispatchDidFinishLoading(unsigned long identifier,
                                 double finish_time,
                                 int64_t encoded_data_length,
@@ -197,8 +199,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   // BaseFetchContext overrides:
   KURL GetSiteForCookies() const override;
-  bool AllowScriptFromSource(const KURL&) const override;
   SubresourceFilter* GetSubresourceFilter() const override;
+  bool AllowScriptFromSource(const KURL&) const override;
   bool ShouldBlockRequestByInspector(const KURL&) const override;
   void DispatchDidBlockRequest(const ResourceRequest&,
                                const FetchInitiatorInfo&,

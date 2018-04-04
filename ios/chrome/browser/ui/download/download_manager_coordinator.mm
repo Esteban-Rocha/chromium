@@ -23,6 +23,8 @@
 #import "ios/chrome/browser/ui/download/download_manager_view_controller.h"
 #import "ios/chrome/browser/ui/presenters/contained_presenter.h"
 #import "ios/chrome/browser/ui/presenters/contained_presenter_delegate.h"
+#import "ios/chrome/browser/web_state_list/web_state_list.h"
+#import "ios/chrome/browser/web_state_list/web_state_list_observer.h"
 #include "ios/chrome/grit/ios_strings.h"
 #import "ios/web/public/download/download_task.h"
 #include "net/base/net_errors.h"
@@ -36,7 +38,8 @@
 namespace {
 // Tracks download tasks which were not opened by the user yet. Reports various
 // metrics in DownloadTaskObserver callbacks.
-class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
+class UnopenedDownloadsTracker : public web::DownloadTaskObserver,
+                                 public WebStateListObserver {
  public:
   // Starts tracking this download task.
   void Add(web::DownloadTask* task) { task->AddObserver(this); }
@@ -54,6 +57,19 @@ class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
         base::UmaHistogramSparse("Download.IOSDownloadedFileNetError",
                                  -task->GetErrorCode());
       }
+
+      bool backgrounded = task->HasPerformedBackgroundDownload();
+      DownloadFileInBackground histogram_value =
+          task->GetErrorCode()
+              ? (backgrounded
+                     ? DownloadFileInBackground::FailedWithBackgrounding
+                     : DownloadFileInBackground::FailedWithoutBackgrounding)
+              : (backgrounded
+                     ? DownloadFileInBackground::SucceededWithBackgrounding
+                     : DownloadFileInBackground::SucceededWithoutBackgrounding);
+      UMA_HISTOGRAM_ENUMERATION("Download.IOSDownloadFileInBackground",
+                                histogram_value,
+                                DownloadFileInBackground::Count);
     }
   }
   void OnDownloadDestroyed(web::DownloadTask* task) override {
@@ -64,14 +80,37 @@ class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
       UMA_HISTOGRAM_ENUMERATION("Download.IOSDownloadFileResult",
                                 DownloadFileResult::Other,
                                 DownloadFileResult::Count);
+
+      if (did_close_web_state_without_user_action) {
+        // web state can be closed without user action only during the app
+        // shutdown.
+        UMA_HISTOGRAM_ENUMERATION(
+            "Download.IOSDownloadFileInBackground",
+            DownloadFileInBackground::CanceledAfterAppQuit,
+            DownloadFileInBackground::Count);
+      }
     }
 
     if (task->IsDone() && task->GetErrorCode() == net::OK) {
-      UMA_HISTOGRAM_ENUMERATION("Download.IOSDownloadedFileAction",
-                                DownloadedFileAction::NoAction,
-                                DownloadedFileAction::Count);
+      UMA_HISTOGRAM_ENUMERATION(
+          "Download.IOSDownloadedFileAction",
+          DownloadedFileAction::NoActionOrOpenedViaExtension,
+          DownloadedFileAction::Count);
     }
   }
+  // WebStateListObserver overrides:
+  void WillCloseWebStateAt(WebStateList* web_state_list,
+                           web::WebState* web_state,
+                           int index,
+                           bool user_action) override {
+    if (!user_action) {
+      did_close_web_state_without_user_action = true;
+    }
+  }
+
+ private:
+  // True if a web state was closed without user action.
+  bool did_close_web_state_without_user_action = false;
 };
 }  // namespace
 
@@ -100,6 +139,7 @@ class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
 @synthesize presenter = _presenter;
 @synthesize animatesPresentation = _animatesPresentation;
 @synthesize downloadTask = _downloadTask;
+@synthesize webStateList = _webStateList;
 
 - (void)dealloc {
   [[InstallationNotifier sharedInstance] unregisterForNotifications:self];
@@ -133,11 +173,25 @@ class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
                                           completion:nil];
   _confirmationDialog = nil;
   _downloadTask = nullptr;
+  self.webStateList = nullptr;
 
   [_storeKitCoordinator stop];
   _storeKitCoordinator = nil;
   [_installDriveAlertCoordinator stop];
   _installDriveAlertCoordinator = nil;
+}
+
+- (void)setWebStateList:(WebStateList*)webStateList {
+  if (_webStateList == webStateList)
+    return;
+
+  if (_webStateList)
+    _webStateList->RemoveObserver(&_unopenedDownloads);
+
+  _webStateList = webStateList;
+
+  if (_webStateList)
+    _webStateList->AddObserver(&_unopenedDownloads);
 }
 
 - (UIViewController*)viewController {
@@ -176,6 +230,8 @@ class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
   [self runConfirmationDialogWithTitle:title
                                message:message
                      completionHandler:^(BOOL confirmed) {
+                       UMA_HISTOGRAM_BOOLEAN("Download.IOSDownloadReplaced",
+                                             confirmed);
                        handler(confirmed ? kNewDownloadPolicyReplace
                                          : kNewDownloadPolicyDiscard);
                      }];
@@ -183,11 +239,6 @@ class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
 
 - (void)downloadManagerTabHelper:(nonnull DownloadManagerTabHelper*)tabHelper
                  didHideDownload:(nonnull web::DownloadTask*)download {
-  if (!_downloadTask) {
-    // TODO(crbug.com/805653): This callback can be called multiple times.
-    return;
-  }
-
   DCHECK_EQ(_downloadTask, download);
   self.animatesPresentation = NO;
   [self stop];
@@ -227,6 +278,9 @@ class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
 - (void)downloadManagerViewControllerDidClose:
     (DownloadManagerViewController*)controller {
   if (_downloadTask->GetState() != web::DownloadTask::State::kInProgress) {
+    UMA_HISTOGRAM_ENUMERATION("Download.IOSDownloadFileResult",
+                              DownloadFileResult::NotStarted,
+                              DownloadFileResult::Count);
     [self cancelDownload];
     return;
   }
@@ -330,7 +384,7 @@ class UnopenedDownloadsTracker : public web::DownloadTaskObserver {
 // Called when Google Drive app is installed after starting StoreKitCoordinator.
 - (void)didInstallGoogleDriveApp {
   base::RecordAction(
-      base::UserMetricsAction(kDownloadManagerGoogleDriveInstalled));
+      base::UserMetricsAction("MobileDownloadFileUIInstallGoogleDrive"));
 }
 
 // Called when Open In... menu was not presented. This method shows the alert

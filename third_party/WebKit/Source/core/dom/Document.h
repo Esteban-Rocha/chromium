@@ -47,7 +47,6 @@
 #include "core/dom/DocumentShutdownNotifier.h"
 #include "core/dom/DocumentShutdownObserver.h"
 #include "core/dom/DocumentTiming.h"
-#include "core/dom/ExecutionContext.h"
 #include "core/dom/FrameRequestCallbackCollection.h"
 #include "core/dom/LiveNodeListRegistry.h"
 #include "core/dom/MutationObserver.h"
@@ -60,6 +59,7 @@
 #include "core/dom/UserActionElementSet.h"
 #include "core/dom/ViewportDescription.h"
 #include "core/editing/Forward.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/frame/DOMTimerCoordinator.h"
 #include "core/frame/HostsUsingFeatures.h"
 #include "core/html/custom/V0CustomElement.h"
@@ -171,6 +171,7 @@ class SecurityOrigin;
 class SelectorQueryCache;
 class SerializedScriptValue;
 class Settings;
+class SlotAssignmentEngine;
 class SnapCoordinator;
 class StringOrDictionary;
 class StyleEngine;
@@ -1423,6 +1424,8 @@ class CORE_EXPORT Document : public ContainerNode,
   void AddComputedStyleMapItem(Element*, StylePropertyMapReadOnly*);
   StylePropertyMapReadOnly* RemoveComputedStyleMapItem(Element*);
 
+  SlotAssignmentEngine& GetSlotAssignmentEngine();
+
  protected:
   Document(const DocumentInit&, DocumentClassFlags = kDefaultDocumentClass);
 
@@ -1816,6 +1819,8 @@ class CORE_EXPORT Document : public ContainerNode,
   bool needs_to_record_ukm_outlive_time_;
 
   Member<Policy> policy_;
+
+  Member<SlotAssignmentEngine> slot_assignment_engine_;
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT Supplement<Document>;

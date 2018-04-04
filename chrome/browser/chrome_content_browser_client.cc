@@ -133,7 +133,6 @@
 #include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/prerender_url_loader_throttle.h"
-#include "chrome/common/profiling/constants.mojom.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/renderer_configuration.mojom.h"
 #include "chrome/common/secure_origin_whitelist.h"
@@ -182,6 +181,7 @@
 #include "components/safe_browsing/db/database_manager.h"
 #include "components/safe_browsing/features.h"
 #include "components/safe_browsing/password_protection/password_protection_navigation_throttle.h"
+#include "components/services/heap_profiling/public/mojom/constants.mojom.h"
 #include "components/services/patch/public/interfaces/constants.mojom.h"
 #include "components/services/unzip/public/interfaces/constants.mojom.h"
 #include "components/signin/core/browser/profile_management_switches.h"
@@ -240,9 +240,9 @@
 #include "net/cookies/cookie_options.h"
 #include "net/ssl/client_cert_store.h"
 #include "net/ssl/ssl_cert_request_info.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "ppapi/host/ppapi_host.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/preferences/public/cpp/in_process_service_factory.h"
@@ -274,11 +274,11 @@
 #include "chrome/browser/chrome_browser_main_mac.h"
 #elif defined(OS_CHROMEOS)
 #include "ash/public/interfaces/constants.mojom.h"
-#include "chrome/browser/chromeos/arc/arc_util.h"
+#include "chrome/browser/chromeos/apps/intent_helper/apps_navigation_throttle.h"
 #include "chrome/browser/chromeos/arc/fileapi/arc_content_file_system_backend_delegate.h"
 #include "chrome/browser/chromeos/arc/fileapi/arc_documents_provider_backend_delegate.h"
-#include "chrome/browser/chromeos/arc/intent_helper/arc_navigation_throttle.h"
 #include "chrome/browser/chromeos/chrome_browser_main_chromeos.h"
+#include "chrome/browser/chromeos/chrome_content_browser_client_chromeos_part.h"
 #include "chrome/browser/chromeos/chrome_service_name.h"
 #include "chrome/browser/chromeos/drive/fileapi/file_system_backend_delegate.h"
 #include "chrome/browser/chromeos/file_manager/app_id.h"
@@ -320,6 +320,7 @@
 #include "services/proxy_resolver/proxy_resolver_service.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/WebKit/public/platform/modules/payments/payment_request.mojom.h"
+#include "third_party/WebKit/public/platform/modules/webauth/authenticator.mojom.h"
 #include "ui/base/resource/resource_bundle_android.h"
 #include "ui/base/ui_base_paths.h"
 #elif defined(OS_POSIX)
@@ -947,6 +948,10 @@ ChromeContentBrowserClient::ChromeContentBrowserClient()
   TtsExtensionEngine* tts_extension_engine = TtsExtensionEngine::GetInstance();
   TtsController::GetInstance()->SetTtsEngineDelegate(tts_extension_engine);
 #endif
+
+#if defined(OS_CHROMEOS)
+  extra_parts_.push_back(new ChromeContentBrowserClientChromeOsPart);
+#endif  // defined(OS_CHROMEOS)
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   extra_parts_.push_back(new ChromeContentBrowserClientExtensionsPart);
@@ -3557,18 +3562,10 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
       throttles.push_back(MergeSessionNavigationThrottle::Create(handle));
     }
 
-    if (arc::IsArcPlayStoreEnabledForProfile(Profile::FromBrowserContext(
-            handle->GetWebContents()->GetBrowserContext())) &&
-        !handle->GetWebContents()->GetBrowserContext()->IsOffTheRecord()) {
-      prerender::PrerenderContents* prerender_contents =
-          prerender::PrerenderContents::FromWebContents(
-              handle->GetWebContents());
-      if (!prerender_contents) {
-        auto url_to_arc_throttle =
-            std::make_unique<arc::ArcNavigationThrottle>(handle);
-        throttles.push_back(std::move(url_to_arc_throttle));
-      }
-    }
+    auto url_to_apps_throttle =
+        chromeos::AppsNavigationThrottle::MaybeCreate(handle);
+    if (url_to_apps_throttle)
+      throttles.push_back(std::move(url_to_apps_throttle));
   }
 #endif
 
@@ -3747,6 +3744,8 @@ void ChromeContentBrowserClient::InitWebContextInterfaces() {
       &ForwardToJavaFrameRegistry<blink::mojom::InstalledAppProvider>));
   frame_interfaces_parameterized_->AddInterface(
       base::Bind(&ForwardToJavaFrameRegistry<payments::mojom::PaymentRequest>));
+  frame_interfaces_parameterized_->AddInterface(
+      base::Bind(&ForwardToJavaFrameRegistry<webauth::mojom::Authenticator>));
 #else
   if (base::FeatureList::IsEnabled(features::kWebPayments)) {
     frame_interfaces_parameterized_->AddInterface(
@@ -3830,24 +3829,29 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
   std::vector<std::unique_ptr<content::URLLoaderThrottle>> result;
 
 #if defined(SAFE_BROWSING_DB_LOCAL) || defined(SAFE_BROWSING_DB_REMOTE)
-  ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
-  bool matches_enterprise_whitelist =
-      io_data && safe_browsing::IsURLWhitelistedByPolicy(
-                     request.url, io_data->safe_browsing_whitelist_domains());
-  if (!matches_enterprise_whitelist &&
-      (network_service_enabled ||
-       base::FeatureList::IsEnabled(
-           safe_browsing::kCheckByURLLoaderThrottle))) {
-    auto* delegate = GetSafeBrowsingUrlCheckerDelegate(resource_context);
-    if (delegate && !delegate->ShouldSkipRequestCheck(
-                        resource_context, request.url, frame_tree_node_id,
-                        -1 /* render_process_id */, -1 /* render_frame_id */,
-                        request.originated_from_service_worker)) {
-      auto safe_browsing_throttle =
-          safe_browsing::BrowserURLLoaderThrottle::MaybeCreate(delegate,
-                                                               wc_getter);
-      if (safe_browsing_throttle)
-        result.push_back(std::move(safe_browsing_throttle));
+  // Null-check safe_browsing_service_ as in unit tests |resource_context| is a
+  // MockResourceContext and the cast doesn't work.
+  if (safe_browsing_service_) {
+    ProfileIOData* io_data =
+        ProfileIOData::FromResourceContext(resource_context);
+    bool matches_enterprise_whitelist =
+        io_data && safe_browsing::IsURLWhitelistedByPolicy(
+                       request.url, io_data->safe_browsing_whitelist_domains());
+    if (!matches_enterprise_whitelist &&
+        (network_service_enabled ||
+         base::FeatureList::IsEnabled(
+             safe_browsing::kCheckByURLLoaderThrottle))) {
+      auto* delegate = GetSafeBrowsingUrlCheckerDelegate(resource_context);
+      if (delegate && !delegate->ShouldSkipRequestCheck(
+                          resource_context, request.url, frame_tree_node_id,
+                          -1 /* render_process_id */, -1 /* render_frame_id */,
+                          request.originated_from_service_worker)) {
+        auto safe_browsing_throttle =
+            safe_browsing::BrowserURLLoaderThrottle::MaybeCreate(delegate,
+                                                                 wc_getter);
+        if (safe_browsing_throttle)
+          result.push_back(std::move(safe_browsing_throttle));
+      }
     }
   }
 #endif  // defined(SAFE_BROWSING_DB_LOCAL) || defined(SAFE_BROWSING_DB_REMOTE)

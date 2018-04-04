@@ -34,7 +34,7 @@
 #include "content/browser/android/gesture_listener_manager.h"
 #include "content/browser/android/ime_adapter_android.h"
 #include "content/browser/android/overscroll_controller_android.h"
-#include "content/browser/android/selection_popup_controller.h"
+#include "content/browser/android/selection/selection_popup_controller.h"
 #include "content/browser/android/synchronous_compositor_host.h"
 #include "content/browser/android/tap_disambiguator.h"
 #include "content/browser/android/text_suggestion_host_android.h"
@@ -304,10 +304,6 @@ bool RenderWidgetHostViewAndroid::HasValidFrame() const {
   DCHECK(!delegated_frame_host_ ||
          delegated_frame_host_->HasDelegatedContent());
   return true;
-}
-
-gfx::Vector2dF RenderWidgetHostViewAndroid::GetLastScrollOffset() const {
-  return last_scroll_offset_;
 }
 
 gfx::NativeView RenderWidgetHostViewAndroid::GetNativeView() const {
@@ -940,7 +936,6 @@ void RenderWidgetHostViewAndroid::SubmitCompositorFrame(
     return;
   }
 
-  last_scroll_offset_ = frame.metadata.root_scroll_offset;
   DCHECK(!frame.render_pass_list.empty());
 
   viz::RenderPass* root_pass = frame.render_pass_list.back().get();
@@ -1250,7 +1245,12 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
   view_.UpdateFrameInfo({scrollable_viewport_size_dip, top_content_offset});
 
   bool top_changed = !FloatEquals(top_shown_pix, prev_top_shown_pix_);
-  if (top_changed || !controls_initialized_) {
+  // TODO(carlosil, https://crbug.com/825765): Remove the IsInVR() check here,
+  // which is a temporary hack. When interstitial pages load they set the
+  // top controls offset to 0, and if we don't ignore that hit targeting on
+  // interstitial pages breaks. The fix is still crucial for VR as VR needs the
+  // top controls to be initially hidden correctly.
+  if (top_changed || (!controls_initialized_ && IsInVR())) {
     float translate = top_shown_pix - top_controls_pix;
     view_.OnTopControlsChanged(translate, top_shown_pix);
     prev_top_shown_pix_ = top_shown_pix;
@@ -1260,7 +1260,7 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
   float bottom_shown_pix =
       bottom_controls_pix * frame_metadata.bottom_controls_shown_ratio;
   bool bottom_changed = !FloatEquals(bottom_shown_pix, prev_bottom_shown_pix_);
-  if (bottom_changed || !controls_initialized_) {
+  if (bottom_changed || (!controls_initialized_ && IsInVR())) {
     float translate = bottom_controls_pix - bottom_shown_pix;
     view_.OnBottomControlsChanged(translate, bottom_shown_pix);
     prev_bottom_shown_pix_ = bottom_shown_pix;
@@ -2006,7 +2006,7 @@ void RenderWidgetHostViewAndroid::OnDetachedFromWindow() {
 void RenderWidgetHostViewAndroid::OnAttachCompositor() {
   DCHECK(view_.parent());
   CreateOverscrollControllerIfPossible();
-  if (observing_root_window_) {
+  if (observing_root_window_ && using_browser_compositor_) {
     ui::WindowAndroidCompositor* compositor =
         view_.GetWindowAndroid()->GetCompositor();
     delegated_frame_host_->AttachToCompositor(compositor);
@@ -2015,10 +2015,10 @@ void RenderWidgetHostViewAndroid::OnAttachCompositor() {
 
 void RenderWidgetHostViewAndroid::OnDetachCompositor() {
   DCHECK(view_.parent());
-  DCHECK(using_browser_compositor_);
   RunAckCallbacks();
   overscroll_controller_.reset();
-  delegated_frame_host_->DetachFromCompositor();
+  if (using_browser_compositor_)
+    delegated_frame_host_->DetachFromCompositor();
 }
 
 void RenderWidgetHostViewAndroid::OnBeginFrame(
@@ -2129,6 +2129,9 @@ void RenderWidgetHostViewAndroid::OnStylusSelectBegin(float x0,
                                                       float x1,
                                                       float y1) {
   SetTextHandlesHiddenForStylus(true);
+  // TODO(ajith.v) Refactor the event names as this is not really handle drag,
+  // but currently we use same for long press drag selection as well.
+  OnSelectionEvent(ui::SELECTION_HANDLE_DRAG_STARTED);
   SelectBetweenCoordinates(gfx::PointF(x0, y0), gfx::PointF(x1, y1));
 }
 
@@ -2138,7 +2141,9 @@ void RenderWidgetHostViewAndroid::OnStylusSelectUpdate(float x, float y) {
 
 void RenderWidgetHostViewAndroid::OnStylusSelectEnd(float x, float y) {
   SetTextHandlesHiddenForStylus(false);
-  ShowContextMenuAtPoint(gfx::Point(x, y), ui::MENU_SOURCE_STYLUS);
+  // TODO(ajith.v) Refactor the event names as this is not really handle drag,
+  // but currently we use same for long press drag selection as well.
+  OnSelectionEvent(ui::SELECTION_HANDLE_DRAG_STOPPED);
 }
 
 void RenderWidgetHostViewAndroid::OnStylusSelectTap(base::TimeTicks time,

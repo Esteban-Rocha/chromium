@@ -69,7 +69,7 @@
 #include "ipc/ipc_message_start.h"
 #include "ipc/ipc_sync_message.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/FilePathConversion.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
@@ -81,8 +81,8 @@
 #include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/render_widget_scheduling_state.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "third_party/WebKit/public/platform/scheduler/render_widget_scheduling_state.h"
+#include "third_party/WebKit/public/platform/scheduler/web_main_thread_scheduler.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebFrameWidget.h"
@@ -638,31 +638,6 @@ void RenderWidget::SetExternalPopupOriginAdjustmentsForEmulation(
 }
 #endif
 
-void RenderWidget::SetLocalSurfaceIdForAutoResize(
-    uint64_t sequence_number,
-    const content::ScreenInfo& screen_info,
-    uint32_t content_source_id,
-    const viz::LocalSurfaceId& local_surface_id) {
-  DCHECK(!size_.IsEmpty());
-
-  // If the given LocalSurfaceId was generated before navigation, don't use it.
-  // We should receive a new LocalSurfaceId later.
-  viz::LocalSurfaceId new_local_surface_id =
-      content_source_id != current_content_source_id_ ? viz::LocalSurfaceId()
-                                                      : local_surface_id;
-  // TODO(ccameron): If there is a meaningful distinction between |size_| and
-  // |compositor_viewport_pixel_size_| is it okay to ignore that distinction
-  // here, and assume that |compositor_viewport_pixel_size_| is just |size_| in
-  // pixels? Also note that the computation of
-  // |new_compositor_viewport_pixel_size| does not appear to take into account
-  // device emulation.
-  float new_device_scale_factor = screen_info.device_scale_factor;
-  gfx::Size new_compositor_viewport_pixel_size =
-      gfx::ScaleToCeiledSize(size_, new_device_scale_factor);
-  UpdateSurfaceAndScreenInfo(new_local_surface_id,
-                             new_compositor_viewport_pixel_size, screen_info);
-}
-
 void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
   if (screen_metrics_emulator_)
     screen_metrics_emulator_->OnShowContextMenu(params);
@@ -693,8 +668,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_ShowContextMenu, OnShowContextMenu)
     IPC_MESSAGE_HANDLER(ViewMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetLocalSurfaceIdForAutoResize,
-                        OnSetLocalSurfaceIdForAutoResize)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableDeviceEmulation,
                         OnEnableDeviceEmulation)
     IPC_MESSAGE_HANDLER(ViewMsg_DisableDeviceEmulation,
@@ -832,23 +805,6 @@ void RenderWidget::OnResize(const ResizeParams& params) {
     for (auto& render_frame : render_frames_)
       render_frame.DidChangeVisibleViewport();
   }
-}
-
-void RenderWidget::OnSetLocalSurfaceIdForAutoResize(
-    uint64_t sequence_number,
-    const gfx::Size& min_size,
-    const gfx::Size& max_size,
-    const content::ScreenInfo& screen_info,
-    uint32_t content_source_id,
-    const viz::LocalSurfaceId& local_surface_id) {
-  if (!auto_resize_mode_ || auto_resize_sequence_number_ != sequence_number) {
-    DidResizeOrRepaintAck();
-    return;
-  }
-  // TODO(ccameron): This does not appear to interact correctly with device
-  // emulation (compare with the intercepting of ScreenInfo in OnResize).
-  SetLocalSurfaceIdForAutoResize(sequence_number, screen_info,
-                                 content_source_id, local_surface_id);
 }
 
 void RenderWidget::OnEnableDeviceEmulation(
@@ -1065,11 +1021,6 @@ void RenderWidget::DidCommitAndDrawCompositorFrame() {
   // tab_capture_performancetest.cc.
   TRACE_EVENT0("gpu", "RenderWidget::DidCommitAndDrawCompositorFrame");
 
-  // If we haven't commited yet, then this method was called as a response to a
-  // previous commit and should not be used to ack the resize.
-  if (did_commit_after_resize_)
-    DidResizeOrRepaintAck();
-
   for (auto& observer : render_frames_)
     observer.DidCommitAndDrawCompositorFrame();
 
@@ -1078,7 +1029,7 @@ void RenderWidget::DidCommitAndDrawCompositorFrame() {
 }
 
 void RenderWidget::DidCommitCompositorFrame() {
-  did_commit_after_resize_ = true;
+  DidResizeOrRepaintAck();
 }
 
 void RenderWidget::DidCompletePageScaleAnimation() {}
@@ -1364,15 +1315,16 @@ gfx::Size RenderWidget::GetSizeForWebWidget() const {
 }
 
 void RenderWidget::Resize(const ResizeParams& params) {
+  if (params.auto_resize_enabled && auto_resize_mode_ &&
+      (!params.auto_resize_sequence_number ||
+       auto_resize_sequence_number_ != params.auto_resize_sequence_number)) {
+    DidResizeOrRepaintAck();
+    return;
+  }
+
   // The content_source_id that the browser sends us should never be larger than
   // |current_content_source_id_|.
   DCHECK_GE(1u << 30, current_content_source_id_ - params.content_source_id);
-
-  // If this resize needs to be acked, make sure we ack it only after we commit.
-  // It is possible to get DidCommitAndDraw calls that belong to the previous
-  // commit, in which case we should not ack this resize.
-  if (params.needs_resize_ack)
-    did_commit_after_resize_ = false;
 
   // Inform the rendering thread of the color space indicate the presence of HDR
   // capabilities.
@@ -1400,8 +1352,13 @@ void RenderWidget::Resize(const ResizeParams& params) {
       params.content_source_id == current_content_source_id_) {
     new_local_surface_id = *params.local_surface_id;
   }
+  gfx::Size new_compositor_viewport_pixel_size =
+      params.auto_resize_enabled
+          ? gfx::ScaleToCeiledSize(size_,
+                                   params.screen_info.device_scale_factor)
+          : params.compositor_viewport_pixel_size;
   UpdateSurfaceAndScreenInfo(new_local_surface_id,
-                             params.compositor_viewport_pixel_size,
+                             new_compositor_viewport_pixel_size,
                              params.screen_info);
   if (compositor_) {
     // If surface synchronization is enabled, then this will use the provided
@@ -1418,6 +1375,9 @@ void RenderWidget::Resize(const ResizeParams& params) {
     compositor_->SetRasterColorSpace(
         screen_info_.color_space.GetRasterColorSpace());
   }
+
+  if (params.auto_resize_enabled)
+    return;
 
   visible_viewport_size_ = params.visible_viewport_size;
 
@@ -2575,6 +2535,10 @@ void RenderWidget::SetHandlingInputEventForTesting(bool handling_input_event) {
 }
 
 void RenderWidget::HasTouchEventHandlers(bool has_handlers) {
+  if (has_touch_handlers_ && *has_touch_handlers_ == has_handlers)
+    return;
+
+  has_touch_handlers_ = has_handlers;
   if (render_widget_scheduling_state_)
     render_widget_scheduling_state_->SetHasTouchHandler(has_handlers);
   Send(new ViewHostMsg_HasTouchEventHandlers(routing_id_, has_handlers));

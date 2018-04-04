@@ -20,13 +20,13 @@ namespace blink {
 
 // TODO(dcheng): Ideally, enough of FrameTestHelpers would be in core/ that
 // placing a test for a core/ class in web/ wouldn't be necessary.
-class DocumentLoaderTest : public ::testing::Test {
+class DocumentLoaderTest : public testing::Test {
  protected:
   void SetUp() override {
     web_view_helper_.Initialize();
     URLTestHelpers::RegisterMockedURLLoad(
         URLTestHelpers::ToKURL("https://example.com/foo.html"),
-        testing::CoreTestDataPath("foo.html"));
+        test::CoreTestDataPath("foo.html"));
   }
 
   void TearDown() override {

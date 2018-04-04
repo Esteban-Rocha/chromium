@@ -179,7 +179,9 @@ TEST_F(U2fSignTest, TestCreateSignApduCommand) {
       // Key Handle
       0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
       0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01,
-      0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01
+      0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01,
+      // Max response length
+      0x00, 0x00,
       // clang-format on
   };
 
@@ -209,7 +211,9 @@ TEST_F(U2fSignTest, TestCreateSignApduCommand) {
       // Key Handle
       0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
       0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01,
-      0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01
+      0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01,
+      // Max response length
+      0x00, 0x00,
       // clang-format on
   };
 
@@ -259,8 +263,10 @@ TEST_F(U2fSignTest, TestSignSuccessWithFake) {
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
   auto device = std::make_unique<VirtualFidoDevice>();
-  device->AddRegistration(key_handle, std::move(private_key),
-                          GetTestRelyingPartyIdSHA256(), 42);
+  device->mutable_state()->registrations.emplace(
+      key_handle,
+      VirtualFidoDevice::RegistrationData(std::move(private_key),
+                                          GetTestRelyingPartyIdSHA256(), 42));
   discovery()->AddDevice(std::move(device));
 
   sign_callback_receiver().WaitForCallback();
@@ -422,6 +428,38 @@ TEST_F(U2fSignTest, TestFakeEnroll) {
   EXPECT_EQ(FidoReturnCode::kConditionsNotSatisfied,
             sign_callback_receiver().status());
   EXPECT_FALSE(sign_callback_receiver().value());
+}
+
+TEST_F(U2fSignTest, TestFakeEnrollErroringOut) {
+  auto request = CreateSignRequestWithKeys({std::vector<uint8_t>(32, 0x0A)});
+  request->Start();
+  // First device errors out on all requests (including the sign request and
+  // fake registration attempt). The device should then be abandoned to prevent
+  // the test from crashing or timing out.
+  auto device0 = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device0, GetId()).WillRepeatedly(::testing::Return("device0"));
+  EXPECT_CALL(*device0, DeviceTransactPtr(_, _))
+      .WillRepeatedly(::testing::Invoke(MockFidoDevice::WrongData));
+  // One wink per device.
+  EXPECT_CALL(*device0, TryWinkRef(_))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
+  discovery()->AddDevice(std::move(device0));
+
+  // Second device will have a successful touch and sign on the first attempt.
+  auto device1 = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device1, GetId()).WillRepeatedly(::testing::Return("device1"));
+  EXPECT_CALL(*device1, DeviceTransactPtr(_, _))
+      .WillOnce(::testing::Invoke(MockFidoDevice::NoErrorSign));
+  // One wink per device.
+  EXPECT_CALL(*device1, TryWinkRef(_))
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
+  discovery()->AddDevice(std::move(device1));
+  discovery()->WaitForCallToStartAndSimulateSuccess();
+
+  // Correct key was sent so a sign response is expected.
+  sign_callback_receiver().WaitForCallback();
+  EXPECT_EQ(GetTestAssertionSignature(),
+            sign_callback_receiver().value()->signature());
 }
 
 TEST_F(U2fSignTest, TestAuthenticatorDataForSign) {

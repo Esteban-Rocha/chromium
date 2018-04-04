@@ -39,7 +39,6 @@
 #include "net/proxy_resolution/proxy_config_service.h"
 #include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/quic/core/quic_packets.h"
-#include "net/socket/next_proto.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request_job_factory.h"
 
@@ -166,8 +165,8 @@ class NET_EXPORT URLRequestContextBuilder {
 
   // Sets the proxy service. If one is not provided, by default, uses system
   // libraries to evaluate PAC scripts, if available (And if not, skips PAC
-  // resolution). Subclasses may override CreateProxyService for different
-  // default behavior.
+  // resolution). Subclasses may override CreateProxyResolutionService for
+  // different default behavior.
   void set_proxy_resolution_service(
       std::unique_ptr<ProxyResolutionService> proxy_resolution_service) {
     proxy_resolution_service_ = std::move(proxy_resolution_service);
@@ -348,7 +347,7 @@ class NET_EXPORT URLRequestContextBuilder {
   // ProxyResolutionService that uses the URLRequestContext itself to get PAC
   // scripts. When this method is invoked, the URLRequestContext is not yet
   // ready to service requests.
-  virtual std::unique_ptr<ProxyResolutionService> CreateProxyService(
+  virtual std::unique_ptr<ProxyResolutionService> CreateProxyResolutionService(
       std::unique_ptr<ProxyConfigService> proxy_config_service,
       URLRequestContext* url_request_context,
       HostResolver* host_resolver,

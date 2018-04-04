@@ -31,8 +31,8 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExecutionContext.h"
 #include "core/dom/events/Event.h"
+#include "core/execution_context/ExecutionContext.h"
 #include "core/frame/Deprecation.h"
 #include "modules/imagecapture/ImageCapture.h"
 #include "modules/mediastream/ApplyConstraintsRequest.h"
@@ -447,10 +447,13 @@ void MediaStreamTrack::getSettings(MediaTrackSettings& settings) {
         break;
     }
   }
-  if (platform_settings.HasEchoCancellationValue()) {
-    settings.setEchoCancellation(
-        static_cast<bool>(platform_settings.echo_cancellation));
-  }
+
+  if (platform_settings.echo_cancellation)
+    settings.setEchoCancellation(*platform_settings.echo_cancellation);
+  if (platform_settings.auto_gain_control)
+    settings.setAutoGainControl(*platform_settings.auto_gain_control);
+  if (platform_settings.noise_supression)
+    settings.setNoiseSuppression(*platform_settings.noise_supression);
 
   if (image_capture_)
     image_capture_->GetMediaTrackSettings(settings);

@@ -37,6 +37,13 @@
 #include "chrome/common/extensions/api/easy_unlock_private.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/components/proximity_auth/logging/logging.h"
+#include "chromeos/components/proximity_auth/promotion_manager.h"
+#include "chromeos/components/proximity_auth/proximity_auth_pref_names.h"
+#include "chromeos/components/proximity_auth/proximity_auth_profile_pref_manager.h"
+#include "chromeos/components/proximity_auth/proximity_auth_system.h"
+#include "chromeos/components/proximity_auth/screenlock_bridge.h"
+#include "chromeos/components/proximity_auth/switches.h"
 #include "components/cryptauth/cryptauth_access_token_fetcher.h"
 #include "components/cryptauth/cryptauth_client_impl.h"
 #include "components/cryptauth/cryptauth_enrollment_manager.h"
@@ -44,18 +51,11 @@
 #include "components/cryptauth/cryptauth_gcm_manager_impl.h"
 #include "components/cryptauth/local_device_data_provider.h"
 #include "components/cryptauth/remote_device_loader.h"
-#include "components/cryptauth/secure_message_delegate.h"
+#include "components/cryptauth/secure_message_delegate_impl.h"
 #include "components/gcm_driver/gcm_profile_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
-#include "components/proximity_auth/logging/logging.h"
-#include "components/proximity_auth/promotion_manager.h"
-#include "components/proximity_auth/proximity_auth_pref_names.h"
-#include "components/proximity_auth/proximity_auth_profile_pref_manager.h"
-#include "components/proximity_auth/proximity_auth_system.h"
-#include "components/proximity_auth/screenlock_bridge.h"
-#include "components/proximity_auth/switches.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/translate/core/browser/translate_download_manager.h"
@@ -84,7 +84,7 @@ const char kKeyDevices[] = "devices";
 EasyUnlockServiceRegular::EasyUnlockServiceRegular(Profile* profile)
     : EasyUnlockServiceRegular(
           profile,
-          EasyUnlockNotificationController::Create(profile)) {}
+          std::make_unique<EasyUnlockNotificationController>(profile)) {}
 
 EasyUnlockServiceRegular::EasyUnlockServiceRegular(
     Profile* profile,
@@ -124,7 +124,7 @@ void EasyUnlockServiceRegular::LoadRemoteDevices() {
       GetCryptAuthDeviceManager()->GetUnlockKeys(),
       proximity_auth_client()->GetAccountId(),
       GetCryptAuthEnrollmentManager()->GetUserPrivateKey(),
-      proximity_auth_client()->CreateSecureMessageDelegate()));
+      cryptauth::SecureMessageDelegateImpl::Factory::NewInstance()));
   remote_device_loader_->Load(
       true /* should_load_beacon_seeds */,
       base::Bind(&EasyUnlockServiceRegular::OnRemoteDevicesLoaded,
@@ -250,7 +250,7 @@ void EasyUnlockServiceRegular::LaunchSetup() {
   if (short_lived_user_context_ && short_lived_user_context_->user_context()) {
     OpenSetupApp();
   } else {
-    bool reauth_success = chromeos::EasyUnlockReauth::ReauthForUserContext(
+    bool reauth_success = EasyUnlockReauth::ReauthForUserContext(
         base::Bind(&EasyUnlockServiceRegular::OpenSetupAppAfterReauth,
                    weak_ptr_factory_.GetWeakPtr()));
     if (!reauth_success)
@@ -259,17 +259,17 @@ void EasyUnlockServiceRegular::LaunchSetup() {
 }
 
 void EasyUnlockServiceRegular::HandleUserReauth(
-    const chromeos::UserContext& user_context) {
+    const UserContext& user_context) {
   // Cache the user context for the next X minutes, so the user doesn't have to
   // reauth again.
-  short_lived_user_context_.reset(new chromeos::ShortLivedUserContext(
+  short_lived_user_context_.reset(new ShortLivedUserContext(
       user_context,
       apps::AppLifetimeMonitorFactory::GetForBrowserContext(profile()),
       base::ThreadTaskRunnerHandle::Get().get()));
 }
 
 void EasyUnlockServiceRegular::OpenSetupAppAfterReauth(
-    const chromeos::UserContext& user_context) {
+    const UserContext& user_context) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   HandleUserReauth(user_context);
 
@@ -279,8 +279,8 @@ void EasyUnlockServiceRegular::OpenSetupAppAfterReauth(
   // cleared earlier.
   const base::ListValue* devices = GetRemoteDevices();
   if (!devices || devices->empty()) {
-    chromeos::EasyUnlockKeyManager* key_manager =
-        chromeos::UserSessionManager::GetInstance()->GetEasyUnlockKeyManager();
+    EasyUnlockKeyManager* key_manager =
+        UserSessionManager::GetInstance()->GetEasyUnlockKeyManager();
     key_manager->RefreshKeys(
         user_context, base::ListValue(),
         base::Bind(&EasyUnlockServiceRegular::SetHardlockAfterKeyOperation,
@@ -518,7 +518,7 @@ bool EasyUnlockServiceRegular::IsAllowedInternal() const {
   if (user_manager->IsCurrentUserNonCryptohomeDataEphemeral())
     return false;
 
-  if (!chromeos::ProfileHelper::IsPrimaryProfile(profile()))
+  if (!ProfileHelper::IsPrimaryProfile(profile()))
     return false;
 
   if (!profile()->GetPrefs()->GetBoolean(prefs::kEasyUnlockAllowed))
@@ -722,14 +722,12 @@ void EasyUnlockServiceRegular::RefreshCryptohomeKeysIfPossible() {
     if (!IsChromeOSLoginEnabled() || !remote_devices_list)
       remote_devices_list = &empty_list;
 
-    chromeos::UserSessionManager::GetInstance()
-        ->GetEasyUnlockKeyManager()
-        ->RefreshKeys(
-            *short_lived_user_context_->user_context(),
-            base::ListValue(remote_devices_list->GetList()),
-            base::Bind(&EasyUnlockServiceRegular::SetHardlockAfterKeyOperation,
-                       weak_ptr_factory_.GetWeakPtr(),
-                       EasyUnlockScreenlockStateHandler::NO_HARDLOCK));
+    UserSessionManager::GetInstance()->GetEasyUnlockKeyManager()->RefreshKeys(
+        *short_lived_user_context_->user_context(),
+        base::ListValue(remote_devices_list->GetList()),
+        base::Bind(&EasyUnlockServiceRegular::SetHardlockAfterKeyOperation,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   EasyUnlockScreenlockStateHandler::NO_HARDLOCK));
   } else {
     CheckCryptohomeKeysAndMaybeHardlock();
   }

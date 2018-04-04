@@ -15,7 +15,7 @@ class PaintPropertyTreeUpdateTest : public PaintPropertyTreeBuilderTest {};
 INSTANTIATE_TEST_CASE_P(
     All,
     PaintPropertyTreeUpdateTest,
-    ::testing::ValuesIn(kSlimmingPaintNonV1TestConfigurations));
+    testing::ValuesIn(kSlimmingPaintNonV1TestConfigurations));
 
 TEST_P(PaintPropertyTreeUpdateTest,
        ThreadedScrollingDisabledMainThreadScrollReason) {
@@ -392,7 +392,7 @@ TEST_P(PaintPropertyTreeUpdateTest, BuildingStopsAtThrottledFrames) {
   iframe->setAttribute(HTMLNames::styleAttr, "transform: translateY(5555px)");
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Ensure intersection observer notifications get delivered.
-  testing::RunPendingTasks();
+  test::RunPendingTasks();
   EXPECT_FALSE(GetDocument().View()->IsHiddenForThrottling());
   EXPECT_TRUE(ChildDocument().View()->IsHiddenForThrottling());
 

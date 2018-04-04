@@ -35,12 +35,6 @@
       custom_compare: true,
     },
     {
-      name: "AnimationPropertiesLocked",
-      field_template: "primitive",
-      default_value: "false",
-      type_name: "bool",
-    },
-    {
       name: "BorderLeftColorIsCurrentColor",
       field_template: "primitive",
       default_value: "true",
@@ -190,15 +184,6 @@
       custom_compare: true,
     },
     // These properties only have generated storage, and their methods are handwritten in ComputedStyle.
-    {
-      name: "EmptyState",
-      field_template: "primitive",
-      default_value: "false",
-      type_name: "bool",
-      custom_copy: true,
-      custom_compare: true,
-      computed_style_custom_functions: ["setter"],
-    },
     {
       name: "StyleType",
       field_template: "primitive",

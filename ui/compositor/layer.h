@@ -14,6 +14,7 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
 #include "cc/base/region.h"
@@ -292,8 +293,8 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   const std::string& name() const { return name_; }
   void set_name(const std::string& name) { name_ = name; }
 
-  // Set new TransferableResource for this layer. Note that |resource| may hold
-  // a handle for a shared memory resource or a gpu texture.
+  // Set new TransferableResource for this layer. This method only supports
+  // a gpu-backed |resource|.
   void SetTransferableResource(
       const viz::TransferableResource& resource,
       std::unique_ptr<viz::SingleReleaseCallback> release_callback,
@@ -395,6 +396,7 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
 
   // TextureLayerClient implementation.
   bool PrepareTransferableResource(
+      cc::SharedBitmapIdRegistrar* bitmap_registar,
       viz::TransferableResource* resource,
       std::unique_ptr<viz::SingleReleaseCallback>* release_callback) override;
 
@@ -622,6 +624,8 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   // If the value == 0, means we should not perform trilinear filtering on the
   // layer.
   unsigned trilinear_filtering_request_;
+
+  base::WeakPtrFactory<Layer> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Layer);
 };

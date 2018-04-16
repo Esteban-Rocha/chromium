@@ -15,7 +15,6 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/run_loop.h"
 #include "base/strings/string_split.h"
@@ -35,6 +34,8 @@
 #include "net/cookies/cookie_options.h"
 #include "net/cookies/cookie_store.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/http/http_auth_handler_factory.h"
+#include "net/http/http_auth_preferences.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_manager.h"
@@ -43,6 +44,7 @@
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_info.h"
 #include "net/proxy_resolution/proxy_resolution_service.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
@@ -53,6 +55,7 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/proxy_config.mojom.h"
+#include "services/network/test/test_url_loader_client.h"
 #include "services/network/udp_socket_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -120,6 +123,47 @@ class NetworkContextTest : public testing::Test {
   // message loop must be spun for that to happen.
   mojom::NetworkContextPtr network_context_ptr_;
 };
+
+TEST_F(NetworkContextTest, DestroyContextWithLiveRequest) {
+  net::EmbeddedTestServer test_server;
+  test_server.AddDefaultHandlers(
+      base::FilePath(FILE_PATH_LITERAL("services/test/data")));
+  ASSERT_TRUE(test_server.Start());
+
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  ResourceRequest request;
+  request.url = test_server.GetURL("/hung-after-headers");
+
+  mojom::URLLoaderFactoryPtr loader_factory;
+  network_context->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory),
+                                          0);
+
+  mojom::URLLoaderPtr loader;
+  TestURLLoaderClient client;
+  loader_factory->CreateLoaderAndStart(
+      mojo::MakeRequest(&loader), 0 /* routing_id */, 0 /* request_id */,
+      0 /* options */, request, client.CreateInterfacePtr(),
+      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
+
+  client.RunUntilResponseReceived();
+  EXPECT_TRUE(client.has_received_response());
+  EXPECT_FALSE(client.has_received_completion());
+
+  // Destroying the loader factory should not delete the URLLoader.
+  loader_factory.reset();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(client.has_received_completion());
+
+  // Destroying the NetworkContext should result in destroying the loader and
+  // the client receiving a connection error.
+  network_context.reset();
+
+  client.RunUntilConnectionError();
+  EXPECT_FALSE(client.has_received_completion());
+  EXPECT_EQ(0u, client.download_data_length());
+}
 
 TEST_F(NetworkContextTest, DisableQuic) {
   base::CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableQuic);
@@ -915,6 +959,51 @@ TEST_F(NetworkContextTest, CreateUDPSocket) {
     i++;
   }
 }
+
+#if defined(OS_CHROMEOS)
+TEST_F(NetworkContextTest, GssapiLibraryLoadDisallowedByDefault) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  EXPECT_FALSE(network_context->GetURLRequestContext()
+                   ->http_auth_handler_factory()
+                   ->http_auth_preferences()
+                   ->AllowGssapiLibraryLoad());
+}
+
+TEST_F(NetworkContextTest, DisallowGssapiLibraryLoad) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->allow_gssapi_library_load = false;
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  EXPECT_FALSE(network_context->GetURLRequestContext()
+                   ->http_auth_handler_factory()
+                   ->http_auth_preferences()
+                   ->AllowGssapiLibraryLoad());
+}
+
+TEST_F(NetworkContextTest, AllowGssapiLibraryLoad) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->allow_gssapi_library_load = true;
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  EXPECT_TRUE(network_context->GetURLRequestContext()
+                  ->http_auth_handler_factory()
+                  ->http_auth_preferences()
+                  ->AllowGssapiLibraryLoad());
+}
+#elif defined(OS_POSIX) && !defined(OS_ANDROID)
+TEST_F(NetworkContextTest, GssapiLibraryName) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->gssapi_library_name = "gssapi_library";
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  EXPECT_EQ("gssapi_library", network_context->GetURLRequestContext()
+                                  ->http_auth_handler_factory()
+                                  ->http_auth_preferences()
+                                  ->GssapiLibraryName());
+}
+#endif
 
 }  // namespace
 

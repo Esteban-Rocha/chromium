@@ -142,14 +142,13 @@ void BrowserFrameHeaderAsh::Init(
 
   view_ = header_view;
   window_icon_ = window_icon;
+  SkColor frame_color = view_->GetFrameColor(true);
   caption_button_container_ = caption_button_container;
-  // Use light images in incognito, even when a custom theme is installed. The
-  // incognito window with a custom theme is still darker than a normal window.
-  caption_button_container_->SetUseLightImages(is_incognito_);
+  caption_button_container_->SetBackgroundColor(frame_color);
 
   back_button_ = back_button;
   if (back_button_)
-    back_button_->set_use_light_images(is_incognito_);
+    back_button_->set_background_color(frame_color);
 }
 
 int BrowserFrameHeaderAsh::GetMinimumHeaderWidth() const {
@@ -193,26 +192,7 @@ void BrowserFrameHeaderAsh::LayoutHeader() {
   // |painted_height_| because the computation of |painted_height_| may depend
   // on having laid out the window controls.
   painted_height_ = -1;
-
-  UpdateCaptionButtons();
-  caption_button_container_->Layout();
-
-  const gfx::Size caption_button_container_size =
-      caption_button_container_->GetPreferredSize();
-  caption_button_container_->SetBounds(
-      view_->width() - caption_button_container_size.width(), 0,
-      caption_button_container_size.width(),
-      caption_button_container_size.height());
-
-  if (window_icon_) {
-    // Vertically center the window icon with respect to the caption button
-    // container.
-    const gfx::Size icon_size(window_icon_->GetPreferredSize());
-    const int icon_offset_y = (GetHeaderHeight() - icon_size.height()) / 2;
-    window_icon_->SetBounds(ash::FrameHeaderUtil::GetLeftViewXInset(),
-                            icon_offset_y, icon_size.width(),
-                            icon_size.height());
-  }
+  LayoutHeaderInternal();
 }
 
 int BrowserFrameHeaderAsh::GetHeaderHeight() const {
@@ -232,9 +212,21 @@ void BrowserFrameHeaderAsh::SchedulePaintForTitle() {
 }
 
 void BrowserFrameHeaderAsh::SetPaintAsActive(bool paint_as_active) {
+  SkColor frame_color = view_->GetFrameColor(paint_as_active);
   caption_button_container_->SetPaintAsActive(paint_as_active);
-  if (back_button_)
+  caption_button_container_->SetBackgroundColor(frame_color);
+  if (back_button_) {
     back_button_->set_paint_as_active(paint_as_active);
+    back_button_->set_background_color(frame_color);
+  }
+}
+
+void BrowserFrameHeaderAsh::OnShowStateChanged(ui::WindowShowState show_state) {
+  if (show_state == ui::SHOW_STATE_MINIMIZED)
+    return;
+  // Call LayoutHeaderInternal() instead of LayoutHeader() here because
+  // |show_state| shouldn't cause |painted_height_| change.
+  LayoutHeaderInternal();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -247,6 +239,28 @@ void BrowserFrameHeaderAsh::AnimationProgressed(
 
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserFrameHeaderAsh, private:
+
+void BrowserFrameHeaderAsh::LayoutHeaderInternal() {
+  UpdateCaptionButtons();
+  caption_button_container_->Layout();
+
+  const gfx::Size caption_button_container_size =
+      caption_button_container_->GetPreferredSize();
+  caption_button_container_->SetBounds(
+      view_->width() - caption_button_container_size.width(), 0,
+      caption_button_container_size.width(),
+      caption_button_container_size.height());
+
+  if (!window_icon_)
+    return;
+
+  // Vertically center the window icon with respect to the caption button
+  // container.
+  const gfx::Size icon_size(window_icon_->GetPreferredSize());
+  const int icon_offset_y = (GetHeaderHeight() - icon_size.height()) / 2;
+  window_icon_->SetBounds(ash::FrameHeaderUtil::GetLeftViewXInset(),
+                          icon_offset_y, icon_size.width(), icon_size.height());
+}
 
 void BrowserFrameHeaderAsh::PaintFrameImages(gfx::Canvas* canvas, bool active) {
   int alpha = activation_animation_->CurrentValueBetween(0, 0xFF);

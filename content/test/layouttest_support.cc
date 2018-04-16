@@ -13,7 +13,6 @@
 
 #include "base/callback.h"
 #include "base/lazy_instance.h"
-#include "base/memory/ptr_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
@@ -49,11 +48,12 @@
 #include "services/device/public/cpp/generic_sensor/motion_data.h"
 #include "services/device/public/cpp/generic_sensor/orientation_data.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
-#include "third_party/WebKit/public/platform/WebFloatRect.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_float_rect.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/web/web_view.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/events/blink/blink_event_util.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/icc_profile.h"
@@ -63,7 +63,7 @@
 #include "content/browser/frame_host/popup_menu_helper_mac.h"
 #elif defined(OS_WIN)
 #include "content/child/font_warmup_win.h"
-#include "third_party/WebKit/public/web/win/WebFontRendering.h"
+#include "third_party/blink/public/web/win/web_font_rendering.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/ports/SkFontMgr.h"
 #include "third_party/skia/include/ports/SkTypeface_win.h"
@@ -336,6 +336,8 @@ class LayoutTestDependenciesImpl : public LayoutTestDependencies,
     // Keep texture sizes exactly matching the bounds of the RenderPass to avoid
     // floating point badness in texcoords.
     renderer_settings.dont_round_texture_sizes_for_pixel_tests = true;
+    renderer_settings.use_skia_renderer =
+        cmd->HasSwitch(switches::kUseSkiaRenderer);
 
     constexpr bool disable_display_vsync = false;
     constexpr double refresh_rate = 60.0;
@@ -548,8 +550,8 @@ void DisableAutoResizeMode(RenderView* render_view, const WebSize& new_size) {
 }
 
 void SchedulerRunIdleTasks(const base::Closure& callback) {
-  blink::scheduler::RendererScheduler* scheduler =
-      content::RenderThreadImpl::current()->GetRendererScheduler();
+  blink::scheduler::WebMainThreadScheduler* scheduler =
+      content::RenderThreadImpl::current()->GetWebMainThreadScheduler();
   blink::scheduler::RunIdleTasksForTesting(scheduler, callback);
 }
 

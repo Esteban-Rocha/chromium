@@ -83,12 +83,7 @@ ServiceWorkerNavigationLoader::ServiceWorkerNavigationLoader(
       weak_factory_(this) {
   DCHECK(ServiceWorkerUtils::IsMainResourceType(
       static_cast<ResourceType>(resource_request.resource_type)));
-  DCHECK_EQ(network::mojom::FetchRequestMode::kNavigate,
-            resource_request_.fetch_request_mode);
-  DCHECK_EQ(network::mojom::FetchCredentialsMode::kInclude,
-            resource_request_.fetch_credentials_mode);
-  DCHECK_EQ(network::mojom::FetchRedirectMode::kManual,
-            resource_request_.fetch_redirect_mode);
+
   response_head_.load_timing.request_start = base::TimeTicks::Now();
   response_head_.load_timing.request_start_time = base::Time::Now();
 }
@@ -264,8 +259,8 @@ void ServiceWorkerNavigationLoader::DidDispatchFetchEvent(
     return;
   }
 
-  // Creates a new HttpResponseInfo using the the ServiceWorker script's
-  // HttpResponseInfo to show HTTPS padlock.
+  // Get SSLInfo from the ServiceWorker script's HttpResponseInfo to show HTTPS
+  // padlock.
   // TODO(horo): When we support mixed-content (HTTP) no-cors requests from a
   // ServiceWorker, we have to check the security level of the responses.
   const net::HttpResponseInfo* main_script_http_info =
@@ -321,9 +316,6 @@ void ServiceWorkerNavigationLoader::StartResponse(
   // We have a non-redirect response. Send the headers to the client.
   CommitResponseHeaders();
 
-  // S13nServiceWorker without NetworkService:
-  // TODO(shimazu): Wait to respond body until ProceedWithResponse().
-
   // Handle a stream response body.
   if (!body_as_stream.is_null() && body_as_stream->stream.is_valid()) {
     stream_waiter_ = std::make_unique<StreamWaiter>(
@@ -372,9 +364,9 @@ void ServiceWorkerNavigationLoader::FollowRedirect() {
 }
 
 void ServiceWorkerNavigationLoader::ProceedWithResponse() {
-  // TODO(arthursonzogni): Implement this for navigation requests if the
-  // ServiceWorker service is enabled before the Network Service.
-  NOTREACHED();
+  // ServiceWorkerNavigationLoader doesn't need to wait for
+  // ProceedWithResponse() since it doesn't use MojoAsyncResourceHandler to load
+  // the resource request.
 }
 
 void ServiceWorkerNavigationLoader::SetPriority(net::RequestPriority priority,

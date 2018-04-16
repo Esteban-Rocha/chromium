@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "base/command_line.h"
 #include "base/i18n/number_formatting.h"
@@ -34,8 +35,8 @@
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/star_view.h"
-#include "chrome/browser/ui/views/toolbar/app_menu_button.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
+#include "chrome/browser/ui/views/toolbar/browser_app_menu_button.h"
 #include "chrome/browser/ui/views/toolbar/home_button.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
@@ -201,29 +202,11 @@ void ToolbarView::Init() {
 
 // ChromeOS never shows a profile icon in the browser window.
 #if !defined(OS_CHROMEOS)
-  if (ui::MaterialDesignController::IsNewerMaterialUi()) {
-    avatar_ = new ToolbarButton(browser_->profile(), this, nullptr);
-    avatar_->set_triggerable_event_flags(ui::EF_LEFT_MOUSE_BUTTON |
-                                         ui::EF_MIDDLE_MOUSE_BUTTON);
-    avatar_->set_tag(IDC_SHOW_AVATAR_MENU);
-    if (browser_->profile()->IsOffTheRecord()) {
-      avatar_->SetTooltipText(
-          l10n_util::GetStringUTF16(IDS_INCOGNITO_AVATAR_BUTTON_TOOLTIP));
-      avatar_->SetEnabled(false);
-    } else {
-      // TODO(pbos): Incorporate GetAvatarButtonTextForProfile. See
-      // AvatarButton.
-      avatar_->SetTooltipText(
-          l10n_util::GetStringUTF16(IDS_GENERIC_USER_AVATAR_LABEL));
-      avatar_->SetAccessibleName(
-          l10n_util::GetStringUTF16(IDS_GENERIC_USER_AVATAR_LABEL));
-    }
-    avatar_->set_id(VIEW_ID_AVATAR_BUTTON);
-    avatar_->Init();
-  }
+  if (ui::MaterialDesignController::IsNewerMaterialUi())
+    avatar_ = new AvatarToolbarButton(browser_->profile(), this);
 #endif  // !defined(OS_CHROMEOS)
 
-  app_menu_button_ = new AppMenuButton(this);
+  app_menu_button_ = new BrowserAppMenuButton(this);
   app_menu_button_->EnableCanvasFlippingForRTLUI(true);
   app_menu_button_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_APP));
@@ -292,7 +275,7 @@ bool ToolbarView::IsAppMenuFocused() {
 
 #if defined(OS_CHROMEOS)
 void ToolbarView::ShowIntentPickerBubble(
-    const std::vector<IntentPickerBubbleView::AppInfo>& app_info,
+    std::vector<IntentPickerBubbleView::AppInfo> app_info,
     IntentPickerResponse callback) {
   IntentPickerView* intent_picker_view = location_bar()->intent_picker_view();
   if (intent_picker_view) {
@@ -302,8 +285,8 @@ void ToolbarView::ShowIntentPickerBubble(
     }
 
     views::Widget* bubble_widget = IntentPickerBubbleView::ShowBubble(
-        intent_picker_view, GetWebContents(), app_info,
-        false /* disable_stay_in_chrome */, callback);
+        intent_picker_view, GetWebContents(), std::move(app_info),
+        false /* disable_stay_in_chrome */, std::move(callback));
     if (bubble_widget && intent_picker_view)
       intent_picker_view->OnBubbleWidgetCreated(bubble_widget);
   }
@@ -698,13 +681,21 @@ void ToolbarView::UpdateSeverity(AppMenuIconController::IconType type,
   }
 }
 
-// BrowserViewButtonProvider:
+// ToolbarButtonProvider:
 BrowserActionsContainer* ToolbarView::GetBrowserActionsContainer() {
   return browser_actions_;
 }
 
-views::MenuButton* ToolbarView::GetAppMenuButton() {
+AppMenuButton* ToolbarView::GetAppMenuButton() {
   return app_menu_button_;
+}
+
+void ToolbarView::FocusToolbar() {
+  SetPaneFocus(nullptr);
+}
+
+views::AccessiblePaneView* ToolbarView::GetAsAccessiblePaneView() {
+  return this;
 }
 
 gfx::Size ToolbarView::GetSizeInternal(
@@ -754,10 +745,10 @@ void ToolbarView::LoadImages() {
   const SkColor disabled_color =
       tp->GetColor(ThemeProperties::COLOR_TOOLBAR_BUTTON_ICON_INACTIVE);
 
+  browser_actions_->SetSeparatorColor(normal_color);
+
   const bool is_touch =
       ui::MaterialDesignController::IsTouchOptimizedUiEnabled();
-  // TODO(pbos): Move these constants to LayoutProvider or LayoutConstants.
-  const int icon_size = is_touch ? 24 : 16;
 
   const gfx::VectorIcon& back_image =
       is_touch ? kBackArrowTouchIcon : vector_icons::kBackArrowIcon;
@@ -778,13 +769,11 @@ void ToolbarView::LoadImages() {
   home_->SetImage(views::Button::STATE_NORMAL,
                   gfx::CreateVectorIcon(home_image, normal_color));
 
-  if (avatar_) {
-    // TODO(pbos): Account for incognito by either changing the icon and
-    // effectively disabling the menu or by not showing it at all in incognito.
-    avatar_->SetImage(
-        views::Button::STATE_NORMAL,
-        gfx::CreateVectorIcon(kUserAccountAvatarIcon, icon_size, normal_color));
-  }
+#if !defined(OS_CHROMEOS)
+  if (avatar_)
+    avatar_->UpdateIcon();
+#endif  // !defined(OS_CHROMEOS)
+
   app_menu_button_->UpdateIcon(false);
 
   const SkColor ink_drop_color = color_utils::BlendTowardOppositeLuma(

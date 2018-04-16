@@ -90,7 +90,6 @@
 #include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
-#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/ssl/ssl_info.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/test/cert_test_util.h"
@@ -271,6 +270,18 @@ class FailingProxyResolverFactory : public ProxyResolverFactory {
                           std::unique_ptr<Request>* request) override {
     return ERR_PAC_SCRIPT_FAILED;
   }
+};
+
+class TestSSLConfigService : public SSLConfigService {
+ public:
+  explicit TestSSLConfigService(const SSLConfig& config) : config_(config) {}
+
+  void GetSSLConfig(SSLConfig* config) override { *config = config_; }
+
+ private:
+  ~TestSSLConfigService() override = default;
+
+  SSLConfig config_;
 };
 
 }  // namespace
@@ -683,6 +694,16 @@ bool CheckNTLMServerAuth(const AuthChallengeInfo* auth_challenge) {
     return false;
   EXPECT_FALSE(auth_challenge->is_proxy);
   EXPECT_EQ("https://server", auth_challenge->challenger.Serialize());
+  EXPECT_EQ(std::string(), auth_challenge->realm);
+  EXPECT_EQ(kNtlmAuthScheme, auth_challenge->scheme);
+  return true;
+}
+
+bool CheckNTLMProxyAuth(const AuthChallengeInfo* auth_challenge) {
+  if (!auth_challenge)
+    return false;
+  EXPECT_TRUE(auth_challenge->is_proxy);
+  EXPECT_EQ("http://server", auth_challenge->challenger.Serialize());
   EXPECT_EQ(std::string(), auth_challenge->realm);
   EXPECT_EQ(kNtlmAuthScheme, auth_challenge->scheme);
   return true;
@@ -6868,6 +6889,163 @@ TEST_F(HttpNetworkTransactionTest, NTLMOverHttp2) {
   EXPECT_TRUE(data1.AllReadDataConsumed());
   EXPECT_TRUE(data1.AllWriteDataConsumed());
 }
+
+// Test that, if we have an NTLM proxy and the origin resets the connection, we
+// do no retry forever checking for TLS version interference. This is a
+// regression test for https://crbug.com/823387.
+TEST_F(HttpNetworkTransactionTest, NTLMProxyTLSHandshakeReset) {
+  // The NTLM test data expects the proxy to be named 'server'. The origin is
+  // https://origin/.
+  session_deps_.proxy_resolution_service =
+      ProxyResolutionService::CreateFixedFromPacResult(
+          "PROXY server", TRAFFIC_ANNOTATION_FOR_TESTS);
+
+  SSLConfig config;
+  config.version_max = SSL_PROTOCOL_VERSION_TLS1_3;
+  session_deps_.ssl_config_service =
+      base::MakeRefCounted<TestSSLConfigService>(config);
+
+  HttpRequestInfo request;
+  request.method = "GET";
+  request.url = GURL("https://origin/");
+  request.traffic_annotation =
+      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
+
+  // Ensure load is not disrupted by flags which suppress behaviour specific
+  // to other auth schemes.
+  request.load_flags = LOAD_DO_NOT_USE_EMBEDDED_IDENTITY;
+
+  HttpAuthHandlerNTLM::ScopedProcSetter proc_setter(
+      MockGetMSTime, MockGenerateRandom, MockGetHostName);
+  std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
+
+  // Generate the NTLM messages based on known test data.
+  std::string negotiate_msg;
+  std::string challenge_msg;
+  std::string authenticate_msg;
+  base::Base64Encode(
+      base::StringPiece(
+          reinterpret_cast<const char*>(ntlm::test::kExpectedNegotiateMsg),
+          arraysize(ntlm::test::kExpectedNegotiateMsg)),
+      &negotiate_msg);
+  base::Base64Encode(
+      base::StringPiece(
+          reinterpret_cast<const char*>(ntlm::test::kChallengeMsgFromSpecV2),
+          arraysize(ntlm::test::kChallengeMsgFromSpecV2)),
+      &challenge_msg);
+  base::Base64Encode(
+      base::StringPiece(
+          reinterpret_cast<const char*>(
+              ntlm::test::kExpectedAuthenticateMsgEmptyChannelBindingsV2),
+          arraysize(
+              ntlm::test::kExpectedAuthenticateMsgEmptyChannelBindingsV2)),
+      &authenticate_msg);
+
+  MockWrite data_writes[] = {
+      // The initial CONNECT request.
+      MockWrite("CONNECT origin:443 HTTP/1.1\r\n"
+                "Host: origin:443\r\n"
+                "Proxy-Connection: keep-alive\r\n\r\n"),
+
+      // After restarting with an identity.
+      MockWrite("CONNECT origin:443 HTTP/1.1\r\n"
+                "Host: origin:443\r\n"
+                "Proxy-Connection: keep-alive\r\n"
+                "Proxy-Authorization: NTLM "),
+      MockWrite(negotiate_msg.c_str()),
+      // End headers.
+      MockWrite("\r\n\r\n"),
+
+      // The second restart.
+      MockWrite("CONNECT origin:443 HTTP/1.1\r\n"
+                "Host: origin:443\r\n"
+                "Proxy-Connection: keep-alive\r\n"
+                "Proxy-Authorization: NTLM "),
+      MockWrite(authenticate_msg.c_str()),
+      // End headers.
+      MockWrite("\r\n\r\n"),
+  };
+
+  MockRead data_reads[] = {
+      // The initial NTLM response.
+      MockRead("HTTP/1.1 407 Access Denied\r\n"
+               "Content-Length: 0\r\n"
+               "Proxy-Authenticate: NTLM\r\n\r\n"),
+
+      // The NTLM challenge message.
+      MockRead("HTTP/1.1 407 Access Denied\r\n"
+               "Content-Length: 0\r\n"
+               "Proxy-Authenticate: NTLM "),
+      MockRead(challenge_msg.c_str()),
+      // End headers.
+      MockRead("\r\n\r\n"),
+
+      // Finally the tunnel is established.
+      MockRead("HTTP/1.1 200 Connected\r\n\r\n"),
+  };
+
+  StaticSocketDataProvider data(data_reads, arraysize(data_reads), data_writes,
+                                arraysize(data_writes));
+  SSLSocketDataProvider data_ssl(ASYNC, ERR_CONNECTION_RESET);
+  StaticSocketDataProvider data2(data_reads, arraysize(data_reads), data_writes,
+                                 arraysize(data_writes));
+  SSLSocketDataProvider data_ssl2(ASYNC, ERR_CONNECTION_RESET);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+  session_deps_.socket_factory->AddSSLSocketDataProvider(&data_ssl);
+  session_deps_.socket_factory->AddSocketDataProvider(&data2);
+  session_deps_.socket_factory->AddSSLSocketDataProvider(&data_ssl2);
+
+  // Start the transaction. The proxy responds with an NTLM authentication
+  // request.
+  TestCompletionCallback callback;
+  HttpNetworkTransaction trans(DEFAULT_PRIORITY, session.get());
+  int rv = callback.GetResult(
+      trans.Start(&request, callback.callback(), NetLogWithSource()));
+
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_FALSE(trans.IsReadyToRestartForAuth());
+  const HttpResponseInfo* response = trans.GetResponseInfo();
+  ASSERT_TRUE(response);
+  EXPECT_TRUE(CheckNTLMProxyAuth(response->auth_challenge.get()));
+
+  // Configure credentials. The proxy responds with the challenge message.
+  rv = callback.GetResult(trans.RestartWithAuth(
+      AuthCredentials(ntlm::test::kDomainUserCombined, ntlm::test::kPassword),
+      callback.callback()));
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(trans.IsReadyToRestartForAuth());
+  response = trans.GetResponseInfo();
+  ASSERT_TRUE(response);
+  EXPECT_FALSE(response->auth_challenge);
+
+  // Restart once more. The tunnel will be established and the the SSL handshake
+  // will reset. The TLS 1.3 version interference probe will then kick in and
+  // restart the process. The proxy responds with another NTLM authentiation
+  // request, but we don't need to provide credentials as the cached ones work/
+  rv = callback.GetResult(
+      trans.RestartWithAuth(AuthCredentials(), callback.callback()));
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(trans.IsReadyToRestartForAuth());
+  response = trans.GetResponseInfo();
+  ASSERT_TRUE(response);
+  EXPECT_FALSE(response->auth_challenge);
+
+  // The proxy responds with the NTLM challenge message.
+  rv = callback.GetResult(
+      trans.RestartWithAuth(AuthCredentials(), callback.callback()));
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(trans.IsReadyToRestartForAuth());
+  response = trans.GetResponseInfo();
+  ASSERT_TRUE(response);
+  EXPECT_FALSE(response->auth_challenge);
+
+  // Send the NTLM authenticate message. The tunnel is established and the
+  // handshake resets again. We should not retry again.
+  rv = callback.GetResult(
+      trans.RestartWithAuth(AuthCredentials(), callback.callback()));
+  EXPECT_THAT(rv, IsError(ERR_CONNECTION_RESET));
+}
+
 #endif  // NTLM_PORTABLE
 
 // Test reading a server response which has only headers, and no body.
@@ -16125,342 +16303,6 @@ TEST_F(HttpNetworkTransactionTest, GetFullRequestHeadersIncludesExtraHeader) {
   EXPECT_EQ("bar", foo);
 }
 
-namespace {
-
-// Fake HttpStream that simply records calls to SetPriority().
-class FakeStream : public HttpStream,
-                   public base::SupportsWeakPtr<FakeStream> {
- public:
-  explicit FakeStream(RequestPriority priority) : priority_(priority) {}
-  ~FakeStream() override = default;
-
-  RequestPriority priority() const { return priority_; }
-
-  int InitializeStream(const HttpRequestInfo* request_info,
-                       bool can_send_early,
-                       RequestPriority priority,
-                       const NetLogWithSource& net_log,
-                       CompletionOnceCallback callback) override {
-    return ERR_IO_PENDING;
-  }
-
-  int SendRequest(const HttpRequestHeaders& request_headers,
-                  HttpResponseInfo* response,
-                  CompletionOnceCallback callback) override {
-    ADD_FAILURE();
-    return ERR_UNEXPECTED;
-  }
-
-  int ReadResponseHeaders(CompletionOnceCallback callback) override {
-    ADD_FAILURE();
-    return ERR_UNEXPECTED;
-  }
-
-  int ReadResponseBody(IOBuffer* buf,
-                       int buf_len,
-                       CompletionOnceCallback callback) override {
-    ADD_FAILURE();
-    return ERR_UNEXPECTED;
-  }
-
-  void Close(bool not_reusable) override {}
-
-  bool IsResponseBodyComplete() const override {
-    ADD_FAILURE();
-    return false;
-  }
-
-  bool IsConnectionReused() const override {
-    ADD_FAILURE();
-    return false;
-  }
-
-  void SetConnectionReused() override { ADD_FAILURE(); }
-
-  bool CanReuseConnection() const override { return false; }
-
-  int64_t GetTotalReceivedBytes() const override {
-    ADD_FAILURE();
-    return 0;
-  }
-
-  int64_t GetTotalSentBytes() const override {
-    ADD_FAILURE();
-    return 0;
-  }
-
-  bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override {
-    ADD_FAILURE();
-    return false;
-  }
-
-  bool GetAlternativeService(
-      AlternativeService* alternative_service) const override {
-    ADD_FAILURE();
-    return false;
-  }
-
-  void GetSSLInfo(SSLInfo* ssl_info) override { ADD_FAILURE(); }
-
-  void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override {
-    ADD_FAILURE();
-  }
-
-  bool GetRemoteEndpoint(IPEndPoint* endpoint) override { return false; }
-
-  Error GetTokenBindingSignature(crypto::ECPrivateKey* key,
-                                 TokenBindingType tb_type,
-                                 std::vector<uint8_t>* out) override {
-    ADD_FAILURE();
-    return ERR_NOT_IMPLEMENTED;
-  }
-
-  void Drain(HttpNetworkSession* session) override { ADD_FAILURE(); }
-
-  void PopulateNetErrorDetails(NetErrorDetails* details) override { return; }
-
-  void SetPriority(RequestPriority priority) override { priority_ = priority; }
-
-  HttpStream* RenewStreamForAuth() override { return NULL; }
-
-  void SetRequestHeadersCallback(RequestHeadersCallback callback) override {}
-
- private:
-  RequestPriority priority_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeStream);
-};
-
-// Fake HttpStreamRequest that simply records calls to SetPriority()
-// and vends FakeStreams with its current priority.
-class FakeStreamRequest : public HttpStreamRequest,
-                          public base::SupportsWeakPtr<FakeStreamRequest> {
- public:
-  FakeStreamRequest(RequestPriority priority,
-                    HttpStreamRequest::Delegate* delegate)
-      : priority_(priority),
-        delegate_(delegate),
-        websocket_stream_create_helper_(NULL) {}
-
-  FakeStreamRequest(RequestPriority priority,
-                    HttpStreamRequest::Delegate* delegate,
-                    WebSocketHandshakeStreamBase::CreateHelper* create_helper)
-      : priority_(priority),
-        delegate_(delegate),
-        websocket_stream_create_helper_(create_helper) {}
-
-  ~FakeStreamRequest() override = default;
-
-  RequestPriority priority() const { return priority_; }
-
-  const WebSocketHandshakeStreamBase::CreateHelper*
-  websocket_stream_create_helper() const {
-    return websocket_stream_create_helper_;
-  }
-
-  // Create a new FakeStream and pass it to the request's
-  // delegate. Returns a weak pointer to the FakeStream.
-  base::WeakPtr<FakeStream> FinishStreamRequest() {
-    auto fake_stream = std::make_unique<FakeStream>(priority_);
-    // Do this before calling OnStreamReady() as OnStreamReady() may
-    // immediately delete |fake_stream|.
-    base::WeakPtr<FakeStream> weak_stream = fake_stream->AsWeakPtr();
-    delegate_->OnStreamReady(SSLConfig(), ProxyInfo(), std::move(fake_stream));
-    return weak_stream;
-  }
-
-  int RestartTunnelWithProxyAuth() override {
-    ADD_FAILURE();
-    return ERR_UNEXPECTED;
-  }
-
-  LoadState GetLoadState() const override {
-    ADD_FAILURE();
-    return LoadState();
-  }
-
-  void SetPriority(RequestPriority priority) override { priority_ = priority; }
-
-  bool was_alpn_negotiated() const override { return false; }
-
-  NextProto negotiated_protocol() const override { return kProtoUnknown; }
-
-  bool using_spdy() const override { return false; }
-
-  const ConnectionAttempts& connection_attempts() const override {
-    static ConnectionAttempts no_attempts;
-    return no_attempts;
-  }
-
- private:
-  RequestPriority priority_;
-  HttpStreamRequest::Delegate* const delegate_;
-  WebSocketHandshakeStreamBase::CreateHelper* websocket_stream_create_helper_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeStreamRequest);
-};
-
-// Fake HttpStreamFactory that vends FakeStreamRequests.
-class FakeStreamFactory : public HttpStreamFactory {
- public:
-  FakeStreamFactory() = default;
-  ~FakeStreamFactory() override = default;
-
-  // Returns a WeakPtr<> to the last HttpStreamRequest returned by
-  // RequestStream() (which may be NULL if it was destroyed already).
-  base::WeakPtr<FakeStreamRequest> last_stream_request() {
-    return last_stream_request_;
-  }
-
-  std::unique_ptr<HttpStreamRequest> RequestStream(
-      const HttpRequestInfo& info,
-      RequestPriority priority,
-      const SSLConfig& server_ssl_config,
-      const SSLConfig& proxy_ssl_config,
-      HttpStreamRequest::Delegate* delegate,
-      bool enable_ip_based_pooling,
-      bool enable_alternative_services,
-      const NetLogWithSource& net_log) override {
-    auto fake_request = std::make_unique<FakeStreamRequest>(priority, delegate);
-    last_stream_request_ = fake_request->AsWeakPtr();
-    return std::move(fake_request);
-  }
-
-  std::unique_ptr<HttpStreamRequest> RequestBidirectionalStreamImpl(
-      const HttpRequestInfo& info,
-      RequestPriority priority,
-      const SSLConfig& server_ssl_config,
-      const SSLConfig& proxy_ssl_config,
-      HttpStreamRequest::Delegate* delegate,
-      bool enable_ip_based_pooling,
-      bool enable_alternative_services,
-      const NetLogWithSource& net_log) override {
-    NOTREACHED();
-    return nullptr;
-  }
-
-  std::unique_ptr<HttpStreamRequest> RequestWebSocketHandshakeStream(
-      const HttpRequestInfo& info,
-      RequestPriority priority,
-      const SSLConfig& server_ssl_config,
-      const SSLConfig& proxy_ssl_config,
-      HttpStreamRequest::Delegate* delegate,
-      WebSocketHandshakeStreamBase::CreateHelper* create_helper,
-      bool enable_ip_based_pooling,
-      bool enable_alternative_services,
-      const NetLogWithSource& net_log) override {
-    auto fake_request =
-        std::make_unique<FakeStreamRequest>(priority, delegate, create_helper);
-    last_stream_request_ = fake_request->AsWeakPtr();
-    return std::move(fake_request);
-  }
-
-  void PreconnectStreams(int num_streams,
-                         const HttpRequestInfo& info) override {
-    ADD_FAILURE();
-  }
-
-  const HostMappingRules* GetHostMappingRules() const override {
-    ADD_FAILURE();
-    return NULL;
-  }
-
-  void DumpMemoryStats(base::trace_event::ProcessMemoryDump* pmd,
-                       const std::string& parent_absolute_name) const override {
-    ADD_FAILURE();
-  }
-
- private:
-  base::WeakPtr<FakeStreamRequest> last_stream_request_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeStreamFactory);
-};
-
-}  // namespace
-
-// Make sure that HttpNetworkTransaction passes on its priority to its
-// stream request on start.
-TEST_F(HttpNetworkTransactionTest, SetStreamRequestPriorityOnStart) {
-  std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
-  HttpNetworkSessionPeer peer(session.get());
-  FakeStreamFactory* fake_factory = new FakeStreamFactory();
-  peer.SetHttpStreamFactory(std::unique_ptr<HttpStreamFactory>(fake_factory));
-
-  HttpRequestInfo request;
-  HttpNetworkTransaction trans(LOW, session.get());
-
-  request.traffic_annotation =
-      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
-
-  ASSERT_FALSE(fake_factory->last_stream_request());
-
-  TestCompletionCallback callback;
-  EXPECT_EQ(ERR_IO_PENDING,
-            trans.Start(&request, callback.callback(), NetLogWithSource()));
-
-  base::WeakPtr<FakeStreamRequest> fake_request =
-      fake_factory->last_stream_request();
-  ASSERT_TRUE(fake_request);
-  EXPECT_EQ(LOW, fake_request->priority());
-}
-
-// Make sure that HttpNetworkTransaction passes on its priority
-// updates to its stream request.
-TEST_F(HttpNetworkTransactionTest, SetStreamRequestPriority) {
-  std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
-  HttpNetworkSessionPeer peer(session.get());
-  FakeStreamFactory* fake_factory = new FakeStreamFactory();
-  peer.SetHttpStreamFactory(std::unique_ptr<HttpStreamFactory>(fake_factory));
-
-  HttpRequestInfo request;
-  HttpNetworkTransaction trans(LOW, session.get());
-
-  request.traffic_annotation =
-      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
-
-  TestCompletionCallback callback;
-  EXPECT_EQ(ERR_IO_PENDING,
-            trans.Start(&request, callback.callback(), NetLogWithSource()));
-
-  base::WeakPtr<FakeStreamRequest> fake_request =
-      fake_factory->last_stream_request();
-  ASSERT_TRUE(fake_request);
-  EXPECT_EQ(LOW, fake_request->priority());
-
-  trans.SetPriority(LOWEST);
-  ASSERT_TRUE(fake_request);
-  EXPECT_EQ(LOWEST, fake_request->priority());
-}
-
-// Make sure that HttpNetworkTransaction passes on its priority
-// updates to its stream.
-TEST_F(HttpNetworkTransactionTest, SetStreamPriority) {
-  std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
-  HttpNetworkSessionPeer peer(session.get());
-  FakeStreamFactory* fake_factory = new FakeStreamFactory();
-  peer.SetHttpStreamFactory(std::unique_ptr<HttpStreamFactory>(fake_factory));
-
-  HttpRequestInfo request;
-  HttpNetworkTransaction trans(LOW, session.get());
-
-  request.traffic_annotation =
-      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
-
-  TestCompletionCallback callback;
-  EXPECT_EQ(ERR_IO_PENDING,
-            trans.Start(&request, callback.callback(), NetLogWithSource()));
-
-  base::WeakPtr<FakeStreamRequest> fake_request =
-      fake_factory->last_stream_request();
-  ASSERT_TRUE(fake_request);
-  base::WeakPtr<FakeStream> fake_stream = fake_request->FinishStreamRequest();
-  ASSERT_TRUE(fake_stream);
-  EXPECT_EQ(LOW, fake_stream->priority());
-
-  trans.SetPriority(LOWEST);
-  EXPECT_EQ(LOWEST, fake_stream->priority());
-}
-
 // Tests that when a used socket is returned to the SSL socket pool, it's closed
 // if the transport socket pool is stalled on the global socket limit.
 TEST_F(HttpNetworkTransactionTest, CloseSSLSocketOnIdleForHttpRequest) {
@@ -17124,35 +16966,61 @@ void AddWebSocketHeaders(HttpRequestHeaders* headers) {
 }  // namespace
 
 TEST_F(HttpNetworkTransactionTest, CreateWebSocketHandshakeStream) {
-  std::string test_cases[] = {"ws://www.example.org/",
-                              "wss://www.example.org/"};
-  for (size_t i = 0; i < arraysize(test_cases); ++i) {
-    std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
-    HttpNetworkSessionPeer peer(session.get());
-    FakeStreamFactory* fake_factory = new FakeStreamFactory();
-    peer.SetHttpStreamFactory(std::unique_ptr<HttpStreamFactory>(fake_factory));
+  for (bool secure : {true, false}) {
+    MockWrite data_writes[] = {
+        MockWrite("GET / HTTP/1.1\r\n"
+                  "Host: www.example.org\r\n"
+                  "Connection: Upgrade\r\n"
+                  "Upgrade: websocket\r\n"
+                  "Origin: http://www.example.org\r\n"
+                  "Sec-WebSocket-Version: 13\r\n"
+                  "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                  "Sec-WebSocket-Extensions: permessage-deflate; "
+                  "client_max_window_bits\r\n\r\n")};
+
+    MockRead data_reads[] = {
+        MockRead("HTTP/1.1 101 Switching Protocols\r\n"
+                 "Upgrade: websocket\r\n"
+                 "Connection: Upgrade\r\n"
+                 "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n")};
+
+    StaticSocketDataProvider data(data_reads, arraysize(data_reads),
+                                  data_writes, arraysize(data_writes));
+    session_deps_.socket_factory->AddSocketDataProvider(&data);
+    SSLSocketDataProvider ssl(ASYNC, OK);
+    if (secure)
+      session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
     HttpRequestInfo request;
     request.method = "GET";
-    request.url = GURL(test_cases[i]);
+    request.url =
+        GURL(secure ? "ws://www.example.org/" : "wss://www.example.org/");
+    AddWebSocketHeaders(&request.extra_headers);
     request.traffic_annotation =
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
-    TestWebSocketHandshakeStreamCreateHelper websocket_stream_create_helper;
+    TestWebSocketHandshakeStreamCreateHelper
+        websocket_handshake_stream_create_helper;
 
+    std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
     HttpNetworkTransaction trans(LOW, session.get());
     trans.SetWebSocketHandshakeStreamCreateHelper(
-        &websocket_stream_create_helper);
+        &websocket_handshake_stream_create_helper);
 
     TestCompletionCallback callback;
-    EXPECT_EQ(ERR_IO_PENDING,
-              trans.Start(&request, callback.callback(), NetLogWithSource()));
+    int rv = trans.Start(&request, callback.callback(), NetLogWithSource());
+    EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
 
-    base::WeakPtr<FakeStreamRequest> fake_request =
-        fake_factory->last_stream_request();
-    ASSERT_TRUE(fake_request);
-    EXPECT_EQ(&websocket_stream_create_helper,
-              fake_request->websocket_stream_create_helper());
+    const HttpStreamRequest* stream_request = trans.stream_request_.get();
+    ASSERT_TRUE(stream_request);
+    EXPECT_EQ(&websocket_handshake_stream_create_helper,
+              stream_request->websocket_handshake_stream_create_helper());
+
+    rv = callback.WaitForResult();
+    EXPECT_THAT(rv, IsOk());
+
+    EXPECT_TRUE(data.AllReadDataConsumed());
+    EXPECT_TRUE(data.AllWriteDataConsumed());
   }
 }
 

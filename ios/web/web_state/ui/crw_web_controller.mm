@@ -2012,7 +2012,11 @@ registerLoadRequestForURL:(const GURL&)requestURL
   // nothing if the document has already loaded.
   if (_loadPhase == web::PAGE_LOADED)
     return;
-  [self loadCompleteWithSuccess:YES forNavigation:navigation];
+
+  web::NavigationContextImpl* context =
+      [_navigationStates contextForNavigation:navigation];
+  BOOL success = !context || !context->GetError();
+  [self loadCompleteWithSuccess:success forNavigation:navigation];
 }
 
 - (void)loadCompleteWithSuccess:(BOOL)loadSuccess
@@ -2178,10 +2182,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
 
 - (CGFloat)nativeContentFooterHeightForContainerView:
     (CRWWebControllerContainerView*)containerView {
-  if (![_delegate respondsToSelector:@selector
-                  (nativeContentFooterHeightForWebController:)])
-    return 0.0f;
-  return [_delegate nativeContentFooterHeightForWebController:self];
+  return [_nativeProvider nativeContentFooterHeightForWebState:self.webState];
 }
 
 #pragma mark -
@@ -2916,6 +2917,14 @@ registerLoadRequestForURL:(const GURL&)requestURL
        error.code == web::kWebKitErrorCannotShowUrl))
     return;
 
+  // If URL is blocked due to Restriction, do not take any further action as
+  // WKWebView will show a built-in error.
+  if (web::GetWebClient()->IsSlimNavigationManagerEnabled() &&
+      [error.domain isEqual:base::SysUTF8ToNSString(web::kWebKitErrorDomain)] &&
+      error.code == web::kWebKitErrorUrlBlockedByContentFilter) {
+    return;
+  }
+
   if (error.code == NSURLErrorCancelled) {
     [self handleCancelledError:error forNavigation:navigation];
     // NSURLErrorCancelled errors that aren't handled by aborting the load will
@@ -3640,10 +3649,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
 }
 
 - (CGFloat)headerHeight {
-  if (![_delegate respondsToSelector:@selector
-                  (nativeContentHeaderHeightForWebController:)])
-    return 0.0f;
-  return [_delegate nativeContentHeaderHeightForWebController:self];
+  return [_nativeProvider nativeContentHeaderHeightForWebState:self.webState];
 }
 
 - (void)updateSSLStatusForCurrentNavigationItem {
@@ -3905,6 +3911,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
     return;
 
   _webStateImpl->CancelDialogs();
+  self.navigationManagerImpl->DetachFromWebView();
 
   [self abortLoad];
   [_webView removeFromSuperview];
@@ -4281,7 +4288,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
     if (!allowNavigation && navigationResponse.isForMainFrame) {
       [_pendingNavigationInfo setCancelled:YES];
     }
-  } else {
+  } else if (responseURL.SchemeIsHTTPOrHTTPS()) {
     std::string contentDisposition;
     if (HTTPHeaders) {
       HTTPHeaders->GetNormalizedHeader("content-disposition",
@@ -4306,19 +4313,16 @@ registerLoadRequestForURL:(const GURL&)requestURL
     if (isPassKit ||
         base::FeatureList::IsEnabled(web::features::kNewFileDownload)) {
       // Discard the pending item to ensure that the current URL is not
-      // different from what is displayed on the view. If there is no previous
-      // committed URL, which can happen when a link is opened in a new tab via
-      // a context menu or window.open, the pending entry should not be
-      // discarded so that the NavigationManager is never empty. Also, URLs
-      // loaded in a native view should be excluded to avoid an ugly animation
-      // where the web view is inserted and quickly removed.
+      // different from what is displayed on the view. URL loaded in a native
+      // view should be excluded to avoid an ugly animation where the web view
+      // is inserted and quickly removed.
       GURL lastCommittedURL = self.webState->GetLastCommittedURL();
-      BOOL isFirstLoad = lastCommittedURL.is_empty();
       BOOL previousItemWasLoadedInNativeView =
           [self shouldLoadURLInNativeView:lastCommittedURL];
-      if (!isFirstLoad && !previousItemWasLoadedInNativeView)
+      if (!previousItemWasLoadedInNativeView)
         self.navigationManagerImpl->DiscardNonCommittedItems();
     }
+    _webStateImpl->SetIsLoading(false);
   }
 
   handler(allowNavigation ? WKNavigationResponsePolicyAllow
@@ -4697,7 +4701,7 @@ registerLoadRequestForURL:(const GURL&)requestURL
         // of session restoration. It is now safe to update the navigation
         // item URL to the original app-specific URL.
         item->SetURL(originalURL);
-      } else if (item->GetURL() != originalURL) {
+      } else if (item->GetVirtualURL() != originalURL) {
         // The |didFinishNavigation| callback can arrive after another
         // navigation has started. Abort in this case.
         return;
@@ -4731,29 +4735,34 @@ registerLoadRequestForURL:(const GURL&)requestURL
       }
     }
 
-    // Handle state transitions for retrying a previously failed navigation.
-    switch (errorRetryState) {
-      case web::ErrorRetryState::kDisplayingErrorForFailedNavigation:
-        DCHECK(context->GetPageTransition() & ui::PAGE_TRANSITION_FORWARD_BACK);
-        if (item->GetURL() == webViewURL) {
-          // Shortcut: if WebView already has the original URL (can happen when
-          // WebKit renders page from cache after after repeated back/forward
-          // navigations), skip kNavigatingToFailedNavigationItem state and just
-          // reload the page.
+    // Handle state transitions for retrying a previously failed navigation to a
+    // web URL. App-specific URLs should never fail to load so should not change
+    // the error retry state.
+    if (!web::GetWebClient()->IsAppSpecificURL(item->GetURL())) {
+      switch (errorRetryState) {
+        case web::ErrorRetryState::kDisplayingErrorForFailedNavigation:
+          DCHECK(context->GetPageTransition() &
+                 ui::PAGE_TRANSITION_FORWARD_BACK);
+          if (item->GetURL() == webViewURL) {
+            // Shortcut: if WebView already has the original URL (can happen
+            // when WebKit renders page from cache after after repeated
+            // back/forward navigations), skip kNavigatingToFailedNavigationItem
+            // state and just reload the page.
+            [self handleRetryFailedNavigationItem:item];
+          } else {
+            [self handleNavigationToFailedNavigationItem:item];
+          }
+          break;
+        case web::ErrorRetryState::kNavigatingToFailedNavigationItem:
           [self handleRetryFailedNavigationItem:item];
-        } else {
-          [self handleNavigationToFailedNavigationItem:item];
-        }
-        break;
-      case web::ErrorRetryState::kNavigatingToFailedNavigationItem:
-        [self handleRetryFailedNavigationItem:item];
-        break;
-      case web::ErrorRetryState::kRetryFailedNavigationItem:
-        item->SetErrorRetryState(web::ErrorRetryState::kNoNavigationError);
-        break;
-      case web::ErrorRetryState::kNoNavigationError:
-      case web::ErrorRetryState::kReadyToDisplayErrorForFailedNavigation:
-        break;
+          break;
+        case web::ErrorRetryState::kRetryFailedNavigationItem:
+          item->SetErrorRetryState(web::ErrorRetryState::kNoNavigationError);
+          break;
+        case web::ErrorRetryState::kNoNavigationError:
+        case web::ErrorRetryState::kReadyToDisplayErrorForFailedNavigation:
+          break;
+      }
     }
   }
 

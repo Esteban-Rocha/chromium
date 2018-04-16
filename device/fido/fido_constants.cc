@@ -6,8 +6,6 @@
 
 namespace device {
 
-const char kU2fCredentialType[] = "public-key";
-
 const std::array<uint8_t, 32> kBogusAppParam = {
     0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
     0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
@@ -51,10 +49,14 @@ const std::array<uint8_t, 6> kU2fVersionResponse = {'U', '2', 'F',
                                                     '_', 'V', '2'};
 
 const base::TimeDelta kDeviceTimeout = base::TimeDelta::FromSeconds(3);
+const base::TimeDelta kHidKeepAliveDelay =
+    base::TimeDelta::FromMilliseconds(100);
 
 const char kFormatKey[] = "fmt";
 const char kAttestationStatementKey[] = "attStmt";
 const char kAuthDataKey[] = "authData";
 const char kNoneAttestationValue[] = "none";
+
+const char kPublicKey[] = "public-key";
 
 }  // namespace device

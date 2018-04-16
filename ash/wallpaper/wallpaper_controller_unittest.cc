@@ -19,6 +19,7 @@
 #include "ash/wallpaper/wallpaper_controller_observer.h"
 #include "ash/wallpaper/wallpaper_view.h"
 #include "ash/wallpaper/wallpaper_widget_controller.h"
+#include "ash/wm/window_state.h"
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
@@ -209,6 +210,8 @@ class TestWallpaperObserver : public mojom::WallpaperObserver {
       run_loop_->Quit();
   }
 
+  void OnWallpaperBlurChanged(bool blurred) override {}
+
   int wallpaper_colors_changed_count() const {
     return wallpaper_colors_changed_count_;
   }
@@ -225,8 +228,6 @@ class TestWallpaperObserver : public mojom::WallpaperObserver {
 class TestWallpaperControllerObserver : public WallpaperControllerObserver {
  public:
   TestWallpaperControllerObserver() = default;
-
-  void OnWallpaperDataChanged() override {}
 
   void OnWallpaperBlurChanged() override { ++wallpaper_blur_changed_count_; }
 
@@ -1492,18 +1493,26 @@ TEST_F(WallpaperControllerTest, SigninWallpaperIsKeptAfterRotation) {
       {wallpaper_dir_->GetPath().Append(kDefaultSmallWallpaperName)}));
 }
 
-// If clients call |ShowUserWallpaper| twice with the same account id, the
-// latter request should be prevented (See crbug.com/158383).
-TEST_F(WallpaperControllerTest, PreventReloadingSameWallpaper) {
+TEST_F(WallpaperControllerTest, ReloadWallpaper) {
   CreateAndSaveWallpapers(account_id_1);
+
+  // If |ShowUserWallpaper| is called twice with the same account id and display
+  // size, the second request shouldn't trigger a wallpaper reload
+  // (crbug.com/158383).
+  UpdateDisplay("800x600");
+  RunAllTasksUntilIdle();
   controller_->ShowUserWallpaper(InitializeUser(account_id_1));
   RunAllTasksUntilIdle();
   EXPECT_EQ(1, GetWallpaperCount());
 
   controller_->ShowUserWallpaper(InitializeUser(account_id_1));
   RunAllTasksUntilIdle();
-  // No wallpaper is set for the second |ShowUserWallpaper| request.
   EXPECT_EQ(0, GetWallpaperCount());
+
+  // Rotating the display should trigger a wallpaper reload.
+  UpdateDisplay("800x600/r");
+  RunAllTasksUntilIdle();
+  EXPECT_EQ(1, GetWallpaperCount());
 }
 
 TEST_F(WallpaperControllerTest, UpdateCustomWallpaperLayout) {
@@ -1691,49 +1700,6 @@ TEST_F(WallpaperControllerTest, WallpaperBlur) {
   controller_->RemoveObserver(&observer);
 }
 
-TEST_F(WallpaperControllerTest, WallpaperBlurDisabledByPolicy) {
-  // Simulate DEVICE policy wallpaper.
-  const WallpaperInfo info("", WALLPAPER_LAYOUT_CENTER, DEVICE,
-                           base::Time::Now());
-  const gfx::ImageSkia image = CreateImage(10, 10, kWallpaperColor);
-  controller_->ShowWallpaperImage(image, info, false /*preview_mode=*/);
-  ASSERT_FALSE(controller_->IsBlurEnabled());
-  ASSERT_FALSE(controller_->IsWallpaperBlurred());
-
-  TestWallpaperControllerObserver observer;
-  controller_->AddObserver(&observer);
-
-  SetSessionState(SessionState::ACTIVE);
-  EXPECT_FALSE(controller_->IsWallpaperBlurred());
-  EXPECT_EQ(0, observer.wallpaper_blur_changed_count_);
-
-  SetSessionState(SessionState::LOCKED);
-  EXPECT_FALSE(controller_->IsWallpaperBlurred());
-  EXPECT_EQ(0, observer.wallpaper_blur_changed_count_);
-
-  SetSessionState(SessionState::LOGGED_IN_NOT_ACTIVE);
-  EXPECT_FALSE(controller_->IsWallpaperBlurred());
-  EXPECT_EQ(0, observer.wallpaper_blur_changed_count_);
-
-  SetSessionState(SessionState::LOGIN_SECONDARY);
-  EXPECT_FALSE(controller_->IsWallpaperBlurred());
-  EXPECT_EQ(0, observer.wallpaper_blur_changed_count_);
-
-  SetSessionState(SessionState::LOGIN_PRIMARY);
-  EXPECT_FALSE(controller_->IsWallpaperBlurred());
-  EXPECT_EQ(0, observer.wallpaper_blur_changed_count_);
-
-  SetSessionState(SessionState::OOBE);
-  EXPECT_FALSE(controller_->IsWallpaperBlurred());
-  EXPECT_EQ(0, observer.wallpaper_blur_changed_count_);
-
-  SetSessionState(SessionState::UNKNOWN);
-  EXPECT_FALSE(controller_->IsWallpaperBlurred());
-  EXPECT_EQ(0, observer.wallpaper_blur_changed_count_);
-
-  controller_->RemoveObserver(&observer);
-}
-
 TEST_F(WallpaperControllerTest, WallpaperBlurDuringLockScreenTransition) {
   ASSERT_TRUE(controller_->IsBlurEnabled());
   ASSERT_FALSE(controller_->IsWallpaperBlurred());
@@ -1767,6 +1733,9 @@ TEST_F(WallpaperControllerTest, OnlyShowDevicePolicyWallpaperOnLoginScreen) {
   RunAllTasksUntilIdle();
   EXPECT_EQ(1, GetWallpaperCount());
   EXPECT_TRUE(IsDevicePolicyWallpaper());
+  // Verify the device policy wallpaper shouldn't be blurred.
+  ASSERT_FALSE(controller_->IsBlurEnabled());
+  ASSERT_FALSE(controller_->IsWallpaperBlurred());
 
   // Verify the device policy wallpaper is replaced when session state is no
   // longer LOGIN_PRIMARY.
@@ -1873,6 +1842,11 @@ TEST_F(WallpaperControllerTest, ConfirmPreviewWallpaper) {
       account_id_1, &user_wallpaper_info, false /*is_ephemeral=*/));
   EXPECT_EQ(user_wallpaper_info, default_wallpaper_info);
 
+  // Simulate opening the wallpaper picker window.
+  std::unique_ptr<aura::Window> wallpaper_picker_window(
+      CreateTestWindow(gfx::Rect(0, 0, 100, 100)));
+  wm::GetWindowState(wallpaper_picker_window.get())->Activate();
+
   // Set a custom wallpaper for the user and enable preview. Verify that the
   // wallpaper is changed to the expected color.
   const WallpaperLayout layout = WALLPAPER_LAYOUT_CENTER;
@@ -1954,6 +1928,11 @@ TEST_F(WallpaperControllerTest, CancelPreviewWallpaper) {
       account_id_1, &user_wallpaper_info, false /*is_ephemeral=*/));
   EXPECT_EQ(user_wallpaper_info, default_wallpaper_info);
 
+  // Simulate opening the wallpaper picker window.
+  std::unique_ptr<aura::Window> wallpaper_picker_window(
+      CreateTestWindow(gfx::Rect(0, 0, 100, 100)));
+  wm::GetWindowState(wallpaper_picker_window.get())->Activate();
+
   // Set a custom wallpaper for the user and enable preview. Verify that the
   // wallpaper is changed to the expected color.
   const WallpaperLayout layout = WALLPAPER_LAYOUT_CENTER;
@@ -2023,6 +2002,11 @@ TEST_F(WallpaperControllerTest, WallpaperSyncedDuringPreview) {
   EXPECT_TRUE(controller_->GetUserWallpaperInfo(
       account_id_1, &user_wallpaper_info, false /*is_ephemeral=*/));
   EXPECT_EQ(user_wallpaper_info, default_wallpaper_info);
+
+  // Simulate opening the wallpaper picker window.
+  std::unique_ptr<aura::Window> wallpaper_picker_window(
+      CreateTestWindow(gfx::Rect(0, 0, 100, 100)));
+  wm::GetWindowState(wallpaper_picker_window.get())->Activate();
 
   // Set a custom wallpaper for the user and enable preview. Verify that the
   // wallpaper is changed to the expected color.

@@ -6,6 +6,7 @@
 
 #include "build/build_config.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/views/frame/app_menu_button.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
@@ -21,17 +22,15 @@ views::View* GetPageInfoAnchorView(Browser* browser, Anchor anchor) {
   if (views_mode_controller::IsViewsBrowserCocoa())
     return nullptr;
 #endif
-  if (!browser->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR))
-    return nullptr;  // Fall back to GetAnchorPoint().
-
   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
 
-  if (anchor == kLocationBar)
+  if (anchor == kLocationBar &&
+      browser->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR) &&
+      browser_view->GetLocationBarView()->visible()) {
     return browser_view->GetLocationBarView()->GetSecurityBubbleAnchorView();
-  if (anchor == kAppMenuButton)
-    return browser_view->button_provider()->GetAppMenuButton();
-  NOTREACHED();
-  return nullptr;
+  }
+  // Fall back to menu button if no location bar present.
+  return browser_view->toolbar_button_provider()->GetAppMenuButton();
 }
 
 gfx::Rect GetPageInfoAnchorRect(Browser* browser) {

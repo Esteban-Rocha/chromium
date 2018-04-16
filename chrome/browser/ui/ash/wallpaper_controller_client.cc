@@ -359,6 +359,16 @@ void WallpaperControllerClient::OpenWallpaperPickerIfAllowed() {
   wallpaper_controller_->OpenWallpaperPickerIfAllowed();
 }
 
+void WallpaperControllerClient::MinimizeInactiveWindows(
+    const std::string& user_id_hash) {
+  wallpaper_controller_->MinimizeInactiveWindows(user_id_hash);
+}
+
+void WallpaperControllerClient::RestoreMinimizedWindows(
+    const std::string& user_id_hash) {
+  wallpaper_controller_->RestoreMinimizedWindows(user_id_hash);
+}
+
 void WallpaperControllerClient::AddObserver(
     ash::mojom::WallpaperObserverAssociatedPtrInfo observer) {
   wallpaper_controller_->AddObserver(std::move(observer));
@@ -372,6 +382,11 @@ void WallpaperControllerClient::GetWallpaperImage(
 void WallpaperControllerClient::GetWallpaperColors(
     ash::mojom::WallpaperController::GetWallpaperColorsCallback callback) {
   wallpaper_controller_->GetWallpaperColors(std::move(callback));
+}
+
+void WallpaperControllerClient::IsWallpaperBlurred(
+    ash::mojom::WallpaperController::IsWallpaperBlurredCallback callback) {
+  wallpaper_controller_->IsWallpaperBlurred(std::move(callback));
 }
 
 void WallpaperControllerClient::IsActiveUserWallpaperControlledByPolicy(

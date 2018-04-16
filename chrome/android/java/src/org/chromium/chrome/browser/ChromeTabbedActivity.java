@@ -107,7 +107,7 @@ import org.chromium.chrome.browser.signin.SigninPromoUtil;
 import org.chromium.chrome.browser.snackbar.undo.UndoBarController;
 import org.chromium.chrome.browser.suggestions.SuggestionsEventReporterBridge;
 import org.chromium.chrome.browser.suggestions.SuggestionsMetrics;
-import org.chromium.chrome.browser.survey.ChromeHomeSurveyController;
+import org.chromium.chrome.browser.survey.ChromeSurveyController;
 import org.chromium.chrome.browser.tab.BrowserControlsVisibilityDelegate;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabDelegateFactory;
@@ -476,7 +476,7 @@ public class ChromeTabbedActivity
                 private void closeIfNoTabsAndHomepageEnabled(boolean isPendingClosure) {
                     if (getTabModelSelector().getTotalTabCount() == 0) {
                         // If the last tab is closed, and homepage is enabled, then exit Chrome.
-                        if (HomepageManager.isHomepageEnabled()) {
+                        if (HomepageManager.shouldCloseAppWithZeroTabs()) {
                             finish();
                         } else if (isPendingClosure) {
                             NewTabPageUma.recordNTPImpression(
@@ -1606,7 +1606,7 @@ public class ChromeTabbedActivity
 
             LauncherShortcutActivity.updateIncognitoShortcut(ChromeTabbedActivity.this);
 
-            ChromeHomeSurveyController.initialize(mTabModelSelectorImpl);
+            ChromeSurveyController.initialize(mTabModelSelectorImpl);
         });
     }
 
@@ -1761,7 +1761,8 @@ public class ChromeTabbedActivity
         MultiWindowUtils.setOpenInOtherWindowIntentExtras(intent, this, targetActivity);
         MultiWindowUtils.onMultiInstanceModeStarted();
 
-        tab.detachAndStartReparenting(intent, null, null);
+        tab.detachAndStartReparenting(
+                intent, MultiWindowUtils.getOpenInOtherWindowActivityOptions(this), null);
     }
 
     @Override
@@ -2096,6 +2097,11 @@ public class ChromeTabbedActivity
         // attempt to show the menu until the UI creation has finished.
         if (!mUIInitialized) return false;
 
+        // If the current active tab is showing a tab modal dialog, an app menu shouldn't be shown
+        // in any cases, e.g. when a hardware menu button is clicked.
+        Tab tab = getActivityTab();
+        if (tab != null && tab.isShowingTabModalDialog()) return false;
+
         return super.shouldShowAppMenu();
     }
 
@@ -2342,6 +2348,11 @@ public class ChromeTabbedActivity
 
     @Override
     public boolean supportsModernDesign() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsContextualSuggestionsBottomSheet() {
         return true;
     }
 

@@ -197,6 +197,11 @@ void FrameSinkManagerImpl::RegisterFrameSinkHierarchy(
   DCHECK(!base::ContainsKey(children, child_frame_sink_id));
   children.insert(child_frame_sink_id);
 
+  for (auto& observer : observer_list_) {
+    observer.OnRegisteredFrameSinkHierarchy(parent_frame_sink_id,
+                                            child_frame_sink_id);
+  }
+
   // If the parent has no source, then attaching it to this child will
   // not change any downstream sources.
   BeginFrameSource* parent_source =
@@ -206,11 +211,6 @@ void FrameSinkManagerImpl::RegisterFrameSinkHierarchy(
 
   DCHECK_EQ(registered_sources_.count(parent_source), 1u);
   RecursivelyAttachBeginFrameSource(child_frame_sink_id, parent_source);
-
-  for (auto& observer : observer_list_) {
-    observer.OnRegisteredFrameSinkHierarchy(parent_frame_sink_id,
-                                            child_frame_sink_id);
-  }
 }
 
 void FrameSinkManagerImpl::UnregisterFrameSinkHierarchy(
@@ -523,13 +523,6 @@ bool FrameSinkManagerImpl::ChildContains(
   return false;
 }
 
-void FrameSinkManagerImpl::OnClientConnectionLost(
-    const FrameSinkId& frame_sink_id) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  if (client_)
-    client_->OnClientConnectionClosed(frame_sink_id);
-}
-
 void FrameSinkManagerImpl::SubmitHitTestRegionList(
     const SurfaceId& surface_id,
     uint64_t frame_index,
@@ -545,11 +538,11 @@ void FrameSinkManagerImpl::OnFrameTokenChanged(const FrameSinkId& frame_sink_id,
 }
 
 VideoDetector* FrameSinkManagerImpl::CreateVideoDetectorForTesting(
-    std::unique_ptr<base::TickClock> tick_clock,
+    const base::TickClock* tick_clock,
     scoped_refptr<base::SequencedTaskRunner> task_runner) {
   DCHECK(!video_detector_);
-  video_detector_ = std::make_unique<VideoDetector>(
-      surface_manager(), std::move(tick_clock), task_runner);
+  video_detector_ = std::make_unique<VideoDetector>(surface_manager(),
+                                                    tick_clock, task_runner);
   return video_detector_.get();
 }
 
@@ -559,6 +552,37 @@ void FrameSinkManagerImpl::AddObserver(FrameSinkObserver* obs) {
 
 void FrameSinkManagerImpl::RemoveObserver(FrameSinkObserver* obs) {
   observer_list_.RemoveObserver(obs);
+}
+
+std::vector<FrameSinkId> FrameSinkManagerImpl::GetCreatedFrameSinkIds() const {
+  std::vector<FrameSinkId> frame_sink_ids;
+  for (auto& map_entry : support_map_)
+    frame_sink_ids.push_back(map_entry.first);
+  return frame_sink_ids;
+}
+
+std::vector<FrameSinkId> FrameSinkManagerImpl::GetRegisteredFrameSinkIds()
+    const {
+  std::vector<FrameSinkId> frame_sink_ids;
+  for (auto& map_entry : surface_manager_.valid_frame_sink_labels())
+    frame_sink_ids.push_back(map_entry.first);
+  return frame_sink_ids;
+}
+
+base::flat_set<FrameSinkId> FrameSinkManagerImpl::GetChildrenByParent(
+    const FrameSinkId& parent_frame_sink_id) const {
+  auto it = frame_sink_source_map_.find(parent_frame_sink_id);
+  if (it != frame_sink_source_map_.end())
+    return it->second.children;
+  return {};
+}
+
+const CompositorFrameSinkSupport* FrameSinkManagerImpl::GetFrameSinkForId(
+    const FrameSinkId& frame_sink_id) const {
+  auto it = support_map_.find(frame_sink_id);
+  if (it != support_map_.end())
+    return it->second;
+  return nullptr;
 }
 
 }  // namespace viz

@@ -11,6 +11,7 @@
 #include "base/optional.h"
 #include "base/time/time.h"
 #include "content/browser/web_package/signed_exchange_header.h"
+#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/completion_callback.h"
@@ -27,7 +28,6 @@ class CertVerifyResult;
 class DrainableIOBuffer;
 class SourceStream;
 class URLRequestContextGetter;
-class X509Certificate;
 }  // namespace net
 
 namespace network {
@@ -38,6 +38,7 @@ namespace content {
 
 class SignedExchangeCertFetcher;
 class SignedExchangeCertFetcherFactory;
+class SignedExchangeCertificateChain;
 
 // IMPORTANT: Currenly SignedExchangeHandler partially implements the verifying
 // logic.
@@ -68,7 +69,8 @@ class CONTENT_EXPORT SignedExchangeHandler {
       std::unique_ptr<net::SourceStream> body,
       ExchangeHeadersCallback headers_callback,
       std::unique_ptr<SignedExchangeCertFetcherFactory> cert_fetcher_factory,
-      scoped_refptr<net::URLRequestContextGetter> request_context_getter);
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+      int frame_tree_node_id);
   ~SignedExchangeHandler();
 
  protected:
@@ -90,7 +92,7 @@ class CONTENT_EXPORT SignedExchangeHandler {
   void RunErrorCallback(net::Error);
 
   void OnCertReceived(
-      scoped_refptr<net::X509Certificate> cert);
+      std::unique_ptr<SignedExchangeCertificateChain> cert_chain);
   void OnCertVerifyComplete(int result);
 
   ExchangeHeadersCallback headers_callback_;
@@ -110,7 +112,7 @@ class CONTENT_EXPORT SignedExchangeHandler {
 
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
-  scoped_refptr<net::X509Certificate> unverified_cert_;
+  std::unique_ptr<SignedExchangeCertificateChain> unverified_cert_chain_;
 
   // CertVerifyResult must be freed after the Request has been destructed.
   // So |cert_verify_result_| must be written before |cert_verifier_request_|.
@@ -120,6 +122,8 @@ class CONTENT_EXPORT SignedExchangeHandler {
   // TODO(https://crbug.com/767450): figure out what we should do for NetLog
   // with Network Service.
   net::NetLogWithSource net_log_;
+
+  signed_exchange_utils::LogCallback error_message_callback_;
 
   base::WeakPtrFactory<SignedExchangeHandler> weak_factory_;
 

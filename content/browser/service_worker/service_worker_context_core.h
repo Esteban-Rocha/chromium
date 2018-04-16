@@ -25,7 +25,7 @@
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/service_worker_context.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 class GURL;
 
@@ -174,11 +174,11 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   ServiceWorkerProviderHost* GetProviderHost(int process_id, int provider_id);
   void RemoveProviderHost(int process_id, int provider_id);
   void RemoveAllProviderHostsForProcess(int process_id);
-  std::unique_ptr<ProviderHostIterator> GetProviderHostIterator();
 
-  // Returns a ProviderHost iterator for all ServiceWorker clients for
-  // the |origin|.  This only returns ProviderHosts that are of CONTROLLEE
-  // and belong to the |origin|.
+  // Returns a ProviderHost iterator for all service worker clients for the
+  // |origin|. This only returns clients that are execution ready (i.e., for
+  // windows, the navigation has been committed and for workers, the final
+  // response after redirects has been delivered).
   std::unique_ptr<ProviderHostIterator> GetClientProviderHostIterator(
       const GURL& origin);
 

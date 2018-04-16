@@ -13,13 +13,14 @@
 #include "base/json/json_writer.h"
 #include "base/run_loop.h"
 #include "base/test/gtest_util.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "components/cbor/cbor_reader.h"
 #include "components/cbor/cbor_values.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/common/content_features.h"
 #include "content/public/test/test_service_manager_context.h"
 #include "content/test/test_render_frame_host.h"
 #include "device/fido/fake_hid_impl_for_testing.h"
@@ -45,12 +46,15 @@ using webauth::mojom::GetAssertionAuthenticatorResponsePtr;
 using webauth::mojom::MakeCredentialAuthenticatorResponsePtr;
 using webauth::mojom::PublicKeyCredentialCreationOptions;
 using webauth::mojom::PublicKeyCredentialCreationOptionsPtr;
+using webauth::mojom::PublicKeyCredentialDescriptor;
+using webauth::mojom::PublicKeyCredentialDescriptorPtr;
 using webauth::mojom::PublicKeyCredentialParameters;
 using webauth::mojom::PublicKeyCredentialParametersPtr;
 using webauth::mojom::PublicKeyCredentialRequestOptions;
 using webauth::mojom::PublicKeyCredentialRequestOptionsPtr;
 using webauth::mojom::PublicKeyCredentialRpEntity;
 using webauth::mojom::PublicKeyCredentialRpEntityPtr;
+using webauth::mojom::PublicKeyCredentialType;
 using webauth::mojom::PublicKeyCredentialUserEntity;
 using webauth::mojom::PublicKeyCredentialUserEntityPtr;
 
@@ -58,8 +62,9 @@ namespace {
 
 typedef struct {
   const char* origin;
-  const char* relying_party_id;
-} OriginRelyingPartyIdPair;
+  // Either a relying party ID or a U2F AppID.
+  const char* claimed_authority;
+} OriginClaimedAuthorityPair;
 
 constexpr char kTestOrigin1[] = "https://a.google.com";
 constexpr char kTestRelyingPartyId[] = "google.com";
@@ -83,7 +88,7 @@ constexpr char kTestSignClientDataJsonString[] =
     R"("https://a.google.com","tokenBinding":{"status":"not-supported"},)"
     R"("type":"webauthn.get"})";
 
-constexpr OriginRelyingPartyIdPair kValidRelyingPartyTestCases[] = {
+constexpr OriginClaimedAuthorityPair kValidRelyingPartyTestCases[] = {
     {"http://localhost", "localhost"},
     {"https://myawesomedomain", "myawesomedomain"},
     {"https://foo.bar.google.com", "foo.bar.google.com"},
@@ -107,7 +112,7 @@ constexpr OriginRelyingPartyIdPair kValidRelyingPartyTestCases[] = {
     {"https://accounts.google.com", ".google.com"},
 };
 
-constexpr OriginRelyingPartyIdPair kInvalidRelyingPartyTestCases[] = {
+constexpr OriginClaimedAuthorityPair kInvalidRelyingPartyTestCases[] = {
     {"https://google.com", "com"},
     {"http://google.com", "google.com"},
     {"http://myawesomedomain", "myawesomedomain"},
@@ -167,6 +172,24 @@ constexpr OriginRelyingPartyIdPair kInvalidRelyingPartyTestCases[] = {
     // This case is acceptable according to spec, but both renderer
     // and browser handling currently do not permit it.
     {"https://login.awesomecompany", "awesomecompany"},
+
+    // These are AppID test cases, but should also be invalid relying party
+    // examples too.
+    {"https://example.com", "https://com/"},
+    {"https://example.com", "https://com/foo"},
+    {"https://example.com", "https://foo.com/"},
+    {"https://example.com", "http://example.com"},
+    {"http://example.com", "https://example.com"},
+    {"https://127.0.0.1", "https://127.0.0.1"},
+    {"https://www.notgoogle.com",
+     "https://www.gstatic.com/securitykey/origins.json"},
+    {"https://www.google.com",
+     "https://www.gstatic.com/securitykey/origins.json#x"},
+    {"https://www.google.com",
+     "https://www.gstatic.com/securitykey/origins.json2"},
+    {"https://www.google.com", "https://gstatic.com/securitykey/origins.json"},
+    {"https://ggoogle.com", "https://www.gstatic.com/securitykey/origi"},
+    {"https://com", "https://www.gstatic.com/securitykey/origins.json"},
 };
 
 using TestMakeCredentialCallback = device::test::StatusAndValueCallbackReceiver<
@@ -218,6 +241,16 @@ AuthenticatorSelectionCriteriaPtr GetTestAuthenticatorSelectionCriteria() {
   return criteria;
 }
 
+std::vector<PublicKeyCredentialDescriptorPtr> GetTestAllowCredentials() {
+  std::vector<PublicKeyCredentialDescriptorPtr> descriptors;
+  auto credential = PublicKeyCredentialDescriptor::New();
+  credential->type = PublicKeyCredentialType::PUBLIC_KEY;
+  std::vector<uint8_t> id(32, 0x0A);
+  credential->id = id;
+  descriptors.push_back(std::move(credential));
+  return descriptors;
+}
+
 PublicKeyCredentialCreationOptionsPtr
 GetTestPublicKeyCredentialCreationOptions() {
   auto options = PublicKeyCredentialCreationOptions::New();
@@ -239,6 +272,7 @@ GetTestPublicKeyCredentialRequestOptions() {
   options->adjusted_timeout = base::TimeDelta::FromMinutes(1);
   options->user_verification =
       webauth::mojom::UserVerificationRequirement::PREFERRED;
+  options->allow_credentials = GetTestAllowCredentials();
   return options;
 }
 
@@ -293,6 +327,23 @@ class AuthenticatorImplTest : public content::RenderViewHostTestHarness {
         token_binding);
   }
 
+  AuthenticatorStatus TryAuthenticationWithAppId(const std::string& origin,
+                                                 const std::string& appid) {
+    const GURL origin_url(origin);
+    NavigateAndCommit(origin_url);
+    AuthenticatorPtr authenticator = ConnectToAuthenticator();
+    PublicKeyCredentialRequestOptionsPtr options =
+        GetTestPublicKeyCredentialRequestOptions();
+    options->relying_party_id = origin_url.host();
+    options->appid = appid;
+
+    TestGetAssertionCallback cb;
+    authenticator->GetAssertion(std::move(options), cb.callback());
+    cb.WaitForCallback();
+
+    return cb.status();
+  }
+
  private:
   std::unique_ptr<AuthenticatorImpl> authenticator_impl_;
 };
@@ -302,14 +353,14 @@ TEST_F(AuthenticatorImplTest, MakeCredentialOriginAndRpIds) {
   // These instances should return security errors (for circumstances
   // that would normally crash the renderer).
   for (auto test_case : kInvalidRelyingPartyTestCases) {
-    SCOPED_TRACE(std::string(test_case.relying_party_id) + " " +
+    SCOPED_TRACE(std::string(test_case.claimed_authority) + " " +
                  std::string(test_case.origin));
 
     NavigateAndCommit(GURL(test_case.origin));
     AuthenticatorPtr authenticator = ConnectToAuthenticator();
     PublicKeyCredentialCreationOptionsPtr options =
         GetTestPublicKeyCredentialCreationOptions();
-    options->relying_party->id = test_case.relying_party_id;
+    options->relying_party->id = test_case.claimed_authority;
     TestMakeCredentialCallback cb;
     authenticator->MakeCredential(std::move(options), cb.callback());
     cb.WaitForCallback();
@@ -319,24 +370,24 @@ TEST_F(AuthenticatorImplTest, MakeCredentialOriginAndRpIds) {
   // These instances pass the origin and relying party checks and return at
   // the algorithm check.
   for (auto test_case : kValidRelyingPartyTestCases) {
-    SCOPED_TRACE(std::string(test_case.relying_party_id) + " " +
+    SCOPED_TRACE(std::string(test_case.claimed_authority) + " " +
                  std::string(test_case.origin));
 
     NavigateAndCommit(GURL(test_case.origin));
     AuthenticatorPtr authenticator = ConnectToAuthenticator();
     PublicKeyCredentialCreationOptionsPtr options =
         GetTestPublicKeyCredentialCreationOptions();
-    options->relying_party->id = test_case.relying_party_id;
+    options->relying_party->id = test_case.claimed_authority;
     options->public_key_parameters = GetTestPublicKeyCredentialParameters(123);
 
     TestMakeCredentialCallback cb;
     authenticator->MakeCredential(std::move(options), cb.callback());
     cb.WaitForCallback();
-    EXPECT_EQ(AuthenticatorStatus::NOT_SUPPORTED_ERROR, cb.status());
+    EXPECT_EQ(AuthenticatorStatus::ALGORITHM_UNSUPPORTED, cb.status());
   }
 }
 
-// Test that service returns NOT_SUPPORTED_ERROR if no parameters contain
+// Test that service returns ALGORITHM_UNSUPPORTED if no parameters contain
 // a supported algorithm.
 TEST_F(AuthenticatorImplTest, MakeCredentialNoSupportedAlgorithm) {
   SimulateNavigation(GURL(kTestOrigin1));
@@ -349,11 +400,11 @@ TEST_F(AuthenticatorImplTest, MakeCredentialNoSupportedAlgorithm) {
   TestMakeCredentialCallback cb;
   authenticator->MakeCredential(std::move(options), cb.callback());
   cb.WaitForCallback();
-  EXPECT_EQ(AuthenticatorStatus::NOT_SUPPORTED_ERROR, cb.status());
+  EXPECT_EQ(AuthenticatorStatus::ALGORITHM_UNSUPPORTED, cb.status());
 }
 
-// Test that service returns NOT_ALLOWED_ERROR if user verification is
-// REQUIRED for get().
+// Test that service returns USER_VERIFICATION_UNSUPPORTED if user verification
+// is REQUIRED for get().
 TEST_F(AuthenticatorImplTest, GetAssertionUserVerification) {
   SimulateNavigation(GURL(kTestOrigin1));
   AuthenticatorPtr authenticator = ConnectToAuthenticator();
@@ -365,11 +416,11 @@ TEST_F(AuthenticatorImplTest, GetAssertionUserVerification) {
   TestGetAssertionCallback cb;
   authenticator->GetAssertion(std::move(options), cb.callback());
   cb.WaitForCallback();
-  EXPECT_EQ(AuthenticatorStatus::NOT_ALLOWED_ERROR, cb.status());
+  EXPECT_EQ(AuthenticatorStatus::USER_VERIFICATION_UNSUPPORTED, cb.status());
 }
 
-// Test that service returns NOT_ALLOWED_ERROR if user verification is
-// REQUIRED for create().
+// Test that service returns AUTHENTICATOR_CRITERIA_UNSUPPORTED if user
+// verification is REQUIRED for create().
 TEST_F(AuthenticatorImplTest, MakeCredentialUserVerification) {
   SimulateNavigation(GURL(kTestOrigin1));
   AuthenticatorPtr authenticator = ConnectToAuthenticator();
@@ -382,11 +433,12 @@ TEST_F(AuthenticatorImplTest, MakeCredentialUserVerification) {
   TestMakeCredentialCallback cb;
   authenticator->MakeCredential(std::move(options), cb.callback());
   cb.WaitForCallback();
-  EXPECT_EQ(AuthenticatorStatus::NOT_ALLOWED_ERROR, cb.status());
+  EXPECT_EQ(AuthenticatorStatus::AUTHENTICATOR_CRITERIA_UNSUPPORTED,
+            cb.status());
 }
 
-// Test that service returns NOT_ALLOWED_ERROR if resident key is
-// requested for create().
+// Test that service returns AUTHENTICATOR_CRITERIA_UNSUPPORTED if resident key
+// is requested for create().
 TEST_F(AuthenticatorImplTest, MakeCredentialResidentKey) {
   SimulateNavigation(GURL(kTestOrigin1));
   AuthenticatorPtr authenticator = ConnectToAuthenticator();
@@ -398,11 +450,12 @@ TEST_F(AuthenticatorImplTest, MakeCredentialResidentKey) {
   TestMakeCredentialCallback cb;
   authenticator->MakeCredential(std::move(options), cb.callback());
   cb.WaitForCallback();
-  EXPECT_EQ(AuthenticatorStatus::NOT_ALLOWED_ERROR, cb.status());
+  EXPECT_EQ(AuthenticatorStatus::AUTHENTICATOR_CRITERIA_UNSUPPORTED,
+            cb.status());
 }
 
-// Test that service returns NOT_ALLOWED_ERROR if a platform authenticator is
-// requested for U2F.
+// Test that service returns AUTHENTICATOR_CRITERIA_UNSUPPORTED if a platform
+// authenticator is requested for U2F.
 TEST_F(AuthenticatorImplTest, MakeCredentialPlatformAuthenticator) {
   SimulateNavigation(GURL(kTestOrigin1));
   AuthenticatorPtr authenticator = ConnectToAuthenticator();
@@ -415,7 +468,8 @@ TEST_F(AuthenticatorImplTest, MakeCredentialPlatformAuthenticator) {
   TestMakeCredentialCallback cb;
   authenticator->MakeCredential(std::move(options), cb.callback());
   cb.WaitForCallback();
-  EXPECT_EQ(AuthenticatorStatus::NOT_ALLOWED_ERROR, cb.status());
+  EXPECT_EQ(AuthenticatorStatus::AUTHENTICATOR_CRITERIA_UNSUPPORTED,
+            cb.status());
 }
 
 // Parses its arguments as JSON and expects that all the keys in the first are
@@ -519,16 +573,16 @@ TEST_F(AuthenticatorImplTest, TestMakeCredentialTimeout) {
 TEST_F(AuthenticatorImplTest, GetAssertionOriginAndRpIds) {
   // These instances should return security errors (for circumstances
   // that would normally crash the renderer).
-  for (const OriginRelyingPartyIdPair& test_case :
+  for (const OriginClaimedAuthorityPair& test_case :
        kInvalidRelyingPartyTestCases) {
-    SCOPED_TRACE(std::string(test_case.relying_party_id) + " " +
+    SCOPED_TRACE(std::string(test_case.claimed_authority) + " " +
                  std::string(test_case.origin));
 
     NavigateAndCommit(GURL(test_case.origin));
     AuthenticatorPtr authenticator = ConnectToAuthenticator();
     PublicKeyCredentialRequestOptionsPtr options =
         GetTestPublicKeyCredentialRequestOptions();
-    options->relying_party_id = test_case.relying_party_id;
+    options->relying_party_id = test_case.claimed_authority;
 
     TestGetAssertionCallback cb;
     authenticator->GetAssertion(std::move(options), cb.callback());
@@ -537,32 +591,19 @@ TEST_F(AuthenticatorImplTest, GetAssertionOriginAndRpIds) {
   }
 }
 
-typedef struct {
-  const char* origin;
-  const char* appid;
-  bool should_succeed;
-} OriginAppIdPair;
-
-constexpr OriginAppIdPair kAppIdCases[] = {
-    {"https://example.com", "https://com/foo", false},
-    {"https://example.com", "https://foo.com/", false},
-    {"https://example.com", "http://example.com", false},
-    {"http://example.com", "https://example.com", false},
-    {"https://127.0.0.1", "https://127.0.0.1", false},
-    {"https://www.notgoogle.com",
-     "https://www.gstatic.com/securitykey/origins.json", false},
-
-    {"https://example.com", "https://example.com", true},
-    {"https://www.example.com", "https://example.com", true},
-    {"https://example.com", "https://www.example.com", true},
-    {"https://example.com", "https://foo.bar.example.com", true},
-    {"https://example.com", "https://foo.bar.example.com/foo/bar", true},
+constexpr OriginClaimedAuthorityPair kValidAppIdCases[] = {
+    {"https://example.com", "https://example.com"},
+    {"https://www.example.com", "https://example.com"},
+    {"https://example.com", "https://www.example.com"},
+    {"https://example.com", "https://foo.bar.example.com"},
+    {"https://example.com", "https://foo.bar.example.com/foo/bar"},
+    {"https://google.com", "https://www.gstatic.com/securitykey/origins.json"},
     {"https://www.google.com",
-     "https://www.gstatic.com/securitykey/origins.json", true},
+     "https://www.gstatic.com/securitykey/origins.json"},
     {"https://www.google.com",
-     "https://www.gstatic.com/securitykey/a/google.com/origins.json", true},
+     "https://www.gstatic.com/securitykey/a/google.com/origins.json"},
     {"https://accounts.google.com",
-     "https://www.gstatic.com/securitykey/origins.json", true},
+     "https://www.gstatic.com/securitykey/origins.json"},
 };
 
 // Verify behavior for various combinations of origins and RP IDs.
@@ -570,31 +611,29 @@ TEST_F(AuthenticatorImplTest, AppIdExtension) {
   TestServiceManagerContext smc;
   device::test::ScopedVirtualFidoDevice virtual_device;
 
-  for (const auto& test_case : kAppIdCases) {
+  for (const auto& test_case : kValidAppIdCases) {
     SCOPED_TRACE(std::string(test_case.origin) + " " +
-                 std::string(test_case.appid));
+                 std::string(test_case.claimed_authority));
 
-    const GURL origin_url(test_case.origin);
-    NavigateAndCommit(origin_url);
-    AuthenticatorPtr authenticator = ConnectToAuthenticator();
-    PublicKeyCredentialRequestOptionsPtr options =
-        GetTestPublicKeyCredentialRequestOptions();
-    options->relying_party_id = origin_url.host();
-    options->appid = std::string(test_case.appid);
-
-    TestGetAssertionCallback cb;
-    authenticator->GetAssertion(std::move(options), cb.callback());
-    cb.WaitForCallback();
-
-    const AuthenticatorStatus status = cb.status();
-    if (test_case.should_succeed) {
-      EXPECT_EQ(AuthenticatorStatus::NOT_ALLOWED_ERROR, status);
-    } else {
-      EXPECT_EQ(AuthenticatorStatus::INVALID_DOMAIN, status);
-    }
+    EXPECT_EQ(AuthenticatorStatus::CREDENTIAL_NOT_RECOGNIZED,
+              TryAuthenticationWithAppId(test_case.origin,
+                                         test_case.claimed_authority));
   }
 
-  // TODO(agl): test positive cases once a mock U2F device exists.
+  // All the invalid relying party test cases should also be invalid as AppIDs.
+  for (const auto& test_case : kInvalidRelyingPartyTestCases) {
+    SCOPED_TRACE(std::string(test_case.origin) + " " +
+                 std::string(test_case.claimed_authority));
+
+    if (strlen(test_case.claimed_authority) == 0) {
+      // In this case, no AppID is actually being tested.
+      continue;
+    }
+
+    EXPECT_EQ(AuthenticatorStatus::INVALID_DOMAIN,
+              TryAuthenticationWithAppId(test_case.origin,
+                                         test_case.claimed_authority));
+  }
 }
 
 TEST_F(AuthenticatorImplTest, TestGetAssertionTimeout) {
@@ -630,6 +669,128 @@ TEST_F(AuthenticatorImplTest, TestGetAssertionTimeout) {
   task_runner->FastForwardBy(base::TimeDelta::FromMinutes(1));
   cb.WaitForCallback();
   EXPECT_EQ(AuthenticatorStatus::NOT_ALLOWED_ERROR, cb.status());
+}
+
+TEST_F(AuthenticatorImplTest, OversizedCredentialId) {
+  device::test::ScopedVirtualFidoDevice scoped_virtual_device;
+  TestServiceManagerContext service_manager_context;
+
+  // 255 is the maximum size of a U2F credential ID. We also test one greater
+  // (256) to ensure that nothing untoward happens.
+  const std::vector<size_t> kSizes = {255, 256};
+
+  for (const size_t size : kSizes) {
+    SCOPED_TRACE(size);
+
+    SimulateNavigation(GURL(kTestOrigin1));
+    AuthenticatorPtr authenticator = ConnectToAuthenticator();
+    PublicKeyCredentialRequestOptionsPtr options =
+        GetTestPublicKeyCredentialRequestOptions();
+    auto credential = PublicKeyCredentialDescriptor::New();
+    credential->type = PublicKeyCredentialType::PUBLIC_KEY;
+    credential->id.resize(size);
+
+    const bool should_be_valid = size < 256;
+    if (should_be_valid) {
+      ASSERT_TRUE(scoped_virtual_device.mutable_state()->InjectRegistration(
+          credential->id, kTestRelyingPartyId));
+    }
+
+    options->allow_credentials.emplace_back(std::move(credential));
+
+    TestGetAssertionCallback cb;
+    authenticator->GetAssertion(std::move(options), cb.callback());
+    cb.WaitForCallback();
+
+    if (should_be_valid) {
+      EXPECT_EQ(AuthenticatorStatus::SUCCESS, cb.status());
+    } else {
+      EXPECT_EQ(AuthenticatorStatus::CREDENTIAL_NOT_RECOGNIZED, cb.status());
+    }
+  }
+}
+
+TEST_F(AuthenticatorImplTest, TestU2fDeviceDoesNotSupportMakeCredential) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kWebAuthCtap2);
+
+  SimulateNavigation(GURL(kTestOrigin1));
+  PublicKeyCredentialCreationOptionsPtr options =
+      GetTestPublicKeyCredentialCreationOptions();
+  TestMakeCredentialCallback cb;
+
+  // Set up service_manager::Connector for tests.
+  auto fake_hid_manager = std::make_unique<device::FakeHidManager>();
+  service_manager::mojom::ConnectorRequest request;
+  auto connector = service_manager::Connector::Create(&request);
+
+  // Set up a timer for testing.
+  auto task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>(
+      base::Time::Now(), base::TimeTicks::Now());
+  auto timer =
+      std::make_unique<base::OneShotTimer>(task_runner->GetMockTickClock());
+  timer->SetTaskRunner(task_runner);
+  AuthenticatorPtr authenticator =
+      ConnectToAuthenticator(connector.get(), std::move(timer));
+
+  device::test::ScopedVirtualFidoDevice virtual_device;
+  authenticator->MakeCredential(std::move(options), cb.callback());
+
+  // Trigger timer.
+  base::RunLoop().RunUntilIdle();
+  task_runner->FastForwardBy(base::TimeDelta::FromMinutes(1));
+  cb.WaitForCallback();
+  EXPECT_EQ(AuthenticatorStatus::NOT_ALLOWED_ERROR, cb.status());
+}
+
+TEST_F(AuthenticatorImplTest, TestU2fDeviceDoesNotSupportGetAssertion) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kWebAuthCtap2);
+
+  SimulateNavigation(GURL(kTestOrigin1));
+  PublicKeyCredentialRequestOptionsPtr options =
+      GetTestPublicKeyCredentialRequestOptions();
+  TestGetAssertionCallback cb;
+
+  // Set up service_manager::Connector for tests.
+  auto fake_hid_manager = std::make_unique<device::FakeHidManager>();
+  service_manager::mojom::ConnectorRequest request;
+  auto connector = service_manager::Connector::Create(&request);
+
+  // Set up a timer for testing.
+  auto task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>(
+      base::Time::Now(), base::TimeTicks::Now());
+  auto timer =
+      std::make_unique<base::OneShotTimer>(task_runner->GetMockTickClock());
+  timer->SetTaskRunner(task_runner);
+  AuthenticatorPtr authenticator =
+      ConnectToAuthenticator(connector.get(), std::move(timer));
+
+  device::test::ScopedVirtualFidoDevice virtual_device;
+  authenticator->GetAssertion(std::move(options), cb.callback());
+
+  // Trigger timer.
+  base::RunLoop().RunUntilIdle();
+  task_runner->FastForwardBy(base::TimeDelta::FromMinutes(1));
+  cb.WaitForCallback();
+  EXPECT_EQ(AuthenticatorStatus::NOT_ALLOWED_ERROR, cb.status());
+}
+
+TEST_F(AuthenticatorImplTest, GetAssertionWithEmptyAllowCredentials) {
+  device::test::ScopedVirtualFidoDevice scoped_virtual_device;
+  TestServiceManagerContext service_manager_context;
+
+  SimulateNavigation(GURL(kTestOrigin1));
+  AuthenticatorPtr authenticator = ConnectToAuthenticator();
+  PublicKeyCredentialRequestOptionsPtr options =
+      GetTestPublicKeyCredentialRequestOptions();
+  options->allow_credentials.clear();
+
+  TestGetAssertionCallback cb;
+  authenticator->GetAssertion(std::move(options), cb.callback());
+  cb.WaitForCallback();
+
+  EXPECT_EQ(AuthenticatorStatus::EMPTY_ALLOW_CREDENTIALS, cb.status());
 }
 
 enum class IndividualAttestation {

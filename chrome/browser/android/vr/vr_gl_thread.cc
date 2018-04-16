@@ -49,10 +49,9 @@ base::WeakPtr<VrShellGl> VrGLThread::GetVrShellGl() {
   return vr_shell_gl_->GetWeakPtr();
 }
 
-void VrGLThread::SetInputConnection(
-    base::WeakPtr<VrInputConnection> weak_connection) {
+void VrGLThread::SetInputConnection(VrInputConnection* input_connection) {
   DCHECK(OnGlThread());
-  weak_input_connection_ = weak_connection;
+  input_connection_ = input_connection;
 }
 
 void VrGLThread::Init() {
@@ -125,13 +124,21 @@ void VrGLThread::DialogSurfaceCreated(jobject surface,
                                 surface, base::Unretained(texture)));
 }
 
-void VrGLThread::GvrDelegateReady(
-    gvr::ViewerType viewer_type,
+void VrGLThread::GvrDelegateReady(gvr::ViewerType viewer_type) {
+  DCHECK(OnGlThread());
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&VrShell::GvrDelegateReady, weak_vr_shell_, viewer_type));
+}
+
+void VrGLThread::SendRequestPresentReply(
+    bool success,
     device::mojom::VRDisplayFrameTransportOptionsPtr transport_options) {
   DCHECK(OnGlThread());
   main_thread_task_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&VrShell::GvrDelegateReady, weak_vr_shell_,
-                                viewer_type, std::move(transport_options)));
+      FROM_HERE,
+      base::BindOnce(&VrShell::SendRequestPresentReply, weak_vr_shell_, success,
+                     std::move(transport_options)));
 }
 
 void VrGLThread::UpdateGamepadData(device::GvrGamepadData pad) {
@@ -157,20 +164,20 @@ void VrGLThread::ClearFocusedElement() {
 
 void VrGLThread::OnWebInputEdited(const TextEdits& edits) {
   DCHECK(OnGlThread());
-  DCHECK(weak_input_connection_);
-  weak_input_connection_->OnKeyboardEdit(edits);
+  DCHECK(input_connection_);
+  input_connection_->OnKeyboardEdit(edits);
 }
 
 void VrGLThread::SubmitWebInput() {
   DCHECK(OnGlThread());
-  DCHECK(weak_input_connection_);
-  weak_input_connection_->SubmitInput();
+  DCHECK(input_connection_);
+  input_connection_->SubmitInput();
 }
 
 void VrGLThread::RequestWebInputText(TextStateUpdateCallback callback) {
   DCHECK(OnGlThread());
-  DCHECK(weak_input_connection_);
-  weak_input_connection_->RequestTextState(std::move(callback));
+  DCHECK(input_connection_);
+  input_connection_->RequestTextState(std::move(callback));
 }
 
 void VrGLThread::ForwardDialogEvent(
@@ -440,6 +447,13 @@ void VrGLThread::SetIncognitoTabsOpen(bool open) {
   task_runner()->PostTask(
       FROM_HERE, base::BindOnce(&BrowserUiInterface::SetIncognitoTabsOpen,
                                 weak_browser_ui_, open));
+}
+
+void VrGLThread::SetOverlayTextureEmpty(bool empty) {
+  DCHECK(OnMainThread());
+  task_runner()->PostTask(
+      FROM_HERE, base::BindOnce(&BrowserUiInterface::SetOverlayTextureEmpty,
+                                weak_browser_ui_, empty));
 }
 
 void VrGLThread::ShowSoftInput(bool show) {

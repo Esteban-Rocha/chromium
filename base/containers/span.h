@@ -151,8 +151,8 @@ using EnableIfConstSpanCompatibleContainer =
 // - no dynamic_extent constant
 //
 // Differences from [span.objectrep]:
-// - no as_bytes()
-// - no as_writeable_bytes()
+// - as_bytes() and as_writeable_bytes() return spans of uint8_t instead of
+//   std::byte
 //
 // Differences in constants and types:
 // - no element_type type alias
@@ -171,7 +171,6 @@ using EnableIfConstSpanCompatibleContainer =
 // - using size_t instead of ptrdiff_t for indexing
 //
 // Differences from [span.obs]:
-// - no size_bytes()
 // - using size_t instead of ptrdiff_t to represent size()
 //
 // Differences from [span.elem]:
@@ -235,6 +234,7 @@ class span {
 
   // [span.obs], span observers
   constexpr size_t size() const noexcept { return size_; }
+  constexpr size_t size_bytes() const noexcept { return size() * sizeof(T); }
   constexpr bool empty() const noexcept { return size_ == 0; }
 
   // [span.elem], span element access
@@ -272,35 +272,46 @@ class span {
 
 // [span.comparison], span comparison operators
 // Relational operators. Equality is a element-wise comparison.
-template <typename T>
-constexpr bool operator==(span<T> lhs, span<T> rhs) noexcept {
+template <typename T, typename U>
+constexpr bool operator==(span<T> lhs, span<U> rhs) noexcept {
   return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
 }
 
-template <typename T>
-constexpr bool operator!=(span<T> lhs, span<T> rhs) noexcept {
+template <typename T, typename U>
+constexpr bool operator!=(span<T> lhs, span<U> rhs) noexcept {
   return !(lhs == rhs);
 }
 
-template <typename T>
-constexpr bool operator<(span<T> lhs, span<T> rhs) noexcept {
+template <typename T, typename U>
+constexpr bool operator<(span<T> lhs, span<U> rhs) noexcept {
   return std::lexicographical_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(),
                                       rhs.cend());
 }
 
-template <typename T>
-constexpr bool operator<=(span<T> lhs, span<T> rhs) noexcept {
+template <typename T, typename U>
+constexpr bool operator<=(span<T> lhs, span<U> rhs) noexcept {
   return !(rhs < lhs);
 }
 
-template <typename T>
-constexpr bool operator>(span<T> lhs, span<T> rhs) noexcept {
+template <typename T, typename U>
+constexpr bool operator>(span<T> lhs, span<U> rhs) noexcept {
   return rhs < lhs;
 }
 
-template <typename T>
-constexpr bool operator>=(span<T> lhs, span<T> rhs) noexcept {
+template <typename T, typename U>
+constexpr bool operator>=(span<T> lhs, span<U> rhs) noexcept {
   return !(lhs < rhs);
+}
+
+// [span.objectrep], views of object representation
+template <typename T>
+span<const uint8_t> as_bytes(span<T> s) noexcept {
+  return {reinterpret_cast<const uint8_t*>(s.data()), s.size_bytes()};
+}
+
+template <typename T, typename = std::enable_if_t<!std::is_const<T>::value>>
+span<uint8_t> as_writable_bytes(span<T> s) noexcept {
+  return {reinterpret_cast<uint8_t*>(s.data()), s.size_bytes()};
 }
 
 // Type-deducing helpers for constructing a span.

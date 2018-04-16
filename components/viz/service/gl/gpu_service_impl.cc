@@ -17,7 +17,6 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "components/crash/core/common/crash_key.h"
-#include "components/viz/common/gpu/in_process_context_provider.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/scheduler.h"
@@ -435,6 +434,32 @@ void GpuServiceImpl::GetVideoMemoryUsageStats(
   std::move(callback).Run(video_memory_usage_stats);
 }
 
+// Currently, this function only supports the Windows platform.
+void GpuServiceImpl::GetGpuSupportedRuntimeVersion() {
+#if defined(OS_WIN)
+  if (io_runner_->BelongsToCurrentThread()) {
+    main_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&GpuServiceImpl::GetGpuSupportedRuntimeVersion,
+                       weak_ptr_));
+    return;
+  }
+  DCHECK(main_runner_->BelongsToCurrentThread());
+
+  // GPU full info collection should only happen on un-sandboxed GPU process
+  // or single process/in-process gpu mode on Windows.
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  DCHECK(command_line->HasSwitch("disable-gpu-sandbox") || in_host_process());
+
+  gpu::RecordGpuSupportedRuntimeVersionHistograms(&gpu_info_);
+  if (!in_host_process()) {
+    // The unsandboxed GPU process fulfilled its duty. Rest
+    // in peace.
+    base::RunLoop().QuitCurrentWhenIdleDeprecated();
+  }
+#endif
+}
+
 void GpuServiceImpl::RequestCompleteGpuInfo(
     RequestCompleteGpuInfoCallback callback) {
   if (io_runner_->BelongsToCurrentThread()) {
@@ -508,6 +533,9 @@ void GpuServiceImpl::UpdateGpuInfoPlatform(
   // or single process/in-process gpu mode on Windows.
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   DCHECK(command_line->HasSwitch("disable-gpu-sandbox") || in_host_process());
+
+  gpu::GetGpuSupportedD3DVersion(&gpu_info_);
+  gpu::GetGpuSupportedVulkanVersion(&gpu_info_);
 
   // We can continue on shutdown here because we're not writing any critical
   // state in this task.

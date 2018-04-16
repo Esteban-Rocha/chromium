@@ -27,7 +27,7 @@
 #include "extensions/common/guest_view/extensions_guest_view_messages.h"
 #include "extensions/strings/grit/extensions_strings.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
 
 using content::WebContents;
 using guest_view::GuestViewBase;
@@ -209,6 +209,14 @@ void MimeHandlerViewGuest::DidInitialize(
   ExtensionsAPIClient::Get()->AttachWebContentsHelpers(web_contents());
 }
 
+void MimeHandlerViewGuest::EmbedderFullscreenToggled(bool entered_fullscreen) {
+  is_embedder_fullscreen_ = entered_fullscreen;
+  if (entered_fullscreen)
+    return;
+
+  SetFullscreenState(false);
+}
+
 bool MimeHandlerViewGuest::ZoomPropagatesFromEmbedderToGuest() const {
   return false;
 }
@@ -295,6 +303,39 @@ void MimeHandlerViewGuest::OnRenderFrameHostDeleted(int process_id,
       routing_id == embedder_frame_routing_id_) {
     Destroy(/*also_delete=*/true);
   }
+}
+
+void MimeHandlerViewGuest::EnterFullscreenModeForTab(content::WebContents*,
+                                                     const GURL& origin) {
+  if (SetFullscreenState(true)) {
+    embedder_web_contents()->GetDelegate()->EnterFullscreenModeForTab(
+        embedder_web_contents(), origin);
+  }
+}
+
+void MimeHandlerViewGuest::ExitFullscreenModeForTab(content::WebContents*) {
+  if (SetFullscreenState(false)) {
+    embedder_web_contents()->GetDelegate()->ExitFullscreenModeForTab(
+        embedder_web_contents());
+  }
+}
+
+bool MimeHandlerViewGuest::IsFullscreenForTabOrPending(
+    const content::WebContents* web_contents) const {
+  return is_guest_fullscreen_;
+}
+
+bool MimeHandlerViewGuest::SetFullscreenState(bool is_fullscreen) {
+  // Disallow fullscreen for embedded plugins.
+  if (!is_full_page_plugin() || is_fullscreen == is_guest_fullscreen_)
+    return false;
+
+  is_guest_fullscreen_ = is_fullscreen;
+  if (is_guest_fullscreen_ == is_embedder_fullscreen_)
+    return false;
+
+  is_embedder_fullscreen_ = is_fullscreen;
+  return true;
 }
 
 void MimeHandlerViewGuest::DocumentOnLoadCompletedInMainFrame() {

@@ -98,11 +98,10 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
 
   // Updates the root window's size using |host_size_in_pixels|, current
   // transform and outsets.
-  // TODO(ccameron): Make this function take no arguments, and make this
-  // function no longer public. The interaction between this call, GetBounds,
-  // and OnHostResizedInPixels is ambiguous and allows for inconsistencies.
-  virtual void UpdateRootWindowSizeInPixels(
-      const gfx::Size& host_size_in_pixels);
+  // TODO(ccameron): Make this function no longer public. The interaction
+  // between this call, GetBounds, and OnHostResizedInPixels is ambiguous and
+  // allows for inconsistencies.
+  void UpdateRootWindowSizeInPixels();
 
   // Converts |point| from the root window's coordinate system to native
   // screen's.
@@ -273,7 +272,12 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   // Stops capturing system keyboard events.
   virtual void ReleaseSystemKeyEventCapture() = 0;
 
- protected:
+  // True if |native_key_code| is reserved for an active KeyboardLock request.
+  virtual bool IsKeyLocked(int native_key_code) = 0;
+
+  virtual gfx::Rect GetTransformedRootWindowBoundsInPixels(
+      const gfx::Size& size_in_pixels) const;
+
   const base::ObserverList<WindowTreeHostObserver>& observers() const {
     return observers_;
   }

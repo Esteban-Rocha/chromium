@@ -21,6 +21,7 @@
 
 namespace arc {
 
+using AXActionType = mojom::AccessibilityActionType;
 using AXBooleanProperty = mojom::AccessibilityBooleanProperty;
 using AXCollectionInfoData = mojom::AccessibilityCollectionInfoData;
 using AXCollectionItemInfoData = mojom::AccessibilityCollectionItemInfoData;
@@ -207,7 +208,6 @@ void PopulateAXState(AXNodeInfoData* node, ui::AXNodeData* out_data) {
   MAP_STATE(AXBooleanProperty::FOCUSABLE, ax::mojom::State::kFocusable);
   MAP_STATE(AXBooleanProperty::MULTI_LINE, ax::mojom::State::kMultiline);
   MAP_STATE(AXBooleanProperty::PASSWORD, ax::mojom::State::kProtected);
-  MAP_STATE(AXBooleanProperty::SELECTED, ax::mojom::State::kSelected);
 
 #undef MAP_STATE
 
@@ -542,6 +542,9 @@ void AXTreeSourceArc::SerializeNode(AXNodeInfoData* node,
   if (GetProperty(node, AXBooleanProperty::CLICKABLE)) {
     out_data->AddBoolAttribute(ax::mojom::BoolAttribute::kClickable, true);
   }
+  if (GetProperty(node, AXBooleanProperty::SELECTED)) {
+    out_data->AddBoolAttribute(ax::mojom::BoolAttribute::kSelected, true);
+  }
 
   // Range info.
   AXRangeInfoData* range_info = node->range_info.get();
@@ -575,6 +578,24 @@ void AXTreeSourceArc::SerializeNode(AXNodeInfoData* node,
 
   if (GetProperty(node, AXIntProperty::TEXT_SELECTION_END, &val) && val >= 0)
     out_data->AddIntAttribute(ax::mojom::IntAttribute::kTextSelEnd, val);
+
+  std::vector<int32_t> standard_action_ids;
+  if (GetProperty(node, AXIntListProperty::STANDARD_ACTION_IDS,
+                  &standard_action_ids)) {
+    for (size_t i = 0; i < standard_action_ids.size(); ++i) {
+      switch (static_cast<AXActionType>(standard_action_ids[i])) {
+        case AXActionType::SCROLL_BACKWARD:
+          out_data->AddAction(ax::mojom::Action::kScrollBackward);
+          break;
+        case AXActionType::SCROLL_FORWARD:
+          out_data->AddAction(ax::mojom::Action::kScrollForward);
+          break;
+        default:
+          // unmapped
+          break;
+      }
+    }
+  }
 
   // Custom actions.
   std::vector<int32_t> custom_action_ids;

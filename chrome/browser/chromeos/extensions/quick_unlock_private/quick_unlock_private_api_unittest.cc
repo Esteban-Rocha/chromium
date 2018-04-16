@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "ash/public/cpp/ash_pref_names.h"
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
@@ -126,6 +127,12 @@ class QuickUnlockPrivateUnitTest : public ExtensionApiUnittest {
     RunSetModes(QuickUnlockModeList{}, CredentialList{});
 
     modes_changed_handler_ = base::DoNothing();
+  }
+
+  void TearDown() override {
+    quick_unlock::DisablePinByPolicyForTesting(false);
+
+    ExtensionApiUnittest::TearDown();
   }
 
   TestingProfile::TestingFactories GetTestingFactories() override {
@@ -423,12 +430,12 @@ TEST_F(QuickUnlockPrivateUnitTest, GetAuthTokenInvalid) {
 TEST_F(QuickUnlockPrivateUnitTest, SetLockScreenEnabled) {
   PrefService* pref_service = profile()->GetPrefs();
   bool lock_screen_enabled =
-      pref_service->GetBoolean(prefs::kEnableAutoScreenLock);
+      pref_service->GetBoolean(ash::prefs::kEnableAutoScreenLock);
 
   SetLockScreenEnabled(token(), !lock_screen_enabled);
 
   EXPECT_EQ(!lock_screen_enabled,
-            pref_service->GetBoolean(prefs::kEnableAutoScreenLock));
+            pref_service->GetBoolean(ash::prefs::kEnableAutoScreenLock));
 }
 
 // Verifies that setting lock screen enabled fails to modify the setting with
@@ -436,20 +443,31 @@ TEST_F(QuickUnlockPrivateUnitTest, SetLockScreenEnabled) {
 TEST_F(QuickUnlockPrivateUnitTest, SetLockScreenEnabledFailsWithInvalidToken) {
   PrefService* pref_service = profile()->GetPrefs();
   bool lock_screen_enabled =
-      pref_service->GetBoolean(prefs::kEnableAutoScreenLock);
+      pref_service->GetBoolean(ash::prefs::kEnableAutoScreenLock);
 
   std::string error =
       SetLockScreenEnabledWithInvalidToken(!lock_screen_enabled);
   EXPECT_FALSE(error.empty());
 
   EXPECT_EQ(lock_screen_enabled,
-            pref_service->GetBoolean(prefs::kEnableAutoScreenLock));
+            pref_service->GetBoolean(ash::prefs::kEnableAutoScreenLock));
 }
 
-// Verifies that this returns PIN for GetAvailableModes.
+// Verifies that this returns PIN for GetAvailableModes, unless it is blocked by
+// policy.
 TEST_F(QuickUnlockPrivateUnitTest, GetAvailableModes) {
   EXPECT_EQ(GetAvailableModes(),
             QuickUnlockModeList{QuickUnlockMode::QUICK_UNLOCK_MODE_PIN});
+
+  quick_unlock::DisablePinByPolicyForTesting(true);
+  EXPECT_TRUE(GetAvailableModes().empty());
+}
+
+// Verfies that trying to set modes with a valid PIN failes when PIN is blocked
+// by policy.
+TEST_F(QuickUnlockPrivateUnitTest, SetModesForPinFailsWhenPinDisabledByPolicy) {
+  quick_unlock::DisablePinByPolicyForTesting(true);
+  EXPECT_FALSE(SetModesWithError("[\"valid\", [\"PIN\"], [\"111\"]]").empty());
 }
 
 // Verifies that SetModes succeeds with a valid token.
@@ -511,7 +529,7 @@ TEST_F(QuickUnlockPrivateUnitTest, ModeChangeEventOnlyRaisedWhenModesChange) {
 }
 
 // Ensures that quick unlock can be enabled and disabled by checking the result
-// of quickUnlockPrivate.GetActiveModes and PinStorage::IsPinSet.
+// of quickUnlockPrivate.GetActiveModes and PinStoragePrefs::IsPinSet.
 TEST_F(QuickUnlockPrivateUnitTest, SetModesAndGetActiveModes) {
   quick_unlock::QuickUnlockStorage* quick_unlock_storage =
       quick_unlock::QuickUnlockFactory::GetForProfile(profile());
@@ -523,13 +541,13 @@ TEST_F(QuickUnlockPrivateUnitTest, SetModesAndGetActiveModes) {
               {"111111"});
   EXPECT_EQ(GetActiveModes(),
             QuickUnlockModeList{QuickUnlockMode::QUICK_UNLOCK_MODE_PIN});
-  EXPECT_TRUE(quick_unlock_storage->pin_storage()->IsPinSet());
+  EXPECT_TRUE(quick_unlock_storage->pin_storage_prefs()->IsPinSet());
 
   // SetModes can be used to turn off a quick unlock mode.
   ExpectModesChanged(QuickUnlockModeList{});
   RunSetModes(QuickUnlockModeList{}, CredentialList{});
   EXPECT_EQ(GetActiveModes(), QuickUnlockModeList{});
-  EXPECT_FALSE(quick_unlock_storage->pin_storage()->IsPinSet());
+  EXPECT_FALSE(quick_unlock_storage->pin_storage_prefs()->IsPinSet());
 }
 
 // Verifies that enabling PIN quick unlock actually talks to the PIN subsystem.
@@ -538,14 +556,14 @@ TEST_F(QuickUnlockPrivateUnitTest, VerifyAuthenticationAgainstPIN) {
       quick_unlock::QuickUnlockFactory::GetForProfile(profile());
 
   RunSetModes(QuickUnlockModeList{}, CredentialList{});
-  EXPECT_FALSE(quick_unlock_storage->pin_storage()->IsPinSet());
+  EXPECT_FALSE(quick_unlock_storage->pin_storage_prefs()->IsPinSet());
 
   RunSetModes(QuickUnlockModeList{QuickUnlockMode::QUICK_UNLOCK_MODE_PIN},
               {"111111"});
-  EXPECT_TRUE(quick_unlock_storage->pin_storage()->IsPinSet());
+  EXPECT_TRUE(quick_unlock_storage->pin_storage_prefs()->IsPinSet());
 
   quick_unlock_storage->MarkStrongAuth();
-  quick_unlock_storage->pin_storage()->ResetUnlockAttemptCount();
+  quick_unlock_storage->pin_storage_prefs()->ResetUnlockAttemptCount();
   EXPECT_TRUE(quick_unlock_storage->TryAuthenticatePin(
       "111111", Key::KEY_TYPE_PASSWORD_PLAIN));
   EXPECT_FALSE(quick_unlock_storage->TryAuthenticatePin(

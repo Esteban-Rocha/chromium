@@ -18,7 +18,7 @@
 #include "media/base/media_switches.h"
 #include "services/device/public/cpp/device_features.h"
 #include "services/network/public/cpp/features.h"
-#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_features.h"
@@ -207,6 +207,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   WebRuntimeFeatures::EnableWebXR(
       base::FeatureList::IsEnabled(features::kWebXr));
 
+  if (base::FeatureList::IsEnabled(features::kWebXrGamepadSupport))
+    WebRuntimeFeatures::EnableWebXRGamepadSupport(true);
+
   if (command_line.HasSwitch(switches::kDisablePresentationAPI))
     WebRuntimeFeatures::EnablePresentationAPI(false);
 
@@ -327,6 +330,10 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
                                                 false);
   }
 
+  if (base::FeatureList::IsEnabled(
+          features::kTurnOff2DAndOpacityCompositorAnimations))
+    WebRuntimeFeatures::EnableTurnOff2DAndOpacityCompositorAnimations(true);
+
   if (base::FeatureList::IsEnabled(features::kRasterInducingScroll))
     WebRuntimeFeatures::EnableRasterInducingScroll(true);
 
@@ -391,6 +398,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (base::FeatureList::IsEnabled(features::kKeyboardLockAPI))
     WebRuntimeFeatures::EnableFeatureFromString("KeyboardLock", true);
+
+  if (base::FeatureList::IsEnabled(features::kLazyFrameLoading))
+    WebRuntimeFeatures::EnableLazyFrameLoading(true);
 
   // Enable explicitly enabled features, and then disable explicitly disabled
   // ones.

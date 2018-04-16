@@ -22,13 +22,14 @@ class FeaturePodsContainerViewTest : public AshTestBase,
   // AshTestBase:
   void SetUp() override {
     AshTestBase::SetUp();
-    container_ = std::make_unique<FeaturePodsContainerView>();
+    container_ = std::make_unique<FeaturePodsContainerView>(
+        true /* initially_expanded */);
     container_->AddObserver(this);
   }
 
   // FeaturePodControllerBase:
   FeaturePodButton* CreateButton() override { return nullptr; }
-  void OnPressed() override {}
+  void OnIconPressed() override {}
 
   // views::ViewObserver:
   void OnViewPreferredSizeChanged(views::View* observed_view) override {

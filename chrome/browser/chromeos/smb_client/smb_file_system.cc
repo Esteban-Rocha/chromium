@@ -8,10 +8,9 @@
 #include <memory>
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/chromeos/file_system_provider/service.h"
+#include "chrome/browser/chromeos/smb_client/smb_file_system_id.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/smb_provider_client.h"
 #include "components/services/filesystem/public/interfaces/types.mojom.h"
@@ -143,11 +142,7 @@ base::File::Error SmbFileSystem::TranslateError(smbprovider::ErrorType error) {
 }
 
 int32_t SmbFileSystem::GetMountId() const {
-  int32_t mount_id;
-  bool result =
-      base::StringToInt(file_system_info_.file_system_id(), &mount_id);
-  DCHECK(result);
-  return mount_id;
+  return GetMountIdFromFileSystemId(file_system_info_.file_system_id());
 }
 
 SmbProviderClient* SmbFileSystem::GetSmbProviderClient() const {
@@ -512,13 +507,14 @@ void SmbFileSystem::HandleGetDeleteListCallback(
     return;
   }
 
+  auto copyable_callback = base::AdaptCallbackForRepeating(std::move(callback));
   for (int i = 0; i < delete_list.entries_size(); ++i) {
     const base::FilePath entry_path(delete_list.entries(i));
     bool is_last_entry = (i == delete_list.entries_size() - 1);
 
     auto reply =
         base::BindOnce(&SmbFileSystem::HandleDeleteEntryCallback, AsWeakPtr(),
-                       std::move(callback), list_error, is_last_entry);
+                       copyable_callback, list_error, is_last_entry);
 
     SmbTask task = base::BindOnce(
         &SmbProviderClient::DeleteEntry, GetWeakSmbProviderClient(),

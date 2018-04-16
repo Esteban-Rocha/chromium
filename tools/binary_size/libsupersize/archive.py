@@ -20,6 +20,7 @@ import tempfile
 import zipfile
 
 import apkanalyzer
+import ar
 import concurrent
 import demangle
 import describe
@@ -33,6 +34,16 @@ import path_util
 
 sys.path.insert(1, os.path.join(path_util.SRC_ROOT, 'tools', 'grit'))
 from grit.format import data_pack
+
+
+# Holds computation state that is live only when an output directory exists.
+_OutputDirectoryContext = collections.namedtuple('_OutputDirectoryContext', [
+    'elf_object_paths',  # Only when elf_path is also provided.
+    'known_inputs',  # Only when elf_path is also provided.
+    'output_directory',
+    'source_mapper',
+    'thin_archives',
+])
 
 
 # Tunable "knobs" for CreateSectionSizesAndSymbols().
@@ -56,6 +67,14 @@ class SectionSizeKnobs(object):
     # between .size files reasonable. Otherwise this can differ every pak
     # change.
     self.pak_compression_ratio = 0.33
+
+    # File name: Source file.
+    self.apk_other_files = {
+      'icudtl.dat': 'third_party/icu/android/icudtl.dat',
+      'snapshot_blob_32.bin': 'v8/snapshot_blob_32.bin',
+      'snapshot_blob_64.bin': 'v8/snapshot_blob_64.bin',
+      'natives_blob.bin': 'v8/natives_blob.bin',
+    }
 
 
 def _OpenMaybeGz(path):
@@ -103,69 +122,72 @@ def _NormalizeNames(raw_symbols):
 
     # See comment in _CalculatePadding() about when this can happen. Don't
     # process names for non-native sections.
-    if full_name.startswith('*') or not symbol.IsNative():
+    if full_name.startswith('*') or symbol.IsOverhead():
       symbol.template_name = full_name
       symbol.name = full_name
-      continue
+    elif symbol.IsDex():
+      symbol.full_name, symbol.template_name, symbol.name = (
+          function_signature.ParseJava(full_name))
+    elif symbol.IsNative():
+      # Remove [clone] suffix, and set flag accordingly.
+      # Search from left-to-right, as multiple [clone]s can exist.
+      # Example name suffixes:
+      #     [clone .part.322]  # GCC
+      #     [clone .isra.322]  # GCC
+      #     [clone .constprop.1064]  # GCC
+      #     [clone .11064]  # clang
+      # http://unix.stackexchange.com/questions/223013/function-symbol-gets-part-suffix-after-compilation
+      idx = full_name.find(' [clone ')
+      if idx != -1:
+        full_name = full_name[:idx]
+        symbol.flags |= models.FLAG_CLONE
 
-    # Remove [clone] suffix, and set flag accordingly.
-    # Search from left-to-right, as multiple [clone]s can exist.
-    # Example name suffixes:
-    #     [clone .part.322]  # GCC
-    #     [clone .isra.322]  # GCC
-    #     [clone .constprop.1064]  # GCC
-    #     [clone .11064]  # clang
-    # http://unix.stackexchange.com/questions/223013/function-symbol-gets-part-suffix-after-compilation
-    idx = full_name.find(' [clone ')
-    if idx != -1:
-      full_name = full_name[:idx]
-      symbol.flags |= models.FLAG_CLONE
+      # Clones for C symbols.
+      if symbol.section == 't':
+        idx = full_name.rfind('.')
+        if idx != -1 and full_name[idx + 1:].isdigit():
+          new_name = full_name[:idx]
+          # Generated symbols that end with .123 but are not clones.
+          # Find these via:
+          # size_info.symbols.WhereInSection('t').WhereIsGroup().SortedByCount()
+          if new_name not in ('__tcf_0', 'startup'):
+            full_name = new_name
+            symbol.flags |= models.FLAG_CLONE
+            # Remove .part / .isra / .constprop.
+            idx = full_name.rfind('.', 0, idx)
+            if idx != -1:
+              full_name = full_name[:idx]
 
-    # Clones for C symbols.
-    if symbol.section == 't':
-      idx = full_name.rfind('.')
-      if idx != -1 and full_name[idx + 1:].isdigit():
-        new_name = full_name[:idx]
-        # Generated symbols that end with .123 but are not clones.
-        # Find these via:
-        #   size_info.symbols.WhereInSection('t').WhereIsGroup().SortedByCount()
-        if new_name not in ('__tcf_0', 'startup'):
-          full_name = new_name
-          symbol.flags |= models.FLAG_CLONE
-          # Remove .part / .isra / .constprop.
-          idx = full_name.rfind('.', 0, idx)
-          if idx != -1:
-            full_name = full_name[:idx]
+      # E.g.: vtable for FOO
+      idx = full_name.find(' for ', 0, 30)
+      if idx != -1:
+        found_prefixes.add(full_name[:idx + 4])
+        full_name = '{} [{}]'.format(full_name[idx + 5:], full_name[:idx])
 
-    # E.g.: vtable for FOO
-    idx = full_name.find(' for ', 0, 30)
-    if idx != -1:
-      found_prefixes.add(full_name[:idx + 4])
-      full_name = '{} [{}]'.format(full_name[idx + 5:], full_name[:idx])
+      # E.g.: virtual thunk to FOO
+      idx = full_name.find(' to ', 0, 30)
+      if idx != -1:
+        found_prefixes.add(full_name[:idx + 3])
+        full_name = '{} [{}]'.format(full_name[idx + 4:], full_name[:idx])
 
-    # E.g.: virtual thunk to FOO
-    idx = full_name.find(' to ', 0, 30)
-    if idx != -1:
-      found_prefixes.add(full_name[:idx + 3])
-      full_name = '{} [{}]'.format(full_name[idx + 4:], full_name[:idx])
+      # Strip out return type, and split out name, template_name.
+      # Function parsing also applies to non-text symbols.
+      # E.g. Function statics.
+      symbol.full_name, symbol.template_name, symbol.name = (
+          function_signature.Parse(full_name))
 
-    # Strip out return type, and split out name, template_name.
-    # Function parsing also applies to non-text symbols. E.g. Function statics.
-    # TODO(wnwen): Dex methods might want this processing.
-    symbol.full_name, symbol.template_name, symbol.name = (
-        function_signature.Parse(full_name))
+      # Remove anonymous namespaces (they just harm clustering).
+      symbol.template_name = symbol.template_name.replace(
+          '(anonymous namespace)::', '')
+      symbol.full_name = symbol.full_name.replace(
+          '(anonymous namespace)::', '')
+      non_anonymous_name = symbol.name.replace('(anonymous namespace)::', '')
+      if symbol.name != non_anonymous_name:
+        symbol.flags |= models.FLAG_ANONYMOUS
+        symbol.name = non_anonymous_name
 
-    # Remove anonymous namespaces (they just harm clustering).
-    symbol.template_name = symbol.template_name.replace(
-        '(anonymous namespace)::', '')
-    symbol.full_name = symbol.full_name.replace(
-        '(anonymous namespace)::', '')
-    non_anonymous_name = symbol.name.replace('(anonymous namespace)::', '')
-    if symbol.name != non_anonymous_name:
-      symbol.flags |= models.FLAG_ANONYMOUS
-      symbol.name = non_anonymous_name
-
-    # Allow using "is" to compare names (and should help with RAM).
+    # Allow using "is" to compare names (and should help with RAM). This applies
+    # to all symbols.
     function_signature.InternSameNames(symbol)
 
   logging.debug('Found name prefixes of: %r', found_prefixes)
@@ -179,8 +201,9 @@ def _NormalizeObjectPath(path):
     # Convert ../../third_party/... -> third_party/...
     path = path[6:]
   if path.endswith(')'):
-    # Convert foo/bar.a(baz.o) -> foo/bar.a/baz.o
-    start_idx = path.index('(')
+    # Convert foo/bar.a(baz.o) -> foo/bar.a/baz.o so that hierarchical
+    # breakdowns consider the .o part to be a separate node.
+    start_idx = path.rindex('(')
     path = os.path.join(path[:start_idx], path[start_idx + 1:-1])
   return path
 
@@ -362,17 +385,16 @@ def _AssignNmAliasPathsAndCreatePathAliases(raw_symbols, object_paths_by_name):
   return ret
 
 
-def _DiscoverMissedObjectPaths(raw_symbols, elf_object_paths):
+def _DiscoverMissedObjectPaths(raw_symbols, known_inputs):
   # Missing object paths are caused by .a files added by -l flags, which are not
   # listed as explicit inputs within .ninja rules.
-  parsed_inputs = set(elf_object_paths)
   missed_inputs = set()
   for symbol in raw_symbols:
     path = symbol.object_path
     if path.endswith(')'):
       # Convert foo/bar.a(baz.o) -> foo/bar.a
-      path = path[:path.index('(')]
-    if path and path not in parsed_inputs:
+      path = path[:path.rindex('(')]
+    if path and path not in known_inputs:
       missed_inputs.add(path)
   return missed_inputs
 
@@ -597,9 +619,21 @@ def CreateMetadata(map_path, elf_path, apk_path, tool_prefix, output_directory):
   return metadata
 
 
-def _ParseElfInfo(map_path, elf_path, tool_prefix, output_directory,
-    track_string_literals, elf_object_paths):
-  """Adds Elf section sizes and symbols."""
+def _ResolveThinArchivePaths(raw_symbols, thin_archives):
+  """Converts object_paths for thin archives to external .o paths."""
+  for symbol in raw_symbols:
+    object_path = symbol.object_path
+    if object_path.endswith(')'):
+      start_idx = object_path.rindex('(')
+      archive_path = object_path[:start_idx]
+      if archive_path in thin_archives:
+        subpath = object_path[start_idx + 1:-1]
+        symbol.object_path = ar.CreateThinObjectPath(archive_path, subpath)
+
+
+def _ParseElfInfo(map_path, elf_path, tool_prefix, track_string_literals,
+                  outdir_context=None):
+  """Adds ELF section sizes and symbols."""
   if elf_path:
     # Run nm on the elf file to retrieve the list of symbol names per-address.
     # This list is required because the .map file contains only a single name
@@ -616,14 +650,18 @@ def _ParseElfInfo(map_path, elf_path, tool_prefix, output_directory,
     # single path for these symbols.
     # Rather than record all paths for each symbol, set the paths to be the
     # common ancestor of all paths.
-    if output_directory:
-      bulk_analyzer = nm.BulkObjectFileAnalyzer(tool_prefix, output_directory)
-      bulk_analyzer.AnalyzePaths(elf_object_paths)
+    if outdir_context:
+      bulk_analyzer = nm.BulkObjectFileAnalyzer(
+          tool_prefix, outdir_context.output_directory)
+      bulk_analyzer.AnalyzePaths(outdir_context.elf_object_paths)
 
   logging.info('Parsing Linker Map')
   with _OpenMaybeGz(map_path) as map_file:
     section_sizes, raw_symbols = (
         linker_map_parser.MapFileParser().Parse(map_file))
+
+    if outdir_context and outdir_context.thin_archives:
+      _ResolveThinArchivePaths(raw_symbols, outdir_context.thin_archives)
 
   if elf_path:
     logging.debug('Validating section sizes')
@@ -635,9 +673,11 @@ def _ParseElfInfo(map_path, elf_path, tool_prefix, output_directory,
         logging.error('readelf: %r', elf_section_sizes)
         sys.exit(1)
 
-  if elf_path and output_directory:
+  if elf_path and outdir_context:
     missed_object_paths = _DiscoverMissedObjectPaths(
-        raw_symbols, elf_object_paths)
+        raw_symbols, outdir_context.known_inputs)
+    missed_object_paths = ar.ExpandThinArchives(
+        missed_object_paths, outdir_context.output_directory)[0]
     bulk_analyzer.AnalyzePaths(missed_object_paths)
     bulk_analyzer.SortPaths()
     if track_string_literals:
@@ -663,11 +703,12 @@ def _ParseElfInfo(map_path, elf_path, tool_prefix, output_directory,
     names_by_address = elf_nm_result.get()
     raw_symbols = _AddNmAliases(raw_symbols, names_by_address)
 
-    if output_directory:
+    if outdir_context:
       object_paths_by_name = bulk_analyzer.GetSymbolNames()
-      logging.debug('Fetched path information for %d symbols from %d files',
-                    len(object_paths_by_name),
-                    len(elf_object_paths) + len(missed_object_paths))
+      logging.debug(
+          'Fetched path information for %d symbols from %d files',
+          len(object_paths_by_name),
+          len(outdir_context.elf_object_paths) + len(missed_object_paths))
 
       # For aliases, this provides path information where there wasn't any.
       logging.info('Creating aliases for symbols shared by multiple paths')
@@ -808,19 +849,21 @@ def _ParseDexSymbols(section_sizes, apk_path, output_directory):
   return symbols
 
 
-def _ParseApkOtherSymbols(section_sizes, apk_path):
+def _ParseApkOtherSymbols(section_sizes, apk_path, apk_so_path, knobs):
   apk_name = os.path.basename(apk_path)
   apk_symbols = []
   zip_info_total = 0
   with zipfile.ZipFile(apk_path) as z:
     for zip_info in z.infolist():
       zip_info_total += zip_info.compress_size
-      # Skip shared library, pak, and dex files as they are accounted for.
-      if (zip_info.filename.endswith('.so')
+      # Skip main shared library, pak, and dex files as they are accounted for.
+      if (zip_info.filename == apk_so_path
           or zip_info.filename.endswith('.dex')
           or zip_info.filename.endswith('.pak')):
         continue
-      path = os.path.join(apk_name, 'other', zip_info.filename)
+      file_name = os.path.basename(zip_info.filename)
+      path = knobs.apk_other_files.get(
+          file_name, os.path.join(apk_name, 'other', zip_info.filename))
       apk_symbols.append(models.Symbol(
             models.SECTION_OTHER, zip_info.compress_size,
             object_path=path, full_name=os.path.basename(zip_info.filename)))
@@ -910,22 +953,42 @@ def CreateSectionSizesAndSymbols(
     apk_elf_result = concurrent.ForkAndCall(
         _ElfInfoFromApk, (apk_path, apk_so_path, tool_prefix))
 
+  outdir_context = None
   source_mapper = None
-  elf_object_paths = None
   if output_directory:
     # Start by finding the elf_object_paths, so that nm can run on them while
     # the linker .map is being parsed.
     logging.info('Parsing ninja files.')
-    source_mapper, elf_object_paths = ninja_parser.Parse(
-        output_directory, elf_path)
+    source_mapper, ninja_elf_object_paths = (
+        ninja_parser.Parse(output_directory, elf_path))
     logging.debug('Parsed %d .ninja files.', source_mapper.parsed_file_count)
-    assert not elf_path or elf_object_paths, (
+    assert not elf_path or ninja_elf_object_paths, (
         'Failed to find link command in ninja files for ' +
         os.path.relpath(elf_path, output_directory))
 
+    if ninja_elf_object_paths:
+      elf_object_paths, thin_archives = ar.ExpandThinArchives(
+          ninja_elf_object_paths, output_directory)
+      known_inputs = set(elf_object_paths)
+      known_inputs.update(ninja_elf_object_paths)
+    else:
+      elf_object_paths = None
+      known_inputs = None
+      # When we don't know which elf file is used, just search all paths.
+      thin_archives = set(
+          p for p in source_mapper.IterAllPaths()
+          if p.endswith('.a') and ar.IsThinArchive(
+              os.path.join(output_directory, p)))
+
+    outdir_context = _OutputDirectoryContext(
+        elf_object_paths=elf_object_paths,
+        known_inputs=known_inputs,
+        output_directory=output_directory,
+        source_mapper=source_mapper,
+        thin_archives=thin_archives)
+
   section_sizes, raw_symbols = _ParseElfInfo(
-      map_path, elf_path, tool_prefix, output_directory, track_string_literals,
-      elf_object_paths)
+      map_path, elf_path, tool_prefix, track_string_literals, outdir_context)
   elf_overhead_size = _CalculateElfOverhead(section_sizes, elf_path)
 
   pak_symbols_by_id = None
@@ -937,7 +1000,8 @@ def CreateSectionSizesAndSymbols(
           section_sizes, metadata, apk_elf_result)
     raw_symbols.extend(
         _ParseDexSymbols(section_sizes, apk_path, output_directory))
-    raw_symbols.extend(_ParseApkOtherSymbols(section_sizes, apk_path))
+    raw_symbols.extend(
+        _ParseApkOtherSymbols(section_sizes, apk_path, apk_so_path, knobs))
   elif pak_files and pak_info_file:
     pak_symbols_by_id = _FindPakSymbolsFromFiles(
         pak_files, pak_info_file, output_directory)
@@ -967,6 +1031,10 @@ def CreateSizeInfo(
     section_sizes, raw_symbols, metadata=None, normalize_names=True):
   """Performs operations on all symbols and creates a SizeInfo object."""
   logging.debug('Sorting %d symbols', len(raw_symbols))
+  # TODO(agrieve): Either change this sort so that it's only sorting by section
+  #     (and not using .sort()), or have it specify a total ordering (which must
+  #     also include putting padding-only symbols before others of the same
+  #     address). Note: The sort as-is takes ~1.5 seconds.
   raw_symbols.sort(key=lambda s: (
       s.IsPak(), s.IsBss(), s.section_name, s.address))
   logging.info('Processed %d symbols', len(raw_symbols))
@@ -1059,8 +1127,31 @@ def _ElfInfoFromApk(apk_path, apk_so_path, tool_prefix):
     return build_id, section_sizes, elf_overhead_size
 
 
+def _AutoIdentifyInputFile(args):
+  file_output = subprocess.check_output(['file', args.f])
+  format_text = file_output[file_output.find(': ') + 2:]
+  # File-not-found -> 'cannot ...' and directory -> 'directory', which don't
+  # match anything here, so they are handled by the final 'return False'.
+  if (format_text.startswith('Java archive data') or
+      format_text.startswith('Zip archive data')):
+    logging.info('Auto-identified --apk-file.')
+    args.apk_file = args.f
+    return True
+  if format_text.startswith('ELF '):
+    logging.info('Auto-identified --elf-file.')
+    args.elf_file = args.f
+    return True
+  if format_text.startswith('ASCII text'):
+    logging.info('Auto-identified --map-file.')
+    args.map_file = args.f
+    return True
+  return False
+
+
 def AddMainPathsArguments(parser):
   """Add arguments for DeduceMainPaths()."""
+  parser.add_argument('-f', metavar='FILE',
+                      help='Auto-identify input file type.')
   parser.add_argument('--apk-file',
                       help='.apk file to measure. When set, --elf-file will be '
                             'derived (if unset). Providing the .apk allows '
@@ -1097,6 +1188,10 @@ def AddArguments(parser):
 
 def DeduceMainPaths(args, parser):
   """Computes main paths based on input, and deduces them if needed."""
+  if args.f is not None:
+    if not _AutoIdentifyInputFile(args):
+      parser.error('Cannot find or identify file %s' % args.f)
+
   apk_path = args.apk_file
   elf_path = args.elf_file
   map_path = args.map_file

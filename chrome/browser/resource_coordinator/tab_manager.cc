@@ -60,7 +60,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/page_importance_signals.h"
-#include "third_party/WebKit/public/platform/WebSuddenTerminationDisablerType.h"
+#include "third_party/blink/public/platform/web_sudden_termination_disabler_type.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/resource_coordinator/tab_manager_delegate_chromeos.h"
@@ -115,12 +115,18 @@ std::unique_ptr<base::trace_event::ConvertableToTraceFormat> DataAsTraceValue(
   return std::move(data);
 }
 
+int GetNumLoadedLifecycleUnits(LifecycleUnitSet lifecycle_unit_set) {
+  int num_loaded_lifecycle_units = 0;
+  for (auto* lifecycle_unit : lifecycle_unit_set)
+    if (lifecycle_unit->GetState() == LifecycleUnit::State::LOADED)
+      num_loaded_lifecycle_units++;
+  return num_loaded_lifecycle_units;
+}
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // TabManager
-
-constexpr base::TimeDelta TabManager::kDiscardProtectionTime;
 
 class TabManager::TabManagerSessionRestoreObserver final
     : public SessionRestoreObserver {
@@ -260,11 +266,6 @@ LifecycleUnitVector TabManager::GetSortedLifecycleUnits() {
   return sorted_lifecycle_units;
 }
 
-bool TabManager::IsTabDiscarded(content::WebContents* contents) const {
-  auto* lifecycle_unit = TabLifecycleUnitExternal::FromWebContents(contents);
-  return lifecycle_unit && lifecycle_unit->IsDiscarded();
-}
-
 void TabManager::DiscardTab(DiscardReason reason) {
   if (reason == DiscardReason::kUrgent)
     stats_collector_->RecordWillDiscardUrgently(GetNumAliveTabs());
@@ -327,11 +328,6 @@ void TabManager::AddObserver(TabLifecycleObserver* observer) {
 
 void TabManager::RemoveObserver(TabLifecycleObserver* observer) {
   TabLifecycleUnitExternal::RemoveTabLifecycleObserver(observer);
-}
-
-bool TabManager::IsTabAutoDiscardable(content::WebContents* contents) const {
-  auto* lifecycle_unit = TabLifecycleUnitExternal::FromWebContents(contents);
-  return !lifecycle_unit || lifecycle_unit->IsAutoDiscardable();
 }
 
 void TabManager::SetTabAutoDiscardableState(int32_t tab_id, bool state) {
@@ -477,7 +473,7 @@ base::TimeDelta TabManager::GetTimeToPurge(
 bool TabManager::ShouldPurgeNow(content::WebContents* content) const {
   if (GetWebContentsData(content)->is_purged())
     return false;
-  if (IsTabDiscarded(content))
+  if (TabLifecycleUnitExternal::FromWebContents(content)->IsDiscarded())
     return false;
 
   base::TimeDelta time_passed =
@@ -880,7 +876,7 @@ int TabManager::GetNumAliveTabs() const {
     TabStripModel* tab_strip_model = browser->tab_strip_model();
     for (int index = 0; index < tab_strip_model->count(); ++index) {
       content::WebContents* contents = tab_strip_model->GetWebContentsAt(index);
-      if (!IsTabDiscarded(contents))
+      if (!TabLifecycleUnitExternal::FromWebContents(contents)->IsDiscarded())
         ++tab_count;
     }
   }
@@ -915,15 +911,35 @@ bool TabManager::IsForceLoadTimerRunning() const {
   return force_load_timer_ && force_load_timer_->IsRunning();
 }
 
+void TabManager::OnLifecycleUnitStateChanged(LifecycleUnit* lifecycle_unit) {
+  if (lifecycle_unit->GetState() == LifecycleUnit::State::LOADED)
+    num_loaded_lifecycle_units_++;
+  else
+    num_loaded_lifecycle_units_--;
+
+  DCHECK_EQ(num_loaded_lifecycle_units_,
+            GetNumLoadedLifecycleUnits(lifecycle_units_));
+}
+
 void TabManager::OnLifecycleUnitDestroyed(LifecycleUnit* lifecycle_unit) {
+  if (lifecycle_unit->GetState() == LifecycleUnit::State::LOADED)
+    num_loaded_lifecycle_units_--;
   lifecycle_units_.erase(lifecycle_unit);
+
+  DCHECK_EQ(num_loaded_lifecycle_units_,
+            GetNumLoadedLifecycleUnits(lifecycle_units_));
 }
 
 void TabManager::OnLifecycleUnitCreated(LifecycleUnit* lifecycle_unit) {
   lifecycle_units_.insert(lifecycle_unit);
+  if (lifecycle_unit->GetState() == LifecycleUnit::State::LOADED)
+    num_loaded_lifecycle_units_++;
 
   // Add an observer to be notified of destruction.
   lifecycle_unit->AddObserver(this);
+
+  DCHECK_EQ(num_loaded_lifecycle_units_,
+            GetNumLoadedLifecycleUnits(lifecycle_units_));
 }
 
 }  // namespace resource_coordinator

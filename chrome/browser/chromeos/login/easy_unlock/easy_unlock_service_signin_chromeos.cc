@@ -12,7 +12,6 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/sys_info.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -170,10 +169,6 @@ EasyUnlockServiceSignin::EasyUnlockServiceSignin(Profile* profile)
 
 EasyUnlockServiceSignin::~EasyUnlockServiceSignin() {}
 
-void EasyUnlockServiceSignin::SetCurrentUser(const AccountId& account_id) {
-  OnFocusedUserChanged(account_id);
-}
-
 void EasyUnlockServiceSignin::WrapChallengeForUserAndDevice(
     const AccountId& account_id,
     const std::string& device_public_key,
@@ -221,15 +216,6 @@ AccountId EasyUnlockServiceSignin::GetAccountId() const {
 }
 
 void EasyUnlockServiceSignin::LaunchSetup() {
-  NOTREACHED();
-}
-
-const base::DictionaryValue* EasyUnlockServiceSignin::GetPermitAccess() const {
-  return nullptr;
-}
-
-void EasyUnlockServiceSignin::SetPermitAccess(
-    const base::DictionaryValue& permit) {
   NOTREACHED();
 }
 
@@ -313,16 +299,6 @@ void EasyUnlockServiceSignin::RecordPasswordLoginEvent(
   EasyUnlockAuthEvent event = GetPasswordAuthEvent();
   RecordEasyUnlockSigninEvent(event);
   DVLOG(1) << "Easy Sign-in password login event, event=" << event;
-}
-
-void EasyUnlockServiceSignin::StartAutoPairing(
-    const AutoPairingResultCallback& callback) {
-  NOTREACHED();
-}
-
-void EasyUnlockServiceSignin::SetAutoPairingResult(bool success,
-                                                   const std::string& error) {
-  NOTREACHED();
 }
 
 void EasyUnlockServiceSignin::InitializeInternal() {
@@ -444,8 +420,6 @@ void EasyUnlockServiceSignin::OnFocusedUserChanged(
 
   if (should_update_app_state) {
     UpdateAppState();
-  } else {
-    NotifyUserUpdated();
   }
 
   LoadCurrentUserDataIfNeeded();
@@ -512,11 +486,6 @@ void EasyUnlockServiceSignin::OnUserDataLoaded(
                               EasyUnlockScreenlockStateHandler::NO_PAIRING);
     }
   }
-
-  // If the fetched data belongs to the currently focused user, notify the app
-  // that it has to refresh it's user data.
-  if (account_id == account_id_)
-    NotifyUserUpdated();
 
   if (devices.empty())
     return;

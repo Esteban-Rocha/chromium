@@ -255,8 +255,6 @@ android_library("chrome_java") {
     "//services/shape_detection:shape_detection_java",
     "//services/shape_detection/public/mojom:mojom_java",
     "//skia/public/interfaces:interfaces_java",
-    "//third_party/WebKit/public:android_mojo_bindings_java",
-    "//third_party/WebKit/public:blink_headers_java",
     "//third_party/android_data_chart:android_data_chart_java",
     "//third_party/android_media:android_media_java",
     "//third_party/android_protobuf:protobuf_nano_javalib",
@@ -272,6 +270,8 @@ android_library("chrome_java") {
     "//third_party/android_tools:android_support_v7_gridlayout_java",
     "//third_party/android_tools:android_support_v7_mediarouter_java",
     "//third_party/android_tools:android_support_v7_recyclerview_java",
+    "//third_party/blink/public:android_mojo_bindings_java",
+    "//third_party/blink/public:blink_headers_java",
     "//third_party/cacheinvalidation:cacheinvalidation_javalib",
     "//third_party/cacheinvalidation:cacheinvalidation_proto_java",
     "//third_party/custom_tabs_client:custom_tabs_support_java",
@@ -401,7 +401,6 @@ proto_java_library("document_tab_model_info_proto_java") {
   sources = [
     "$proto_path/document_tab_model_info.proto",
   ]
-  generate_lite = true
 }
 
 proto_java_library("partner_location_descriptor_proto_java") {
@@ -409,7 +408,6 @@ proto_java_library("partner_location_descriptor_proto_java") {
   sources = [
     "$proto_path/partner_location_descriptor.proto",
   ]
-  generate_lite = true
 }
 
 proto_java_library("thumbnail_cache_entry_proto_java") {
@@ -417,7 +415,6 @@ proto_java_library("thumbnail_cache_entry_proto_java") {
   sources = [
     "$proto_path/thumbnail_cache_entry.proto",
   ]
-  generate_lite = true
 }
 
 java_cpp_template("resource_id_javagen") {
@@ -468,14 +465,14 @@ junit_binary("chrome_junit_tests") {
     "//mojo/public/java:bindings_java",
     "//mojo/public/java:system_java",
     "//net/android:net_java",
-    "//third_party/WebKit/public:android_mojo_bindings_java",
-    "//third_party/WebKit/public:blink_headers_java",
     "//third_party/android_protobuf:protobuf_nano_javalib",
     "//third_party/android_tools:android_arch_lifecycle_common_java",
     "//third_party/android_tools:android_support_annotations_java",
     "//third_party/android_tools:android_support_v7_appcompat_java",
     "//third_party/android_tools:android_support_v7_mediarouter_java",
     "//third_party/android_tools:android_support_v7_recyclerview_java",
+    "//third_party/blink/public:android_mojo_bindings_java",
+    "//third_party/blink/public:blink_headers_java",
     "//third_party/cacheinvalidation:cacheinvalidation_javalib",
     "//third_party/custom_tabs_client:custom_tabs_support_java",
     "//third_party/hamcrest:hamcrest_java",
@@ -572,8 +569,6 @@ android_library("chrome_test_java") {
     "//printing:printing_java",
     "//services:service_javatests",
     "//services/service_manager/public/java:service_manager_java",
-    "//third_party/WebKit/public:android_mojo_bindings_java",
-    "//third_party/WebKit/public:blink_headers_java",
     "//third_party/android_protobuf:protobuf_nano_javalib",
     "//third_party/android_support_test_runner:rules_java",
     "//third_party/android_support_test_runner:runner_java",
@@ -582,6 +577,8 @@ android_library("chrome_test_java") {
     "//third_party/android_tools:android_support_design_java",
     "//third_party/android_tools:android_support_v7_appcompat_java",
     "//third_party/android_tools:android_support_v7_recyclerview_java",
+    "//third_party/blink/public:android_mojo_bindings_java",
+    "//third_party/blink/public:blink_headers_java",
     "//third_party/cacheinvalidation:cacheinvalidation_javalib",
     "//third_party/custom_tabs_client:custom_tabs_support_java",
     "//third_party/espresso:espresso_all_java",
@@ -645,10 +642,12 @@ if (enable_vr) {
       "javatests/src/org/chromium/chrome/browser/vr_shell/nfc_apk/SimNfcActivity.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/rules/ChromeTabbedActivityVrTestRule.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/rules/CustomTabActivityVrTestRule.java",
+      "javatests/src/org/chromium/chrome/browser/vr_shell/rules/HeadTrackingMode.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/rules/VrActivityRestriction.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/rules/VrActivityRestrictionRule.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/rules/VrTestRule.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/rules/WebappActivityVrTestRule.java",
+      "javatests/src/org/chromium/chrome/browser/vr_shell/util/HeadTrackingUtils.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/util/NfcSimUtils.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/util/TransitionUtils.java",
       "javatests/src/org/chromium/chrome/browser/vr_shell/util/VrInfoBarUtils.java",
@@ -722,6 +721,26 @@ android_resources("chrome_public_apk_resources") {
   ]
 }
 
+version_resource_dir = "$target_gen_dir/templates/chrome_version_xml/res"
+verson_resource_file = "$version_resource_dir/values/strings.xml"
+process_version("version_xml") {
+  template_file = "java/version_strings.xml.template"
+  sources = [
+    "//chrome/VERSION",
+  ]
+  output = verson_resource_file
+}
+
+android_resources("product_version_resources") {
+  resource_dirs = []
+  generated_resource_dirs = [ version_resource_dir ]
+  generated_resource_files = [ verson_resource_file ]
+  custom_package = "org.chromium.base"
+  deps = [
+    ":version_xml",
+  ]
+}
+
 java_group("chrome_public_non_pak_assets") {
   deps = [
     "//chrome/android/webapk/libs/runtime_library:runtime_library_assets",
@@ -763,6 +782,7 @@ android_assets("chrome_public_locale_pak_assets") {
 
 jinja_template_resources("chrome_public_apk_template_resources") {
   resources = [
+    "java/res_template/xml/file_paths.xml",
     "java/res_template/xml/launchershortcuts.xml",
     "java/res_template/xml/searchable.xml",
     "java/res_template/xml/syncadapter.xml",
@@ -773,6 +793,7 @@ jinja_template_resources("chrome_public_apk_template_resources") {
 
 jinja_template_resources("chrome_sync_shell_apk_template_resources") {
   resources = [
+    "java/res_template/xml/file_paths.xml",
     "java/res_template/xml/launchershortcuts.xml",
     "java/res_template/xml/searchable.xml",
     "java/res_template/xml/syncadapter.xml",
@@ -793,14 +814,6 @@ template("chrome_shared_library") {
       "//build/config:exe_and_shlib_deps",
       "//chrome:chrome_android_core",
     ]
-
-    if (enable_vr) {
-      # Ensure libgvr static library appears before gcc library in linking order.
-      # See https://crbug.com/704305 for details.
-      libs = [
-        "//third_party/gvr-android-sdk/libgvr_shim_static_${current_cpu}.a",
-      ]
-    }
 
     if (use_order_profiling) {
       deps += [ "//tools/cygprofile" ]
@@ -1012,14 +1025,6 @@ if (!android_64bit_target_cpu ||
       "//chrome:chrome_android_core",
     ]
 
-    if (enable_vr) {
-      # Ensure libgvr static library appears before gcc library in linking order.
-      # See https://crbug.com/704305 for details.
-      libs = [
-        "//third_party/gvr-android-sdk/libgvr_shim_static_${current_cpu}.a",
-      ]
-    }
-
     configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
     configs += [ "//build/config/android:hide_all_but_jni" ]
     if (use_lld) {
@@ -1061,12 +1066,6 @@ shared_library("chrome_sync_shell") {
     "//components/sync",
     "//components/sync:test_support_fake_server_android",
   ]
-  if (enable_vr) {
-    # Ensure libgvr static library appears before gcc library in linking order.
-    # See https://crbug.com/704305 for details.
-    libs =
-        [ "//third_party/gvr-android-sdk/libgvr_shim_static_${current_cpu}.a" ]
-  }
   if (chromium_linker_supported && use_lld) {
     configs += [ "//build/config/android:lld_pack_relocations" ]
   }
@@ -1092,11 +1091,20 @@ template("chrome_public_apk_tmpl_shared") {
   }
 }
 
+# Unwind tables are added to only official builds (public_apk(s)) so that
+# developer builds are not affected.
+_add_unwind_tables_in_chrome_public_apk =
+    can_unwind_with_cfi_table && is_official_build
+
 chrome_public_apk_tmpl_shared("chrome_public_apk") {
   android_manifest = chrome_public_android_manifest
   android_manifest_dep = ":chrome_public_android_manifest"
   apk_name = "ChromePublic"
   shared_libraries = [ ":libchrome" ]
+  add_unwind_tables_in_apk = _add_unwind_tables_in_chrome_public_apk
+  if (_add_unwind_tables_in_chrome_public_apk) {
+    shared_library_for_unwind_asset = "chrome"
+  }
 }
 
 chrome_public_apk_tmpl_shared("chrome_public_apk_for_test") {
@@ -1105,6 +1113,10 @@ chrome_public_apk_tmpl_shared("chrome_public_apk_for_test") {
   android_manifest_dep = ":chrome_public_android_manifest"
   apk_name = "ChromePublicForTest"
   shared_libraries = [ ":libchromefortest" ]
+  add_unwind_tables_in_apk = _add_unwind_tables_in_chrome_public_apk
+  if (_add_unwind_tables_in_chrome_public_apk) {
+    shared_library_for_unwind_asset = "chromefortest"
+  }
   deps = [
     "//chrome/browser/profiling_host:profiling_host_java_test_support",
   ]
@@ -1115,6 +1127,10 @@ chrome_public_apk_tmpl_shared("chrome_modern_public_apk") {
   android_manifest_dep = ":chrome_modern_public_android_manifest"
   apk_name = "ChromeModernPublic"
   shared_libraries = [ ":libchrome" ]
+  add_unwind_tables_in_apk = _add_unwind_tables_in_chrome_public_apk
+  if (_add_unwind_tables_in_chrome_public_apk) {
+    shared_library_for_unwind_asset = "chrome"
+  }
 
   if (!is_java_debug) {
     png_to_webp = true
@@ -1155,6 +1171,11 @@ monochrome_public_apk_tmpl("monochrome_public_apk") {
     "//chrome/android:chrome_java",
     "//chrome/android:class_register_java",
   ]
+
+  add_unwind_tables_in_apk = _add_unwind_tables_in_chrome_public_apk
+  if (_add_unwind_tables_in_chrome_public_apk && can_unwind_with_cfi_table) {
+    shared_library_for_unwind_asset = "monochrome"
+  }
 }
 
 chrome_public_apk_tmpl_shared("chrome_sync_shell_apk") {

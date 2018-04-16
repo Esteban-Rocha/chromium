@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/guid.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/observer_list.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
@@ -49,6 +48,27 @@ void RunRouteRequestCallbacks(
     std::vector<MediaRouteResponseCallback> callbacks) {
   for (MediaRouteResponseCallback& callback : callbacks)
     std::move(callback).Run(*result);
+}
+
+// TODO(crbug.com/831416): Delete temporary code once we can use
+// presentation.mojom types here.
+blink::mojom::PresentationConnectionCloseReason
+PresentationConnectionCloseReasonToBlink(
+    media_router::mojom::MediaRouter::PresentationConnectionCloseReason
+        reason) {
+  switch (reason) {
+    case media_router::mojom::MediaRouter::PresentationConnectionCloseReason::
+        CONNECTION_ERROR:
+      return blink::mojom::PresentationConnectionCloseReason::CONNECTION_ERROR;
+    case media_router::mojom::MediaRouter::PresentationConnectionCloseReason::
+        CLOSED:
+      return blink::mojom::PresentationConnectionCloseReason::CLOSED;
+    case media_router::mojom::MediaRouter::PresentationConnectionCloseReason::
+        WENT_AWAY:
+      return blink::mojom::PresentationConnectionCloseReason::WENT_AWAY;
+  }
+  NOTREACHED() << "Unknown PresentationConnectionCloseReason " << reason;
+  return blink::mojom::PresentationConnectionCloseReason::CONNECTION_ERROR;
 }
 
 }  // namespace
@@ -213,7 +233,7 @@ void MediaRouterMojoImpl::CreateRoute(
     provider_id = MediaRouteProviderId::EXTENSION;
   }
 
-  int tab_id = SessionTabHelper::IdForTab(web_contents);
+  int tab_id = SessionTabHelper::IdForTab(web_contents).id();
   std::string presentation_id = MediaRouterBase::CreatePresentationId();
   auto callback = base::BindOnce(
       &MediaRouterMojoImpl::RouteResponseReceived, weak_factory_.GetWeakPtr(),
@@ -246,7 +266,7 @@ void MediaRouterMojoImpl::JoinRoute(
     return;
   }
 
-  int tab_id = SessionTabHelper::IdForTab(web_contents);
+  int tab_id = SessionTabHelper::IdForTab(web_contents).id();
   auto callback = base::BindOnce(
       &MediaRouterMojoImpl::RouteResponseReceived, weak_factory_.GetWeakPtr(),
       presentation_id, *provider_id, incognito, std::move(callbacks), true);
@@ -273,7 +293,7 @@ void MediaRouterMojoImpl::ConnectRouteByRouteId(
     return;
   }
 
-  int tab_id = SessionTabHelper::IdForTab(web_contents);
+  int tab_id = SessionTabHelper::IdForTab(web_contents).id();
   std::string presentation_id = MediaRouterBase::CreatePresentationId();
   auto callback = base::BindOnce(
       &MediaRouterMojoImpl::RouteResponseReceived, weak_factory_.GetWeakPtr(),
@@ -818,9 +838,10 @@ void MediaRouterMojoImpl::OnPresentationConnectionStateChanged(
 
 void MediaRouterMojoImpl::OnPresentationConnectionClosed(
     const std::string& route_id,
-    content::PresentationConnectionCloseReason reason,
+    media_router::mojom::MediaRouter::PresentationConnectionCloseReason reason,
     const std::string& message) {
-  NotifyPresentationConnectionClose(route_id, reason, message);
+  NotifyPresentationConnectionClose(
+      route_id, PresentationConnectionCloseReasonToBlink(reason), message);
 }
 
 void MediaRouterMojoImpl::OnTerminateRouteResult(
@@ -901,7 +922,7 @@ void MediaRouterMojoImpl::OnMediaRemoterCreated(
     media::mojom::MirrorServiceRemotingSourceRequest source_request) {
   DVLOG_WITH_INSTANCE(1) << __func__ << ": tab_id = " << tab_id;
 
-  auto it = remoting_sources_.find(tab_id);
+  auto it = remoting_sources_.find(SessionID::FromSerializedValue(tab_id));
   if (it == remoting_sources_.end()) {
     LOG(WARNING) << __func__
                  << ": No registered remoting source for tab_id = " << tab_id;

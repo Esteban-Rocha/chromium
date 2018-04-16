@@ -388,6 +388,9 @@ class ASH_EXPORT ShelfView : public views::View,
   // item, we should ignore the call.
   bool IsRepostEvent(const ui::Event& event);
 
+  // Returns true if the given |item| is supposed to be shown to the user.
+  bool ShouldShowShelfItem(const ShelfItem& item);
+
   // Convenience accessor to model_->items().
   const ShelfItem* ShelfItemForView(const views::View* view) const;
 
@@ -396,6 +399,9 @@ class ASH_EXPORT ShelfView : public views::View,
   int CalculateShelfDistance(const gfx::Point& coordinate) const;
 
   bool CanPrepareForDrag(Pointer pointer, const ui::LocatedEvent& event);
+
+  // Updates the back button opacity and focus behavior based on tablet mode.
+  void UpdateBackButton();
 
   // The model; owned by Launcher.
   ShelfModel* model_;

@@ -122,6 +122,7 @@
         <item name="android:windowMinWidthMinor">100%</item>
         <item name="buttonBarStyle">@style/ModalDialogButtonBarStyle</item>
         <item name="buttonBarButtonStyle">@style/ModalDialogButtonStyle</item>
+        <item name="android:windowSoftInputMode">adjustResize|stateHidden</item>
     </style>
 
     <style name="ModalDialogButtonBarStyle" parent="Widget.AppCompat.ButtonBar.AlertDialog">
@@ -264,6 +265,7 @@
     <style name="AlertDialogContent">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAlignment">viewStart</item>
         <item name="android:paddingStart">@dimen/dialog_padding_sides</item>
         <item name="android:paddingEnd">@dimen/dialog_padding_sides</item>
         <item name="android:paddingTop">@dimen/dialog_padding_top</item>
@@ -547,7 +549,7 @@
     <style name="LocationBarButton">
         <item name="android:background">@null</item>
     </style>
-    <style name="LocationBarButtonTablet" parent="LocationBarButton">
+    <style name="LocationBarActionButton" parent="LocationBarButton">
         <item name="android:layout_width">@dimen/location_bar_icon_width</item>
         <item name="android:layout_height">match_parent</item>
         <item name="android:scaleType">center</item>

@@ -35,14 +35,22 @@
 
 namespace gl {
 class GLContext;
+class GLFence;
 class GLFenceEGL;
+class GLImageEGL;
 class GLSurface;
 class ScopedJavaSurface;
 class SurfaceTexture;
 }  // namespace gl
 
+namespace gfx {
+class GpuFence;
+}  // namespace gfx
+
 namespace gpu {
 struct MailboxHolder;
+struct SyncToken;
+class GpuMemoryBufferImplAndroidHardwareBuffer;
 }  // namespace gpu
 
 namespace vr {
@@ -64,6 +72,171 @@ struct WebVrBounds {
   gfx::RectF left_bounds;
   gfx::RectF right_bounds;
   gfx::Size source_size;
+};
+
+// WebVR/WebXR frames go through a three-stage pipeline: Animating, Processing,
+// and Rendering. There's also an Idle state used as the starting state before
+// Animating and ending state after Rendering.
+//
+// The stages can overlap, but we enforce that there isn't more than one
+// frame in a given non-Idle state at any one time.
+//
+//       <- GetVSync
+//   Idle
+//       SendVSync
+//   Animating
+//       <- UpdateLayerBounds (optional)
+//       <- GetVSync
+//       <- SubmitFrame
+//       ProcessWebVrFrame
+//   Processing
+//       <- OnWebVrFrameAvailable
+//       DrawFrame
+//       DrawFrameSubmitWhenReady
+//       <= poll prev_frame_completion_fence_
+//       DrawFrameSubmitNow
+//   Rendering
+//       <= prev_frame_completion_fence_ signals
+//       DrawFrameSubmitNow (of next frame)
+//   Idle
+//
+// Note that the frame is considered to still be in "Animating" state until
+// ProcessWebVrFrame is called. If the current processing frame isn't done yet
+// at the time the incoming SubmitFrame arrives, we defer ProcessWebVrFrame
+// until that finishes.
+//
+// The renderer may call SubmitFrameMissing instead of SubmitFrame. In that
+// case, the frame transitions from Animating back to Idle.
+//
+//       <- GetVSync
+//   Idle
+//       SendVSync
+//   Animating
+//       <- UpdateLayerBounds (optional)
+//       <- GetVSync
+//       <- SubmitFrameMissing
+//   Idle
+
+struct WebXrSharedBuffer {
+  WebXrSharedBuffer();
+  ~WebXrSharedBuffer();
+
+  gfx::Size size = {0, 0};
+
+  // Shared GpuMemoryBuffer
+  std::unique_ptr<gpu::GpuMemoryBufferImplAndroidHardwareBuffer> gmb;
+
+  // Resources in the remote GPU process command buffer context
+  std::unique_ptr<gpu::MailboxHolder> mailbox_holder;
+  uint32_t remote_texture = 0;
+  uint32_t remote_image = 0;
+
+  // Resources in the local GL context
+  uint32_t local_texture = 0;
+  // This refptr keeps the image alive while processing a frame. That's
+  // required because it owns underlying resources, and must still be
+  // alive when the mailbox texture backed by this image is used.
+  scoped_refptr<gl::GLImageEGL> local_glimage;
+};
+
+struct WebXrFrame {
+  WebXrFrame();
+  ~WebXrFrame();
+
+  bool IsValid();
+  void Recycle();
+
+  // If true, this frame cannot change state until unlocked. Used to mark
+  // processing frames for the critical stage from drawing to Surface until
+  // they arrive in OnWebVRFrameAvailable. See also recycle_once_unlocked.
+  bool state_locked = false;
+
+  // Start of elements that need to be reset on Recycle
+
+  int16_t index = -1;
+
+  // Set on an animating frame if it is waiting for being able to transition
+  // to processing state.
+  base::OnceClosure deferred_start_processing;
+
+  // Set if a frame recycle failed due to being locked. The client should check
+  // this after unlocking it and retry recycling it at that time.
+  bool recycle_once_unlocked = false;
+
+  std::unique_ptr<gl::GLFence> gvr_handoff_fence;
+
+  // End of elements that need to be reset on Recycle
+
+  base::TimeTicks time_pose;
+  base::TimeTicks time_js_submit;
+  base::TimeTicks time_copied;
+  gfx::Transform head_pose;
+
+  // In SharedBuffer mode, keep a swap chain.
+  std::unique_ptr<WebXrSharedBuffer> shared_buffer;
+
+  DISALLOW_COPY_AND_ASSIGN(WebXrFrame);
+};
+
+class WebXrPresentationState {
+ public:
+  // WebXR frames use an arbitrary sequential ID to help catch logic errors
+  // involving out-of-order frames. We use an 8-bit unsigned counter, wrapping
+  // from 255 back to 0. Elsewhere we use -1 to indicate a non-WebXR frame, so
+  // most internal APIs use int16_t to ensure that they can store a full
+  // -1..255 value range.
+  using FrameIndexType = uint8_t;
+
+  WebXrPresentationState();
+  ~WebXrPresentationState();
+
+  // State transitions for normal flow
+  FrameIndexType StartFrameAnimating();
+  void TransitionFrameAnimatingToProcessing();
+  void TransitionFrameProcessingToRendering();
+  void EndFrameRendering();
+
+  // Shuts down a presentation session. This will recycle any
+  // animating or rendering frame. A processing frame cannot be
+  // recycled if its state is locked, it will be recycled later
+  // once the state unlocks.
+  void EndPresentation();
+
+  // Variant transitions, if Renderer didn't call SubmitFrame,
+  // or if we want to discard an unwanted incoming frame.
+  void RecycleUnusedAnimatingFrame();
+  bool RecycleProcessingFrameIfPossible();
+
+  bool HaveAnimatingFrame() { return animating_frame_; }
+  WebXrFrame* GetAnimatingFrame();
+  bool HaveProcessingFrame() { return processing_frame_; }
+  WebXrFrame* GetProcessingFrame();
+  bool HaveRenderingFrame() { return rendering_frame_; }
+  WebXrFrame* GetRenderingFrame();
+
+  // Used by WebVrCanAnimateFrame() to detect when ui_->CanSendWebVrVSync()
+  // transitions from false to true, as part of starting the incoming frame
+  // timeout.
+  bool last_ui_allows_sending_vsync = false;
+
+  // GpuMemoryBuffer creation needs a buffer ID. We don't really care about
+  // this, but try to keep it unique to avoid confusion.
+  int next_memory_buffer_id = 0;
+
+  base::OnceClosure end_presentation_callback;
+
+ private:
+  std::vector<std::unique_ptr<WebXrFrame>> frames_storage_;
+
+  // Index of the next animating WebXR frame.
+  FrameIndexType next_frame_index_ = 0;
+
+  WebXrFrame* animating_frame_ = nullptr;
+  WebXrFrame* processing_frame_ = nullptr;
+  WebXrFrame* rendering_frame_ = nullptr;
+  base::queue<WebXrFrame*> idle_frames_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebXrPresentationState);
 };
 
 // This class manages all GLThread owned objects and GL rendering for VrShell.
@@ -95,6 +268,9 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
 
   void SetWebVrMode(bool enabled);
   void CreateOrResizeWebVRSurface(const gfx::Size& size);
+  void WebVrCreateOrResizeSharedBufferImage(WebXrSharedBuffer* buffer,
+                                            const gfx::Size& size);
+  void WebVrPrepareSharedBuffer(const gfx::Size& size);
   void ContentBoundsChanged(int width, int height);
   void BufferBoundsChanged(const gfx::Size& content_buffer_size,
                            const gfx::Size& overlay_buffer_size);
@@ -130,7 +306,7 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
  private:
   void GvrInit(gvr_context* gvr_api);
   device::mojom::VRDisplayFrameTransportOptionsPtr
-  GetWebVrFrameTransportOptions();
+      GetWebVrFrameTransportOptions(device::mojom::VRRequestPresentOptionsPtr);
   void InitializeRenderer();
   void OnGpuProcessConnectionReady();
   // Returns true if successfully resized.
@@ -175,17 +351,27 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
 
   void OnVSync(base::TimeTicks frame_time);
 
+  bool IsSubmitFrameExpected(int16_t frame_index);
+
   // VRPresentationProvider
   void GetVSync(GetVSyncCallback callback) override;
+  void SubmitFrameMissing(int16_t frame_index, const gpu::SyncToken&) override;
   void SubmitFrame(int16_t frame_index,
                    const gpu::MailboxHolder& mailbox,
                    base::TimeDelta time_waited) override;
   void SubmitFrameWithTextureHandle(int16_t frame_index,
                                     mojo::ScopedHandle texture_handle) override;
+  void SubmitFrameDrawnIntoTexture(int16_t frame_index,
+                                   const gpu::SyncToken&,
+                                   base::TimeDelta time_waited) override;
   void UpdateLayerBounds(int16_t frame_index,
                          const gfx::RectF& left_bounds,
                          const gfx::RectF& right_bounds,
                          const gfx::Size& source_size) override;
+
+  // Shared logic for SubmitFrame variants, including sanity checks.
+  // Returns true if OK to proceed.
+  bool SubmitFrameCommon(int16_t frame_index, base::TimeDelta time_waited);
 
   void ForceExitVr();
 
@@ -213,8 +399,19 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   // becoming true.
   void WebVrTryDeferredProcessing();
   // Transition a frame from animating to processing.
-  void ProcessWebVrFrame(int16_t frame_index,
-                         const gpu::MailboxHolder& mailbox);
+  void ProcessWebVrFrameFromGMB(int16_t frame_index,
+                                const gpu::SyncToken& sync_token);
+  void ProcessWebVrFrameFromMailbox(int16_t frame_index,
+                                    const gpu::MailboxHolder& mailbox);
+
+  // Used for discarding unwanted WebVR frames while UI is showing. We can't
+  // safely cancel frames from processing start until they show up in
+  // OnWebVRFrameAvailable, so only support cancelling them before or after
+  // that lifecycle segment.
+  void WebVrCancelAnimatingFrame();
+  void WebVrCancelProcessingFrameAfterTransfer();
+
+  void WebVrSendRenderNotification(bool was_rendered);
 
   void ClosePresentationBindings();
 
@@ -232,6 +429,7 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   scoped_refptr<gl::SurfaceTexture> content_overlay_surface_texture_;
   scoped_refptr<gl::SurfaceTexture> ui_surface_texture_;
   scoped_refptr<gl::SurfaceTexture> webvr_surface_texture_;
+  float webvr_surface_texture_uv_transform_[16];
   std::unique_ptr<gl::ScopedJavaSurface> content_surface_;
   std::unique_ptr<gl::ScopedJavaSurface> ui_surface_;
   std::unique_ptr<gl::ScopedJavaSurface> content_overlay_surface_;
@@ -245,7 +443,8 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   std::unique_ptr<gvr::BufferViewport> webvr_right_viewport_;
   std::unique_ptr<gvr::SwapChain> swap_chain_;
   gvr::Frame acquired_frame_;
-  base::queue<std::pair<uint8_t, WebVrBounds>> pending_bounds_;
+  base::queue<std::pair<WebXrPresentationState::FrameIndexType, WebVrBounds>>
+      pending_bounds_;
   base::queue<uint16_t> pending_frames_;
   std::unique_ptr<MailboxToSurfaceBridge> mailbox_bridge_;
   bool mailbox_bridge_ready_ = false;
@@ -263,6 +462,11 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   // check WebXrRenderPath or other feature flags in individual code paths
   // directly to avoid inconsistent logic.
   bool webvr_use_gpu_fence_ = false;
+  bool webvr_use_shared_buffer_draw_ = false;
+
+  void WebVrWaitForServerFence();
+  void OnWebVRTokenSignaled(int16_t frame_index,
+                            std::unique_ptr<gfx::GpuFence>);
 
   int webvr_unstuff_ratelimit_frames_ = 0;
 
@@ -272,11 +476,7 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   gfx::Size content_tex_buffer_size_ = {0, 0};
   gfx::Size webvr_surface_size_ = {0, 0};
 
-  std::vector<base::TimeTicks> webvr_time_pose_;
-  std::vector<base::TimeTicks> webvr_time_js_submit_;
-  std::vector<base::TimeTicks> webvr_time_copied_;
-  std::vector<bool> webvr_frame_oustanding_;
-  std::vector<gfx::Transform> webvr_head_pose_;
+  std::unique_ptr<WebXrPresentationState> webxr_ = nullptr;
 
   std::unique_ptr<Ui> ui_;
 
@@ -292,6 +492,7 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   bool cardboard_trigger_clicked_ = false;
 
   std::unique_ptr<VrController> controller_;
+  std::vector<device::mojom::XRInputSourceStatePtr> input_states_;
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
@@ -311,11 +512,6 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   device::mojom::VRSubmitFrameClientPtr submit_client_;
 
   GlBrowserInterface* browser_;
-
-  // Index of the next WebXR frame, wrapping from 255 back to 0. Elsewhere we
-  // use -1 to indicate a non-WebXR frame, so most internal APIs use int16_t to
-  // store the -1..255 range.
-  uint8_t next_frame_index_ = 0;
 
   uint64_t webvr_frames_received_ = 0;
 
@@ -344,6 +540,9 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   SlidingTimeDeltaAverage webvr_acquire_time_;
   SlidingTimeDeltaAverage webvr_submit_time_;
 
+  SlidingTimeDeltaAverage ui_processing_time_;
+  SlidingTimeDeltaAverage ui_controller_update_time_;
+
   gfx::Point3F pointer_start_;
 
   RenderInfo render_info_primary_;
@@ -356,18 +555,9 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
   // WebVR defers submitting a frame to GVR by scheduling a closure
   // for later. If we exit WebVR before it is executed, we need to
   // cancel it to avoid inconsistent state.
-  base::CancelableCallback<
+  base::CancelableOnceCallback<
       void(int16_t, const gfx::Transform&, std::unique_ptr<gl::GLFenceEGL>)>
       webvr_delayed_gvr_submit_;
-
-  // We only want one frame at a time in the lifecycle from
-  // mojo SubmitFrame until we submit to GVR. This flag is true
-  // for that timespan.
-  bool webvr_frame_processing_ = false;
-
-  // If we receive a new SubmitFrame when we're not ready, defer start of
-  // processing for later.
-  base::OnceClosure webvr_deferred_start_processing_;
 
   std::vector<gvr::BufferSpec> specs_;
 
@@ -378,11 +568,6 @@ class VrShellGl : public device::mojom::VRPresentationProvider {
 
   std::unique_ptr<VrDialog> vr_dialog_;
   bool showing_vr_dialog_ = false;
-
-  // Used by WebVrCanAnimateFrame() to detect when ui_->CanSendWebVrVSync()
-  // transitions from false to true, as part of starting the incoming frame
-  // timeout.
-  bool last_ui_allows_sending_webvr_vsync_ = false;
 
   base::WeakPtrFactory<VrShellGl> weak_ptr_factory_;
 

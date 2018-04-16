@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "base/optional.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
@@ -63,8 +62,8 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/cpp/resource_response.h"
-#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
-#include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
+#include "third_party/blink/public/common/frame/sandbox_flags.h"
+#include "third_party/blink/public/platform/web_mixed_content_context_type.h"
 
 namespace content {
 
@@ -299,7 +298,7 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateBrowserInitiated(
           GURL() /* searchable_form_url */,
           std::string() /* searchable_form_encoding */, initiator,
           GURL() /* client_side_redirect_url */,
-          nullptr /* devtools_initiator_info */),
+          base::nullopt /* devtools_initiator_info */),
       request_params, browser_initiated, false /* from_begin_navigation */,
       &frame_entry, &entry, std::move(navigation_ui_data)));
   return navigation_request;
@@ -597,6 +596,10 @@ void NavigationRequest::CreateNavigationHandle() {
 
   bool is_external_protocol =
       !GetContentClient()->browser()->IsHandledURL(common_params_.url);
+
+  net::HttpRequestHeaders headers;
+  headers.AddHeadersFromString(begin_params_->headers);
+
   std::unique_ptr<NavigationHandleImpl> navigation_handle =
       NavigationHandleImpl::Create(
           common_params_.url, redirect_chain, frame_tree_node_,
@@ -608,7 +611,7 @@ void NavigationRequest::CreateNavigationHandle() {
           common_params_.should_check_main_world_csp,
           begin_params_->is_form_submission, common_params_.suggested_filename,
           std::move(navigation_ui_data_), common_params_.method,
-          common_params_.post_data,
+          std::move(headers), common_params_.post_data,
           Referrer::SanitizeForRequest(common_params_.url,
                                        common_params_.referrer),
           common_params_.has_user_gesture, common_params_.transition,
@@ -799,6 +802,15 @@ void NavigationRequest::OnRequestRedirected(
           *this);
   speculative_site_instance_ =
       site_instance->HasProcess() ? site_instance : nullptr;
+
+  // If the new site instance doesn't yet have a process, then tell the
+  // SpareRenderProcessHostManager so it can decide whether to start warming up
+  // the spare at this time (note that the actual behavior depends on
+  // RenderProcessHostImpl::IsSpareProcessKeptAtAllTimes).
+  if (!site_instance->HasProcess()) {
+    RenderProcessHostImpl::NotifySpareManagerAboutRecentlyUsedBrowserContext(
+        site_instance->GetBrowserContext());
+  }
 
   // Check what the process of the SiteInstance is. It will be passed to the
   // NavigationHandle, and informed to expect a navigation to the redirected
@@ -1404,6 +1416,12 @@ void NavigationRequest::CommitNavigation() {
       std::move(body_), common_params_, request_params_, is_view_source_,
       std::move(subresource_loader_params_), std::move(subresource_overrides_),
       devtools_navigation_token_);
+
+  // Give SpareRenderProcessHostManager a heads-up about the most recently used
+  // BrowserContext.  This is mostly needed to make sure the spare is warmed-up
+  // if it wasn't done in RenderProcessHostImpl::GetProcessHostForSiteInstance.
+  RenderProcessHostImpl::NotifySpareManagerAboutRecentlyUsedBrowserContext(
+      render_frame_host->GetSiteInstance()->GetBrowserContext());
 }
 
 NavigationRequest::ContentSecurityPolicyCheckResult

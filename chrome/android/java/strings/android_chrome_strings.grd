@@ -534,6 +534,17 @@ CHAR-LIMIT guidelines:
         Chrome Passwords
       </message>
 
+      <!-- Contextual suggestions preferences -->
+      <message name="IDS_PREFS_CONTEXTUAL_SUGGESTIONS" desc="Title of contextual suggestions settings, which allows the user to get site suggestions based on the current website.">
+        Suggest related pages
+      </message>
+      <message name="IDS_CONTEXTUAL_SUGGESTIONS_DESCRIPTION" desc="Description of contextual suggestions, which tells the user what contextual suggestions does.">
+        When you scroll up, show quick links to related pages.
+      </message>
+      <message name="IDS_CONTEXTUAL_SUGGESTIONS_MESSAGE" desc="Message of contextual suggestions settings, which tells the user how to opt in contextual suggestions.">
+        This feature uses <ph name="BEGIN_LINK">&lt;link&gt;</ph>sync<ph name="END_LINK">&lt;/link&gt;</ph>. The URLs of pages you visit are sent to Google.
+      </message>
+
       <!-- Homepage preferences -->
       <message name="IDS_OPTIONS_HOMEPAGE_EDIT_TITLE" desc="The title of the screen that allows users to change the URL that opens when they tap on the home page button in the omnibox.">
         Edit home page
@@ -1203,6 +1214,27 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
       <message name="IDS_DOWNLOAD_LOCATION_DIALOG_CHECKBOX" desc="Label for the checkbox that allows the user to indicate if they do not want the download location selection dialog to appear every time they initiate a download.">
         Don‘t show again
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_DOWNLOAD_AGAIN" desc="Title for download location dialog in the case that there exists a file with the same name as the one they are trying to download, confirming the user wants to download a file with the same name.">
+        Download file again?
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_NAME_EXISTS" desc="Subtitle for download location dialog in the case that the file needs to be renamed because another file has the same name.">
+        File name already exists
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_RENAME_FILE" desc="Title for download location dialog in the case that the file needs to be renamed.">
+        Rename file
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_NAME_TOO_LONG" desc="Subtitle for download location dialog in the case that the file needs to be renamed because the name is too long.">
+        File name too long
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_NOT_ENOUGH_SPACE" desc="Text on download location dialog in the case that there is not enough space in the chosen location.">
+        Not enough space
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_DOWNLOAD_TO_DEFAULT_FOLDER" desc="Subtitle for download location dialog in the case that the download location the user had originally selected is full or not found. We automatically revert back to the default download location and ask the user to confirm that this is ok.">
+        Download to default folder?
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_NO_SD_CARD" desc="Title for download location dialog in the case that the SD card is not found.">
+        No SD card found
       </message>
 
       <!-- About Chrome preferences -->
@@ -2315,6 +2347,9 @@ Google may use your browsing activity, content on some sites you visit, and othe
       <message name="IDS_SIGNIN_ACCEPT_BUTTON" desc="Text for the confirmation button in the sign-in screen. By clicking this button users signs in and turns on Sync and personalization. [CHAR-LIMIT=20]" translateable="false">
         Yes, I'm in
       </message>
+      <message name="IDS_SIGNIN_ACCOUNT_PICKER_DIALOG_TITLE" desc="The title for the dialog that shows the list of accounts on the device and asks user to select one of these accounts. [CHAR-LIMIT=27]" translateable="false">
+        Choose an account
+      </message>
 
       <!-- Personalized Signin Promos Strings -->
       <message name="IDS_SIGNIN_PROMO_DESCRIPTION_BOOKMARKS" desc="Description string for 'Continue as' signin promo shown in Bookmarks screen.">
@@ -2444,8 +2479,10 @@ Google may use your browsing activity, content on some sites you visit, and othe
       <message name="IDS_NTP_ALL_DISMISSED_REFRESH" desc="Text label for button to refresh the New Tab Page when all suggested content has been dismissed. [CHAR-LIMIT=20]">
         Refresh
       </message>
-      <message name="IDS_CONTEXTUAL_SUGGESTIONS_TOOLBAR_TITLE" desc="The title displayed above a list of content suggestions based on the user's current webpage. The title tells the user that the list contains more suggestions related to the topic they are currently viewing.">
-        More about <ph name="TOPIC">%1$s<ex>Game of Thrones</ex></ph>
+
+      <!-- Contextual suggestions strings -->
+      <message name="IDS_CONTEXTUAL_SUGGESTIONS_IN_PRODUCT_HELP" desc="The string displayed in an in-product help bubble when contextual suggestions are displayed for the first time. The bubble points to a swipeable panel containing suggestions related to the webpage the user is currently viewing.">
+        See more like this from Google
       </message>
 
       <!-- Toolbar button strings -->
@@ -2683,7 +2720,7 @@ Google may use your browsing activity, content on some sites you visit, and othe
       <message name="IDS_URL_COPIED" desc="Notification telling the user that the url has been copied to clipboard. [CHAR-LIMIT=32]">
         URL copied.
       </message>
-      <message name="IDS_CHROME_HOME_SURVEY_PROMPT" desc="Message shown that invites the user to take a survey about Chrome. 'Help' and 'improve' are imperative verbs. 'Take survey' is a tappable link. When tapped, a survey about Chrome opens.">
+      <message name="IDS_CHROME_SURVEY_PROMPT" desc="Message shown that invites the user to take a survey about Chrome. 'Help' and 'improve' are imperative verbs. 'Take survey' is a tappable link. When tapped, a survey about Chrome opens.">
         Help improve Chrome. <ph name="BEGIN_LINK">&lt;LINK&gt;</ph>Take survey<ph name="END_LINK">&lt;/LINK&gt;</ph>
       </message>
 

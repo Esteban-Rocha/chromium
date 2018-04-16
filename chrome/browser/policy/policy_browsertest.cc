@@ -155,16 +155,20 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/service_manager_connection.h"
+#include "content/public/common/service_names.mojom.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
 #include "content/public/test/mock_notification_observer.h"
+#include "content/public/test/network_service_test_helper.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
@@ -187,8 +191,10 @@
 #include "extensions/common/switches.h"
 #include "extensions/common/value_builder.h"
 #include "media/media_buildflags.h"
+#include "net/base/hash_value.h"
 #include "net/base/net_errors.h"
 #include "net/base/url_util.h"
+#include "net/cert/x509_util.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/transport_security_state.h"
@@ -200,9 +206,13 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_interceptor.h"
+#include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/network_switches.h"
+#include "services/network/public/mojom/network_service_test.mojom.h"
+#include "services/service_manager/public/cpp/connector.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -248,6 +258,10 @@
 
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
+#endif
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/media/router/media_router_feature.h"
 #endif
 
 using content::BrowserThread;
@@ -464,8 +478,9 @@ void CheckURLIsBlocked(Browser* browser, const std::string& spec) {
 
 // Downloads a file named |file| and expects it to be saved to |dir|, which
 // must be empty.
-void DownloadAndVerifyFile(
-    Browser* browser, const base::FilePath& dir, const base::FilePath& file) {
+void DownloadAndVerifyFile(Browser* browser,
+                           const base::FilePath& dir,
+                           const base::FilePath& file) {
   net::EmbeddedTestServer embedded_test_server;
   base::FilePath test_data_directory;
   GetTestDataDirectory(&test_data_directory);
@@ -721,12 +736,50 @@ class PolicyTest : public InProcessBrowserTest {
     }
   }
 
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    InProcessBrowserTest::SetUpCommandLine(command_line);
+    // TODO(devlin): Remove this. See https://crbug.com/816679.
+    command_line->AppendSwitch(
+        extensions::switches::kAllowLegacyExtensionManifests);
+  }
+
   void SetScreenshotPolicy(bool enabled) {
     PolicyMap policies;
     policies.Set(key::kDisableScreenshots, POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER, POLICY_SOURCE_CLOUD,
                  std::make_unique<base::Value>(!enabled), nullptr);
     UpdateProviderPolicy(policies);
+  }
+
+  void SetShouldRequireCTForTesting(bool* required) {
+    if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+      network::mojom::NetworkServiceTestPtr network_service_test;
+      content::ServiceManagerConnection::GetForProcess()
+          ->GetConnector()
+          ->BindInterface(content::mojom::kNetworkServiceName,
+                          &network_service_test);
+      network::mojom::NetworkServiceTest::ShouldRequireCT required_ct;
+      if (!required) {
+        required_ct =
+            network::mojom::NetworkServiceTest::ShouldRequireCT::RESET;
+      } else {
+        required_ct =
+            *required
+                ? network::mojom::NetworkServiceTest::ShouldRequireCT::REQUIRE
+                : network::mojom::NetworkServiceTest::ShouldRequireCT::
+                      DONT_REQUIRE;
+      }
+
+      mojo::ScopedAllowSyncCallForTesting allow_sync_call;
+      network_service_test->SetShouldRequireCT(required_ct);
+      return;
+    }
+
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::BindOnce(
+            &net::TransportSecurityState::SetShouldRequireCTForTesting,
+            required));
   }
 
 #if defined(OS_CHROMEOS)
@@ -1556,33 +1609,30 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_WebStoreIconHidden) {
 IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
   // Verifies that the download directory can be forced by policy.
 
-  // Set the initial download directory.
-  base::ScopedAllowBlockingForTesting allow_blocking;
-  base::ScopedTempDir initial_dir;
-  ASSERT_TRUE(initial_dir.CreateUniqueTempDir());
-  browser()->profile()->GetPrefs()->SetFilePath(
-      prefs::kDownloadDefaultDirectory, initial_dir.GetPath());
   // Don't prompt for the download location during this test.
   browser()->profile()->GetPrefs()->SetBoolean(
       prefs::kPromptForDownload, false);
 
+  base::FilePath initial_dir =
+      DownloadPrefs(browser()->profile()).DownloadPath();
+
   // Verify that downloads end up on the default directory.
+  base::ScopedAllowBlockingForTesting allow_blocking;
   base::FilePath file(FILE_PATH_LITERAL("download-test1.lib"));
-  DownloadAndVerifyFile(browser(), initial_dir.GetPath(), file);
-  base::DieFileDie(initial_dir.GetPath().Append(file), false);
+  DownloadAndVerifyFile(browser(), initial_dir, file);
+  base::DieFileDie(initial_dir.Append(file), false);
 
   // Override the download directory with the policy and verify a download.
-  base::ScopedTempDir forced_dir;
-  ASSERT_TRUE(forced_dir.CreateUniqueTempDir());
+  base::FilePath forced_dir = initial_dir.AppendASCII("forced");
+
   PolicyMap policies;
   policies.Set(key::kDownloadDirectory, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, POLICY_SOURCE_CLOUD,
-               std::make_unique<base::Value>(forced_dir.GetPath().value()),
-               nullptr);
+               std::make_unique<base::Value>(forced_dir.value()), nullptr);
   UpdateProviderPolicy(policies);
-  DownloadAndVerifyFile(browser(), forced_dir.GetPath(), file);
+  DownloadAndVerifyFile(browser(), forced_dir, file);
   // Verify that the first download location wasn't affected.
-  EXPECT_FALSE(base::PathExists(initial_dir.GetPath().Append(file)));
+  EXPECT_FALSE(base::PathExists(initial_dir.Append(file)));
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallBlacklistSelective) {
@@ -2073,13 +2123,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallSources) {
   const GURL install_source_url(
       URLRequestMockHTTPJob::GetMockUrl("extensions/*"));
   const GURL referrer_url(URLRequestMockHTTPJob::GetMockUrl("policy/*"));
-
-  base::ScopedAllowBlockingForTesting allow_blocking;
-  base::ScopedTempDir download_directory;
-  ASSERT_TRUE(download_directory.CreateUniqueTempDir());
-  DownloadPrefs* download_prefs =
-      DownloadPrefs::FromBrowserContext(browser()->profile());
-  download_prefs->SetDownloadPath(download_directory.GetPath());
 
   const GURL download_page_url(URLRequestMockHTTPJob::GetMockUrl(
       "policy/extension_install_sources_test.html"));
@@ -3771,23 +3814,14 @@ IN_PROC_BROWSER_TEST_F(WebBluetoothPolicyTest, Block) {
 
 IN_PROC_BROWSER_TEST_F(PolicyTest,
                        CertificateTransparencyEnforcementDisabledForUrls) {
-  // Cleanup any globals even if the test fails.
-  base::ScopedClosureRunner cleanup(base::Bind(
-      base::IgnoreResult(&BrowserThread::PostTask), BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&net::TransportSecurityState::SetShouldRequireCTForTesting,
-                 nullptr)));
-
   net::EmbeddedTestServer https_server_ok(net::EmbeddedTestServer::TYPE_HTTPS);
   https_server_ok.SetSSLConfig(net::EmbeddedTestServer::CERT_OK);
   https_server_ok.ServeFilesFromSourceDirectory("chrome/test/data");
   ASSERT_TRUE(https_server_ok.Start());
 
   // Require CT for all hosts (in the absence of policy).
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::BindOnce(net::TransportSecurityState::SetShouldRequireCTForTesting,
-                     base::Owned(new bool(true))));
+  bool required = true;
+  SetShouldRequireCTForTesting(&required);
 
   ui_test_utils::NavigateToURL(browser(), https_server_ok.GetURL("/"));
 
@@ -3812,6 +3846,58 @@ IN_PROC_BROWSER_TEST_F(PolicyTest,
   policies.Set(key::kCertificateTransparencyEnforcementDisabledForUrls,
                POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER, POLICY_SOURCE_CLOUD,
                std::move(disabled_urls), nullptr);
+  UpdateProviderPolicy(policies);
+  FlushBlacklistPolicy();
+
+  ui_test_utils::NavigateToURL(browser(),
+                               https_server_ok.GetURL("/simple.html"));
+
+  // There should be no interstitial after the page loads.
+  interstitial = content::InterstitialPage::GetInterstitialPage(
+      browser()->tab_strip_model()->GetActiveWebContents());
+  ASSERT_FALSE(interstitial);
+
+  EXPECT_EQ(base::UTF8ToUTF16("OK"),
+            browser()->tab_strip_model()->GetActiveWebContents()->GetTitle());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest,
+                       CertificateTransparencyEnforcementDisabledForCas) {
+  net::EmbeddedTestServer https_server_ok(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_server_ok.SetSSLConfig(net::EmbeddedTestServer::CERT_OK);
+  https_server_ok.ServeFilesFromSourceDirectory("chrome/test/data");
+  ASSERT_TRUE(https_server_ok.Start());
+
+  // Require CT for all hosts (in the absence of policy).
+  bool required = true;
+  SetShouldRequireCTForTesting(&required);
+
+  ui_test_utils::NavigateToURL(browser(), https_server_ok.GetURL("/"));
+
+  // The page should initially be blocked.
+  const content::InterstitialPage* interstitial =
+      content::InterstitialPage::GetInterstitialPage(
+          browser()->tab_strip_model()->GetActiveWebContents());
+  ASSERT_TRUE(interstitial);
+  ASSERT_TRUE(content::WaitForRenderFrameReady(interstitial->GetMainFrame()));
+
+  EXPECT_TRUE(chrome_browser_interstitials::IsInterstitialDisplayingText(
+      interstitial->GetMainFrame(), "proceed-link"));
+  EXPECT_NE(base::UTF8ToUTF16("OK"),
+            browser()->tab_strip_model()->GetActiveWebContents()->GetTitle());
+
+  // Now exempt the leaf SPKI from being blocked by setting policy.
+  net::HashValue leaf_hash;
+  ASSERT_TRUE(net::x509_util::CalculateSha256SpkiHash(
+      https_server_ok.GetCertificate()->cert_buffer(), &leaf_hash));
+  std::unique_ptr<base::ListValue> disabled_spkis =
+      std::make_unique<base::ListValue>();
+  disabled_spkis->AppendString(leaf_hash.ToString());
+
+  PolicyMap policies;
+  policies.Set(key::kCertificateTransparencyEnforcementDisabledForCas,
+               POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER, POLICY_SOURCE_CLOUD,
+               std::move(disabled_spkis), nullptr);
   UpdateProviderPolicy(policies);
   FlushBlacklistPolicy();
 
@@ -4547,6 +4633,7 @@ IN_PROC_BROWSER_TEST_F(MediaRouterDisabledPolicyTest, MediaRouterDisabled) {
   EXPECT_FALSE(media_router::MediaRouterEnabled(browser()->profile()));
 }
 
+#if !defined(OS_ANDROID)
 template <bool enable>
 class MediaRouterActionPolicyTest : public PolicyTest {
  public:
@@ -4587,6 +4674,37 @@ IN_PROC_BROWSER_TEST_F(MediaRouterActionDisabledPolicyTest,
       MediaRouterActionController::IsActionShownByPolicy(browser()->profile()));
   EXPECT_FALSE(HasMediaRouterActionAtInit());
 }
+
+class MediaRouterCastAllowAllIPsPolicyTest
+    : public PolicyTest,
+      public testing::WithParamInterface<bool> {
+ public:
+  void SetUpInProcessBrowserTestFixture() override {
+    PolicyTest::SetUpInProcessBrowserTestFixture();
+    PolicyMap policies;
+    policies.Set(key::kMediaRouterCastAllowAllIPs, POLICY_LEVEL_MANDATORY,
+                 POLICY_SCOPE_USER, POLICY_SOURCE_CLOUD,
+                 std::make_unique<base::Value>(is_enabled()), nullptr);
+    provider_.UpdateChromePolicy(policies);
+  }
+
+  bool is_enabled() const { return GetParam(); }
+};
+
+IN_PROC_BROWSER_TEST_P(MediaRouterCastAllowAllIPsPolicyTest, RunTest) {
+  PrefService* const pref = g_browser_process->local_state();
+  ASSERT_TRUE(pref);
+  EXPECT_EQ(is_enabled(),
+            pref->GetBoolean(media_router::prefs::kMediaRouterCastAllowAllIPs));
+  EXPECT_TRUE(pref->IsManagedPreference(
+      media_router::prefs::kMediaRouterCastAllowAllIPs));
+  EXPECT_EQ(is_enabled(), media_router::GetCastAllowAllIPsPref(pref));
+}
+
+INSTANTIATE_TEST_CASE_P(MediaRouterCastAllowAllIPsPolicyTestInstance,
+                        MediaRouterCastAllowAllIPsPolicyTest,
+                        testing::Values(true, false));
+#endif  // !defined(OS_ANDROID)
 
 #if BUILDFLAG(ENABLE_WEBRTC)
 // Sets the proper policy before the browser is started.

@@ -69,7 +69,7 @@
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "third_party/WebKit/public/common/mime_util/mime_util.h"
+#include "third_party/blink/public/common/mime_util/mime_util.h"
 
 namespace content {
 
@@ -244,7 +244,6 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
     new_request->update_first_party_url_on_redirect = true;
 
   int load_flags = request_info->begin_params->load_flags;
-  load_flags |= net::LOAD_VERIFY_EV_CERT;
   if (request_info->is_main_frame)
     load_flags |= net::LOAD_MAIN_FRAME_DEPRECATED;
 
@@ -409,6 +408,7 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
       interceptors_.push_back(std::make_unique<WebPackageRequestHandler>(
           url::Origin::Create(request_info->common_params.url),
           GetURLLoaderOptions(request_info->is_main_frame),
+          request_info->frame_tree_node_id,
           base::MakeRefCounted<
               SignedExchangeURLLoaderFactoryForNonNetworkService>(
               resource_context_, url_request_context_getter),
@@ -589,6 +589,7 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
       interceptors_.push_back(std::make_unique<WebPackageRequestHandler>(
           url::Origin::Create(request_info->common_params.url),
           GetURLLoaderOptions(request_info->is_main_frame),
+          request_info->frame_tree_node_id,
           default_url_loader_factory_getter_->GetNetworkFactory(),
           base::BindRepeating(
               &URLLoaderRequestController::CreateURLLoaderThrottles,

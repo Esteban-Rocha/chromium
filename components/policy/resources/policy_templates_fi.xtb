@@ -34,7 +34,7 @@
 <translation id="1096105751829466145">Oletushakupalvelu</translation>
 <translation id="1099282607296956954">Ota sivuston eristäminen käyttöön kaikilla sivustoilla</translation>
 <translation id="1117535567637097036">Tämän käytännön kautta määritettyjä protokollan käsittelijöitä ei käytetä Android-tavoitteisiin.</translation>
-<translation id="1122282995569868661">Näytä <ph name="PRODUCT_NAME" /> ‑yläpalkkikuvake</translation>
+<translation id="1118093128235245168">Salli sivustojen pyytää käyttäjältä yhdistetyn USB-laitteen käyttöoikeutta</translation>
 <translation id="1128903365609589950">Määrittää levyllä sijaitsevan hakemiston, johon <ph name="PRODUCT_NAME" /> tallentaa välimuistitiedostot.
 
       Jos otat tämän käytännön käyttöön, <ph name="PRODUCT_NAME" /> käyttää määritettyä hakemistoa, vaikka käyttäjä antaisi --disk-cache-dir-komennon. Älä määritä käytännön arvoksi juurihakemistoa tai muihin tarkoituksiin käytettävää hakemistoa, sillä <ph name="PRODUCT_NAME" /> hallinnoi sen sisältöä ja seurauksena voi olla tietojen katoamista tai muita odottamattomia ongelmia.
@@ -58,22 +58,13 @@
 
       Jos tämä käytäntö on käytössä, käyttäjä voi käyttää kaikkia tulostimia, paitsi niitä, joiden tunnukset on lueteltu tässä.
       </translation>
-<translation id="1181881366217399113">
-      HUOM. Tämä käytäntö on kokeellinen ja saattaa rikkoa toimintoja!
-      Jos käytäntö on otettu käyttöön, kaikki pilkuilla erotetun luettelon
-      nimetyistä alkuperistä suorittavat oman prosessinsa. Tämä eristää myös
-      aliverkkotunnusten mukaan nimetyt alkuperät, esim. jos https://example.com/
-      määritetään, https://foo.example.com/ eristetään myös osana
-      https://example.com/-sivustoa.
-      Jos käytäntöä ei ole otettu käyttöön, sivuston eristämistä edeltävän prosessin hallintalogiikka tulee voimaan. 
-      Jos käytäntöä ei ole määritetty, käyttäjä voi muuttaa tämän asetuksen.
-      Tuotteen <ph name="PRODUCT_OS_NAME" /> kohdalla myös laitekäytännölle <ph name="DEVICE_LOGIN_SCREEN_ISOLATE_ORIGINS_POLICY_NAME" /> kannattaa määrittää sama arvo. Jos käytännöissä määritetyt arvot eivät täsmää, käyttökerran aloittamisen yhteydessä saattaa esiintyä viive, kun käyttäjäkäytännössä määritetty arvo otetaan käyttöön.
-      </translation>
 <translation id="1198465924256827162">Laitteen tilatietojen lähetystiheys millisekunteina.
 
       Jos tätä käytäntöä ei aseteta, käytetään oletustiheyttä 3 tuntia.
       Pienin sallittu arvo on 60 sekuntia.</translation>
 <translation id="1204263402976895730">Käytössä olevat yritystulostimet</translation>
+<translation id="1216758672198492382">Antaa sinun määrittää, sallitaanko sivustojen käyttää yhdistettyjä USB-laitteita. Käyttö on mahdollista estää kokonaan, tai käyttäjältä voidaan pyytää vahvistusta aina, kun verkkosivusto haluaa käyttää yhdistettyä USB-laitetta.
+          Jos tätä käytäntöä ei ole määritetty, sen arvoksi asetetaan 3 ja käyttäjä voi halutessaan muokata sitä.</translation>
 <translation id="1219695476179627719">Määrittää, palaako laite käytännön <ph name="DEVICE_TARGET_VERSION_PREFIX_POLICY_NAME" /> määrittämään versioon, jos se käyttää jo uudempaa versiota
 
       Oletusarvo on RollbackDisabled.</translation>
@@ -96,7 +87,6 @@
 <translation id="131353325527891113">Näytä käyttäjänimet kirjautumisruudulla</translation>
 <translation id="1327466551276625742">Ota käyttöön verkon määrityskehote offline-tilassa</translation>
 <translation id="1330145147221172764">Ota ruutunäppäimistö käyttöön</translation>
-<translation id="1330985749576490863">Poistaa Google Driven käytöstä tuotteen <ph name="PRODUCT_OS_NAME" /> Tiedostot-sovelluksesta matkapuhelinverkkoyhteyden ollessa käytössä</translation>
 <translation id="13356285923490863">Käytännön nimi</translation>
 <translation id="1353966721814789986">Käynnistyssivut:</translation>
 <translation id="1359553908012294236">Jos tämän käytännön arvoksi asetetaan Tosi tai sitä ei määritetä, <ph name="PRODUCT_NAME" /> sallii vieraskirjautumisen. Vieraskirjautumisessa <ph name="PRODUCT_NAME" /> käyttää profiilia, jonka kaikki ikkunat avataan incognito-tilassa.
@@ -158,14 +148,8 @@
 
           Löydät lisää esimerkkejä osoitteesta
           <ph name="PROXY_HELP_URL" />.</translation>
-<translation id="1503487916067509762">Ottaa käyttöön kolmannen osapuolen ohjelmistojen lisäämisen eston</translation>
 <translation id="1504431521196476721">Etätodennus</translation>
 <translation id="1509692106376861764">Tämä käytäntö on poistettu käytöstä tuotteen <ph name="PRODUCT_NAME" /> versiosta 29 lähtien.</translation>
-<translation id="1519337829779572350">Tämä asetus on vanhentunut. Sen sijaan on käytettävä asetusta SafeBrowsingExtendedReportingEnabled. Asetuksen SafeBrowsingExtendedReportingEnabled ottaminen käyttöön tai poistaminen käytöstä vastaa sitä, että SafeBrowsingExtendedReportingOptInAllowed asetetaan arvoon Epätosi.
-
-      Jos tämän käytännön arvo on Epätosi, käyttäjät eivät voi enää valita, lähetetäänkö Googlen palvelimille tietoja järjestelmästä ja sivujen sisällöstä. Jos asetuksen arvo on Tosi tai sitä ei määritetä, käyttäjät voivat lähettää Selaussuojalle tietoja järjestelmästä ja sivujen sisällöstä vaarallisten sovellusten ja sivustojen tunnistamiseksi.
-
-      Katso lisätietoja Selaussuojasta osoitteesta https://developers.google.com/safe-browsing.</translation>
 <translation id="1522425503138261032">Anna sivustojen seurata käyttäjien fyysistä sijaintia</translation>
 <translation id="152657506688053119">Oletushakupalvelun vaihtoehtoiset URL-osoitteet</translation>
 <translation id="1530812829012954197">Hahmonna aina seuraavat URL-mallit isäntäselaimessa</translation>
@@ -320,6 +304,17 @@
 <translation id="2113068765175018713">Rajoita laitteen käyttöaikaa automaattisella uudelleenkäynnistyksellä</translation>
 <translation id="2127599828444728326">Salli ilmoitukset näillä sivustoilla</translation>
 <translation id="2131902621292742709">Ruudun himmennyksen viive käytettäessä laitetta akkuvirralla</translation>
+<translation id="2132732175597591362">Hallinnoi sellaisten URL-osoitemallien sallittujen luetteloa, joiden automaattinen toisto on aina käytössä
+
+      Jos automaattinen toisto on käytössä, videoita ja niiden äänisisältöä voidaan toistaa automaattisesti (ilman käyttäjän suostumusta) tuotteessa <ph name="PRODUCT_NAME" />.
+
+      URL-osoitemallin muotoilun on noudatettava tätä mallia: https://www.chromium.org/administrators/url-blacklist-filter-format.
+
+      Jos AutoplayAllowed-käytännön arvoksi on määritetty tosi, tällä käytännöllä ei ole vaikutusta.
+
+      Jos AutoplayAllowed-käytännön arvoksi on määritetty epätosi, kaikki tässä käytännössä määritetyt URL-mallit voidaan silti toistaa.
+
+      Huomaa, että jos <ph name="PRODUCT_NAME" /> on käytössä ja tämä käytäntö muuttuu, sitä sovelletaan vain uusiin avattuihin välilehtiin. Tämän vuoksi jotkin välilehdet saattavat edelleen noudattaa edellistä käytäntöä.</translation>
 <translation id="2134437727173969994">Salli näytön lukitseminen</translation>
 <translation id="2137064848866899664">Kun tämä käytäntö on määritetty, jokaista näyttöä kierretään
       käytännön mukaisesti aina laitteen uudelleenkäynnistyksen yhteydessä ja 
@@ -476,7 +471,6 @@
       Jos tätä asetusta ei ole määritetty, käyttäjä voi päättää, käyttääkö tätä toimintoa vai ei.
 
       Tämä asetus on poistettu <ph name="PRODUCT_NAME" /> 29:stä ja uudemmista versioista.</translation>
-<translation id="2436445024487698630">Sallii kirjautumisen tuotteeseen <ph name="PRODUCT_NAME" /></translation>
 <translation id="244317009688098048">Salli automaattisen kirjautumisen peruutusnäppäin.
 
       Jos tätä käytäntöä ei ole asetettu tai sen arvo on tosi ja laitteelle on määritetty paikallinen tili viiveettömällä automaattisella kirjautumisella, <ph name="PRODUCT_OS_NAME" /> hyväksyy pikanäppäimen Ctrl+Alt+S, jolla ohitetaan automaattinen kirjautuminen ja tuodaan näkyviin kirjautumisruutu.
@@ -513,7 +507,6 @@ Jos tämä asetus ei ole käytössä, käyttäjät eivät voi tulostaa tuotteest
 <translation id="2529700525201305165">Rajoita tuotteeseen <ph name="PRODUCT_NAME" /> kirjautumista</translation>
 <translation id="2529880111512635313">Määritä sovellukset ja laajennukset, joiden asennus pakotetaan.</translation>
 <translation id="253135976343875019">Käyttämättömyysvaroituksen viive käytettäessä laitetta verkkovirralla</translation>
-<translation id="2536283449105918306">Ottaa käyttöön suojauksen ylimääräisen välilehden (tab-under) avaamista vastaan</translation>
 <translation id="2552966063069741410">Aikavyöhyke</translation>
 <translation id="2562339630163277285">Määrittää Instant-hakuihin käytettävän hakukoneen URL-osoitteen. Osoitteen on sisällettävä merkkijono <ph name="SEARCH_TERM_MARKER" />, joka korvataan kyselyn aikana käyttäjän kirjoittamalla tekstillä.
 
@@ -553,7 +546,6 @@ Jos tämä asetus ei ole käytössä, käyttäjät eivät voi tulostaa tuotteest
           Tämä käytäntö täytyy asettaa, jos käytäntö DefaultSearchProviderEnabled on käytössä. Se toteutetaan vain, jos kyseinen käytäntö on käytössä.</translation>
 <translation id="2660846099862559570">Älä käytä välityspalvelinta</translation>
 <translation id="267596348720209223">Määrittää hakupalvelun tukemat merkkikoodaukset. Koodaukset ovat koodisivun nimiä, kuten UTF-8, GB2312 ja ISO-8859-1. Koodauksia yritetään käyttää määritetyssä järjestyksessä. Tämä käytäntö on valinnainen, ja jos sitä ei ole määritetty, käytetään oletusasetusta (UTF-8). Tämä käytäntö on voimassa vain, jos DefaultSearchProviderEnabled-käytäntö on käytössä.</translation>
-<translation id="2682225790874070339">Poistaa Google Driven käytöstä tuotteen <ph name="PRODUCT_OS_NAME" /> Tiedostot-sovelluksesta</translation>
 <translation id="268577405881275241">Ota käyttöön tietojen pakkauksen välitysominaisuus</translation>
 <translation id="2693108589792503178">Määritä salasanan vaihdon URL-osoite.</translation>
 <translation id="2731627323327011390">Estä ARC-sovelluksia käyttämästä <ph name="PRODUCT_OS_NAME" /> -varmenteita</translation>
@@ -589,6 +581,12 @@ Kaikki luettelon kohteet ovat tunnuksia, joiden perusteella erotetaan laitteesee
 <translation id="2801230735743888564">Anna käyttäjien pelata dinosauruspeliä laitteen ollessa offline-tilassa.
 
       Jos tämän käytännön arvo on epätosi, käyttäjät eivät voi pelata dinosauruspeliä laitteen ollessa offline-tilassa. Jos asetuksen arvo on tosi, käyttäjät voivat pelata peliä. Jos käytännön arvoa ei ole määritetty, käyttäjät eivät voi pelata dinosauruspeliä käyttöön otetulla Chrome-käyttöjärjestelmälaitteella, mutta voivat pelata peliä muissa olosuhteissa.</translation>
+<translation id="2802085784857530815">Antaa sinun valita, saavatko käyttäjät käyttää yrityksen ulkopuolisia tulostimia
+
+      Jos käytännön arvoksi on asetettu tosi tai sitä ei ole asetettu, kaikki käyttäjät voivat lisätä ja määrittää omia natiivitulostimiaan ja tulostaa niillä.
+
+      Jos käytännön arvoksi on asetettu epätosi, käyttäjät eivät voi lisätä tai määrittää natiivitulostimiaan. He eivät myöskään voi tulostaa aiemmin määritetyillä natiivitulostimilla.
+      </translation>
 <translation id="2805707493867224476">Anna kaikkien sivustojen näyttää ponnahdusikkunoita</translation>
 <translation id="2808013382476173118">Sallii etäasiakkaiden muodostaa yhteyden tähän koneeseen STUN-palvelimien kautta.
 
@@ -654,17 +652,6 @@ Kaikki luettelon kohteet ovat tunnuksia, joiden perusteella erotetaan laitteesee
           Tämän käytännön arvo täytyy määrittää millisekunteina. Arvo rajoitetaan korkeintaan mahdollisen ruudun sammutuksen viiveen ja käyttämättömyysajan suuruiseksi.</translation>
 <translation id="2987155890997901449">Ota ARC käyttöön.</translation>
 <translation id="2987227569419001736">Hallinnoi Web Bluetooth ‑sovellusliittymän käyttöä</translation>
-<translation id="2998886474614739865">
-      HUOM. Tämä käytäntö on kokeellinen ja saattaa häiritä toimintoja.
-      Tämä käytäntö koskee kirjautumisnäyttöjä. Tutustu myös <ph name="ISOLATE_ORIGINS_POLICY_NAME" />-käytäntöön, joka koskee käyttökertaa. Suosittelemme määrittämään molemmille käytännöille saman arvon. Jos käytännöissä määritetyt arvot eivät täsmää, käyttökerran aloittamisen yhteydessä saattaa esiintyä viive, kun käyttäjäkäytännössä määritetty arvo otetaan käyttöön.
-      Jos käytäntö on otettu käyttöön, jokainen pilkuilla erotetun luettelon nimetyistä
-      alkuperistä suorittaa oman prosessinsa. Tämä eristää myös aliverkkotunnusten
-      mukaan nimetyt alkuperät. Jos esim. https://example.com/ määritetään,
-      https://foo.example.com/ eristetään myös osana
-      https://example.com/-sivustoa.
-      Jos käytäntö on poissa käytöstä, sivustokohtaisen erilläänpidon hallintalogiikka tulee voimaan.
-      Jos käytäntöä ei ole määritetty, alustan sivun erilläänpidon oletusasetusta käytetään kirjautumisnäytöllä.
-      </translation>
 <translation id="3016255526521614822">Luo luettelo sallituista muistiinpanosovelluksista, jotka <ph name="PRODUCT_OS_NAME" /> voi näyttää lukitusnäytöllä.</translation>
 <translation id="3021562480854470924">Palautukselle sallittujen virstanpylväiden määrä</translation>
 <translation id="3030000825273123558">Ota tilastoraportit käyttöön</translation>
@@ -745,13 +732,13 @@ Jos tätä käytäntöä ei määritetä, käyttäjät voivat valita, haluavatko
           Tämän käytännön arvo täytyy määrittää millisekunteina. Arvo rajoitetaan korkeintaan mahdollisen ruudun sammutuksen viiveen ja käyttämättömyysajan suuruiseksi.</translation>
 <translation id="3264793472749429012">Oletushakupalvelun merkkijärjestelmät</translation>
 <translation id="3273221114520206906">JavaScriptin oletusasetus</translation>
+<translation id="3284094172359247914">Hallinnoi WebUSB-sovellusliittymän käyttöä</translation>
 <translation id="3288595667065905535">Julkaisuversio</translation>
 <translation id="3292147213643666827">Antaa tuotteen <ph name="PRODUCT_NAME" /> toimia välityspalvelimena palvelun <ph name="CLOUD_PRINT_NAME" /> ja koneeseen liitettyjen tulostimien välillä.
 
 Jos tämä asetus on käytössä tai sitä ei ole määritetty, käyttäjät voivat ottaa pilvitulostuksen välityspalvelimen käyttöön todentamalla sen Google-tilinsä avulla.
 
 Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta käyttöön eikä kone voi jakaa tulostimiaan palvelussa <ph name="CLOUD_PRINT_NAME" />.</translation>
-<translation id="3297010562646015826">Salli prosessien lopettaminen tehtävänhallinnassa</translation>
 <translation id="3307746730474515290">Hallinnoi, minkä tyyppisiä laajennuksia tai sovelluksia saa asentaa ja rajoittaa suorituksenaikaista käyttöä.
 
           Tämä asetus lisää sallittujen luetteloon ne sovellus- tai laajennustyypit, jotka tuotteeseen <ph name="PRODUCT_NAME" /> saa asentaa ja minkä isäntien kanssa ne saavat olla vuorovaikutuksessa. Arvo on merkkijonojen luettelo. Kunkin merkkijonon tulee olla jokin seuraavista: "extension", "theme", "user_script", "hosted_app", "legacy_packaged_app", "platform_app". Saat lisätietoja näistä tyypeistä kohteen <ph name="PRODUCT_NAME" /> laajennuksien dokumentaatiosta.
@@ -768,17 +755,6 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
 
           Jos tämän käytännön arvo on ei-tyhjä merkkijono, <ph name="PRODUCT_NAME" /> näyttää kyseisen merkkijonon kohdenimenä. Muussa tapauksessa kohdenimenä käytetään laitteen nimeä. Jos tätä käytäntöä ei ole määritetty, kohdenimenä käytetään laitteen nimeä ja laitteen omistaja (tai laitetta hallinnoivan verkkotunnuksen käyttäjä) voi vaihtaa nimen. Nimen enimmäispituus on 24 merkkiä.</translation>
 <translation id="3381968327636295719">Käytä oletuksena isäntäselainta</translation>
-<translation id="3386001018488754001">
-      HUOM. Tämä käytäntö on kokeellinen ja saattaa häiritä toimintoja.
-      Tämä käytäntö koskee kirjautumisnäyttöjä. Tutustu myös <ph name="SITE_PER_PROCESS_POLICY_NAME" />-käytäntöön, joka koskee käyttökertaa. Suosittelemme määrittämään molemmille käytännöille saman arvon. Jos käytännöissä määritetyt arvot eivät täsmää, käyttökerran aloittamisen yhteydessä saattaa esiintyä viive, kun käyttäjäkäytännössä määritetty arvo otetaan käyttöön.
-      Suosittelemme tutustumaan IsolateOrigins-käytännön asetukseen, sillä käyttämällä sitä yhdessä
-      erillään pidettävien sivustojen luettelon kanssa voit saada molempien parhaat puolet –
-      erilläänpidon ja rajallisen vaikutuksen käyttäjille. Tämä asetus,
-      SitePerProcess, eristää kaikki sivustot. Jos käytäntö on otettu käyttöön,
-      jokainen sivusto suorittaa oman prosessinsa. Jos käytäntö on poissa käytöstä,
-      sivustokohtaisen erilläänpidon hallintalogiikka tulee voimaan.
-      Jos käytäntöä ei ole määritetty, käyttäjä voi muuttaa tämän asetuksen.
-      </translation>
 <translation id="3395348522300156660">Määrittää tulostimet, joita käyttäjä voi käyttää.
 
       Tätä käytäntöä käytetään vain, jos <ph name="PRINTERS_WHITELIST" />-tilaksi on valittu <ph name="DEVICE_PRINTERS_ACCESS_MODE" />.
@@ -830,6 +806,7 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
           Käytäntö on voimassa vain, jos käytäntö DefaultSearchProviderEnabled on käytössä.</translation>
 <translation id="350797926066071931">Ota Kääntäjä käyttöön</translation>
 <translation id="3512226956150568738">Jos asiakkaan laitemalli tuki ARC:tä jo ennen kuin siirtyminen ext4:ään oli pakollista ARC:n suorittamiseksi ja jos ArcEnabled-käytännön arvoksi on asetettu tosi, tämä vaihtoehto toimii samalla tavalla kuin AskUser (arvo 3). Kaikissa muissa tapauksissa (jos laitemalli ei tukenut ARC:tä ennen tai jos ArcEnabled-käytännön arvoksi on asetettu epätosi), tämä arvo on sama kuin DisallowArc (arvo 0).</translation>
+<translation id="3524204464536655762">Älä salli sivustojen pyytää USB-laitteiden käyttöoikeutta WebUSB-sovellusliittymän kautta</translation>
 <translation id="3528000905991875314">Ota vaihtoehtoiset virhesivut käyttöön</translation>
 <translation id="3547954654003013442">Välityspalvelimen asetukset</translation>
 <translation id="3577251398714997599">Häiritseviä mainoksia sisältävien sivustojen mainosasetukset</translation>
@@ -838,11 +815,6 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
 <translation id="3646859102161347133">Aseta näytön suurentajan tyyppi</translation>
 <translation id="3653237928288822292">Oletushakupalvelun kuvake</translation>
 <translation id="3660562134618097814">SAML-tunnistuspalvelun evästeiden siirto kirjautumisen aikana</translation>
-<translation id="3687282113223807271">Selaussuojapalvelu näyttää varoitussivun käyttäjän siirtyessä sivustoihin, jotka on merkitty mahdollisesti haitallisiksi. Jos otat tämän asetuksen käyttöön, käyttäjä ei voi jatkaa varoitussivulta haitalliseen sivustoon.
-
-      Jos tämä asetus ei ole käytössä tai sitä ei ole määritetty, käyttäjä voi halutessaan jatkaa varoitussivulta mahdollisesti haitalliseen sivustoon.
-
-      Voit lukea lisää Selaussuojasta osoitteessa https://developers.google.com/safe-browsing.</translation>
 <translation id="3709266154059827597">Määritä, mitä laajennuksia ei saa asentaa</translation>
 <translation id="3711895659073496551">Keskeytä</translation>
 <translation id="3736879847913515635">Salli profiilien luominen käyttäjien hallinnassa</translation>
@@ -937,6 +909,9 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
       Luettelee laajennukset, jotka asennetaan automaattisesti esittelykäyttäjälle myyntitilassa olevilla laitteilla. Tällaiset laajennukset on tallennettu laitteelle, ja niitä on mahdollista asentaa offline-tilassa.
 
       Luettelon jokainen merkintä sisältää sanakirjan, jonka tulee sisältää laajennuksen tunnus (extension-id-kenttä) sekä sen päivitysosoite (update-url-kenttä).</translation>
+<translation id="3873159954366380945">Sallii sinun määrittää ajanjakson, jolloin tuotteen <ph name="PRODUCT_NAME" /> uudelleenkäynnistysilmoituksia näytetään
+
+      Tämän käytäntöasetuksen avulla voit määrittää millisekunteina sen ajan, jolloin käyttäjä saa ilmoituksia päivityksen edellyttämästä tuotteen <ph name="PRODUCT_NAME" /> uudelleenkäynnistyksestä (tai tuotteen <ph name="PRODUCT_OS_NAME" /> uudelleenkäynnistyksestä). Tänä aikana käyttäjä saa toistuvia muistutuksia <ph name="RELAUNCH_NOTIFICATION_POLICY_NAME" />-käytännön mukaisen päivityksen tarpeellisuudesta. Jos ajanjaksoa ei ole määritetty, tuotteen <ph name="PRODUCT_OS_NAME" /> oletus on 345 600 000 millisekuntia (neljä päivää) ja kaikkien muiden käyttöympäristöjen oletus on 604 800 000 millisekuntia (yksi viikko).</translation>
 <translation id="3877517141460819966">Sisäänrakennettu monitasoinen todennustila</translation>
 <translation id="388237772682176890">Tämä käytäntö poistetaan käytöstä M53:ssa ja poistetaan kokonaan M54:ssä, koska SPDY/3.1-tuki poistuu.
 
@@ -975,7 +950,6 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
 <translation id="3963602271515417124">Jos tämän käytännön arvo on tosi, etätodennuksen käyttö sallitaan laitteelle ja varmenne luodaan ja ladataan laitehallintapalvelimelle automaattisesti.
 
           Jos tämän käytännön arvo on epätosi tai sitä ei ole määritetty, varmennetta ei luoda ja kutsujen lähettäminen enterprise.platformKeys-laajennussovellusliittymälle epäonnistuu.</translation>
-<translation id="3964909636571393861">Sallii URL-osoiteluettelon käytön</translation>
 <translation id="3965339130942650562">Käyttämättömän käyttökerran uloskirjausaika</translation>
 <translation id="3973371701361892765">Älä koskaan piilota hyllyä automaattisesti</translation>
 <translation id="3984028218719007910">Määrittää, säilyttääkö <ph name="PRODUCT_OS_NAME" /> paikalliset käyttäjätilitiedot uloskirjautumisen jälkeen. Jos asetus on tosi, <ph name="PRODUCT_OS_NAME" /> ei säilytä tilitietoja pysyvästi ja käyttökerran tiedot poistetaan uloskirjautumisen jälkeen. Jos käytännön asetus on epätosi tai sitä ei määritetä, paikalliset käyttäjätiedot voidaan tallentaa laitteelle salattuina.</translation>
@@ -1278,6 +1252,14 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
           Käytäntö on voimassa vain, jos käytäntö DefaultSearchProviderEnabled on käytössä.</translation>
 <translation id="489803897780524242">Parametri, joka hallitsee oletushakupalvelun hakutermien sijoittelua</translation>
 <translation id="4899708173828500852">Ota selaussuoja käyttöön</translation>
+<translation id="4899802251198446659">Sallii sinun määrittää, voiko videoita ja niiden äänisisältöä toistaa automaattisesti (ilman käyttäjän suostumusta) tuotteessa <ph name="PRODUCT_NAME" />
+
+      Jos käytännön arvoksi on määritetty tosi, <ph name="PRODUCT_NAME" /> saa toistaa mediaa automaattisesti.
+      Jos käytännön arvoksi on määritetty epätosi, <ph name="PRODUCT_NAME" /> ei saa toistaa mediaa automaattisesti. AutoplayWhitelist-käytäntöä voidaan käyttää tämän ohittamiseen joidenkin URL-osoitemallien kohdalla.
+      Oletuksena <ph name="PRODUCT_NAME" /> ei saa toistaa mediaa automaattisesti. AutoplayWhitelist-käytäntöä voidaan käyttää tämän ohittamiseen joidenkin URL-osoitemallien kohdalla.
+
+      Huomaa, että jos <ph name="PRODUCT_NAME" /> on käytössä ja tämä käytäntö muuttuu, sitä sovelletaan vain uusiin avattuihin välilehtiin. Tämän vuoksi jotkin välilehdet saattavat edelleen noudattaa edellistä käytäntöä.
+      </translation>
 <translation id="4906194810004762807">Laitekäytännön päivitystiheys</translation>
 <translation id="4917385247580444890">Vahva</translation>
 <translation id="4923806312383904642">Salli WebDriverin ohittaa yhteensopimattomia käytäntöjä</translation>
@@ -1312,19 +1294,6 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
 
       Salasanojen ikä saattaa ylittää määritellyn päivien lukumäärän, jos asiakas on ollut offline-tilassa pidemmän aikaa.</translation>
 <translation id="5105313908130842249">Ruudun lukituksen viive käytettäessä laitetta akkuvirralla</translation>
-<translation id="5106504910236139235">Ottaa käyttöön kohteen <ph name="PRODUCT_NAME" /> Selaussuojan laajennetun raportoinnin ja estää käyttäjiä muuttamasta tätä asetusta.
-
-      Laajennetussa raportoinnissa Googlen palvelimille lähetetään tietoja järjestelmästä ja sivujen sisällöstä vaarallisten sovellusten ja sivustojen tunnistamiseksi.
-
-      Jos asetuksen arvo on Tosi, raportteja luodaan ja lähetetään aina tarvittaessa (esimerkiksi kun ruudulla näytetään suojausilmoitus).
-
-      Jos asetuksen arvo on Epätosi, raportteja ei lähetetä koskaan.
-
-      Jos käytännön arvoksi asetetaan Tosi tai Epätosi, käyttäjä ei voi muuttaa asetusta.
-
-      Jos tätä käytäntöä ei aseteta, käyttäjä voi muuttaa asetusta ja päättää, lähetetäänkö raportteja.
-
-      Katso lisätietoja Selaussuojasta osoitteesta https://developers.google.com/safe-browsing</translation>
 <translation id="5108031557082757679">Käytöstä poistetut yrityslaitteiden tulostimet</translation>
 <translation id="5130288486815037971">TLS:n RC4-salaustekniikoiden käyttöönotto</translation>
 <translation id="5141670636904227950">Aseta näytön suurentajan oletustyyppi, jota käytetään kirjautumisnäytössä</translation>
@@ -1380,16 +1349,6 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
 
       Jos käytäntöä ei määritetä tai sen arvo on tyhjä merkkijono tai virheellinen porttiväli, WebRTC voi käyttää kaikkia käytettävissä olevia paikallisia UDP-portteja.</translation>
 <translation id="5290940294294002042">Määritä laajennukset, jotka käyttäjä voi ottaa käyttöön tai poistaa käytöstä</translation>
-<translation id="5301787427319106606">
-      HUOM. Tämä käytäntö on kokeellinen ja saattaa häiritä toimintoja.
-      Suosittelemme tutustumaan IsolateOrigins-käytännön asetukseen, sillä käyttämällä sitä yhdessä
-      erillään pidettävien sivustojen luettelon kanssa voit saada molempien parhaat puolet –
-      erilläänpidon ja rajallisen vaikutuksen käyttäjille. Tämä asetus, SitePerProcess, eristää kaikki sivustot.
-      Jos käytäntö on otettu käyttöön, jokainen sivusto suorittaa oman prosessinsa.
-      Jos käytäntö on poissa käytöstä, sivustokohtaisen erilläänpidon hallintalogiikka tulee voimaan.
-      Jos käytäntöä ei ole määritetty, käyttäjä voi muuttaa tämän asetuksen.
-      Tuotteen <ph name="PRODUCT_OS_NAME" /> kohdalla myös laitekäytännölle <ph name="DEVICE_LOGIN_SCREEN_SITE_PER_PROCESS_POLICY_NAME" /> kannattaa määrittää sama arvo. Jos käytäntöjen arvot eivät täsmää, käyttökerran aloittamisen yhteydessä saattaa esiintyä viive, kun käyttäjäkäytännössä määritetty arvo otetaan käyttöön.
-      </translation>
 <translation id="5302612588919538756">Tämä käytäntö on vanhentunut, ja sen sijaan tulee harkita käytäntöä SyncDisabled.
 
       Määrittää, salliiko <ph name="PRODUCT_NAME" /> käyttäjän kirjautumisen.
@@ -1419,7 +1378,6 @@ Jos asetus ei ole käytössä, käyttäjät eivät voi ottaa välityspalvelinta 
           Jos asetuksen arvo on tosi tai sitä ei ole määritetty, tämä käyttäjä voi luoda ja hallinnoida valvottuja käyttäjiä.</translation>
 <translation id="5378985487213287085">Voit määrittää, saavatko sivustot näyttää työpöytäilmoituksia. Työpöytäilmoituksien näyttäminen voidaan sallia oletuksena, kieltää oletuksena, tai käyttäjältä voidaan kysyä aina sivuston halutessa näyttää työpöytäilmoituksia. Jos tätä käytäntöä ei ole määritetty, käytetään AskNotifications-käytäntöä, ja käyttäjä voi muuttaa sitä.</translation>
 <translation id="538108065117008131">Anna tuotteen <ph name="PRODUCT_FRAME_NAME" /> käsitellä seuraavia sisältötyyppejä.</translation>
-<translation id="5388730678841939057">Valitsee tavan, jolla automaattinen puhdistus vapauttaa levytilaa (vanhentunut)</translation>
 <translation id="5392172595902933844">Androidin tilatietoja lähetetään takaisin
       palvelimelle.
 
@@ -1491,7 +1449,6 @@ Jos käytäntöä ei määritetä, käyttäjät voivat valita, tuleeko hylly pii
       Huom. Tämän asetuksen käyttöä ei suositella, sillä se voi mahdollistaa nameConstraints-laajennuksen ohittamisen. Kyseinen laajennus rajoittaa isäntänimiä, joiden käyttöön varmenne voidaan valtuuttaa.
 
       Jos tämän käytännön arvo on epätosi tai sitä ei ole määritetty, DNS-nimen tai IP-osoitteen sisältäviä palvelinvarmenteita ei pidetä luotettavina, jos niistä puuttuu subjectAlternativeName-laajennus.</translation>
-<translation id="557658534286111200">Ottaa kirjanmerkkien muokkauksen käyttöön tai poistaa sen käytöstä</translation>
 <translation id="5586942249556966598">Ei toimia</translation>
 <translation id="5630352020869108293">Palauta edellinen käyttökerta</translation>
 <translation id="5645779841392247734">Salli evästeet näissä sivustoissa</translation>
@@ -1508,7 +1465,6 @@ Jos käytäntöä ei määritetä, käyttäjät voivat valita, tuleeko hylly pii
       Jos <ph name="PRODUCT_NAME" /> ei saa peruuttamistietoja, varmenteet katsotaan peruutetuiksi.
 
       Jos tätä käytäntöä ei ole määritetty tai sen arvoksi on asetettu epätosi, <ph name="PRODUCT_NAME" /> käyttää olemassa olevia verkon peruuttamisen tarkistusasetuksia.</translation>
-<translation id="572720239788271400">Ottaa käyttöön <ph name="PRODUCT_NAME" /> ‑osien päivitykset.</translation>
 <translation id="5728154254076636808">Salli roaming-kopioiden luominen <ph name="PRODUCT_NAME" /> ‑profiilitiedoista.</translation>
 <translation id="5732972008943405952">Tuo automaattisen täytön lomaketiedot oletusselaimesta ensimmäisen käynnistyksen yhteydessä</translation>
 <translation id="5765780083710877561">Kuvaus:</translation>
@@ -1525,20 +1481,6 @@ Jos käytäntöä ei määritetä, käyttäjät voivat valita, tuleeko hylly pii
           Kun tälle käytännölle ei ole asetettu arvoa, se käyttää ajan oletusarvoa.
 
           Tämän käytännön arvo täytyy määrittää millisekunteina.</translation>
-<translation id="5784370777704871674">Ottaa tuotteen <ph name="PRODUCT_NAME" /> selaussuojan käyttöön ja estää käyttäjiä muuttamasta tätä asetusta
-
-      Jos otat asetuksen käyttöön, selaussuoja on aina käytössä.
-
-      Jos poistat asetuksen käytöstä, selaussuojaa ei oteta käyttöön.
-
-      Valittuasi asetuksen käyttäjät eivät voi muuttaa tai ohittaa Aktivoi tietojenkalastelu- ja haittaohjelmasuojaus ‑asetusta tuotteessa <ph name="PRODUCT_NAME" />.
-
-      Jos käytäntöä ei ole määritetty, asetus otetaan käyttöön mutta käyttäjät voivat muuttaa sitä.
-
-      Voit lukea lisää selaussuojasta osoitteessa https://developers.google.com/safe-browsing.
-
-      Tämä käytäntö ei ole käytettävissä Windowsin esiintymissä, joita ei ole liitetty <ph name="MS_AD_NAME" /> ‑verkkotunnukseen.</translation>
-<translation id="5795001131770861387">Sallii HTTP/0.9-tuen muilla kuin oletusarvoisilla porteilla.</translation>
 <translation id="5809728392451418079">Määritä laitteeseen lisättyjen tilien näyttönimi</translation>
 <translation id="5814301096961727113">Aseta äänipalautteen oletustila kirjautumisnäytössä</translation>
 <translation id="5815129011704381141">Käynnistä automaattisesti uudelleen päivityksen jälkeen</translation>
@@ -1695,7 +1637,6 @@ Jos tämä asetus ei ole käytössä tai jos sen arvo on false, tulostuskomento 
 <translation id="6155936611791017817">Aseta suuren osoittimen oletustila kirjautumisnäytössä</translation>
 <translation id="6157537876488211233">Välityspalvelimen ohitussääntöjen pilkuilla erotettu luettelo</translation>
 <translation id="6158324314836466367">Enterprise-verkkomyymälän nimi (ei enää käytössä)</translation>
-<translation id="6161405879872578475">Ota <ph name="PRODUCT_NAME" /> käyttöön</translation>
 <translation id="6181608880636987460">Voit määrittää URL-osoitemalleja, joiden määrittämät sivustot eivät saa suorittaa <ph name="FLASH_PLUGIN_NAME" />-laajennusta.
 
           Jos tätä käytäntöä ei ole määritetty, kaikkiin sivustoihin sovelletaan DefaultPluginsSetting-käytäntöä (jos se on määritetty) tai käyttäjän omien asetusten mukaista yleistä oletusarvoa.</translation>
@@ -1725,11 +1666,6 @@ Jos tämä asetus ei ole käytössä tai jos sen arvo on false, tulostuskomento 
 <translation id="6281043242780654992">Määrittää laitteen oman viestijärjestelmän käytännöt. Kiellettyjen luettelossa olevia laitteen omaa viestijärjestelmää käyttäviä isäntiä ei sallita, ellei niitä ole lisätty sallittujen luetteloon.</translation>
 <translation id="6282799760374509080">Salli tai estä äänen kaappaaminen</translation>
 <translation id="6284362063448764300">TLS 1.1</translation>
-<translation id="6287694548537067861"><ph name="PRODUCT_NAME" /> sallii kaikkien komponenttien päivityksen, kun tämän käytännön arvo on Tosi tai sitä ei ole määritetty.
-
-      Jos tämän käytännön arvo on Epätosi, komponenttien päivittäminen poistetaan käytöstä. Tämä käytäntö ei kuitenkaan koske kaikkia osia: päivitys sallitaan, jos komponentti ei sisällä suoritettavaa koodia, muuta selaimen toimintaa merkittävästi tai on selaimen suojauksen kannalta kriittinen.
-      Tällaisia komponentteja ovat esimerkiksi varmenteiden peruutusluettelot ja Selaussuojan tiedot.
-      Voit lukea lisää Selaussuojasta osoitteessa https://developers.google.com/safe-browsing.</translation>
 <translation id="6310223829319187614">Verkkotunnuksen automaattinen täydennys kirjautumisen yhteydessä</translation>
 <translation id="6315673513957120120">Chrome näyttää varoitussivun, jos käyttäjä avaa SSL-virheitä sisältävän sivuston. Jos käytännön arvo on Tosi, käyttäjä voi ohittaa varoitussivun. Tämä on myös oletusarvo.
       Käytännön arvo Epätosi estää varoitussivujen ohittamisen.</translation>
@@ -1942,7 +1878,6 @@ Jos tätä käytäntöä ei ole määritetty, käytetään oletusarvoa (32).</tr
 <translation id="7063895219334505671">Salli ponnahdusikkunat näissä sivustoissa</translation>
 <translation id="706669471845501145">Anna kaikkien sivustojen näyttää työpöytäilmoituksia</translation>
 <translation id="7072208053150563108">Laitteen salasanan muutostiheys</translation>
-<translation id="7072406291414141328">Ottaa käyttöön verkon kaistanleveyden rajoituksen</translation>
 <translation id="7074513465313721551">Määrittää listan verkkotunnuksia, joihin Selaussuoja luottaa. Tämä tarkoittaa, että
       Selaussuoja ei tee vaarallisten resurssien (esim. tietojenkalastelu, haittaohjelmat tai ei-toivotut ohjelmat) tarkastusta, jos URL-osoite vastaa jotakin näistä verkkotunnuksista
       Selaussuojan lataussuoja ei tarkasta näistä verkkotunnuksista peräisin olevia latauksia
@@ -2054,10 +1989,8 @@ Jos tätä käytäntöä ei ole määritetty, käytetään oletusarvoa (32).</tr
 
       Jos käytäntöä ei määritetä, automaattinen puhdistus käyttää sisäänrakennettua oletustapaa, joka on tällä hetkellä RemoveLRUIfDormant.</translation>
 <translation id="7336878834592315572">Säilytä evästeet käyttökerran ajan</translation>
-<translation id="733838170182967492">Sallii mediasisällön automaattisen toiston</translation>
 <translation id="7340034977315324840">Ilmoita laitteen käyttöajat</translation>
 <translation id="7343497214039883642">Yritystulostimen määritystiedosto laitteille</translation>
-<translation id="7384999953864505698">Sallii QUIC-protokollan käytön</translation>
 <translation id="7417972229667085380">Prosenttiosuus, jolla käyttämättömyyden viive skaalataan esitystilassa (ei enää käytössä)</translation>
 <translation id="7421483919690710988">Aseta levyn mediavälimuistin koko tavuina</translation>
 <translation id="7424751532654212117">Käytöstä poistettujen laajennuksien poikkeukset</translation>
@@ -2231,7 +2164,6 @@ Jos tätä käytäntöä ei ole määritetty, käytetään oletusarvoa (32).</tr
 <translation id="8044493735196713914">Ilmoita laitteen tila uudelleenkäynnistyksen yhteydessä</translation>
 <translation id="8050080920415773384">Natiivitulostus</translation>
 <translation id="8059164285174960932">URL-osoite, josta etäkäytön asiakkaiden tulisi saada todennustunnus</translation>
-<translation id="8073243368829195">Sallii Smart Lockin käytön</translation>
 <translation id="8099880303030573137">Käyttämättömyysaika käytettäessä laitetta akkuvirralla</translation>
 <translation id="8102913158860568230">Mediastreamin oletusasetus</translation>
 <translation id="8104962233214241919">Valitse automaattisesti näiden sivustojen asiakasvarmenteet</translation>
@@ -2411,7 +2343,6 @@ Suosittelemme määrittämään käytännöt Windowsissa ryhmäkäytäntöobjekt
       Jos käytännölle ei ole määritetty arvoa tai sen arvo on tosi, kaikilla käyttäjillä on oikeus käyttää ARC:tä (paitsi jos ARC on poistettu käytöstä toisella tavalla).
 
       Käytäntöön tehtyjä muutoksia sovelletaan vain, jos ARC ei ole käynnissä, esimerkiksi Chrome-käyttöjärjestelmän käynnistyksen aikana.</translation>
-<translation id="8614804915612153606">Poistaa automaattisen päivityksen käytöstä</translation>
 <translation id="8631434304112909927">versioon <ph name="UNTIL_VERSION" /> saakka</translation>
 <translation id="863319402127182273">Android-sovellusten kohdalla tämä käytäntö vaikuttaa vain sisäänrakennettuun kameraan. Kun käytännön arvoksi on määritetty tosi, kamera ei ole minkään Android-sovellusten käytössä, ilman poikkeuksia.</translation>
 <translation id="8649763579836720255">Chrome-käyttöjärjestelmää käyttävät laitteet voivat käyttää etävahvistusta (vahvistetut käyttöoikeudet), jotta saavat Chrome-käyttöjärjestelmän CA:n lähettämän todistuksen, joka vahvistaa, että laitteella voi toistaa suojattua sisältöä. Tähän prosessiin kuuluu laitteistosuositusten lähettäminen Chrome-käyttöjärjestelmän CA:lle, joka tunnistaa jokaisen yksittäisen laitteen.
@@ -2442,7 +2373,6 @@ Suosittelemme määrittämään käytännöt Windowsissa ryhmäkäytäntöobjekt
       Jos asetusta ei oteta käyttöön, selaus- ja lataushistoriaa ei voi poistaa.</translation>
 <translation id="8759829385824155666">Sallitut Kerberos-salaustyypit</translation>
 <translation id="8764119899999036911">Määrittää, perustuuko luotu Kerberos SPN ensisijaiseen DNS-nimeen vai annettuun alkuperäiseen nimeen. Jos otat tämän asetuksen käyttöön, CNAME-haku ohitetaan, ja palvelimen nimeä käytetään sen annetussa muodossa. Jos poistat asetuksen käytöstä tai et määritä sitä, palvelimen ensisijainen nimi määritetään CNAME-haun kautta.</translation>
-<translation id="87812015706645271">Edellyttää, että paikallisen käyttäjän nimi vastaa etäkäytön isännän omistajaa.</translation>
 <translation id="8782750230688364867">Määrittää prosenttimäärän, jolla näytön himmennyksen viive skaalataan, kun laite on esitystilassa.
 
           Jos tämä käytäntö on asetettu, se määrittää prosenttimäärän, jonka mukaan näytön himmennyksen viive skaalataan, kun laite on esitystilassa. Kun himmennyksen viive on skaalattu, näytön sammutus-, lukitus- ja käyttämättömyysviiveet säädetään ylläpitämään samoja etäisyyksiä näytön himmennyksen viiveestä kuin alun perin määritettiin.
@@ -2552,16 +2482,19 @@ Suosittelemme määrittämään käytännöt Windowsissa ryhmäkäytäntöobjekt
 <translation id="9096086085182305205">Sallittujen todennuspalvelimien luettelo</translation>
 <translation id="9098553063150791878">HTTP-todennuksen käytännöt</translation>
 <translation id="9105265795073104888">Vain osa välityspalvelinasetuksista on Android-sovellusten käytettävissä. Android-sovellukset voivat käyttää välityspalvelinta halutessaan. Et voi pakottaa niitä käyttämään välityspalvelinta.</translation>
-<translation id="9110615239151047025">Ottaa käyttöön suojauksen ylimääräisiä välilehtiä vastaan. Suojaus estää ylimääräiselle välilehdelle siirtymisen.
-
-      Lue selitys ylimääräisen välilehden avaamisesta (tab-under) osoitteesta https://www.chromestatus.com/features/5675755719622656.
-      Jos käytännön arvo on tosi, siirtymiset jotka <ph name="PRODUCT_NAME" /> havaitsee johtavan ylimääräiselle välilehdelle, estetään.
-      Jos käytännön arvo on epätosi, <ph name="PRODUCT_NAME" /> sallii ylimääräiselle välilehdelle siirtymisen.
-      Käytännön oletusarvo on tosi.</translation>
 <translation id="9112727953998243860">Yritystulostimen määritystiedosto</translation>
 <translation id="9112897538922695510">Tämän käytännön avulla voit rekisteröidä luettelon protokollan käsittelijöitä. Tämä voi olla vain suositeltu käytäntö. |protocol|-ominaisuudeksi tulee asettaa malli, kuten "mailto", ja |url|-ominaisuudeksi tulee asettaa kyseistä mallia käsittelevän sovelluksen URL-osoitemalli. Osoitemalli voi sisältää merkin %s, joka korvataan käsiteltävällä URL-osoitteella.
 
           Käytännön avulla rekisteröidyt protokollan käsittelijät yhdistetään käyttäjän rekisteröimien käsittelijöiden kanssa, ja molemmat ovat käytettävissä. Käyttäjä voi ohittaa käytännön määrittämät protokollan käsittelijät asentamalla uuden oletuskäsittelijän. Käyttäjä ei kuitenkaan voi poistaa käytännön avulla rekisteröityjä protokollan käsittelijöitä.</translation>
+<translation id="9123211093995421438">Määritä <ph name="PRODUCT_OS_NAME" /> ‑virstanpylväiden palauttamisten sallittu vähimmäismäärä, joka lasketaan aina vakaasta versiosta alkaen.
+
+      Kuluttajalaitteissa oletusmäärä on 0 ja yritysten rekisteröimissä laitteissa 4 (noin puolen vuoden välein).
+
+      Jos tämä käytäntö on määritetty, palautussuojaus voi alkaa toimia aikaisintaan tässä asetetun virstanpylväsmäärän jälkeen.
+
+      Tämän käytännön määrittäminen pienempään arvoon vaikuttaa pysyvästi: laitetta ei EHKÄ voi palauttaa aiempiin versioihin, vaikka käytäntöön palautettaisiin suurempi arvo.
+
+      Todelliset palautusmahdollisuudet voivat riippua myös levystä ja kriittisten haavoittuvuuksien korjauksista.</translation>
 <translation id="913195841488580904">Estää URL-osoiteluettelon käytön</translation>
 <translation id="9135033364005346124">Ota välityspalvelin <ph name="CLOUD_PRINT_NAME" /> käyttöön</translation>
 <translation id="9136253551939494882">Luettelo sallituista lukituksen pika-avaamisen tiloista, joita käyttäjä voi määrittää ja käyttää lukitusnäytön avaamiseen.
@@ -2599,7 +2532,6 @@ Suosittelemme määrittämään käytännöt Windowsissa ryhmäkäytäntöobjekt
 <translation id="922540222991413931">Määritä laajennusten, sovellusten ja käyttäjien komentosarjojen asennuslähteet</translation>
 <translation id="924557436754151212">Tuo tallennetut salasanat oletusselaimesta ensimmäisellä käyttökerralla</translation>
 <translation id="930930237275114205">Määritä tuotteen <ph name="PRODUCT_FRAME_NAME" /> käyttäjätietohakemisto</translation>
-<translation id="934390688529359269">Ottaa käyttöön pakotetun kirjautumisen kohteessa <ph name="PRODUCT_NAME" />.</translation>
 <translation id="938916311528680351">Tällä käytännöllä määritetään, voidaanko Chrome-käyttöjärjestelmässä suorittaa virtuaalikoneita.
 
       Jos käytännön arvoksi asetetaan Tosi, laitteella on sallittua suorittaa virtuaalikoneita.

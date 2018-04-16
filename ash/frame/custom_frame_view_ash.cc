@@ -519,17 +519,23 @@ void CustomFrameViewAsh::OnWindowPropertyChanged(aura::Window* window,
                                                  const void* key,
                                                  intptr_t old) {
   DCHECK_EQ(frame_->GetNativeWindow(), window);
-  if (key != ash::kFrameActiveColorKey && key != ash::kFrameInactiveColorKey)
+  if (key == aura::client::kShowStateKey) {
+    header_view_->OnShowStateChanged(
+        window->GetProperty(aura::client::kShowStateKey));
     return;
+  }
 
   if (key == ash::kFrameActiveColorKey) {
     header_view_->SetFrameColors(window->GetProperty(ash::kFrameActiveColorKey),
                                  header_view_->GetInactiveFrameColor());
     return;
   }
-  header_view_->SetFrameColors(
-      header_view_->GetActiveFrameColor(),
-      window->GetProperty(ash::kFrameInactiveColorKey));
+
+  if (key == ash::kFrameInactiveColorKey) {
+    header_view_->SetFrameColors(
+        header_view_->GetActiveFrameColor(),
+        window->GetProperty(ash::kFrameInactiveColorKey));
+  }
 }
 
 const views::View* CustomFrameViewAsh::GetAvatarIconViewForTest() const {
@@ -596,23 +602,12 @@ CustomFrameViewAsh::GetFrameCaptionButtonContainerViewForTest() {
 }
 
 int CustomFrameViewAsh::NonClientTopBorderHeight() const {
-  // TODO(oshima): CustomFrameViewAsh should be able to tell if it's
-  // in immersive mode and return 0, instead of using custom logic.
-  if (zero_top_border_height_)
-    return 0;
-
   // The frame should not occupy the window area when it's in fullscreen,
   // not visible or disabled.
-  if (frame_->IsFullscreen() || !visible() || !enabled())
+  if (frame_->IsFullscreen() || !visible() || !enabled() ||
+      header_view_->in_immersive_mode()) {
     return 0;
-
-  const bool should_hide_titlebar_in_tablet_mode =
-      Shell::Get()->tablet_mode_controller() &&
-      Shell::Get()->tablet_mode_controller()->ShouldAutoHideTitlebars(frame_);
-
-  if (should_hide_titlebar_in_tablet_mode)
-    return 0;
-
+  }
   return header_view_->GetPreferredHeight();
 }
 

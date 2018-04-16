@@ -15,7 +15,6 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/linux_util.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/sys_info.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/default_clock.h"
@@ -300,24 +299,6 @@ void EasyUnlockServiceRegular::SetHardlockAfterKeyOperation(
   CheckCryptohomeKeysAndMaybeHardlock();
 }
 
-const base::DictionaryValue* EasyUnlockServiceRegular::GetPermitAccess() const {
-  const base::DictionaryValue* pairing_dict =
-      profile()->GetPrefs()->GetDictionary(prefs::kEasyUnlockPairing);
-  const base::DictionaryValue* permit_dict = NULL;
-  if (pairing_dict &&
-      pairing_dict->GetDictionary(kKeyPermitAccess, &permit_dict))
-    return permit_dict;
-
-  return NULL;
-}
-
-void EasyUnlockServiceRegular::SetPermitAccess(
-    const base::DictionaryValue& permit) {
-  DictionaryPrefUpdate pairing_update(profile()->GetPrefs(),
-                                      prefs::kEasyUnlockPairing);
-  pairing_update->SetKey(kKeyPermitAccess, permit.Clone());
-}
-
 void EasyUnlockServiceRegular::ClearPermitAccess() {
   DictionaryPrefUpdate pairing_update(profile()->GetPrefs(),
                                       prefs::kEasyUnlockPairing);
@@ -442,34 +423,6 @@ void EasyUnlockServiceRegular::RecordEasySignInOutcome(
 void EasyUnlockServiceRegular::RecordPasswordLoginEvent(
     const AccountId& account_id) const {
   NOTREACHED();
-}
-
-void EasyUnlockServiceRegular::StartAutoPairing(
-    const AutoPairingResultCallback& callback) {
-  if (!auto_pairing_callback_.is_null()) {
-    LOG(ERROR)
-        << "Start auto pairing when there is another auto pairing requested.";
-    callback.Run(false, std::string());
-    return;
-  }
-
-  auto_pairing_callback_ = callback;
-
-  std::unique_ptr<base::ListValue> args(new base::ListValue());
-  std::unique_ptr<extensions::Event> event(new extensions::Event(
-      extensions::events::EASY_UNLOCK_PRIVATE_ON_START_AUTO_PAIRING,
-      extensions::api::easy_unlock_private::OnStartAutoPairing::kEventName,
-      std::move(args)));
-  extensions::EventRouter::Get(profile())->DispatchEventWithLazyListener(
-      extension_misc::kEasyUnlockAppId, std::move(event));
-}
-
-void EasyUnlockServiceRegular::SetAutoPairingResult(bool success,
-                                                    const std::string& error) {
-  DCHECK(!auto_pairing_callback_.is_null());
-
-  auto_pairing_callback_.Run(success, error);
-  auto_pairing_callback_.Reset();
 }
 
 void EasyUnlockServiceRegular::InitializeInternal() {

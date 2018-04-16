@@ -4,12 +4,13 @@
 
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager.h"
 
-#include "base/feature_list.h"
+#include "base/command_line.h"
+#include "base/optional.h"
 #include "base/task_scheduler/post_task.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/common/content_features.h"
 
 namespace {
 
@@ -98,8 +99,7 @@ WebRtcEventLogManager::WebRtcEventLogManager()
            base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN})) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  if (base::FeatureList::IsEnabled(::features::kWebRtcRemoteEventLog)) {
-    VLOG(1) << "WebRTC remote-bound event logging enabled.";
+  if (IsRemoteLoggingEnabled()) {
     remote_logs_manager_ = std::make_unique<WebRtcRemoteEventLogManager>(this);
   }
 
@@ -287,13 +287,24 @@ void WebRtcEventLogManager::StartRemoteLogging(
     const std::string& peer_connection_id,
     size_t max_file_size_bytes,
     const std::string& metadata,
-    base::OnceCallback<void(bool)> reply) {
+    base::OnceCallback<void(bool, const std::string&)> reply) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  if (!remote_logs_manager_) {
+    MaybeReply(std::move(reply), false,
+               std::string(kStartRemoteLoggingFailureFeatureDisabled));
+    return;
+  }
 
   const BrowserContext* browser_context = GetBrowserContext(render_process_id);
   if (!browser_context || browser_context->IsOffTheRecord()) {
     // RPH died before processing of this notification, or is incognito.
-    MaybeReply(std::move(reply), false);
+    // In the former case, there's no one to report to anyway.
+    // In the latter case, we don't want to expose incognito state to the
+    // JS application, so we give an error message that must be shared with
+    // other common events.
+    MaybeReply(std::move(reply), false,
+               std::string(kStartRemoteLoggingFailureGeneric));
     return;
   }
 
@@ -309,6 +320,23 @@ void WebRtcEventLogManager::StartRemoteLogging(
                      browser_context_id, peer_connection_id,
                      browser_context->GetPath(), max_file_size_bytes, metadata,
                      std::move(reply)));
+}
+
+void WebRtcEventLogManager::ClearCacheForBrowserContext(
+    const BrowserContext* browser_context,
+    const base::Time& delete_begin,
+    const base::Time& delete_end,
+    base::OnceClosure reply) {
+  const auto browser_context_id = GetBrowserContextId(browser_context);
+  DCHECK_NE(browser_context_id, kNullBrowserContextId);
+
+  // The object outlives the task queue - base::Unretained(this) is safe.
+  task_runner_->PostTaskAndReply(
+      FROM_HERE,
+      base::BindOnce(
+          &WebRtcEventLogManager::ClearCacheForBrowserContextInternal,
+          base::Unretained(this), browser_context_id, delete_begin, delete_end),
+      std::move(reply));
 }
 
 void WebRtcEventLogManager::SetLocalLogsObserver(
@@ -333,6 +361,36 @@ void WebRtcEventLogManager::SetRemoteLogsObserver(
       FROM_HERE,
       base::BindOnce(&WebRtcEventLogManager::SetRemoteLogsObserverInternal,
                      base::Unretained(this), observer, std::move(reply)));
+}
+
+bool WebRtcEventLogManager::IsRemoteLoggingEnabled() const {
+  base::Optional<bool> enabled;
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kWebRtcRemoteEventLog)) {
+    const std::string switch_value =
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kWebRtcRemoteEventLog);
+    if (switch_value == "disable" || switch_value == "disabled") {
+      enabled = false;
+    } else if (switch_value == "enable" || switch_value == "enabled") {
+      enabled = true;
+    } else {
+      LOG(WARNING) << "Unrecognized value given for "
+                   << switches::kWebRtcRemoteEventLog
+                   << "; ignoring. (Use enabled/disabled.)";
+    }
+  }
+
+  if (!enabled.has_value()) {
+    // TODO(crbug.com/775415): Enable for non-mobile builds where the users
+    // have given appropriate consent.
+    enabled = false;
+  }
+
+  VLOG(1) << "WebRTC remote-bound event logging "
+          << (enabled.value() ? "enabled" : "disabled") << ".";
+
+  return enabled.value();
 }
 
 void WebRtcEventLogManager::RenderProcessExited(RenderProcessHost* host,
@@ -565,19 +623,31 @@ void WebRtcEventLogManager::StartRemoteLoggingInternal(
     const base::FilePath& browser_context_dir,
     size_t max_file_size_bytes,
     const std::string& metadata,
-    base::OnceCallback<void(bool)> reply) {
+    base::OnceCallback<void(bool, const std::string&)> reply) {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
-  bool result = false;
-  if (remote_logs_manager_) {
-    result = remote_logs_manager_->StartRemoteLogging(
-        render_process_id, browser_context_id, peer_connection_id,
-        browser_context_dir, max_file_size_bytes, metadata);
-  }
+  std::string error_message;
+  const bool result = remote_logs_manager_->StartRemoteLogging(
+      render_process_id, browser_context_id, peer_connection_id,
+      browser_context_dir, max_file_size_bytes, metadata, &error_message);
+  DCHECK_EQ(result, error_message.empty());  // Error set iff has failed.
 
   if (reply) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            base::BindOnce(std::move(reply), result));
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::BindOnce(std::move(reply), result, error_message));
+  }
+}
+
+void WebRtcEventLogManager::ClearCacheForBrowserContextInternal(
+    BrowserContextId browser_context_id,
+    const base::Time& delete_begin,
+    const base::Time& delete_end) {
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+
+  if (remote_logs_manager_) {
+    remote_logs_manager_->ClearCacheForBrowserContext(browser_context_id,
+                                                      delete_begin, delete_end);
   }
 }
 
@@ -627,6 +697,17 @@ void WebRtcEventLogManager::MaybeReply(base::OnceCallback<void(bool)> reply,
   }
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::BindOnce(std::move(reply), value));
+}
+
+void WebRtcEventLogManager::MaybeReply(
+    base::OnceCallback<void(bool, const std::string&)> reply,
+    bool bool_val,
+    const std::string& str_val) {
+  if (!reply) {
+    return;
+  }
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                          base::BindOnce(std::move(reply), bool_val, str_val));
 }
 
 void WebRtcEventLogManager::MaybeReply(

@@ -41,6 +41,7 @@ namespace ash {
 class WallpaperColorCalculator;
 class WallpaperControllerObserver;
 class WallpaperResizer;
+class WallpaperWindowStateManager;
 
 // The |CustomWallpaperElement| contains |first| the path of the image which
 // is currently being loaded and or in progress of being loaded and |second|
@@ -71,10 +72,6 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
     WALLPAPER_RESOLUTION_LARGE,
     WALLPAPER_RESOLUTION_SMALL
   };
-
-  // The value assigned if extraction fails or the feature is disabled (e.g.
-  // command line, lock/login screens).
-  static const SkColor kInvalidColor;
 
   // Directory names of custom wallpapers.
   static const char kSmallWallpaperSubDir[];
@@ -347,9 +344,12 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
                              const std::string& wallpaper_files_id) override;
   void SetAnimationDuration(base::TimeDelta animation_duration) override;
   void OpenWallpaperPickerIfAllowed() override;
+  void MinimizeInactiveWindows(const std::string& user_id_hash) override;
+  void RestoreMinimizedWindows(const std::string& user_id_hash) override;
   void AddObserver(mojom::WallpaperObserverAssociatedPtrInfo observer) override;
   void GetWallpaperImage(GetWallpaperImageCallback callback) override;
   void GetWallpaperColors(GetWallpaperColorsCallback callback) override;
+  void IsWallpaperBlurred(IsWallpaperBlurredCallback callback) override;
   void IsActiveUserWallpaperControlledByPolicy(
       IsActiveUserWallpaperControlledByPolicyCallback callback) override;
   void GetActiveUserWallpaperLocation(
@@ -556,8 +556,12 @@ class ASH_EXPORT WallpaperController : public mojom::WallpaperController,
   // Asynchronous task to extract colors from the wallpaper.
   std::unique_ptr<WallpaperColorCalculator> color_calculator_;
 
+  // Manages the states of the other windows when the wallpaper app window is
+  // active.
+  std::unique_ptr<WallpaperWindowStateManager> window_state_manager_;
+
   // The prominent colors extracted from the current wallpaper.
-  // kInvalidColor is used by default or if extracting colors fails.
+  // kInvalidWallpaperColor is used by default or if extracting colors fails.
   std::vector<SkColor> prominent_colors_;
 
   // Caches the color profiles that need to do wallpaper color extracting.

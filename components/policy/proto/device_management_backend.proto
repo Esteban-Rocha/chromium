@@ -506,6 +506,10 @@ message PolicyData {
 
   // Whether the device needs to upload an enrollment identifier to the cloud.
   optional bool enrollment_id_needed = 28;
+
+  // Gaia id of the user the policy is intended for.
+  // Should be fetched with user policy.
+  optional string gaia_id = 29;
 }
 
 message PolicyFetchResponse {
@@ -1487,6 +1491,12 @@ message AppInstallReportLogEvent {
     CONNECTIVITY_CHANGE = 8;
     // Session state changed
     SESSION_STATE_CHANGE = 9;
+    // Package installation started
+    INSTALLATION_STARTED = 10;
+    // Package installation finished
+    INSTALLATION_FINISHED = 11;
+    // Package installation failed
+    INSTALLATION_FAILED = 12;
   }
 
   // Enumerates the possible changes in session state.
@@ -1511,7 +1521,8 @@ message AppInstallReportLogEvent {
   optional EventType event_type = 2;
 
   // Total and available space on the stateful partition, in bytes. Set for
-  // event types SERVER_REQUEST, CLOUDDPS_RESPONSE and SUCCESS.
+  // event types SERVER_REQUEST, CLOUDDPS_RESPONSE, INSTALLATION_STARTED,
+  // INSTALLATION_FINISHED, INSTALLATION_FAILED and SUCCESS.
   optional int64 stateful_total = 3;
   optional int64 stateful_free = 4;
 

@@ -102,8 +102,11 @@
   "chrome/browser/resources/net_internals_resources.grd": {
     "includes": [12000],
   },
+  "chrome/browser/resources/print_preview/print_preview_resources_vulcanized.grd": {
+    "includes": [12010],
+  },
   "chrome/browser/resources/print_preview/print_preview_resources.grd": {
-    "structures": [12010],
+    "structures": [12020],
   },
   "chrome/browser/resources/quota_internals_resources.grd": {
     "includes": [12210],
@@ -337,13 +340,13 @@
     "messages": [24800],
   },
 
-  "third_party/WebKit/public/blink_image_resources.grd": {
+  "third_party/blink/public/blink_image_resources.grd": {
     "structures": [25300],
   },
-  "third_party/WebKit/public/blink_resources.grd": {
+  "third_party/blink/public/blink_resources.grd": {
     "includes": [25400],
   },
-  "third_party/WebKit/Source/modules/media_controls/resources/media_controls_resources.grd": {
+  "third_party/blink/renderer/modules/media_controls/resources/media_controls_resources.grd": {
     "includes": [25500],
     "structures": [25600],
   },

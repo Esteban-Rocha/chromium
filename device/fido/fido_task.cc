@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "device/fido/ctap_empty_authenticator_request.h"
 #include "device/fido/device_response_converter.h"
@@ -28,8 +27,7 @@ void FidoTask::CancelTask() {
   if (device()->supported_protocol() != ProtocolVersion::kCtap)
     return;
 
-  device()->DeviceTransact(AuthenticatorCancelRequest().Serialize(),
-                           base::DoNothing());
+  device()->Cancel();
 }
 
 void FidoTask::GetAuthenticatorInfo(base::OnceClosure ctap_callback,

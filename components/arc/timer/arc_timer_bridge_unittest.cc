@@ -225,9 +225,6 @@ bool WaitForExpiration(clockid_t clock_id, ArcTimerStore* arc_timer_store) {
       arc_timer_store->GetTimerReadFd(clock_id);
   EXPECT_NE(timer_read_fd_opt, base::nullopt);
   int timer_read_fd = timer_read_fd_opt.value();
-  // Required before watching a file descriptor.
-  base::FileDescriptorWatcher file_descriptor_watcher(
-      base::MessageLoopForIO::current());
   base::RunLoop loop;
   std::unique_ptr<base::FileDescriptorWatcher::Controller>
       watch_readable_controller = base::FileDescriptorWatcher::WatchReadable(

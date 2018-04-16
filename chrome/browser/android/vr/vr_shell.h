@@ -162,17 +162,21 @@ class VrShell : device::GvrGamepadDataProvider,
                              int composition_end);
   void ResumeContentRendering(JNIEnv* env,
                               const base::android::JavaParamRef<jobject>& obj);
+  void OnOverlayTextureEmptyChanged(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& obj,
+      jboolean empty);
 
   void ContentWebContentsDestroyed();
 
   void ContentSurfaceCreated(jobject surface, gl::SurfaceTexture* texture);
   void ContentOverlaySurfaceCreated(jobject surface,
                                     gl::SurfaceTexture* texture);
-  void GvrDelegateReady(gvr::ViewerType viewer_type,
-                        device::mojom::VRDisplayFrameTransportOptionsPtr);
+  void GvrDelegateReady(gvr::ViewerType viewer_type);
+  void SendRequestPresentReply(
+      bool success,
+      device::mojom::VRDisplayFrameTransportOptionsPtr);
 
-  device::mojom::VRDisplayFrameTransportOptionsPtr
-  GetVRDisplayFrameTransportOptions();
   void DialogSurfaceCreated(jobject surface, gl::SurfaceTexture* texture);
 
   void BufferBoundsChanged(JNIEnv* env,
@@ -186,7 +190,8 @@ class VrShell : device::GvrGamepadDataProvider,
   void ExitPresent();
   void ExitFullscreen();
   void LogUnsupportedModeUserMetric(UiUnsupportedMode mode);
-  void RecordVrStartAction(PageSessionStartAction action);
+  void RecordVrStartAction(VrStartAction action);
+  void RecordPresentationStartAction(PresentationStartAction action);
   void OnUnsupportedMode(UiUnsupportedMode mode);
   void OnExitVrPromptResult(UiUnsupportedMode reason,
                             ExitVrPromptChoice choice);
@@ -292,6 +297,9 @@ class VrShell : device::GvrGamepadDataProvider,
   base::android::ScopedJavaGlobalRef<jobject> j_motion_event_synthesizer_;
 
   std::unique_ptr<VrWebContentsObserver> vr_web_contents_observer_;
+  // Note this must be destroyed after VrGLThread is destroyed in the
+  // destruction of VrShell. VrGLThread keeps a raw pointer of VrInputConnection
+  // and uses the pointer on GL thread.
   std::unique_ptr<VrInputConnection> vr_input_connection_;
 
   VrShellDelegate* delegate_provider_ = nullptr;
@@ -328,9 +336,6 @@ class VrShell : device::GvrGamepadDataProvider,
   device::CardboardGamepadDataFetcher* cardboard_gamepad_data_fetcher_ =
       nullptr;
   int64_t cardboard_gamepad_timer_ = 0;
-
-  // For GetVRDisplayFrameTransportOptions()
-  device::mojom::VRDisplayFrameTransportOptionsPtr frame_transport_options_;
 
   // Content id
   int content_id_ = 0;

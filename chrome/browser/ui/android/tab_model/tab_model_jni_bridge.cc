@@ -72,7 +72,7 @@ void TabModelJniBridge::TabAddedToModel(JNIEnv* env,
   // the window id.
   TabAndroid* tab = TabAndroid::GetNativeTab(env, jtab);
   if (tab)
-    tab->SetWindowSessionID(GetSessionId().id());
+    tab->SetWindowSessionID(GetSessionId());
 }
 
 int TabModelJniBridge::GetTabCount() const {
@@ -143,6 +143,11 @@ bool TabModelJniBridge::IsSessionRestoreInProgress() const {
   JNIEnv* env = AttachCurrentThread();
   return Java_TabModelJniBridge_isSessionRestoreInProgress(
       env, java_object_.get(env));
+}
+
+bool TabModelJniBridge::IsCurrentModel() const {
+  JNIEnv* env = AttachCurrentThread();
+  return Java_TabModelJniBridge_isCurrentModel(env, java_object_.get(env));
 }
 
 void TabModelJniBridge::BroadcastSessionRestoreComplete(

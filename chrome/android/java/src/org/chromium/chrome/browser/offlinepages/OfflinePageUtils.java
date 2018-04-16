@@ -17,6 +17,7 @@ import org.chromium.base.Callback;
 import org.chromium.base.Log;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.UrlConstants;
@@ -32,6 +33,7 @@ import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabModelObserver;
 import org.chromium.chrome.browser.util.ChromeFileProvider;
 import org.chromium.components.bookmarks.BookmarkId;
+import org.chromium.components.offlinepages.SavePageResult;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.net.ConnectionType;
@@ -347,6 +349,18 @@ public class OfflinePageUtils {
     }
 
     /**
+     * Records UMA data for publishing internal page during sharing.
+     * Most of the recording are in JNI layer, since it's a point that can be used by both ways of
+     * sharing a page.
+     * TODO(romax): See if we can merge that.
+     * @param result The result for publishing file.
+     */
+    public static void recordPublishPageResult(int result) {
+        RecordHistogram.recordEnumeratedHistogram("OfflinePages.Sharing.PublishInternalPageResult",
+                result, SavePageResult.RESULT_COUNT);
+    }
+
+    /**
      * If possible, creates the ShareParams needed to share the current offline page loaded in the
      * provided tab as a MHTML file.
      *
@@ -381,12 +395,15 @@ public class OfflinePageUtils {
         // The file access permission is needed since we may need to publish the archive file
         // if it resides in internal directory.
         offlinePageBridge.acquireFileAccessPermission(webContents, (granted) -> {
-            if (!granted) return;
+            if (!granted) {
+                recordPublishPageResult(SavePageResult.PERMISSION_DENIED);
+                return;
+            }
 
             // If the page is not in a public location, we must publish it before sharing it.
             if (offlinePageBridge.isInPrivateDirectory(offlinePath)) {
                 publishThenShareInternalPage(
-                        activity, tab.getProfile(), offlinePageBridge, offlinePage, shareCallback);
+                        activity, offlinePageBridge, offlinePage, shareCallback);
                 return;
             }
 
@@ -447,14 +464,13 @@ public class OfflinePageUtils {
      * @param offlinePage Page to publish and share.
      * @param shareCallback The callback to be used to send the ShareParams.
      */
-    public static void publishThenShareInternalPage(final Activity activity, Profile profile,
+    public static void publishThenShareInternalPage(final Activity activity,
             OfflinePageBridge offlinePageBridge, OfflinePageItem offlinePage,
             final Callback<ShareParams> shareCallback) {
-        Callback<String> publishPageCallback =
+        PublishPageCallback publishPageCallback =
                 new PublishPageCallback(activity, offlinePage, shareCallback);
-        offlinePageBridge.publishInternalPage(profile, offlinePage.getOfflineId(),
-                offlinePage.getTitle(), offlinePage.getUrl(), offlinePage.getFilePath(),
-                offlinePage.getFileSize(), publishPageCallback);
+        offlinePageBridge.publishInternalPageByOfflineId(
+                offlinePage.getOfflineId(), publishPageCallback);
     }
 
     /**
@@ -471,14 +487,12 @@ public class OfflinePageUtils {
     public static void sharePublishedPage(OfflinePageItem page, final Activity activity,
             final Callback<ShareParams> shareCallback) {
         if (page == null) {
-            // Set the source component name to null to indicate failure, causing ShareHelper.share
-            // to return.
-            ShareParams shareParams =
-                    new ShareParams.Builder(activity, page.getTitle(), page.getUrl())
-                            .setShareDirectly(false)
-                            .setOfflineUri(Uri.parse(page.getUrl()))
-                            .setSourcePackageName(null)
-                            .build();
+            // Set share directly to true and the source component name to null to indicate failure,
+            // causing ShareHelper.share() to return.
+            ShareParams shareParams = new ShareParams.Builder(activity, "", "")
+                                              .setShareDirectly(true)
+                                              .setSourcePackageName(null)
+                                              .build();
             shareCallback.onResult(shareParams);
             return;
         }
@@ -493,6 +507,7 @@ public class OfflinePageUtils {
      */
     public static void sharePage(Activity activity, String pageUrl, String pageTitle,
             String offlinePath, File offlinePageFile, final Callback<ShareParams> shareCallback) {
+        RecordUserAction.record("OfflinePages.Sharing.SharePageFromOverflowMenu");
         AsyncTask<Void, Void, Uri> task = new AsyncTask<Void, Void, Uri>() {
             @Override
             protected Uri doInBackground(Void... v) {

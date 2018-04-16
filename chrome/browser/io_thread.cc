@@ -17,7 +17,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
@@ -43,6 +42,9 @@
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/certificate_transparency/features.h"
+#include "components/certificate_transparency/sth_distributor.h"
+#include "components/certificate_transparency/sth_observer.h"
 #include "components/certificate_transparency/tree_state_tracker.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_prefs.h"
 #include "components/data_usage/core/data_use_aggregator.h"
@@ -73,8 +75,6 @@
 #include "net/cert/ct_verifier.h"
 #include "net/cert/multi_log_ct_verifier.h"
 #include "net/cert/multi_threaded_cert_verifier.h"
-#include "net/cert/sth_distributor.h"
-#include "net/cert/sth_observer.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
@@ -428,7 +428,7 @@ IOThread::IOThread(
   pac_https_url_stripping_enabled_.MoveToThread(io_thread_proxy);
 
   chrome_browser_net::SetGlobalSTHDistributor(
-      std::make_unique<net::ct::STHDistributor>());
+      std::make_unique<certificate_transparency::STHDistributor>());
 
   BrowserThread::SetIOThreadDelegate(this);
 
@@ -552,15 +552,17 @@ void IOThread::Init() {
 
   UpdateDnsClientEnabled();
 
-  ct_tree_tracker_ =
-      std::make_unique<certificate_transparency::TreeStateTracker>(
-          globals_->ct_logs, globals_->system_request_context->host_resolver(),
-          net_log_);
-  // Register the ct_tree_tracker_ as observer for new STHs.
-  RegisterSTHObserver(ct_tree_tracker_.get());
-  // Register the ct_tree_tracker_ as observer for verified SCTs.
-  globals_->system_request_context->cert_transparency_verifier()->SetObserver(
-      ct_tree_tracker_.get());
+  if (base::FeatureList::IsEnabled(certificate_transparency::kCTLogAuditing)) {
+    ct_tree_tracker_ =
+        std::make_unique<certificate_transparency::TreeStateTracker>(
+            globals_->ct_logs,
+            globals_->system_request_context->host_resolver(), net_log_);
+    // Register the ct_tree_tracker_ as observer for new STHs.
+    RegisterSTHObserver(ct_tree_tracker_.get());
+    // Register the ct_tree_tracker_ as observer for verified SCTs.
+    globals_->system_request_context->cert_transparency_verifier()->SetObserver(
+        ct_tree_tracker_.get());
+  }
 }
 
 void IOThread::CleanUp() {
@@ -568,13 +570,16 @@ void IOThread::CleanUp() {
 
   system_url_request_context_getter_ = nullptr;
 
-  // Unlink the ct_tree_tracker_ from the global cert_transparency_verifier
-  // and unregister it from new STH notifications so it will take no actions
-  // on anything observed during CleanUp process.
-  globals()->system_request_context->cert_transparency_verifier()->SetObserver(
-      nullptr);
-  UnregisterSTHObserver(ct_tree_tracker_.get());
-  ct_tree_tracker_.reset();
+  if (ct_tree_tracker_) {
+    // Unlink the ct_tree_tracker_ from the global cert_transparency_verifier
+    // and unregister it from new STH notifications so it will take no actions
+    // on anything observed during CleanUp process.
+    globals()
+        ->system_request_context->cert_transparency_verifier()
+        ->SetObserver(nullptr);
+    UnregisterSTHObserver(ct_tree_tracker_.get());
+    ct_tree_tracker_.reset();
+  }
 
   globals_->system_request_context->proxy_resolution_service()->OnShutdown();
 
@@ -739,11 +744,13 @@ void IOThread::UpdateDnsClientEnabled() {
   }
 }
 
-void IOThread::RegisterSTHObserver(net::ct::STHObserver* observer) {
+void IOThread::RegisterSTHObserver(
+    certificate_transparency::STHObserver* observer) {
   chrome_browser_net::GetGlobalSTHDistributor()->RegisterObserver(observer);
 }
 
-void IOThread::UnregisterSTHObserver(net::ct::STHObserver* observer) {
+void IOThread::UnregisterSTHObserver(
+    certificate_transparency::STHObserver* observer) {
   chrome_browser_net::GetGlobalSTHDistributor()->UnregisterObserver(observer);
 }
 

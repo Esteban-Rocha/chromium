@@ -191,8 +191,9 @@ IN_PROC_BROWSER_TEST_F(SingleClientSessionsSyncTest, TimestampMatchesHistory) {
         history::URLRow virtual_row;
         ASSERT_TRUE(GetUrlFromClient(0, it3->virtual_url(), &virtual_row));
         const base::Time history_timestamp = virtual_row.last_visit();
-
-        ASSERT_EQ(timestamp, history_timestamp);
+        // Propagated timestamps have millisecond-level resolution, so we avoid
+        // exact comparison here (i.e. usecs might differ).
+        ASSERT_EQ(0, (timestamp - history_timestamp).InMilliseconds());
         ++found_navigations;
       }
     }
@@ -370,12 +371,11 @@ IN_PROC_BROWSER_TEST_F(SingleClientSessionsSyncTest, SourceTabIDSet) {
   content::WebContents* new_tab_contents =
       GetBrowser(0)->tab_strip_model()->GetWebContentsAt(1);
 
-  SessionID::id_type source_tab_id =
-      SessionTabHelper::IdForTab(original_tab_contents);
+  SessionID source_tab_id = SessionTabHelper::IdForTab(original_tab_contents);
   sync_sessions::SyncSessionsRouterTabHelper* new_tab_helper =
       sync_sessions::SyncSessionsRouterTabHelper::FromWebContents(
           new_tab_contents);
-  EXPECT_EQ(new_tab_helper->source_tab_id().id(), source_tab_id);
+  EXPECT_EQ(new_tab_helper->source_tab_id(), source_tab_id);
 }
 
 void DumpSessionsOnServer(fake_server::FakeServer* fake_server) {

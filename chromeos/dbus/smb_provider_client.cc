@@ -70,6 +70,15 @@ class SmbProviderClientImpl : public SmbProviderClient {
                &SmbProviderClientImpl::HandleMountCallback, &callback);
   }
 
+  void Remount(const base::FilePath& share_path,
+               int32_t mount_id,
+               StatusCallback callback) override {
+    smbprovider::RemountOptionsProto options;
+    options.set_path(share_path.value());
+    options.set_mount_id(mount_id);
+    CallDefaultMethod(smbprovider::kRemountMethod, options, &callback);
+  }
+
   void Unmount(int32_t mount_id, StatusCallback callback) override {
     smbprovider::UnmountOptionsProto options;
     options.set_mount_id(mount_id);
@@ -272,7 +281,7 @@ class SmbProviderClientImpl : public SmbProviderClient {
                   Callback callback) {
     proxy_->CallMethod(
         method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
-        base::BindOnce(handler, GetWeakPtr(), base::Passed(callback)));
+        base::BindOnce(handler, GetWeakPtr(), std::move(*callback)));
   }
 
   // Calls the D-Bus method |name|, passing the |protobuf| as an argument.
@@ -295,7 +304,7 @@ class SmbProviderClientImpl : public SmbProviderClient {
         method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
         base::BindOnce(&SmbProviderClientImpl::HandleDefaultCallback,
                        GetWeakPtr(), method_call->GetMember(),
-                       base::Passed(callback)));
+                       std::move(*callback)));
   }
 
   // Handles D-Bus callback for mount.

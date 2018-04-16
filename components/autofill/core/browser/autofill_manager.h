@@ -185,6 +185,7 @@ class AutofillManager : public AutofillHandler,
   void OnHidePopup() override;
   void OnSetDataList(const std::vector<base::string16>& values,
                      const std::vector<base::string16>& labels) override;
+  void SelectFieldOptionsDidChange(const FormData& form) override;
   void Reset() override;
 
   // Returns true if the value of the AutofillEnabled pref is true and the
@@ -288,18 +289,15 @@ class AutofillManager : public AutofillHandler,
   }
 
  private:
+  // Keeps track of the filling context for a form, used to make refill attemps.
   struct FillingContext {
     FillingContext();
     ~FillingContext();
 
-    void Reset();
-
-    // Whether a refill attempts was made on that page.
+    // Whether a refill attempt was made.
     bool attempted_refill = false;
     // The profile that was used for the initial fill.
     AutofillProfile temp_data_model;
-    // The name of the form that was initially filled.
-    base::string16 filled_form_name;
     // The name of the field that was initially filled.
     base::string16 filled_field_name;
     // The time at which the initial fill occured.
@@ -307,7 +305,7 @@ class AutofillManager : public AutofillHandler,
     // The timer used to trigger a refill.
     base::OneShotTimer on_refill_timer;
     // The field type groups that were initially filled.
-    std::set<FieldTypeGroup> type_groups_to_refill;
+    std::set<FieldTypeGroup> type_groups_originally_filled;
   };
 
   // AutofillDownloadManager::Observer:
@@ -591,8 +589,10 @@ class AutofillManager : public AutofillHandler,
   AutofillAssistant autofill_assistant_;
 #endif
 
-  // Filling context used for dynamic fills.
-  FillingContext filling_context_;
+  // A map of form names to FillingContext instances used to make refill
+  // attempts for dynamic forms.
+  std::map<base::string16, std::unique_ptr<FillingContext>>
+      filling_contexts_map_;
 
   base::WeakPtrFactory<AutofillManager> weak_ptr_factory_;
 

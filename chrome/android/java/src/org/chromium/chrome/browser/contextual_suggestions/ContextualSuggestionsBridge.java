@@ -24,17 +24,44 @@ import java.util.List;
 public class ContextualSuggestionsBridge {
     private long mNativeContextualSuggestionsBridge;
 
+    /** Result of fetching contextual suggestions. */
+    public static class ContextualSuggestionsResult {
+        private String mPeekText;
+        private List<ContextualSuggestionsCluster> mClusters = new ArrayList<>();
+
+        ContextualSuggestionsResult(String peekText) {
+            mPeekText = peekText;
+        }
+
+        /** Peek text to show in UI. */
+        public String getPeekText() {
+            return mPeekText;
+        }
+
+        /** Clusters of suggestions. */
+        public List<ContextualSuggestionsCluster> getClusters() {
+            return mClusters;
+        }
+    }
+
     /**
      * Creates a ContextualSuggestionsBridge for getting snippet data for the current user.
      *
      * @param profile Profile of the user that we will retrieve snippets for.
      */
-    public ContextualSuggestionsBridge(Profile profile) {
+    ContextualSuggestionsBridge(Profile profile) {
         mNativeContextualSuggestionsBridge = nativeInit(profile);
     }
 
-    /** Destroys the brige. */
-    public void destroy() {
+    /**
+     * @return Whether the current profile is enterprise policy managed.
+     */
+    public static boolean isEnterprisePolicyManaged() {
+        return nativeIsEnterprisePolicyManaged();
+    }
+
+    /** Destroys the bridge. */
+    void destroy() {
         assert mNativeContextualSuggestionsBridge != 0;
         nativeDestroy(mNativeContextualSuggestionsBridge);
         mNativeContextualSuggestionsBridge = 0;
@@ -45,28 +72,27 @@ public class ContextualSuggestionsBridge {
      * @param url URL for which to fetch suggestions.
      * @param callback Callback used to return suggestions for a given URL.
      */
-    public void fetchSuggestions(
-            String url, Callback<List<ContextualSuggestionsCluster>> callback) {
+    void fetchSuggestions(String url, Callback<ContextualSuggestionsResult> callback) {
         assert mNativeContextualSuggestionsBridge != 0;
         nativeFetchSuggestions(mNativeContextualSuggestionsBridge, url, callback);
     }
 
     /** Fetches a thumbnail for the suggestion. */
-    public void fetchSuggestionImage(SnippetArticle suggestion, Callback<Bitmap> callback) {
+    void fetchSuggestionImage(SnippetArticle suggestion, Callback<Bitmap> callback) {
         assert mNativeContextualSuggestionsBridge != 0;
         nativeFetchSuggestionImage(
                 mNativeContextualSuggestionsBridge, suggestion.mIdWithinCategory, callback);
     }
 
     /** Fetches a favicon for the suggestion. */
-    public void fetchSuggestionFavicon(SnippetArticle suggestion, Callback<Bitmap> callback) {
+    void fetchSuggestionFavicon(SnippetArticle suggestion, Callback<Bitmap> callback) {
         assert mNativeContextualSuggestionsBridge != 0;
         nativeFetchSuggestionFavicon(
                 mNativeContextualSuggestionsBridge, suggestion.mIdWithinCategory, callback);
     }
 
     /** Requests the backend to clear state related to this bridge. */
-    public void clearState() {
+    void clearState() {
         assert mNativeContextualSuggestionsBridge != 0;
         nativeClearState(mNativeContextualSuggestionsBridge);
     }
@@ -75,9 +101,9 @@ public class ContextualSuggestionsBridge {
      * Reports an event happening in the context of the current URL.
      *
      * @param webContents Web contents with the document for which event is reported.
-     * @param eventId Id of the reported event.
+     * @param eventId The Id of the reported event as a {@link ContextualSuggestionsEvent} integer.
      */
-    public void reportEvent(WebContents webContents, int eventId) {
+    void reportEvent(WebContents webContents, @ContextualSuggestionsEvent int eventId) {
         assert mNativeContextualSuggestionsBridge != 0;
         assert webContents != null && !webContents.isDestroyed();
 
@@ -85,32 +111,32 @@ public class ContextualSuggestionsBridge {
     }
 
     @CalledByNative
-    private static List<ContextualSuggestionsCluster> createContextualSuggestionsClusterList() {
-        return new ArrayList<>();
+    private static ContextualSuggestionsResult createContextualSuggestionsResult(String peekText) {
+        return new ContextualSuggestionsResult(peekText);
     }
 
     @CalledByNative
-    private static void addNewClusterToList(
-            List<ContextualSuggestionsCluster> clusters, String title) {
-        clusters.add(new ContextualSuggestionsCluster(title));
+    private static void addNewClusterToResult(ContextualSuggestionsResult result, String title) {
+        result.getClusters().add(new ContextualSuggestionsCluster(title));
     }
 
     @CalledByNative
-    private static void addSuggestionToLastCluster(List<ContextualSuggestionsCluster> clusters,
-            String id, String title, String publisher, String url, long timestamp, float score,
-            long fetchTime, boolean isVideoSuggestion, int thumbnailDominantColor) {
-        assert clusters.size() > 0;
-        clusters.get(clusters.size() - 1)
+    private static void addSuggestionToLastCluster(ContextualSuggestionsResult result, String id,
+            String title, String publisher, String url) {
+        assert result.getClusters().size() > 0;
+        result.getClusters()
+                .get(result.getClusters().size() - 1)
                 .getSuggestions()
                 .add(new SnippetArticle(KnownCategories.CONTEXTUAL, id, title, publisher, url,
-                        timestamp, score, fetchTime, isVideoSuggestion,
-                        thumbnailDominantColor == 0 ? null : thumbnailDominantColor));
+                        /*publishTimestamp=*/0, /*score=*/0f, /*fetchTimestamp=*/0,
+                        /*isVideoSuggestion=*/false, /*thumbnailDominantColor=*/0));
     }
 
+    static private native boolean nativeIsEnterprisePolicyManaged();
     private native long nativeInit(Profile profile);
     private native void nativeDestroy(long nativeContextualSuggestionsBridge);
     private native void nativeFetchSuggestions(long nativeContextualSuggestionsBridge, String url,
-            Callback<List<ContextualSuggestionsCluster>> callback);
+            Callback<ContextualSuggestionsResult> callback);
     private native void nativeFetchSuggestionImage(
             long nativeContextualSuggestionsBridge, String suggestionId, Callback<Bitmap> callback);
     private native void nativeFetchSuggestionFavicon(

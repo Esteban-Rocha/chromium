@@ -22,7 +22,10 @@ import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.support.annotation.ColorRes;
+import android.support.annotation.DrawableRes;
 import android.support.annotation.IntDef;
+import android.support.annotation.StringRes;
 import android.support.v7.widget.AppCompatTextView;
 import android.text.Layout;
 import android.text.Spannable;
@@ -36,8 +39,6 @@ import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.View.OnClickListener;
-import android.view.View.OnLongClickListener;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
@@ -68,11 +69,10 @@ import org.chromium.chrome.browser.preferences.website.ContentSetting;
 import org.chromium.chrome.browser.preferences.website.ContentSettingsResources;
 import org.chromium.chrome.browser.preferences.website.SingleWebsitePreferences;
 import org.chromium.chrome.browser.preferences.website.WebsitePreferenceBridge;
-import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.ssl.SecurityStateModel;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.util.UrlUtilities;
-import org.chromium.chrome.browser.vr_shell.OnExitVrRequestListener;
+import org.chromium.chrome.browser.vr_shell.UiUnsupportedMode;
 import org.chromium.chrome.browser.vr_shell.VrShellDelegate;
 import org.chromium.chrome.browser.widget.TintedDrawable;
 import org.chromium.components.location.LocationUtils;
@@ -80,8 +80,8 @@ import org.chromium.components.security_state.ConnectionSecurityLevel;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.ui.base.DeviceFormFactor;
+import org.chromium.ui.base.PermissionCallback;
 import org.chromium.ui.base.WindowAndroid;
-import org.chromium.ui.base.WindowAndroid.PermissionCallback;
 import org.chromium.ui.interpolators.BakedBezierInterpolator;
 import org.chromium.ui.widget.Toast;
 
@@ -97,7 +97,7 @@ import java.util.List;
 /**
  * Java side of Android implementation of the page info UI.
  */
-public class PageInfoPopup implements OnClickListener, ModalDialogView.Controller {
+public class PageInfoPopup implements ModalDialogView.Controller {
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({OPENED_FROM_MENU, OPENED_FROM_TOOLBAR, OPENED_FROM_VR})
     private @interface OpenedFromSource {}
@@ -153,8 +153,8 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
         // will show the full, expanded text.
         private boolean mIsShowingTruncatedText = true;
 
-        // The profile to use when getting the end index for the origin.
-        private Profile mProfile;
+        // The length of the URL's origin in number of characters.
+        private int mOriginLength = -1;
 
         // The maximum number of lines currently shown in the view
         private int mCurrentMaxLines = Integer.MAX_VALUE;
@@ -191,15 +191,11 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             setMaxLines(Integer.MAX_VALUE);
             super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-            assert mProfile != null : "setProfile() must be called before layout.";
+            assert mOriginLength >= 0 : "setUrl() must be called before layout.";
             String urlText = getText().toString();
 
-            // Lay out the URL in a StaticLayout that is the same size as our final
-            // container.
-            int originEndIndex = OmniboxUrlEmphasizer.getOriginEndIndex(urlText, mProfile);
-
             // Find the range of lines containing the origin.
-            int originEndLine = getLineForIndex(originEndIndex);
+            int originEndLine = getLineForIndex(mOriginLength);
 
             // Display an extra line so we don't accidentally hide the origin with
             // ellipses
@@ -230,13 +226,16 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
         }
 
         /**
-         * Sets the profile to use when calculating the end index of the origin.
+         * Sets the URL and the length of the URL's origin.
          * Must be called before layout.
          *
-         * @param profile The profile to use when coloring the URL.
+         * @param url The URL.
+         * @param originLength The length of the URL's origin in number of characters.
          */
-        public void setProfile(Profile profile) {
-            mProfile = profile;
+        public void setUrl(CharSequence url, int originLength) {
+            assert originLength >= 0 && originLength <= url.length();
+            setText(url);
+            mOriginLength = originLength;
         }
 
         /**
@@ -261,6 +260,40 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
         }
     }
 
+    /**  Parameters to configure the view of the page info popup. */
+    private static class PageInfoViewParams {
+        public boolean instantAppButtonShown = true;
+        public boolean siteSettingsButtonShown = true;
+        public boolean openOnlineButtonShown = true;
+
+        public Runnable urlTitleClickCallback;
+        public Runnable urlTitleLongClickCallback;
+        public Runnable instantAppButtonClickCallback;
+        public Runnable siteSettingsButtonClickCallback;
+        public Runnable openOnlineButtonClickCallback;
+
+        public boolean alwaysShowFullUrl;
+        public CharSequence url;
+        public int urlOriginLength;
+    }
+
+    /**  Parameters to configure the view of a permission row. */
+    private static class PermissionParams {
+        public CharSequence status;
+        public @DrawableRes int iconResource;
+        public @ColorRes int iconTintColorResource;
+        public @StringRes int warningTextResource;
+        public @StringRes int subtitleTextResource;
+        public Runnable clickCallback;
+    }
+
+    /**  Parameters to configure the view of the connection message. */
+    private static class ConnectionInfoParams {
+        public CharSequence message;
+        public CharSequence summary;
+        public Runnable clickCallback;
+    }
+
     // Delay enter to allow the triggering button to animate before we cover it.
     private static final int ENTER_START_DELAY = 100;
     private static final int FADE_DURATION = 200;
@@ -278,16 +311,16 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
     private long mNativePageInfoPopup;
 
     // The outer container, filled with the layout from page_info.xml.
-    private final LinearLayout mContainer;
+    private LinearLayout mContainer;
 
     // UI elements in the dialog.
-    private final ElidedUrlTextView mUrlTitle;
-    private final TextView mConnectionSummary;
-    private final TextView mConnectionMessage;
-    private final LinearLayout mPermissionsList;
-    private final Button mInstantAppButton;
-    private final Button mSiteSettingsButton;
-    private final Button mOpenOnlineButton;
+    private ElidedUrlTextView mUrlTitle;
+    private TextView mConnectionSummary;
+    private TextView mConnectionMessage;
+    private LinearLayout mPermissionsList;
+    private Button mInstantAppButton;
+    private Button mSiteSettingsButton;
+    private Button mOpenOnlineButton;
 
     // The dialog the container is placed in.
     // mSheetDialog is set if the dialog appears as a sheet. Otherwise, mModalDialog is set.
@@ -330,9 +363,6 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
     // The name of the content publisher, if any.
     private String mContentPublisher;
 
-    // The intent associated with the instant app for this URL (or null if one does not exist).
-    private Intent mInstantAppIntent;
-
     // Observer for dismissing dialog if web contents get destroyed, navigate etc.
     private WebContentsObserver mWebContentsObserver;
 
@@ -353,6 +383,7 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
         mTab = tab;
         mIsBottomPopup = mTab.getActivity().getBottomSheet() != null;
         mOfflinePageState = offlinePageState;
+        PageInfoViewParams viewParams = new PageInfoViewParams();
 
         if (mOfflinePageState != NOT_OFFLINE_PAGE) {
             mOfflinePageCreationDate = offlinePageCreationDate;
@@ -360,62 +391,21 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
         mWindowAndroid = mTab.getWebContents().getTopLevelNativeWindow();
         mContentPublisher = publisher;
 
-        // Find the container and all it's important subviews.
-        mContainer = (LinearLayout) LayoutInflater.from(mContext).inflate(
-                R.layout.page_info, null);
-        mContainer.setVisibility(View.INVISIBLE);
-        mContainer.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
-            @Override
-            public void onLayoutChange(
-                    View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) {
-                // Trigger the entrance animations once the main container has been laid out and has
-                // a height.
-                mContainer.removeOnLayoutChangeListener(this);
-                mContainer.setVisibility(View.VISIBLE);
-                createAllAnimations(true).start();
-            }
-        });
-
-        mUrlTitle = (ElidedUrlTextView) mContainer.findViewById(R.id.page_info_url);
-        mUrlTitle.setProfile(mTab.getProfile());
-        mUrlTitle.setAlwaysShowFullUrl(mIsBottomPopup);
-        mUrlTitle.setOnClickListener(this);
+        viewParams.alwaysShowFullUrl = mIsBottomPopup;
+        viewParams.urlTitleClickCallback = () -> {
+            // Expand/collapse the displayed URL title.
+            mUrlTitle.toggleTruncation();
+        };
         // Long press the url text to copy it to the clipboard.
-        mUrlTitle.setOnLongClickListener(new OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                ClipboardManager clipboard = (ClipboardManager) mContext
-                        .getSystemService(Context.CLIPBOARD_SERVICE);
-                ClipData clip = ClipData.newPlainText("url", mFullUrl);
-                clipboard.setPrimaryClip(clip);
-                Toast.makeText(mContext, R.string.url_copied, Toast.LENGTH_SHORT).show();
-                return true;
-            }
-        });
-
-        mConnectionSummary = (TextView) mContainer
-                .findViewById(R.id.page_info_connection_summary);
-        mConnectionMessage = (TextView) mContainer
-                .findViewById(R.id.page_info_connection_message);
-        mPermissionsList = (LinearLayout) mContainer
-                .findViewById(R.id.page_info_permissions_list);
-
-        mInstantAppButton =
-                (Button) mContainer.findViewById(R.id.page_info_instant_app_button);
-        mInstantAppButton.setOnClickListener(this);
-
-        mSiteSettingsButton =
-                (Button) mContainer.findViewById(R.id.page_info_site_settings_button);
-        mSiteSettingsButton.setOnClickListener(this);
-
-        mOpenOnlineButton =
-                (Button) mContainer.findViewById(R.id.page_info_open_online_button);
-        mOpenOnlineButton.setOnClickListener(this);
+        viewParams.urlTitleLongClickCallback = () -> {
+            ClipboardManager clipboard =
+                    (ClipboardManager) mContext.getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("url", mFullUrl);
+            clipboard.setPrimaryClip(clip);
+            Toast.makeText(mContext, R.string.url_copied, Toast.LENGTH_SHORT).show();
+        };
 
         mDisplayedPermissions = new ArrayList<PageInfoPermissionEntry>();
-
-        // Hide the permissions list for sites with no permissions.
-        setVisibilityOfPermissionsList(false);
 
         // Work out the URL and connection message and status visibility.
         mFullUrl = isShowingOfflinePage() ? offlinePageUrl : mTab.getOriginalUrl();
@@ -445,42 +435,84 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
                             mTab.getProfile(), displayUrlBuilder.toString());
             if (emphasizeResponse.schemeLength > 0) {
                 displayUrlBuilder.setSpan(
-                        new TextAppearanceSpan(mUrlTitle.getContext(), R.style.RobotoMediumStyle),
-                        0, emphasizeResponse.schemeLength, Spannable.SPAN_EXCLUSIVE_INCLUSIVE);
+                        new TextAppearanceSpan(mContext, R.style.RobotoMediumStyle), 0,
+                        emphasizeResponse.schemeLength, Spannable.SPAN_EXCLUSIVE_INCLUSIVE);
             }
         }
-        mUrlTitle.setText(displayUrlBuilder);
+        viewParams.url = displayUrlBuilder;
+        viewParams.urlOriginLength = OmniboxUrlEmphasizer.getOriginEndIndex(
+                displayUrlBuilder.toString(), mTab.getProfile());
 
         if (mParsedUrl == null || mParsedUrl.getScheme() == null || isShowingOfflinePage()
                 || !(mParsedUrl.getScheme().equals(UrlConstants.HTTP_SCHEME)
                            || mParsedUrl.getScheme().equals(UrlConstants.HTTPS_SCHEME))) {
-            mSiteSettingsButton.setVisibility(View.GONE);
+            viewParams.siteSettingsButtonShown = false;
+        } else {
+            viewParams.siteSettingsButtonClickCallback = () -> {
+                // Delay while the PageInfoPopup closes.
+                runAfterDismiss(() -> {
+                    recordAction(PageInfoAction.PAGE_INFO_SITE_SETTINGS_OPENED);
+                    Bundle fragmentArguments =
+                            SingleWebsitePreferences.createFragmentArgsForSite(mFullUrl);
+                    Intent preferencesIntent = PreferencesLauncher.createIntentForSettingsPage(
+                            mContext, SingleWebsitePreferences.class.getName());
+                    preferencesIntent.putExtra(
+                            Preferences.EXTRA_SHOW_FRAGMENT_ARGUMENTS, fragmentArguments);
+                    // Disabling StrictMode to avoid violations (https://crbug.com/819410).
+                    try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
+                        mContext.startActivity(preferencesIntent);
+                    }
+                });
+            };
         }
 
         if (isShowingOfflinePage()) {
             boolean isConnected = OfflinePageUtils.isConnected();
             RecordHistogram.recordBooleanHistogram(
                     "OfflinePages.WebsiteSettings.OpenOnlineButtonVisible", isConnected);
-            if (!isConnected) mOpenOnlineButton.setVisibility(View.GONE);
+            if (isConnected) {
+                viewParams.openOnlineButtonClickCallback = () -> {
+                    runAfterDismiss(() -> {
+                        // Attempt to reload to an online version of the viewed offline web page.
+                        // This attempt might fail if the user is offline, in which case an offline
+                        // copy will be reloaded.
+                        RecordHistogram.recordBooleanHistogram(
+                                "OfflinePages.WebsiteSettings.ConnectedWhenOpenOnlineButtonClicked",
+                                OfflinePageUtils.isConnected());
+                        OfflinePageUtils.reload(mTab);
+                    });
+                };
+            } else {
+                viewParams.openOnlineButtonShown = false;
+            }
         } else {
-            mOpenOnlineButton.setVisibility(View.GONE);
+            viewParams.openOnlineButtonShown = false;
         }
 
         InstantAppsHandler instantAppsHandler = InstantAppsHandler.getInstance();
         if (!mIsInternalPage && !isShowingOfflinePage()
                 && instantAppsHandler.isInstantAppAvailable(mFullUrl, false /* checkHoldback */,
                            false /* includeUserPrefersBrowser */)) {
-            mInstantAppIntent = instantAppsHandler.getInstantAppIntentForUrl(mFullUrl);
+            final Intent instantAppIntent = instantAppsHandler.getInstantAppIntentForUrl(mFullUrl);
+            viewParams.instantAppButtonClickCallback = () -> {
+                try {
+                    mContext.startActivity(instantAppIntent);
+                    RecordUserAction.record("Android.InstantApps.LaunchedFromWebsiteSettingsPopup");
+                } catch (ActivityNotFoundException e) {
+                    mInstantAppButton.setEnabled(false);
+                }
+            };
             RecordUserAction.record("Android.InstantApps.OpenInstantAppButtonShown");
         } else {
-            mInstantAppIntent = null;
-            mInstantAppButton.setVisibility(View.GONE);
+            viewParams.instantAppButtonShown = false;
         }
 
         // On smaller screens, place the dialog at the top of the screen, and remove its border.
         if (isSheet()) {
             createSheetDialog();
         }
+
+        initializePageInfoView(viewParams);
 
         // This needs to come after other member initialization.
         mNativePageInfoPopup = nativeInit(this, mTab.getWebContents());
@@ -510,17 +542,6 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
         };
 
         showDialog();
-    }
-
-    /**
-     * Sets the visibility of the permissions list, which contains padding and borders that should
-     * not be shown if a site has no permissions.
-     *
-     * @param isVisible Whether to show or hide the dialog area.
-     */
-    private void setVisibilityOfPermissionsList(boolean isVisible) {
-        int visibility = isVisible ? View.VISIBLE : View.GONE;
-        mPermissionsList.setVisibility(visibility);
     }
 
     /**
@@ -567,8 +588,6 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
      */
     @CalledByNative
     private void addPermissionSection(String name, int type, int currentSettingValue) {
-        // We have at least one permission, so show the lower permissions area.
-        setVisibilityOfPermissionsList(true);
         mDisplayedPermissions.add(new PageInfoPermissionEntry(name, type, ContentSetting
                 .fromInt(currentSettingValue)));
     }
@@ -578,69 +597,93 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
      */
     @CalledByNative
     private void updatePermissionDisplay() {
-        mPermissionsList.removeAllViews();
+        List<PermissionParams> permissionParamsList = new ArrayList<>();
         for (PageInfoPermissionEntry permission : mDisplayedPermissions) {
-            addReadOnlyPermissionSection(permission);
+            permissionParamsList.add(createPermissionParams(permission));
         }
+        setPermissions(permissionParamsList);
     }
 
-    private void addReadOnlyPermissionSection(PageInfoPermissionEntry permission) {
-        View permissionRow = LayoutInflater.from(mContext).inflate(
-                R.layout.page_info_permission_row, null);
+    private Runnable createPermissionClickCallback(
+            Intent intentOverride, String[] androidPermissions) {
+        return () -> {
+            if (intentOverride == null && mWindowAndroid != null) {
+                // Try and immediately request missing Android permissions where possible.
+                for (int i = 0; i < androidPermissions.length; i++) {
+                    if (!mWindowAndroid.canRequestPermission(androidPermissions[i])) continue;
 
-        ImageView permissionIcon = (ImageView) permissionRow.findViewById(
-                R.id.page_info_permission_icon);
-        permissionIcon.setImageDrawable(TintedDrawable.constructTintedDrawable(
-                permissionIcon.getResources(), getImageResourceForPermission(permission.type)));
-
-        if (permission.setting == ContentSetting.ALLOW) {
-            int warningTextResource = 0;
-
-            // If warningTextResource is non-zero, then the view must be tagged with either
-            // permission_intent_override or permission_type.
-            LocationUtils locationUtils = LocationUtils.getInstance();
-            if (permission.type == ContentSettingsType.CONTENT_SETTINGS_TYPE_GEOLOCATION
-                    && !locationUtils.isSystemLocationSettingEnabled()) {
-                warningTextResource = R.string.page_info_android_location_blocked;
-                permissionRow.setTag(R.id.permission_intent_override,
-                        locationUtils.getSystemLocationSettingsIntent());
-            } else if (!hasAndroidPermission(permission.type)) {
-                warningTextResource = R.string.page_info_android_permission_blocked;
-                permissionRow.setTag(R.id.permission_type,
-                        PrefServiceBridge.getAndroidPermissionsForContentSetting(permission.type));
+                    // If any permissions can be requested, attempt to request them all.
+                    mWindowAndroid.requestPermissions(androidPermissions, new PermissionCallback() {
+                        @Override
+                        public void onRequestPermissionsResult(
+                                String[] permissions, int[] grantResults) {
+                            boolean allGranted = true;
+                            for (int i = 0; i < grantResults.length; i++) {
+                                if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                                    allGranted = false;
+                                    break;
+                                }
+                            }
+                            if (allGranted) updatePermissionDisplay();
+                        }
+                    });
+                    return;
+                }
             }
 
-            if (warningTextResource != 0) {
-                TextView permissionUnavailable = (TextView) permissionRow.findViewById(
-                        R.id.page_info_permission_unavailable_message);
-                permissionUnavailable.setVisibility(View.VISIBLE);
-                permissionUnavailable.setText(warningTextResource);
+            runAfterDismiss(() -> {
+                Intent settingsIntent;
+                if (intentOverride != null) {
+                    settingsIntent = intentOverride;
+                } else {
+                    settingsIntent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                    settingsIntent.setData(Uri.parse("package:" + mContext.getPackageName()));
+                }
+                settingsIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                mContext.startActivity(settingsIntent);
+            });
+        };
+    }
 
-                permissionIcon.setImageResource(R.drawable.exclamation_triangle);
-                permissionIcon.setColorFilter(ApiCompatibilityUtils.getColor(
-                        mContext.getResources(), R.color.google_blue_700));
+    private PermissionParams createPermissionParams(PageInfoPermissionEntry permission) {
+        PermissionParams permissionParams = new PermissionParams();
 
-                permissionRow.setOnClickListener(this);
+        permissionParams.iconResource = getImageResourceForPermission(permission.type);
+        if (permission.setting == ContentSetting.ALLOW) {
+            LocationUtils locationUtils = LocationUtils.getInstance();
+            Intent intentOverride = null;
+            String[] androidPermissions = null;
+            if (permission.type == ContentSettingsType.CONTENT_SETTINGS_TYPE_GEOLOCATION
+                    && !locationUtils.isSystemLocationSettingEnabled()) {
+                permissionParams.warningTextResource = R.string.page_info_android_location_blocked;
+                intentOverride = locationUtils.getSystemLocationSettingsIntent();
+            } else if (!hasAndroidPermission(permission.type)) {
+                permissionParams.warningTextResource =
+                        R.string.page_info_android_permission_blocked;
+                androidPermissions =
+                        PrefServiceBridge.getAndroidPermissionsForContentSetting(permission.type);
+            }
+
+            if (permissionParams.warningTextResource != 0) {
+                permissionParams.iconResource = R.drawable.exclamation_triangle;
+                permissionParams.iconTintColorResource = R.color.google_blue_700;
+                permissionParams.clickCallback =
+                        createPermissionClickCallback(intentOverride, androidPermissions);
             }
         }
 
         // The ads permission requires an additional static subtitle.
         if (permission.type == ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS) {
-            TextView permissionSubtitle =
-                    (TextView) permissionRow.findViewById(R.id.page_info_permission_subtitle);
-            permissionSubtitle.setVisibility(View.VISIBLE);
-            permissionSubtitle.setText(R.string.page_info_permission_ads_subtitle);
+            permissionParams.subtitleTextResource = R.string.page_info_permission_ads_subtitle;
         }
 
-        TextView permissionStatus = (TextView) permissionRow.findViewById(
-                R.id.page_info_permission_status);
         SpannableStringBuilder builder = new SpannableStringBuilder();
         SpannableString nameString = new SpannableString(permission.name);
         final StyleSpan boldSpan = new StyleSpan(android.graphics.Typeface.BOLD);
         nameString.setSpan(boldSpan, 0, nameString.length(), Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
 
         builder.append(nameString);
-        builder.append(" – ");  // en-dash.
+        builder.append(" – "); // en-dash.
         String status_text = "";
         switch (permission.setting) {
             case ALLOW:
@@ -651,21 +694,22 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
                 break;
             default:
                 assert false : "Invalid setting " + permission.setting + " for permission "
-                        + permission.type;
+                               + permission.type;
         }
         if (WebsitePreferenceBridge.isPermissionControlledByDSE(permission.type, mFullUrl, false)) {
-            status_text = statusTextForDSEPermission(permission);
+            status_text = statusTextForDSEPermission(permission.setting);
         }
         builder.append(status_text);
-        permissionStatus.setText(builder);
-        mPermissionsList.addView(permissionRow);
+        permissionParams.status = builder;
+
+        return permissionParams;
     }
 
     /**
-     * Update the permission string for the Default Search Engine.
+     * Returns the permission string for the Default Search Engine.
      */
-    private String statusTextForDSEPermission(PageInfoPermissionEntry permission) {
-        if (permission.setting == ContentSetting.ALLOW) {
+    private String statusTextForDSEPermission(ContentSetting setting) {
+        if (setting == ContentSetting.ALLOW) {
             return mContext.getString(R.string.page_info_dse_permission_allowed);
         }
 
@@ -678,6 +722,8 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
      */
     @CalledByNative
     private void setSecurityDescription(String summary, String details) {
+        ConnectionInfoParams connectionInfoParams = new ConnectionInfoParams();
+
         // Display the appropriate connection message.
         SpannableStringBuilder messageBuilder = new SpannableStringBuilder();
         if (mContentPublisher != null) {
@@ -699,8 +745,7 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
             }
         } else {
             if (!TextUtils.equals(summary, details)) {
-                mConnectionSummary.setVisibility(View.VISIBLE);
-                mConnectionSummary.setText(summary);
+                connectionInfoParams.summary = summary;
             }
             messageBuilder.append(details);
         }
@@ -716,8 +761,23 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
                     blueSpan, 0, detailsText.length(), Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
             messageBuilder.append(detailsText);
         }
-        mConnectionMessage.setText(messageBuilder);
-        if (isConnectionDetailsLinkVisible()) mConnectionMessage.setOnClickListener(this);
+
+        connectionInfoParams.message = messageBuilder;
+        if (isConnectionDetailsLinkVisible()) {
+            connectionInfoParams.clickCallback = () -> {
+                runAfterDismiss(() -> {
+                    // TODO(crbug.com/819883): Port the connection info popup to VR.
+                    if (VrShellDelegate.isInVr()) {
+                        VrShellDelegate.requestToExitVrAndRunOnSuccess(
+                                PageInfoPopup.this ::showConnectionInfoPopup,
+                                UiUnsupportedMode.UNHANDLED_CONNECTION_INFO);
+                    } else {
+                        showConnectionInfoPopup();
+                    }
+                });
+            };
+        }
+        setConnectionInfo(connectionInfoParams);
     }
 
     /**
@@ -791,115 +851,6 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
             task.run();
         } else {
             mContainer.postDelayed(task, FADE_DURATION + CLOSE_CLEANUP_DELAY);
-        }
-    }
-
-    @Override
-    public void onClick(View view) {
-        if (view == mSiteSettingsButton) {
-            // Delay while the PageInfoPopup closes.
-            runAfterDismiss(new Runnable() {
-                @Override
-                public void run() {
-                    recordAction(PageInfoAction.PAGE_INFO_SITE_SETTINGS_OPENED);
-                    Bundle fragmentArguments =
-                            SingleWebsitePreferences.createFragmentArgsForSite(mFullUrl);
-                    Intent preferencesIntent = PreferencesLauncher.createIntentForSettingsPage(
-                            mContext, SingleWebsitePreferences.class.getName());
-                    preferencesIntent.putExtra(
-                            Preferences.EXTRA_SHOW_FRAGMENT_ARGUMENTS, fragmentArguments);
-                    // Disabling StrictMode to avoid violations (https://crbug.com/819410).
-                    try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
-                        mContext.startActivity(preferencesIntent);
-                    }
-                }
-            });
-        } else if (view == mInstantAppButton) {
-            try {
-                mContext.startActivity(mInstantAppIntent);
-                RecordUserAction.record("Android.InstantApps.LaunchedFromWebsiteSettingsPopup");
-            } catch (ActivityNotFoundException e) {
-                mInstantAppButton.setEnabled(false);
-            }
-        } else if (view == mUrlTitle) {
-            // Expand/collapse the displayed URL title.
-            mUrlTitle.toggleTruncation();
-        } else if (view == mConnectionMessage) {
-            // TODO(crbug.com/819883): Port the connection info popup to VR.
-            // TODO(crbug.com/826749): Track how often users encounter this via UMA.
-            if (VrShellDelegate.isInVr()) {
-                VrShellDelegate.requestToExitVr(new OnExitVrRequestListener() {
-                    @Override
-                    public void onSucceeded() {
-                        showConnectionInfoPopup();
-                    }
-
-                    @Override
-                    public void onDenied() {}
-                });
-            } else {
-                runAfterDismiss(new Runnable() {
-                    @Override
-                    public void run() {
-                        showConnectionInfoPopup();
-                    }
-                });
-            }
-        } else if (view.getId() == R.id.page_info_permission_row) {
-            final Object intentOverride = view.getTag(R.id.permission_intent_override);
-
-            if (intentOverride == null && mWindowAndroid != null) {
-                // Try and immediately request missing Android permissions where possible.
-                final String[] permissionType = (String[]) view.getTag(R.id.permission_type);
-                for (int i = 0; i < permissionType.length; i++) {
-                    if (!mWindowAndroid.canRequestPermission(permissionType[i])) continue;
-
-                    // If any permissions can be requested, attempt to request them all.
-                    mWindowAndroid.requestPermissions(permissionType, new PermissionCallback() {
-                        @Override
-                        public void onRequestPermissionsResult(
-                                String[] permissions, int[] grantResults) {
-                            boolean allGranted = true;
-                            for (int i = 0; i < grantResults.length; i++) {
-                                if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
-                                    allGranted = false;
-                                    break;
-                                }
-                            }
-                            if (allGranted) updatePermissionDisplay();
-                        }
-                    });
-                    return;
-                }
-            }
-
-            runAfterDismiss(new Runnable() {
-                @Override
-                public void run() {
-                    Intent settingsIntent;
-                    if (intentOverride != null) {
-                        settingsIntent = (Intent) intentOverride;
-                    } else {
-                        settingsIntent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                        settingsIntent.setData(Uri.parse("package:" + mContext.getPackageName()));
-                    }
-                    settingsIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    mContext.startActivity(settingsIntent);
-                }
-            });
-        } else if (view == mOpenOnlineButton) {
-            runAfterDismiss(new Runnable() {
-                @Override
-                public void run() {
-                    // Attempt to reload to an online version of the viewed offline web page. This
-                    // attempt might fail if the user is offline, in which case an offline copy will
-                    // be reloaded.
-                    RecordHistogram.recordBooleanHistogram(
-                            "OfflinePages.WebsiteSettings.ConnectedWhenOpenOnlineButtonClicked",
-                            OfflinePageUtils.isConnected());
-                    OfflinePageUtils.reload(mTab);
-                }
-            });
         }
     }
 
@@ -1092,6 +1043,116 @@ public class PageInfoPopup implements OnClickListener, ModalDialogView.Controlle
         if (!mTab.getWebContents().isDestroyed()) {
             recordAction(PageInfoAction.PAGE_INFO_SECURITY_DETAILS_OPENED);
             ConnectionInfoPopup.show(mContext, mTab.getWebContents());
+        }
+    }
+
+    private void initializePageInfoView(PageInfoViewParams params) {
+        // Find the container and all it's important subviews.
+        mContainer = (LinearLayout) LayoutInflater.from(mContext).inflate(R.layout.page_info, null);
+        mContainer.setVisibility(View.INVISIBLE);
+        mContainer.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(
+                    View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) {
+                // Trigger the entrance animations once the main container has been laid out and has
+                // a height.
+                mContainer.removeOnLayoutChangeListener(this);
+                mContainer.setVisibility(View.VISIBLE);
+                createAllAnimations(true).start();
+            }
+        });
+
+        mUrlTitle = (ElidedUrlTextView) mContainer.findViewById(R.id.page_info_url);
+        mConnectionSummary = (TextView) mContainer.findViewById(R.id.page_info_connection_summary);
+        mConnectionMessage = (TextView) mContainer.findViewById(R.id.page_info_connection_message);
+        mPermissionsList = (LinearLayout) mContainer.findViewById(R.id.page_info_permissions_list);
+        mInstantAppButton = (Button) mContainer.findViewById(R.id.page_info_instant_app_button);
+        mSiteSettingsButton = (Button) mContainer.findViewById(R.id.page_info_site_settings_button);
+        mOpenOnlineButton = (Button) mContainer.findViewById(R.id.page_info_open_online_button);
+
+        mUrlTitle.setAlwaysShowFullUrl(params.alwaysShowFullUrl);
+        mUrlTitle.setUrl(params.url, params.urlOriginLength);
+        if (params.urlTitleLongClickCallback != null) {
+            mUrlTitle.setOnLongClickListener((View v) -> {
+                params.urlTitleLongClickCallback.run();
+                return true;
+            });
+        }
+
+        initializePageInfoViewChild(mUrlTitle, true, params.urlTitleClickCallback);
+        // Hide the permissions list for sites with no permissions.
+        initializePageInfoViewChild(mPermissionsList, false, null);
+        initializePageInfoViewChild(mInstantAppButton, params.instantAppButtonShown,
+                params.instantAppButtonClickCallback);
+        initializePageInfoViewChild(mSiteSettingsButton, params.siteSettingsButtonShown,
+                params.siteSettingsButtonClickCallback);
+        initializePageInfoViewChild(mOpenOnlineButton, params.openOnlineButtonShown,
+                params.openOnlineButtonClickCallback);
+    }
+
+    private void initializePageInfoViewChild(View child, boolean shown, Runnable clickCallback) {
+        child.setVisibility(shown ? View.VISIBLE : View.GONE);
+        if (clickCallback == null) return;
+        child.setOnClickListener((View v) -> { clickCallback.run(); });
+    }
+
+    private void setPermissions(List<PermissionParams> permissionParamsList) {
+        mPermissionsList.removeAllViews();
+        // If we have at least one permission show the lower permissions area.
+        mPermissionsList.setVisibility(!permissionParamsList.isEmpty() ? View.VISIBLE : View.GONE);
+        for (PermissionParams params : permissionParamsList) {
+            mPermissionsList.addView(createPermissionRow(params));
+        }
+    }
+
+    private View createPermissionRow(PermissionParams params) {
+        View permissionRow =
+                LayoutInflater.from(mContext).inflate(R.layout.page_info_permission_row, null);
+
+        TextView permissionStatus =
+                (TextView) permissionRow.findViewById(R.id.page_info_permission_status);
+        permissionStatus.setText(params.status);
+
+        ImageView permissionIcon =
+                (ImageView) permissionRow.findViewById(R.id.page_info_permission_icon);
+        if (params.iconTintColorResource == 0) {
+            permissionIcon.setImageDrawable(TintedDrawable.constructTintedDrawable(
+                    mContext.getResources(), params.iconResource));
+        } else {
+            permissionIcon.setImageResource(params.iconResource);
+            permissionIcon.setColorFilter(ApiCompatibilityUtils.getColor(
+                    mContext.getResources(), params.iconTintColorResource));
+        }
+
+        if (params.warningTextResource != 0) {
+            TextView permissionUnavailable = (TextView) permissionRow.findViewById(
+                    R.id.page_info_permission_unavailable_message);
+            permissionUnavailable.setVisibility(View.VISIBLE);
+            permissionUnavailable.setText(params.warningTextResource);
+        }
+
+        if (params.subtitleTextResource != 0) {
+            TextView permissionSubtitle =
+                    (TextView) permissionRow.findViewById(R.id.page_info_permission_subtitle);
+            permissionSubtitle.setVisibility(View.VISIBLE);
+            permissionSubtitle.setText(params.subtitleTextResource);
+        }
+
+        if (params.clickCallback != null) {
+            permissionRow.setOnClickListener((View v) -> { params.clickCallback.run(); });
+        }
+
+        return permissionRow;
+    }
+
+    private void setConnectionInfo(ConnectionInfoParams params) {
+        mConnectionMessage.setText(params.message);
+        if (params.summary != null) {
+            mConnectionSummary.setVisibility(View.VISIBLE);
+            mConnectionSummary.setText(params.summary);
+        }
+        if (params.clickCallback != null) {
+            mConnectionMessage.setOnClickListener((View v) -> { params.clickCallback.run(); });
         }
     }
 

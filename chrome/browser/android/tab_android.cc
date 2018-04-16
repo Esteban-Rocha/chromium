@@ -78,8 +78,8 @@
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "skia/ext/image_operations.h"
-#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_provider.h"
-#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/platform/web_referrer_policy.h"
 #include "ui/android/view_android.h"
 #include "ui/android/window_android.h"
 #include "ui/base/layout.h"
@@ -184,6 +184,8 @@ void TabAndroid::AttachTabHelpers(content::WebContents* web_contents) {
 
 TabAndroid::TabAndroid(JNIEnv* env, const JavaRef<jobject>& obj)
     : weak_java_tab_(env, obj),
+      session_tab_id_(SessionID::NewUnique()),
+      session_window_id_(SessionID::InvalidValue()),
       content_layer_(cc::Layer::Create()),
       tab_content_manager_(NULL),
       synced_tab_delegate_(new browser_sync::SyncedTabDelegateAndroid(this)),
@@ -266,8 +268,8 @@ void TabAndroid::DeleteFrozenNavigationEntries(
       env, weak_java_tab_.get(env), reinterpret_cast<intptr_t>(&predicate));
 }
 
-void TabAndroid::SetWindowSessionID(SessionID::id_type window_id) {
-  session_window_id_.set_id(window_id);
+void TabAndroid::SetWindowSessionID(SessionID window_id) {
+  session_window_id_ = window_id;
 
   if (!web_contents())
     return;
@@ -415,10 +417,10 @@ void TabAndroid::InitWebContents(
   AttachTabHelpers(web_contents_.get());
   WebContentsObserver::Observe(web_contents_.get());
 
-  SetWindowSessionID(session_window_id_.id());
+  SetWindowSessionID(session_window_id_);
 
-  session_tab_id_.set_id(
-      SessionTabHelper::FromWebContents(web_contents())->session_id().id());
+  session_tab_id_ =
+      SessionTabHelper::FromWebContents(web_contents())->session_id();
   ContextMenuHelper::FromWebContents(web_contents())->SetPopulator(
       jcontext_menu_populator);
   ViewAndroidHelper::FromWebContents(web_contents())->

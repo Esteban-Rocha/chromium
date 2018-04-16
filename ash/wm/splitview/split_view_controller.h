@@ -92,12 +92,10 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   // primary orientation.
   bool IsCurrentScreenOrientationPrimary() const;
 
-  // Snaps window to left/right. |window_item_bounds| is the bounds of the
-  // overview window item in overview. It's empty if the snapped window doesn't
-  // come from overview grid.
-  void SnapWindow(aura::Window* window,
-                  SnapPosition snap_position,
-                  const gfx::Rect& window_item_bounds = gfx::Rect());
+  // Snaps window to left/right. It will try to remove |window| from the
+  // overview window grid first before snapping it if |window| is currently
+  // showing in the overview window grid.
+  void SnapWindow(aura::Window* window, SnapPosition snap_position);
 
   // Swaps the left and right windows. This will do nothing if one of the
   // windows is not snapped.
@@ -145,6 +143,9 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
 
   // aura::WindowObserver:
   void OnWindowDestroying(aura::Window* window) override;
+  void OnWindowPropertyChanged(aura::Window* window,
+                               const void* key,
+                               intptr_t old) override;
 
   // ash::wm::WindowStateObserver:
   void OnPostWindowStateTypeChange(
@@ -272,11 +273,6 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   // on the minimum size of current snapped windows.
   void GetDividerOptionalPositionRatios(std::vector<float>* positionRatios);
 
-  // Selects the window that needs the quick/smooth resize. It's needed as
-  // Android only supports smooth resize for one app window at a time. If there
-  // are two snapped Arc app windows, always return the one who stacked above
-  // the other.
-  aura::Window* GetWindowForSmoothResize();
   // Gets the expected window component depending on current screen orientation
   // for resizing purpose.
   int GetWindowComponentForResize(aura::Window* window);
@@ -304,9 +300,17 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
   // Set |transform| for |window| and its transient descendants.
   void SetTransform(aura::Window* window, const gfx::Transform& transform);
 
+  // Removes the window item that contains |window| from the overview window
+  // grid if |window| is currently showing in overview window grid. It should be
+  // called before trying to snap the window.
+  void RemoveWindowFromOverviewIfApplicable(aura::Window* window);
+
   // Starts/Ends overview mode if the overview mode is inactive/active.
   void StartOverview();
   void EndOverview();
+
+  // Finalizes and cleans up after a drag or resize is finished for a window.
+  void FinishWindowDrag(aura::Window* window);
 
   // Bindings for the SplitViewController interface.
   mojo::BindingSet<mojom::SplitViewController> bindings_;
@@ -356,13 +360,6 @@ class ASH_EXPORT SplitViewController : public mojom::SplitViewController,
 
   // The time when splitview starts. Used for metric collection purpose.
   base::Time splitview_start_time_;
-
-  // The window that needs smooth resize. It's needed as Android only supports
-  // smooth resize for one app window at a time. It's always the snapped Arc app
-  // window if there is one. And if there are two snapped Arc app windows, it's
-  // the one who stacked above the other, see GetWindowForSmoothResize() for
-  // details.
-  aura::Window* smooth_resize_window_ = nullptr;
 
   // The map from a to-be-snapped window to its overview item's bounds if the
   // window comes from the overview.

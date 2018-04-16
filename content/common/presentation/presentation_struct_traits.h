@@ -13,7 +13,7 @@
 #include "base/strings/string_util.h"
 #include "content/public/common/presentation_connection_message.h"
 #include "content/public/common/presentation_info.h"
-#include "third_party/WebKit/public/platform/modules/presentation/presentation.mojom.h"
+#include "third_party/blink/public/platform/modules/presentation/presentation.mojom.h"
 #include "url/mojom/url.mojom.h"
 
 namespace mojo {
@@ -98,43 +98,6 @@ struct EnumTraits<blink::mojom::PresentationConnectionState,
         return true;
       case blink::mojom::PresentationConnectionState::TERMINATED:
         *output = content::PRESENTATION_CONNECTION_STATE_TERMINATED;
-        return true;
-    }
-    return false;
-  }
-};
-
-template <>
-struct EnumTraits<blink::mojom::PresentationConnectionCloseReason,
-                  content::PresentationConnectionCloseReason> {
-  static blink::mojom::PresentationConnectionCloseReason ToMojom(
-      content::PresentationConnectionCloseReason input) {
-    switch (input) {
-      case content::PRESENTATION_CONNECTION_CLOSE_REASON_CONNECTION_ERROR:
-        return blink::mojom::PresentationConnectionCloseReason::
-            CONNECTION_ERROR;
-      case content::PRESENTATION_CONNECTION_CLOSE_REASON_CLOSED:
-        return blink::mojom::PresentationConnectionCloseReason::CLOSED;
-      case content::PRESENTATION_CONNECTION_CLOSE_REASON_WENT_AWAY:
-        return blink::mojom::PresentationConnectionCloseReason::WENT_AWAY;
-    }
-    NOTREACHED() << "Unknown content::PresentationConnectionCloseReason "
-                 << static_cast<int>(input);
-    return blink::mojom::PresentationConnectionCloseReason::CONNECTION_ERROR;
-  }
-
-  static bool FromMojom(blink::mojom::PresentationConnectionCloseReason input,
-                        content::PresentationConnectionCloseReason* output) {
-    switch (input) {
-      case blink::mojom::PresentationConnectionCloseReason::CONNECTION_ERROR:
-        *output =
-            content::PRESENTATION_CONNECTION_CLOSE_REASON_CONNECTION_ERROR;
-        return true;
-      case blink::mojom::PresentationConnectionCloseReason::CLOSED:
-        *output = content::PRESENTATION_CONNECTION_CLOSE_REASON_CLOSED;
-        return true;
-      case blink::mojom::PresentationConnectionCloseReason::WENT_AWAY:
-        *output = content::PRESENTATION_CONNECTION_CLOSE_REASON_WENT_AWAY;
         return true;
     }
     return false;

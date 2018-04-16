@@ -11,9 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "ash/shell.h"
 #include "ash/wallpaper/wallpaper_controller.h"
-#include "ash/wallpaper/wallpaper_window_state_manager.h"
 #include "base/command_line.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
@@ -45,6 +43,7 @@
 #include "extensions/browser/event_router.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/display/screen.h"
 #include "ui/strings/grit/app_locale_settings.h"
 #include "url/gurl.h"
 
@@ -240,6 +239,11 @@ ExtensionFunction::ResponseAction WallpaperPrivateGetStringsFunction::Run() {
   SET_STRING("learnMore", IDS_LEARN_MORE);
   SET_STRING("currentWallpaperSetByMessage",
              IDS_CURRENT_WALLPAPER_SET_BY_MESSAGE);
+  SET_STRING("currentlySetLabel", IDS_WALLPAPER_MANAGER_CURRENTLY_SET_LABEL);
+  SET_STRING("confirmPreviewLabel",
+             IDS_WALLPAPER_MANAGER_CONFIRM_PREVIEW_WALLPAPER_LABEL);
+  SET_STRING("setSuccessfullyMessage",
+             IDS_WALLPAPER_MANAGER_SET_SUCCESSFULLY_MESSAGE);
 #undef SET_STRING
 
   const std::string& app_locale = g_browser_process->GetApplicationLocale();
@@ -328,7 +332,8 @@ WallpaperPrivateSetWallpaperIfExistsFunction::
 WallpaperPrivateSetWallpaperIfExistsFunction::
     ~WallpaperPrivateSetWallpaperIfExistsFunction() {}
 
-bool WallpaperPrivateSetWallpaperIfExistsFunction::RunAsync() {
+ExtensionFunction::ResponseAction
+WallpaperPrivateSetWallpaperIfExistsFunction::Run() {
   params = set_wallpaper_if_exists::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -358,7 +363,7 @@ bool WallpaperPrivateSetWallpaperIfExistsFunction::RunAsync() {
       FROM_HERE, base::BindOnce(&WallpaperPrivateSetWallpaperIfExistsFunction::
                                     ReadFileAndInitiateStartDecode,
                                 this, wallpaper_path, fallback_path));
-  return true;
+  return RespondLater();
 }
 
 void WallpaperPrivateSetWallpaperIfExistsFunction::
@@ -400,14 +405,15 @@ void WallpaperPrivateSetWallpaperIfExistsFunction::OnWallpaperDecoded(
 
   WallpaperControllerClient::Get()->SetOnlineWallpaper(
       account_id_, image, params->url, layout, params->preview_mode);
-  SetResult(std::make_unique<base::Value>(true));
-  SendResponse(true);
+
+  Respond(OneArgument(std::make_unique<base::Value>(true)));
 }
 
 void WallpaperPrivateSetWallpaperIfExistsFunction::OnFileNotExists(
     const std::string& error) {
-  SetResult(std::make_unique<base::Value>(false));
-  OnFailure(error);
+  auto args = std::make_unique<base::ListValue>();
+  args->AppendBoolean(false);
+  OnFailureWithArguments(std::move(args), error);
 }
 
 WallpaperPrivateSetWallpaperFunction::WallpaperPrivateSetWallpaperFunction() {
@@ -416,7 +422,7 @@ WallpaperPrivateSetWallpaperFunction::WallpaperPrivateSetWallpaperFunction() {
 WallpaperPrivateSetWallpaperFunction::~WallpaperPrivateSetWallpaperFunction() {
 }
 
-bool WallpaperPrivateSetWallpaperFunction::RunAsync() {
+ExtensionFunction::ResponseAction WallpaperPrivateSetWallpaperFunction::Run() {
   params = set_wallpaper::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -425,7 +431,7 @@ bool WallpaperPrivateSetWallpaperFunction::RunAsync() {
   account_id_ = user->GetAccountId();
 
   StartDecode(params->wallpaper);
-  return true;
+  return RespondLater();
 }
 
 void WallpaperPrivateSetWallpaperFunction::OnWallpaperDecoded(
@@ -483,7 +489,7 @@ void WallpaperPrivateSetWallpaperFunction::SetDecodedWallpaper(
 
   WallpaperControllerClient::Get()->SetOnlineWallpaper(
       account_id_, *image.get(), params->url, layout, params->preview_mode);
-  SendResponse(true);
+  Respond(NoArguments());
 }
 
 WallpaperPrivateResetWallpaperFunction::
@@ -492,13 +498,14 @@ WallpaperPrivateResetWallpaperFunction::
 WallpaperPrivateResetWallpaperFunction::
     ~WallpaperPrivateResetWallpaperFunction() {}
 
-bool WallpaperPrivateResetWallpaperFunction::RunAsync() {
+ExtensionFunction::ResponseAction
+WallpaperPrivateResetWallpaperFunction::Run() {
   const AccountId& account_id =
       user_manager::UserManager::Get()->GetActiveUser()->GetAccountId();
 
   WallpaperControllerClient::Get()->SetDefaultWallpaper(
       account_id, true /* show_wallpaper */);
-  return true;
+  return RespondNow(NoArguments());
 }
 
 WallpaperPrivateSetCustomWallpaperFunction::
@@ -507,7 +514,8 @@ WallpaperPrivateSetCustomWallpaperFunction::
 WallpaperPrivateSetCustomWallpaperFunction::
     ~WallpaperPrivateSetCustomWallpaperFunction() {}
 
-bool WallpaperPrivateSetCustomWallpaperFunction::RunAsync() {
+ExtensionFunction::ResponseAction
+WallpaperPrivateSetCustomWallpaperFunction::Run() {
   params = set_custom_wallpaper::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -519,7 +527,7 @@ bool WallpaperPrivateSetCustomWallpaperFunction::RunAsync() {
 
   StartDecode(params->wallpaper);
 
-  return true;
+  return RespondLater();
 }
 
 void WallpaperPrivateSetCustomWallpaperFunction::OnWallpaperDecoded(
@@ -539,12 +547,11 @@ void WallpaperPrivateSetCustomWallpaperFunction::OnWallpaperDecoded(
     GenerateThumbnail(
         image, gfx::Size(kWallpaperThumbnailWidth, kWallpaperThumbnailHeight),
         &thumbnail_data);
-    SetResult(Value::CreateWithCopiedBuffer(
+    Respond(OneArgument(Value::CreateWithCopiedBuffer(
         reinterpret_cast<const char*>(thumbnail_data->front()),
-        thumbnail_data->size()));
-    SendResponse(true);
+        thumbnail_data->size())));
   } else {
-    SendResponse(true);
+    Respond(NoArguments());
   }
 }
 
@@ -554,7 +561,8 @@ WallpaperPrivateSetCustomWallpaperLayoutFunction::
 WallpaperPrivateSetCustomWallpaperLayoutFunction::
     ~WallpaperPrivateSetCustomWallpaperLayoutFunction() {}
 
-bool WallpaperPrivateSetCustomWallpaperLayoutFunction::RunAsync() {
+ExtensionFunction::ResponseAction
+WallpaperPrivateSetCustomWallpaperLayoutFunction::Run() {
   std::unique_ptr<set_custom_wallpaper_layout::Params> params(
       set_custom_wallpaper_layout::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -565,9 +573,7 @@ bool WallpaperPrivateSetCustomWallpaperLayoutFunction::RunAsync() {
   WallpaperControllerClient::Get()->UpdateCustomWallpaperLayout(
       user_manager::UserManager::Get()->GetActiveUser()->GetAccountId(),
       new_layout);
-  SendResponse(true);
-
-  return true;
+  return RespondNow(NoArguments());
 }
 
 WallpaperPrivateMinimizeInactiveWindowsFunction::
@@ -580,11 +586,8 @@ WallpaperPrivateMinimizeInactiveWindowsFunction::
 
 ExtensionFunction::ResponseAction
 WallpaperPrivateMinimizeInactiveWindowsFunction::Run() {
-  // TODO(mash): Convert to mojo API. http://crbug.com/557405
-  if (!ash_util::IsRunningInMash()) {
-    ash::WallpaperWindowStateManager::MinimizeInactiveWindows(
-        user_manager::UserManager::Get()->GetActiveUser()->username_hash());
-  }
+  WallpaperControllerClient::Get()->MinimizeInactiveWindows(
+      user_manager::UserManager::Get()->GetActiveUser()->username_hash());
   return RespondNow(NoArguments());
 }
 
@@ -598,11 +601,8 @@ WallpaperPrivateRestoreMinimizedWindowsFunction::
 
 ExtensionFunction::ResponseAction
 WallpaperPrivateRestoreMinimizedWindowsFunction::Run() {
-  // TODO(mash): Convert to mojo API. http://crbug.com/557405
-  if (!ash_util::IsRunningInMash()) {
-    ash::WallpaperWindowStateManager::RestoreWindows(
-        user_manager::UserManager::Get()->GetActiveUser()->username_hash());
-  }
+  WallpaperControllerClient::Get()->RestoreMinimizedWindows(
+      user_manager::UserManager::Get()->GetActiveUser()->username_hash());
   return RespondNow(NoArguments());
 }
 
@@ -612,7 +612,7 @@ WallpaperPrivateGetThumbnailFunction::WallpaperPrivateGetThumbnailFunction() {
 WallpaperPrivateGetThumbnailFunction::~WallpaperPrivateGetThumbnailFunction() {
 }
 
-bool WallpaperPrivateGetThumbnailFunction::RunAsync() {
+ExtensionFunction::ResponseAction WallpaperPrivateGetThumbnailFunction::Run() {
   std::unique_ptr<get_thumbnail::Params> params(
       get_thumbnail::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -624,10 +624,8 @@ bool WallpaperPrivateGetThumbnailFunction::RunAsync() {
                            &thumbnail_path));
     thumbnail_path = thumbnail_path.Append(file_name);
   } else {
-    if (!IsOEMDefaultWallpaper()) {
-      SetError("No OEM wallpaper.");
-      return false;
-    }
+    if (!IsOEMDefaultWallpaper())
+      return RespondNow(Error("No OEM wallpaper."));
 
     // TODO(bshe): Small resolution wallpaper is used here as wallpaper
     // thumbnail. We should either resize it or include a wallpaper thumbnail in
@@ -639,24 +637,26 @@ bool WallpaperPrivateGetThumbnailFunction::RunAsync() {
   WallpaperFunctionBase::GetNonBlockingTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(&WallpaperPrivateGetThumbnailFunction::Get,
                                 this, thumbnail_path));
-  return true;
+  // WallpaperPrivateGetThumbnailFunction::Get will respond on UI thread
+  // asynchronously.
+  return RespondLater();
 }
 
 void WallpaperPrivateGetThumbnailFunction::Failure(
     const std::string& file_name) {
-  SetError(base::StringPrintf("Failed to access wallpaper thumbnails for %s.",
-                              file_name.c_str()));
-  SendResponse(false);
+  Respond(Error(base::StringPrintf(
+      "Failed to access wallpaper thumbnails for %s.", file_name.c_str())));
 }
 
 void WallpaperPrivateGetThumbnailFunction::FileNotLoaded() {
-  SendResponse(true);
+  // TODO(https://crbug.com/829657): This should fail instead of succeeding.
+  Respond(NoArguments());
 }
 
 void WallpaperPrivateGetThumbnailFunction::FileLoaded(
     const std::string& data) {
-  SetResult(Value::CreateWithCopiedBuffer(data.c_str(), data.size()));
-  SendResponse(true);
+  Respond(
+      OneArgument(Value::CreateWithCopiedBuffer(data.c_str(), data.size())));
 }
 
 void WallpaperPrivateGetThumbnailFunction::Get(const base::FilePath& path) {
@@ -689,7 +689,7 @@ WallpaperPrivateSaveThumbnailFunction::WallpaperPrivateSaveThumbnailFunction() {
 WallpaperPrivateSaveThumbnailFunction::
     ~WallpaperPrivateSaveThumbnailFunction() {}
 
-bool WallpaperPrivateSaveThumbnailFunction::RunAsync() {
+ExtensionFunction::ResponseAction WallpaperPrivateSaveThumbnailFunction::Run() {
   std::unique_ptr<save_thumbnail::Params> params(
       save_thumbnail::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -698,18 +698,19 @@ bool WallpaperPrivateSaveThumbnailFunction::RunAsync() {
       FROM_HERE,
       base::BindOnce(&WallpaperPrivateSaveThumbnailFunction::Save, this,
                      params->data, GURL(params->url).ExtractFileName()));
-  return true;
+  // WallpaperPrivateSaveThumbnailFunction::Save will repsond on UI thread
+  // asynchronously.
+  return RespondLater();
 }
 
 void WallpaperPrivateSaveThumbnailFunction::Failure(
     const std::string& file_name) {
-  SetError(base::StringPrintf("Failed to create/write thumbnail of %s.",
-                              file_name.c_str()));
-  SendResponse(false);
+  Respond(Error(base::StringPrintf("Failed to create/write thumbnail of %s.",
+                                   file_name.c_str())));
 }
 
 void WallpaperPrivateSaveThumbnailFunction::Success() {
-  SendResponse(true);
+  Respond(NoArguments());
 }
 
 void WallpaperPrivateSaveThumbnailFunction::Save(const std::vector<char>& data,
@@ -736,12 +737,14 @@ WallpaperPrivateGetOfflineWallpaperListFunction::
     ~WallpaperPrivateGetOfflineWallpaperListFunction() {
 }
 
-bool WallpaperPrivateGetOfflineWallpaperListFunction::RunAsync() {
+ExtensionFunction::ResponseAction
+WallpaperPrivateGetOfflineWallpaperListFunction::Run() {
   WallpaperFunctionBase::GetNonBlockingTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&WallpaperPrivateGetOfflineWallpaperListFunction::GetList,
                      this));
-  return true;
+  // OnComplete() responds asynchronously.
+  return RespondLater();
 }
 
 void WallpaperPrivateGetOfflineWallpaperListFunction::GetList() {
@@ -772,10 +775,9 @@ void WallpaperPrivateGetOfflineWallpaperListFunction::GetList() {
 
 void WallpaperPrivateGetOfflineWallpaperListFunction::OnComplete(
     const std::vector<std::string>& file_list) {
-  std::unique_ptr<base::ListValue> results(new base::ListValue());
+  auto results = std::make_unique<base::ListValue>();
   results->AppendStrings(file_list);
-  SetResult(std::move(results));
-  SendResponse(true);
+  Respond(OneArgument(std::move(results)));
 }
 
 ExtensionFunction::ResponseAction

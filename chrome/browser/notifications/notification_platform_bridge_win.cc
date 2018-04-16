@@ -57,6 +57,8 @@ using notifications_uma::GetDisplayedStatus;
 using notifications_uma::GetNotificationLaunchIdStatus;
 using notifications_uma::HandleEventStatus;
 using notifications_uma::HistoryStatus;
+using notifications_uma::OnDismissedStatus;
+using notifications_uma::OnFailedStatus;
 using notifications_uma::SetReadyCallbackStatus;
 
 namespace {
@@ -298,6 +300,30 @@ class NotificationPlatformBridgeWinImpl
       // A histogram should have already been logged for this failure.
       DLOG(ERROR) << "Unable to initialize toast notifier";
       return;
+    }
+
+    winui::Notifications::NotificationSetting setting;
+    if (SUCCEEDED(notifier_->get_Setting(&setting))) {
+      switch (setting) {
+        case winui::Notifications::NotificationSetting_Enabled:
+          break;
+        case winui::Notifications::NotificationSetting_DisabledForApplication:
+          LogDisplayHistogram(DisplayStatus::DISABLED_FOR_APPLICATION);
+          DLOG(ERROR) << "Notification disabled for application";
+          return;
+        case winui::Notifications::NotificationSetting_DisabledForUser:
+          LogDisplayHistogram(DisplayStatus::DISABLED_FOR_USER);
+          DLOG(ERROR) << "Notification disabled for user";
+          return;
+        case winui::Notifications::NotificationSetting_DisabledByGroupPolicy:
+          LogDisplayHistogram(DisplayStatus::DISABLED_BY_GROUP_POLICY);
+          DLOG(ERROR) << "Notification disabled by group policy";
+          return;
+        case winui::Notifications::NotificationSetting_DisabledByManifest:
+          LogDisplayHistogram(DisplayStatus::DISABLED_BY_MANIFEST);
+          DLOG(ERROR) << "Notification disabled by manifest";
+          return;
+      }
     }
 
     NotificationLaunchId launch_id(notification_type, notification->id(),
@@ -715,13 +741,21 @@ class NotificationPlatformBridgeWinImpl
   HRESULT OnDismissed(
       winui::Notifications::IToastNotification* notification,
       winui::Notifications::IToastDismissedEventArgs* arguments) {
+    base::Optional<bool> by_user = base::nullopt;
+
     winui::Notifications::ToastDismissalReason reason;
     HRESULT hr = arguments->get_Reason(&reason);
-    DCHECK(SUCCEEDED(hr));
-    HandleEvent(
-        notification, NotificationCommon::CLOSE,
-        /*action_index=*/base::nullopt,
-        reason == winui::Notifications::ToastDismissalReason_UserCanceled);
+    if (SUCCEEDED(hr)) {
+      LogOnDismissedStatus(OnDismissedStatus::SUCCESS);
+      by_user = base::Optional<bool>(
+          reason == winui::Notifications::ToastDismissalReason_UserCanceled);
+    } else {
+      LogOnDismissedStatus(OnDismissedStatus::GET_DISMISSAL_REASON_FAILED);
+      DLOG(ERROR) << "Failed to get toast dismissal reason: " << std::hex << hr;
+    }
+
+    HandleEvent(notification, NotificationCommon::CLOSE,
+                /*action_index=*/base::nullopt, by_user);
     return S_OK;
   }
 
@@ -729,9 +763,17 @@ class NotificationPlatformBridgeWinImpl
                    winui::Notifications::IToastFailedEventArgs* arguments) {
     HRESULT error_code;
     HRESULT hr = arguments->get_ErrorCode(&error_code);
-    DCHECK(SUCCEEDED(hr));
-    LOG(ERROR) << "Failed to raise the toast notification, error code: "
-               << std::hex << error_code;
+    if (SUCCEEDED(hr)) {
+      LogOnFailedStatus(OnFailedStatus::SUCCESS);
+      DLOG(WARNING) << "Failed to raise the toast notification, error code: "
+                    << std::hex << error_code;
+    } else {
+      LogOnFailedStatus(OnFailedStatus::GET_ERROR_CODE_FAILED);
+      DLOG(ERROR) << "Failed to raise the toast notification; failed to get "
+                     "error code: "
+                  << std::hex << hr;
+    }
+
     return S_OK;
   }
 
@@ -789,8 +831,7 @@ NotificationPlatformBridgeWin::~NotificationPlatformBridgeWin() = default;
 
 void NotificationPlatformBridgeWin::Display(
     NotificationHandler::Type notification_type,
-    const std::string& profile_id,
-    bool is_incognito,
+    Profile* profile,
     const message_center::Notification& notification,
     std::unique_ptr<NotificationCommon::Metadata> metadata) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -804,26 +845,27 @@ void NotificationPlatformBridgeWin::Display(
   task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(&NotificationPlatformBridgeWinImpl::Display, impl_,
-                     notification_type, profile_id, is_incognito,
-                     std::move(notification_copy), std::move(metadata)));
+                     notification_type, GetProfileId(profile),
+                     profile->IsOffTheRecord(), std::move(notification_copy),
+                     std::move(metadata)));
 }
 
-void NotificationPlatformBridgeWin::Close(const std::string& profile_id,
+void NotificationPlatformBridgeWin::Close(Profile* profile,
                                           const std::string& notification_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&NotificationPlatformBridgeWinImpl::Close,
-                                impl_, notification_id, profile_id));
+                                impl_, notification_id, GetProfileId(profile)));
 }
 
 void NotificationPlatformBridgeWin::GetDisplayed(
-    const std::string& profile_id,
-    bool incognito,
+    Profile* profile,
     GetDisplayedNotificationsCallback callback) const {
   task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(&NotificationPlatformBridgeWinImpl::GetDisplayed, impl_,
-                     profile_id, incognito, std::move(callback)));
+                     GetProfileId(profile), profile->IsOffTheRecord(),
+                     std::move(callback)));
 }
 
 void NotificationPlatformBridgeWin::SetReadyCallback(

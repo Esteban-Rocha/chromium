@@ -67,7 +67,8 @@ void D3D11VideoDecoderImpl::Initialize(
 
   HRESULT hr;
 
-  // TODO(liberato): Handle cleanup better.
+  // TODO(liberato): Handle cleanup better.  Also consider being less chatty in
+  // the logs, since this will fall back.
   hr = device_context_.CopyTo(video_context_.GetAddressOf());
   if (!SUCCEEDED(hr)) {
     NotifyError("Failed to get device context");
@@ -163,7 +164,7 @@ void D3D11VideoDecoderImpl::Initialize(
   std::move(init_cb_).Run(true);
 }
 
-void D3D11VideoDecoderImpl::Decode(const scoped_refptr<DecoderBuffer>& buffer,
+void D3D11VideoDecoderImpl::Decode(scoped_refptr<DecoderBuffer> buffer,
                                    const DecodeCB& decode_cb) {
   if (state_ == State::kError) {
     // TODO(liberato): consider posting, though it likely doesn't matter.
@@ -171,7 +172,7 @@ void D3D11VideoDecoderImpl::Decode(const scoped_refptr<DecoderBuffer>& buffer,
     return;
   }
 
-  input_buffer_queue_.push_back(std::make_pair(buffer, decode_cb));
+  input_buffer_queue_.push_back(std::make_pair(std::move(buffer), decode_cb));
   // Post, since we're not supposed to call back before this returns.  It
   // probably doesn't matter since we're in the gpu process anyway.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -187,7 +188,7 @@ void D3D11VideoDecoderImpl::DoDecode() {
     if (input_buffer_queue_.empty()) {
       return;
     }
-    current_buffer_ = input_buffer_queue_.front().first;
+    current_buffer_ = std::move(input_buffer_queue_.front().first);
     current_decode_cb_ = input_buffer_queue_.front().second;
     current_timestamp_ = current_buffer_->timestamp();
     input_buffer_queue_.pop_front();
@@ -353,7 +354,8 @@ void D3D11VideoDecoderImpl::OnMailboxReleased(
   // Note that |buffer| might no longer be in |picture_buffers_| if we've
   // replaced them.  That's okay.
 
-  // TODO(liberato): what about the sync token?
+  // TODO(liberato): Wait for the sync token here.
+
   buffer->set_in_client_use(false);
 
   // Also re-start decoding in case it was waiting for more pictures.

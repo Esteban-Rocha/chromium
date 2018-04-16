@@ -5,20 +5,38 @@
 #include "chrome/browser/chromeos/power/ml/adaptive_screen_brightness_manager.h"
 
 #include <cmath>
+#include <utility>
 
 #include "ash/public/cpp/ash_pref_names.h"
 #include "base/process/launch.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/time/clock.h"
+#include "base/time/default_clock.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
+#include "chrome/browser/chromeos/ash_config.h"
 #include "chrome/browser/chromeos/power/ml/adaptive_screen_brightness_ukm_logger.h"
+#include "chrome/browser/chromeos/power/ml/adaptive_screen_brightness_ukm_logger_impl.h"
 #include "chrome/browser/chromeos/power/ml/real_boot_clock.h"
 #include "chrome/browser/chromeos/power/ml/recent_events_counter.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager/backlight.pb.h"
+#include "chromeos/system/devicetype.h"
 #include "components/prefs/pref_service.h"
+#include "components/ukm/content/source_url_recorder.h"
+#include "components/viz/host/host_frame_sink_manager.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/page_importance_signals.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
+#include "services/viz/public/interfaces/compositing/video_detector_observer.mojom.h"
+#include "ui/aura/env.h"
 #include "ui/base/user_activity/user_activity_detector.h"
 
 namespace chromeos {
@@ -37,12 +55,60 @@ constexpr int kNumUserInputEventsBuckets =
 // Log data every 10 minutes.
 constexpr base::TimeDelta kLoggingInterval = base::TimeDelta::FromMinutes(10);
 
+// Returns the focused visible browser unless no visible browser is focused,
+// then returns the topmost visible browser.
+// Returns nullopt if no suitable browsers are found.
+Browser* GetFocusedOrTopmostVisibleBrowser() {
+  Browser* topmost_browser = nullptr;
+  Browser* browser = nullptr;
+  BrowserList* browser_list = BrowserList::GetInstance();
+  DCHECK(browser_list);
+
+  for (auto browser_iterator = browser_list->begin_last_active();
+       browser_iterator != browser_list->end_last_active();
+       ++browser_iterator) {
+    browser = *browser_iterator;
+    if (browser->profile()->IsOffTheRecord() || !browser->window()->IsVisible())
+      continue;
+
+    if (browser->window()->IsActive())
+      return browser;
+
+    if (!topmost_browser)
+      topmost_browser = *browser_iterator;
+  }
+  if (topmost_browser)
+    return topmost_browser;
+
+  return nullptr;
+}
+
+// For the active tab, returns the UKM SourceId and whether any form in this
+// tab had an interaction. The active tab is in the focused visible browser.
+// If no visible browser is focused, the topmost visible browser is used.
+const std::pair<ukm::SourceId, bool> GetActiveTabData() {
+  ukm::SourceId tab_id = ukm::kInvalidSourceId;
+  bool has_form_entry = false;
+  Browser* browser = GetFocusedOrTopmostVisibleBrowser();
+  if (browser) {
+    const TabStripModel* const tab_strip_model = browser->tab_strip_model();
+    DCHECK(tab_strip_model);
+    content::WebContents* contents = tab_strip_model->GetActiveWebContents();
+    if (contents) {
+      tab_id = ukm::GetSourceIdForWebContentsDocument(contents);
+      has_form_entry =
+          contents->GetPageImportanceSignals().had_form_interaction;
+    }
+  }
+  return std::pair<ukm::SourceId, bool>(tab_id, has_form_entry);
+}
+
 }  // namespace
 
 constexpr base::TimeDelta AdaptiveScreenBrightnessManager::kInactivityDuration;
 
 AdaptiveScreenBrightnessManager::AdaptiveScreenBrightnessManager(
-    AdaptiveScreenBrightnessUkmLogger* ukm_logger,
+    std::unique_ptr<AdaptiveScreenBrightnessUkmLogger> ukm_logger,
     ui::UserActivityDetector* detector,
     chromeos::PowerManagerClient* power_manager_client,
     AccessibilityManager* accessibility_manager,
@@ -54,7 +120,7 @@ AdaptiveScreenBrightnessManager::AdaptiveScreenBrightnessManager(
     : clock_(clock),
       boot_clock_(std::move(boot_clock)),
       periodic_timer_(std::move(periodic_timer)),
-      ukm_logger_(ukm_logger),
+      ukm_logger_(std::move(ukm_logger)),
       user_activity_observer_(this),
       power_manager_client_observer_(this),
       accessibility_manager_(accessibility_manager),
@@ -92,6 +158,44 @@ AdaptiveScreenBrightnessManager::AdaptiveScreenBrightnessManager(
 }
 
 AdaptiveScreenBrightnessManager::~AdaptiveScreenBrightnessManager() = default;
+
+std::unique_ptr<AdaptiveScreenBrightnessManager>
+AdaptiveScreenBrightnessManager::CreateInstance() {
+  // TODO(jiameng): video detector below doesn't work with MASH. Temporary
+  // solution is to disable logging if we're under MASH env.
+  if (chromeos::GetDeviceType() != chromeos::DeviceType::kChromebook ||
+      chromeos::GetAshConfig() == ash::Config::MASH) {
+    return nullptr;
+  }
+
+  chromeos::PowerManagerClient* const power_manager_client =
+      chromeos::DBusThreadManager::Get()->GetPowerManagerClient();
+  DCHECK(power_manager_client);
+  ui::UserActivityDetector* const detector = ui::UserActivityDetector::Get();
+  DCHECK(detector);
+  AccessibilityManager* const accessibility_manager =
+      AccessibilityManager::Get();
+  DCHECK(accessibility_manager);
+  MagnificationManager* const magnification_manager =
+      MagnificationManager::Get();
+  DCHECK(magnification_manager);
+  viz::mojom::VideoDetectorObserverPtr video_observer_screen_brightness_logger;
+
+  std::unique_ptr<AdaptiveScreenBrightnessManager> screen_brightness_manager =
+      std::make_unique<AdaptiveScreenBrightnessManager>(
+          std::make_unique<AdaptiveScreenBrightnessUkmLoggerImpl>(), detector,
+          power_manager_client, accessibility_manager, magnification_manager,
+          mojo::MakeRequest(&video_observer_screen_brightness_logger),
+          std::make_unique<base::RepeatingTimer>(),
+          base::DefaultClock::GetInstance(), std::make_unique<RealBootClock>());
+  aura::Env::GetInstance()
+      ->context_factory_private()
+      ->GetHostFrameSinkManager()
+      ->AddVideoDetectorObserver(
+          std::move(video_observer_screen_brightness_logger));
+
+  return screen_brightness_manager;
+}
 
 void AdaptiveScreenBrightnessManager::OnUserActivity(
     const ui::Event* const event) {
@@ -364,9 +468,10 @@ void AdaptiveScreenBrightnessManager::LogEvent() {
         magnification_manager_->IsMagnifierEnabled());
   }
 
+  const std::pair<ukm::SourceId, bool> tab_data = GetActiveTabData();
+
   // Log to metrics.
-  // TODO(pdyson): Add relevant UserActivityId metrics.
-  ukm_logger_->LogActivity(screen_brightness);
+  ukm_logger_->LogActivity(screen_brightness, tab_data.first, tab_data.second);
 }
 
 }  // namespace ml

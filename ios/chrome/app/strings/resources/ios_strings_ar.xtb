@@ -159,6 +159,7 @@
 <translation id="3789841737615482174">تثبيت</translation>
 <translation id="385051799172605136">الرجوع إلى الوراء</translation>
 <translation id="3897092660631435901">قائمة</translation>
+<translation id="3915450441834151894">معلومات الموقع</translation>
 <translation id="3928666092801078803">جمع البيانات التابعة لي</translation>
 <translation id="3950820424414687140">تسجيل الدخول</translation>
 <translation id="3963231839620026525">علامة تبويب جديدة للتصفح المتخفي</translation>
@@ -167,6 +168,7 @@
 <translation id="4002066346123236978">العنوان</translation>
 <translation id="4038354071007134711">لا يمكن فتح هذا الملف بأي تطبيق موجود على هذا الجهاز.</translation>
 <translation id="4049507953662678203">تأكد من اتصالك بالشبكة، وأعد المحاولة.</translation>
+<translation id="4084682180776658562">إشارة</translation>
 <translation id="411254640334432676">فشلت عملية التنزيل</translation>
 <translation id="4121993058175073134">لإرسال بيانات تصدير الشبكة، يُرجى تهيئة حساب بريدك الإلكتروني في التطبيق "الإعدادات".</translation>
 <translation id="4124987746317609294">النطاق الزمني</translation>
@@ -222,6 +224,7 @@
 <translation id="5197255632782567636">الإنترنت</translation>
 <translation id="5228579091201413441">تمكين المزامنة</translation>
 <translation id="5244474230056479698">المزامنة مع <ph name="EMAIL" /></translation>
+<translation id="527973086555161537">يمكنك فتح علامة تبويب لتصفح الويب بشكلٍ خاص.</translation>
 <translation id="5300589172476337783">عرض</translation>
 <translation id="5317780077021120954">حفظ</translation>
 <translation id="5327248766486351172">الاسم</translation>
@@ -301,6 +304,7 @@
 <translation id="6445981559479772097">تم إرسال الرسالة.</translation>
 <translation id="6464071786529933911">فتح في علامة تبويب جديدة للتصفح المتخفي</translation>
 <translation id="6482629121755362506">تم حذف <ph name="NUMBER_OF_SELECTED_BOOKMARKS" /> من العناصر</translation>
+<translation id="6528048372317642110">تنزيل الملف متاح.</translation>
 <translation id="6541915733953096570">الساعة الماضية</translation>
 <translation id="6570040839871198836">ملء النماذج تلقائيًا</translation>
 <translation id="6656103420185847513">تعديل مجلد</translation>
@@ -426,7 +430,6 @@
 <translation id="9083392325882095631">عنصر واحد</translation>
 <translation id="9100610230175265781">عبارة المرور مطلوبة</translation>
 <translation id="9148126808321036104">تسجيل الدخول مرة أخرى</translation>
-<translation id="915371508759614899">هل تريد إلغاء التنزيل؟</translation>
 <translation id="9157836665414082580">إيقاف مربعات الحوار</translation>
 <translation id="9188680907066685419">تسجيل الخروج من الحساب المُدار</translation>
 <translation id="9203116392574189331">Handoff</translation>

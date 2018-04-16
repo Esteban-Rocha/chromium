@@ -49,6 +49,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -229,7 +230,7 @@ bool ChromePasswordProtectionService::ShouldShowChangePasswordSettingUI(
 
 void ChromePasswordProtectionService::FillReferrerChain(
     const GURL& event_url,
-    int event_tab_id,
+    SessionID event_tab_id,
     LoginReputationClientRequest::Frame* frame) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   SafeBrowsingNavigationObserverManager::AttributionResult result =
@@ -334,11 +335,15 @@ void ChromePasswordProtectionService::MaybeStartThreatDetailsCollection(
       web_contents->GetMainFrame()->GetProcess()->GetID(),
       web_contents->GetMainFrame()->GetRoutingID());
   resource.token = token;
-  // Ignores the return of |StartCollectingThreatDetails()| here and let
-  // TriggerManager decide whether it should start data collection.
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory =
+      content::BrowserContext::GetDefaultStoragePartition(profile_)
+          ->GetURLLoaderFactoryForBrowserProcess();
+  // Ignores the return of |StartCollectingThreatDetails()| here and
+  // let TriggerManager decide whether it should start data
+  // collection.
   trigger_manager_->StartCollectingThreatDetails(
       safe_browsing::TriggerType::GAIA_PASSWORD_REUSE, web_contents, resource,
-      profile_->GetRequestContext(), /*history_service=*/nullptr,
+      url_loader_factory, /*history_service=*/nullptr,
       TriggerManager::GetSBErrorDisplayOptions(*profile_->GetPrefs(),
                                                *web_contents));
 }
@@ -916,23 +921,20 @@ bool ChromePasswordProtectionService::IsURLWhitelistedForPasswordEntry(
 
 base::string16 ChromePasswordProtectionService::GetWarningDetailText() {
   if (!base::FeatureList::IsEnabled(
-          safe_browsing::kEnterprisePasswordProtectionV1)) {
-    return l10n_util::GetStringUTF16(IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS);
-  }
-
-  std::string enterprise_name =
-      profile_->GetPrefs()->GetString(prefs::kPasswordProtectionEnterpriseName);
-  if (enterprise_name.empty() ||
+          safe_browsing::kEnterprisePasswordProtectionV1) ||
       GetSyncAccountType() != safe_browsing::LoginReputationClientRequest::
                                   PasswordReuseEvent::GSUITE) {
     return l10n_util::GetStringUTF16(IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS);
   }
 
-  // For GSuite password reuses, we need to include their organization name in
-  // the site identity detail text.
-  return l10n_util::GetStringFUTF16(
-      IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS_ENTERPRISE,
-      base::UTF8ToUTF16(enterprise_name));
+  std::string enterprise_name =
+      profile_->GetPrefs()->GetString(prefs::kPasswordProtectionEnterpriseName);
+  return enterprise_name.empty()
+             ? l10n_util::GetStringUTF16(
+                   IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS_ENTERPRISE)
+             : l10n_util::GetStringFUTF16(
+                   IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS_ENTERPRISE_WITH_ORG_NAME,
+                   base::UTF8ToUTF16(enterprise_name));
 }
 
 }  // namespace safe_browsing

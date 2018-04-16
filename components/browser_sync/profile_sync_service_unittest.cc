@@ -191,10 +191,14 @@ class ProfileSyncServiceTest : public ::testing::Test {
     std::string account_id =
         account_tracker()->SeedAccountInfo(kGaiaId, kEmail);
     auth_service()->UpdateCredentials(account_id, "oauth2_login_token");
+#if defined(OS_CHROMEOS)
+    signin_manager()->SignIn(account_id);
+#else
+    signin_manager()->SignIn(kGaiaId, kEmail, "password");
+#endif
   }
 
   void CreateService(ProfileSyncService::StartBehavior behavior) {
-    signin_manager()->SetAuthenticatedAccountInfo(kGaiaId, kEmail);
     component_factory_ = profile_sync_service_bundle_.component_factory();
     ProfileSyncServiceBundle::SyncClientBuilder builder(
         &profile_sync_service_bundle_);
@@ -318,9 +322,9 @@ class ProfileSyncServiceTest : public ::testing::Test {
   }
 
 #if defined(OS_CHROMEOS)
-  SigninManagerBase* signin_manager()
+  FakeSigninManagerBase* signin_manager()
 #else
-  SigninManager* signin_manager()
+  FakeSigninManager* signin_manager()
 #endif
   // Opening brace is outside of macro to avoid confusing lint.
   {
@@ -674,8 +678,7 @@ TEST_F(ProfileSyncServiceTest, CredentialErrorReturned) {
 
   // Emulate Chrome receiving a new, invalid LST. This happens when the user
   // signs out of the content area.
-  auth_service()->GetDelegate()->UpdateCredentials(primary_account_id,
-                                                   "not a valid token");
+  auth_service()->UpdateCredentials(primary_account_id, "not a valid token");
   auth_service()->IssueErrorForAllPendingRequests(
       GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
 
@@ -716,8 +719,7 @@ TEST_F(ProfileSyncServiceTest, CredentialErrorClearsOnNewToken) {
 
   // Emulate Chrome receiving a new, invalid LST. This happens when the user
   // signs out of the content area.
-  auth_service()->GetDelegate()->UpdateCredentials(primary_account_id,
-                                                   "not a valid token");
+  auth_service()->UpdateCredentials(primary_account_id, "not a valid token");
   auth_service()->IssueErrorForAllPendingRequests(
       GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
 
@@ -726,8 +728,7 @@ TEST_F(ProfileSyncServiceTest, CredentialErrorClearsOnNewToken) {
             service()->GetAuthError().state());
 
   // Now emulate Chrome receiving a new, valid LST.
-  auth_service()->GetDelegate()->UpdateCredentials(primary_account_id,
-                                                   "totally valid token");
+  auth_service()->UpdateCredentials(primary_account_id, "totally valid token");
   auth_service()->IssueTokenForAllPendingRequests(
       "this one works", base::Time::Now() + base::TimeDelta::FromDays(10));
 

@@ -205,7 +205,8 @@ void ToolbarActionsBarUnitTest::SetActionWantsToRunOnTab(
     ExtensionAction* action,
     content::WebContents* web_contents,
     bool wants_to_run) {
-  action->SetIsVisible(SessionTabHelper::IdForTab(web_contents), wants_to_run);
+  action->SetIsVisible(SessionTabHelper::IdForTab(web_contents).id(),
+                       wants_to_run);
   extensions::ExtensionActionAPI::Get(profile())->NotifyChange(
       action, web_contents, profile());
 }
@@ -253,10 +254,9 @@ TEST_P(ToolbarActionsBarUnitTest, BasicToolbarActionsBarTest) {
 
   // By default, all three actions should be visible.
   EXPECT_EQ(3u, toolbar_actions_bar()->GetIconCount());
-  const gfx::Size view_size = ToolbarActionsBar::GetViewSize();
-
+  const gfx::Size view_size = toolbar_actions_bar()->GetViewSize();
   // Check the widths.
-  int expected_width = 3 * view_size.width() + platform_settings.left_padding;
+  int expected_width = 3 * view_size.width();
   EXPECT_EQ(expected_width, toolbar_actions_bar()->GetFullSize().width());
   // Since all icons are showing, the current width should be the max width.
   int maximum_width = expected_width;
@@ -272,7 +272,7 @@ TEST_P(ToolbarActionsBarUnitTest, BasicToolbarActionsBarTest) {
   EXPECT_EQ(2u, toolbar_actions_bar()->GetIconCount());
 
   // The current width should now be enough for two icons.
-  expected_width = 2 * view_size.width() + platform_settings.left_padding;
+  expected_width = 2 * view_size.width();
   EXPECT_EQ(expected_width, toolbar_actions_bar()->GetFullSize().width());
   // The maximum and minimum widths should have remained constant (since we have
   // the same number of actions).
@@ -442,13 +442,9 @@ TEST_P(ToolbarActionsBarUnitTest, TestHighlightMode) {
 
 // Test the bounds calculation for different indices.
 TEST_P(ToolbarActionsBarUnitTest, TestActionFrameBounds) {
-  const auto icon_rect = [](int x, int y) {
-    const auto size = ToolbarActionsBar::GetViewSize();
-    return gfx::Rect(
-        gfx::Point(
-            x * size.width() + GetLayoutConstant(TOOLBAR_ACTION_LEFT_PADDING),
-            y * size.height()),
-        size);
+  const auto size = toolbar_actions_bar()->GetViewSize();
+  const auto icon_rect = [size](int x, int y) {
+    return gfx::Rect(gfx::Point(x * size.width(), y * size.height()), size);
   };
 
   constexpr int kIconsPerOverflowRow = 3;
@@ -461,7 +457,7 @@ TEST_P(ToolbarActionsBarUnitTest, TestActionFrameBounds) {
                           ActionType::BROWSER_ACTION);
   }
   toolbar_model()->SetVisibleIconCount(kNumExtensions);
-  const int icon_width = ToolbarActionsBar::GetViewSize().width();
+  const int icon_width = toolbar_actions_bar()->GetViewSize().width();
   overflow_bar()->SetOverflowRowWidth(icon_width * kIconsPerOverflowRow);
   EXPECT_EQ(kIconsPerOverflowRow,
             overflow_bar()->platform_settings().icons_per_overflow_menu_row);
@@ -497,7 +493,7 @@ TEST_P(ToolbarActionsBarUnitTest, TestActionFrameBounds) {
 }
 
 TEST_P(ToolbarActionsBarUnitTest, TestStartAndEndIndexes) {
-  const int icon_width = ToolbarActionsBar::GetViewSize().width();
+  const int icon_width = toolbar_actions_bar()->GetViewSize().width();
 
   for (int i = 0; i < 3; ++i) {
     CreateAndAddExtension(base::StringPrintf("extension %d", i),

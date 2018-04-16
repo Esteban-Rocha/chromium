@@ -161,6 +161,8 @@ class CloudPolicyClientTest : public testing::Test {
     em::RegisterBrowserRequest* enrollment_request =
         enrollment_token_request_.mutable_register_browser_request();
     enrollment_request->set_machine_name(policy::GetMachineName());
+    enrollment_request->set_os_platform(policy::GetOSPlatform());
+    enrollment_request->set_os_version(policy::GetOSVersion());
 #endif
 
     unregistration_request_.mutable_unregister_request();
@@ -1020,8 +1022,10 @@ TEST_F(CloudPolicyClientTest, UploadChromeDesktopReport) {
   CloudPolicyClient::StatusCallback callback =
       base::Bind(&MockStatusCallbackObserver::OnCallbackComplete,
                  base::Unretained(&callback_observer_));
-  em::ChromeDesktopReportRequest chrome_desktop_report;
-  client_->UploadChromeDesktopReport(chrome_desktop_report, callback);
+  std::unique_ptr<em::ChromeDesktopReportRequest> chrome_desktop_report =
+      std::make_unique<em::ChromeDesktopReportRequest>();
+  client_->UploadChromeDesktopReport(std::move(chrome_desktop_report),
+                                     callback);
   EXPECT_EQ(DM_STATUS_SUCCESS, client_->status());
 }
 

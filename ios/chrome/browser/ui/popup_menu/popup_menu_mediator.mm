@@ -4,14 +4,22 @@
 
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_mediator.h"
 
+#include "base/mac/foundation_util.h"
 #include "base/strings/sys_string_conversions.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/feature_engagement/public/feature_constants.h"
+#include "components/feature_engagement/public/tracker.h"
 #import "ios/chrome/browser/find_in_page/find_tab_helper.h"
 #import "ios/chrome/browser/ui/activity_services/canonical_url_retriever.h"
+#include "ios/chrome/browser/ui/bookmarks/bookmark_model_bridge_observer.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
 #import "ios/chrome/browser/ui/commands/reading_list_add_command.h"
 #import "ios/chrome/browser/ui/popup_menu/cells/popup_menu_item.h"
+#import "ios/chrome/browser/ui/popup_menu/cells/popup_menu_navigation_item.h"
 #import "ios/chrome/browser/ui/popup_menu/cells/popup_menu_tools_item.h"
+#import "ios/chrome/browser/ui/popup_menu/popup_menu_constants.h"
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_table_view_controller.h"
+#import "ios/chrome/browser/ui/popup_menu/popup_menu_table_view_controller_commands.h"
 #import "ios/chrome/browser/ui/reading_list/reading_list_menu_notification_delegate.h"
 #import "ios/chrome/browser/ui/reading_list/reading_list_menu_notifier.h"
 #include "ios/chrome/browser/ui/tools_menu/public/tools_menu_constants.h"
@@ -21,13 +29,16 @@
 #include "ios/chrome/grit/ios_strings.h"
 #include "ios/public/provider/chrome/browser/chrome_browser_provider.h"
 #import "ios/public/provider/chrome/browser/user_feedback/user_feedback_provider.h"
+#include "ios/web/public/favicon_status.h"
 #import "ios/web/public/navigation_item.h"
 #import "ios/web/public/navigation_manager.h"
+#include "ios/web/public/navigation_manager.h"
 #include "ios/web/public/user_agent.h"
 #include "ios/web/public/web_client.h"
 #include "ios/web/public/web_state/web_state.h"
 #import "ios/web/public/web_state/web_state_observer_bridge.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/image/image.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -51,12 +62,15 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
 }
 }
 
-@interface PopupMenuMediator ()<CRWWebStateObserver,
-                                PopupMenuTableViewControllerCommand,
+@interface PopupMenuMediator ()<BookmarkModelBridgeObserver,
+                                CRWWebStateObserver,
+                                PopupMenuTableViewControllerCommands,
                                 ReadingListMenuNotificationDelegate,
                                 WebStateListObserving> {
   std::unique_ptr<web::WebStateObserverBridge> _webStateObserver;
   std::unique_ptr<WebStateListObserverBridge> _webStateListObserver;
+  // Bridge to register for bookmark changes.
+  std::unique_ptr<bookmarks::BookmarkModelBridge> _bookmarkModelBridge;
 }
 
 // Items to be displayed in the popup menu.
@@ -77,11 +91,14 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
 
 #pragma mark*** Specific Items ***
 
-@property(nonatomic, strong) PopupMenuToolsItem* reloadStop;
-@property(nonatomic, strong) PopupMenuToolsItem* readLater;
-@property(nonatomic, strong) PopupMenuToolsItem* findInPage;
-@property(nonatomic, strong) PopupMenuToolsItem* siteInformation;
-@property(nonatomic, strong) PopupMenuToolsItem* readingList;
+@property(nonatomic, strong) PopupMenuToolsItem* reloadStopItem;
+@property(nonatomic, strong) PopupMenuToolsItem* readLaterItem;
+@property(nonatomic, strong) PopupMenuToolsItem* bookmarkItem;
+@property(nonatomic, strong) PopupMenuToolsItem* findInPageItem;
+@property(nonatomic, strong) PopupMenuToolsItem* siteInformationItem;
+@property(nonatomic, strong) PopupMenuToolsItem* requestDesktopSiteItem;
+@property(nonatomic, strong) PopupMenuToolsItem* requestMobileSiteItem;
+@property(nonatomic, strong) PopupMenuToolsItem* readingListItem;
 // Array containing all the nonnull items/
 @property(nonatomic, strong) NSArray<TableViewItem*>* specificItems;
 
@@ -92,16 +109,21 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
 @synthesize items = _items;
 @synthesize isIncognito = _isIncognito;
 @synthesize popupMenu = _popupMenu;
+@synthesize bookmarkModel = _bookmarkModel;
 @synthesize dispatcher = _dispatcher;
+@synthesize engagementTracker = _engagementTracker;
 @synthesize readingListMenuNotifier = _readingListMenuNotifier;
 @synthesize type = _type;
 @synthesize webState = _webState;
 @synthesize webStateList = _webStateList;
-@synthesize reloadStop = _reloadStop;
-@synthesize readLater = _readLater;
-@synthesize findInPage = _findInPage;
-@synthesize siteInformation = _siteInformation;
-@synthesize readingList = _readingList;
+@synthesize reloadStopItem = _reloadStopItem;
+@synthesize readLaterItem = _readLaterItem;
+@synthesize bookmarkItem = _bookmarkItem;
+@synthesize findInPageItem = _findInPageItem;
+@synthesize siteInformationItem = _siteInformationItem;
+@synthesize requestDesktopSiteItem = _requestDesktopSiteItem;
+@synthesize requestMobileSiteItem = _requestMobileSiteItem;
+@synthesize readingListItem = _readingListItem;
 @synthesize specificItems = _specificItems;
 
 #pragma mark - Public
@@ -133,6 +155,17 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
     _webStateObserver.reset();
     _webState = nullptr;
   }
+
+  if (_engagementTracker &&
+      _engagementTracker->ShouldTriggerHelpUI(
+          feature_engagement::kIPHBadgedReadingListFeature)) {
+    _engagementTracker->Dismissed(
+        feature_engagement::kIPHBadgedReadingListFeature);
+    _engagementTracker = nullptr;
+  }
+
+  _readingListMenuNotifier = nil;
+  _bookmarkModelBridge.reset();
 }
 
 #pragma mark - CRWWebStateObserver
@@ -197,6 +230,39 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
   self.webState = newWebState;
 }
 
+#pragma mark - BookmarkModelBridgeObserver
+
+// If an added or removed bookmark is the same as the current url, update the
+// toolbar so the star highlight is kept in sync.
+- (void)bookmarkNodeChildrenChanged:
+    (const bookmarks::BookmarkNode*)bookmarkNode {
+  [self updateBookmarkItem];
+}
+
+// If all bookmarks are removed, update the toolbar so the star highlight is
+// kept in sync.
+- (void)bookmarkModelRemovedAllNodes {
+  [self updateBookmarkItem];
+}
+
+// In case we are on a bookmarked page before the model is loaded.
+- (void)bookmarkModelLoaded {
+  [self updateBookmarkItem];
+}
+
+- (void)bookmarkNodeChanged:(const bookmarks::BookmarkNode*)bookmarkNode {
+  [self updateBookmarkItem];
+}
+- (void)bookmarkNode:(const bookmarks::BookmarkNode*)bookmarkNode
+     movedFromParent:(const bookmarks::BookmarkNode*)oldParent
+            toParent:(const bookmarks::BookmarkNode*)newParent {
+  // No-op -- required by BookmarkModelBridgeObserver but not used.
+}
+- (void)bookmarkNodeDeleted:(const bookmarks::BookmarkNode*)node
+                 fromFolder:(const bookmarks::BookmarkNode*)folder {
+  [self updateBookmarkItem];
+}
+
 #pragma mark - Properties
 
 - (void)setWebState:(web::WebState*)webState {
@@ -233,13 +299,43 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
   _popupMenu = popupMenu;
 
   if (self.type == PopupMenuTypeToolsMenu) {
-    _popupMenu.tableView.accessibilityIdentifier = kToolsMenuTableViewId;
+    _popupMenu.tableView.accessibilityIdentifier =
+        kPopupMenuToolsMenuTableViewId;
+  } else if (self.type == PopupMenuTypeNavigationBackward ||
+             self.type == PopupMenuTypeNavigationForward) {
+    _popupMenu.tableView.accessibilityIdentifier =
+        kPopupMenuNavigationTableViewId;
   }
 
   [_popupMenu setPopupMenuItems:self.items];
   _popupMenu.commandHandler = self;
   if (self.webState) {
     [self updatePopupMenu];
+  }
+}
+
+- (void)setEngagementTracker:(feature_engagement::Tracker*)engagementTracker {
+  _engagementTracker = engagementTracker;
+
+  if (self.popupMenu && self.readingListItem && engagementTracker &&
+      self.engagementTracker->ShouldTriggerHelpUI(
+          feature_engagement::kIPHBadgedReadingListFeature)) {
+    self.readingListItem.badgeText = l10n_util::GetNSStringWithFixup(
+        IDS_IOS_READING_LIST_CELL_NEW_FEATURE_BADGE);
+    [self.popupMenu reconfigureCellsForItems:@[ self.readingListItem ]];
+  }
+}
+
+- (void)setBookmarkModel:(bookmarks::BookmarkModel*)bookmarkModel {
+  _bookmarkModel = bookmarkModel;
+  _bookmarkModelBridge.reset();
+  if (bookmarkModel) {
+    _bookmarkModelBridge =
+        std::make_unique<bookmarks::BookmarkModelBridge>(self, bookmarkModel);
+  }
+
+  if (self.webState && self.popupMenu) {
+    [self updateBookmarkItem];
   }
 }
 
@@ -250,8 +346,10 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
         [self createToolsMenuItems];
         break;
       case PopupMenuTypeNavigationForward:
+        [self createNavigationItemsForType:PopupMenuTypeNavigationForward];
         break;
       case PopupMenuTypeNavigationBackward:
+        [self createNavigationItemsForType:PopupMenuTypeNavigationBackward];
         break;
       case PopupMenuTypeTabGrid:
         [self createTabGridMenuItems];
@@ -260,22 +358,28 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
         break;
     }
     NSMutableArray* specificItems = [NSMutableArray array];
-    if (self.reloadStop)
-      [specificItems addObject:self.reloadStop];
-    if (self.readLater)
-      [specificItems addObject:self.readLater];
-    if (self.findInPage)
-      [specificItems addObject:self.findInPage];
-    if (self.siteInformation)
-      [specificItems addObject:self.siteInformation];
-    if (self.readingList)
-      [specificItems addObject:self.readingList];
+    if (self.reloadStopItem)
+      [specificItems addObject:self.reloadStopItem];
+    if (self.readLaterItem)
+      [specificItems addObject:self.readLaterItem];
+    if (self.bookmarkItem)
+      [specificItems addObject:self.bookmarkItem];
+    if (self.findInPageItem)
+      [specificItems addObject:self.findInPageItem];
+    if (self.siteInformationItem)
+      [specificItems addObject:self.siteInformationItem];
+    if (self.requestDesktopSiteItem)
+      [specificItems addObject:self.requestDesktopSiteItem];
+    if (self.requestMobileSiteItem)
+      [specificItems addObject:self.requestMobileSiteItem];
+    if (self.readingListItem)
+      [specificItems addObject:self.readingListItem];
     self.specificItems = specificItems;
   }
   return _items;
 }
 
-#pragma mark - PopupMenuTableViewControllerCommand
+#pragma mark - PopupMenuTableViewControllerCommands
 
 - (void)readPageLater {
   if (!self.webState)
@@ -296,14 +400,20 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
   });
 }
 
+- (void)navigateToPageForItem:(TableViewItem<PopupMenuItem>*)item {
+  PopupMenuNavigationItem* navigationItem =
+      base::mac::ObjCCastStrict<PopupMenuNavigationItem>(item);
+  [self.dispatcher navigateToHistoryItem:navigationItem.navigationItem];
+}
+
 #pragma mark - ReadingListMenuNotificationDelegate Implementation
 
 - (void)unreadCountChanged:(NSInteger)unreadCount {
-  if (!self.readingList)
+  if (!self.readingListItem)
     return;
 
-  self.readingList.badgeNumber = unreadCount;
-  [self.popupMenu reconfigureCellsForItems:@[ self.readingList ]];
+  self.readingListItem.badgeNumber = unreadCount;
+  [self.popupMenu reconfigureCellsForItems:@[ self.readingListItem ]];
 }
 
 - (void)unseenStateChanged:(BOOL)unseenItemsExist {
@@ -316,31 +426,67 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
 // Updates the popup menu to have its state in sync with the current page
 // status.
 - (void)updatePopupMenu {
-  // TODO(crbug.com/804773): update the items to take into account the state.
-  self.readLater.enabled = [self isWebURL];
-  self.findInPage.enabled = [self isFindInPageEnabled];
-  if ([self isPageLoading] &&
-      self.reloadStop.accessibilityIdentifier == kToolsMenuReload) {
-    self.reloadStop.title = l10n_util::GetNSString(IDS_IOS_TOOLS_MENU_STOP);
-    self.reloadStop.actionIdentifier = PopupMenuActionStop;
-    self.reloadStop.accessibilityIdentifier = kToolsMenuStop;
-    self.reloadStop.image = [[UIImage imageNamed:@"popup_menu_stop"]
-        imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-  } else if (![self isPageLoading] &&
-             self.reloadStop.accessibilityIdentifier == kToolsMenuStop) {
-    self.reloadStop.title = l10n_util::GetNSString(IDS_IOS_TOOLS_MENU_RELOAD);
-    self.reloadStop.actionIdentifier = PopupMenuActionReload;
-    self.reloadStop.accessibilityIdentifier = kToolsMenuReload;
-    self.reloadStop.image = [[UIImage imageNamed:@"popup_menu_reload"]
-        imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-  }
+  [self updateReloadStopItem];
+  self.readLaterItem.enabled = [self isCurrentURLWebURL];
+  [self updateBookmarkItem];
+  self.findInPageItem.enabled = [self isFindInPageEnabled];
+  self.siteInformationItem.enabled = [self isCurrentURLWebURL];
+  self.requestDesktopSiteItem.enabled =
+      [self userAgentType] == web::UserAgentType::MOBILE;
+  self.requestMobileSiteItem.enabled =
+      [self userAgentType] == web::UserAgentType::DESKTOP;
 
   // Reload the items.
   [self.popupMenu reconfigureCellsForItems:self.specificItems];
 }
 
-// Whether the actions associated with the share menu can be enabled.
-- (BOOL)isWebURL {
+// Updates the |bookmark| item to match the bookmarked status of the page.
+- (void)updateBookmarkItem {
+  if (!self.bookmarkItem)
+    return;
+
+  self.bookmarkItem.enabled = [self isCurrentURLWebURL];
+
+  if (self.webState && self.bookmarkModel &&
+      self.bookmarkModel->IsBookmarked(self.webState->GetVisibleURL())) {
+    self.bookmarkItem.title =
+        l10n_util::GetNSString(IDS_IOS_TOOLS_MENU_EDIT_BOOKMARK);
+    self.bookmarkItem.accessibilityIdentifier = kToolsMenuEditBookmark;
+    self.bookmarkItem.image = [[UIImage imageNamed:@"popup_menu_add_bookmark"]
+        imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+  } else {
+    self.bookmarkItem.title =
+        l10n_util::GetNSString(IDS_IOS_TOOLS_MENU_ADD_TO_BOOKMARKS);
+    self.bookmarkItem.accessibilityIdentifier = kToolsMenuAddToBookmarks;
+    self.bookmarkItem.image = [[UIImage imageNamed:@"popup_menu_add_bookmark"]
+        imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+  }
+
+  [self.popupMenu reconfigureCellsForItems:@[ self.bookmarkItem ]];
+}
+
+// Updates the |reloadStopItem| item to match the current behavior.
+- (void)updateReloadStopItem {
+  if ([self isPageLoading] &&
+      self.reloadStopItem.accessibilityIdentifier == kToolsMenuReload) {
+    self.reloadStopItem.title = l10n_util::GetNSString(IDS_IOS_TOOLS_MENU_STOP);
+    self.reloadStopItem.actionIdentifier = PopupMenuActionStop;
+    self.reloadStopItem.accessibilityIdentifier = kToolsMenuStop;
+    self.reloadStopItem.image = [[UIImage imageNamed:@"popup_menu_stop"]
+        imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+  } else if (![self isPageLoading] &&
+             self.reloadStopItem.accessibilityIdentifier == kToolsMenuStop) {
+    self.reloadStopItem.title =
+        l10n_util::GetNSString(IDS_IOS_TOOLS_MENU_RELOAD);
+    self.reloadStopItem.actionIdentifier = PopupMenuActionReload;
+    self.reloadStopItem.accessibilityIdentifier = kToolsMenuReload;
+    self.reloadStopItem.image = [[UIImage imageNamed:@"popup_menu_reload"]
+        imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+  }
+}
+
+// Whether the current page is a web page.
+- (BOOL)isCurrentURLWebURL {
   if (!self.webState)
     return NO;
   const GURL& URL = self.webState->GetLastCommittedURL();
@@ -365,6 +511,36 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
 
 #pragma mark - Item creation (Private)
 
+- (void)createNavigationItemsForType:(PopupMenuType)type {
+  DCHECK(type == PopupMenuTypeNavigationForward ||
+         type == PopupMenuTypeNavigationBackward);
+  if (!self.webState)
+    return;
+
+  web::NavigationManager* navigationManager =
+      self.webState->GetNavigationManager();
+  std::vector<web::NavigationItem*> navigationItems;
+  if (type == PopupMenuTypeNavigationForward) {
+    navigationItems = navigationManager->GetForwardItems();
+  } else {
+    navigationItems = navigationManager->GetBackwardItems();
+  }
+  NSMutableArray* items = [NSMutableArray array];
+  for (web::NavigationItem* navigationItem : navigationItems) {
+    PopupMenuNavigationItem* item =
+        [[PopupMenuNavigationItem alloc] initWithType:kItemTypeEnumZero];
+    item.title = base::SysUTF16ToNSString(navigationItem->GetTitleForDisplay());
+    const gfx::Image& image = navigationItem->GetFavicon().image;
+    if (!image.IsEmpty())
+      item.favicon = image.ToUIImage();
+    item.actionIdentifier = PopupMenuActionNavigate;
+    item.navigationItem = navigationItem;
+    [items addObject:item];
+  }
+
+  self.items = @[ items ];
+}
+
 // Creates the menu items for the tab grid menu.
 - (void)createTabGridMenuItems {
   NSMutableArray* items = [NSMutableArray arrayWithArray:[self itemsForNewTab]];
@@ -385,11 +561,11 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
 // Creates the menu items for the tools menu.
 - (void)createToolsMenuItems {
   // Reload or stop page action, created as reload.
-  self.reloadStop =
+  self.reloadStopItem =
       CreateTableViewItem(IDS_IOS_TOOLS_MENU_RELOAD, PopupMenuActionReload,
                           @"popup_menu_reload", kToolsMenuReload);
 
-  NSArray* tabActions = [@[ self.reloadStop ]
+  NSArray* tabActions = [@[ self.reloadStopItem ]
       arrayByAddingObjectsFromArray:[self itemsForNewTab]];
 
   NSArray* browserActions = [self actionItems];
@@ -416,39 +592,45 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
 - (NSArray<TableViewItem*>*)actionItems {
   NSMutableArray* actionsArray = [NSMutableArray array];
   // Read Later.
-  self.readLater = CreateTableViewItem(
+  self.readLaterItem = CreateTableViewItem(
       IDS_IOS_CONTENT_CONTEXT_ADDTOREADINGLIST, PopupMenuActionReadLater,
       @"popup_menu_read_later", kToolsMenuReadLater);
-  [actionsArray addObject:self.readLater];
+  [actionsArray addObject:self.readLaterItem];
+
+  // Add to bookmark.
+  self.bookmarkItem = CreateTableViewItem(
+      IDS_IOS_TOOLS_MENU_ADD_TO_BOOKMARKS, PopupMenuActionPageBookmark,
+      @"popup_menu_add_bookmark", kToolsMenuAddToBookmarks);
+  [actionsArray addObject:self.bookmarkItem];
 
   // Find in Pad.
-  self.findInPage = CreateTableViewItem(
+  self.findInPageItem = CreateTableViewItem(
       IDS_IOS_TOOLS_MENU_FIND_IN_PAGE, PopupMenuActionFindInPage,
       @"popup_menu_find_in_page", kToolsMenuFindInPageId);
-  [actionsArray addObject:self.findInPage];
+  [actionsArray addObject:self.findInPageItem];
 
   if ([self userAgentType] != web::UserAgentType::DESKTOP) {
     // Request Desktop Site.
-    PopupMenuToolsItem* requestDesktopSite = CreateTableViewItem(
+    self.requestDesktopSiteItem = CreateTableViewItem(
         IDS_IOS_TOOLS_MENU_REQUEST_DESKTOP_SITE, PopupMenuActionRequestDesktop,
         @"popup_menu_request_desktop_site", kToolsMenuRequestDesktopId);
     // Disable the action if the user agent is not mobile.
-    requestDesktopSite.enabled =
+    self.requestDesktopSiteItem.enabled =
         [self userAgentType] == web::UserAgentType::MOBILE;
-    [actionsArray addObject:requestDesktopSite];
+    [actionsArray addObject:self.requestDesktopSiteItem];
   } else {
     // Request Mobile Site.
-    TableViewItem* requestMobileSite = CreateTableViewItem(
+    self.requestMobileSiteItem = CreateTableViewItem(
         IDS_IOS_TOOLS_MENU_REQUEST_MOBILE_SITE, PopupMenuActionRequestMobile,
         @"popup_menu_request_mobile_site", kToolsMenuRequestMobileId);
-    [actionsArray addObject:requestMobileSite];
+    [actionsArray addObject:self.requestMobileSiteItem];
   }
 
   // Site Information.
-  self.siteInformation = CreateTableViewItem(
+  self.siteInformationItem = CreateTableViewItem(
       IDS_IOS_TOOLS_MENU_SITE_INFORMATION, PopupMenuActionSiteInformation,
       @"popup_menu_site_information", kToolsMenuSiteInformation);
-  [actionsArray addObject:self.siteInformation];
+  [actionsArray addObject:self.siteInformationItem];
 
   // Report an Issue.
   if (ios::GetChromeBrowserProvider()
@@ -476,11 +658,18 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
       @"popup_menu_bookmarks", kToolsMenuBookmarksId);
 
   // Reading List.
-  self.readingList = CreateTableViewItem(
+  self.readingListItem = CreateTableViewItem(
       IDS_IOS_TOOLS_MENU_READING_LIST, PopupMenuActionReadingList,
       @"popup_menu_reading_list", kToolsMenuReadingListId);
-  self.readingList.badgeNumber =
+  self.readingListItem.badgeNumber =
       [self.readingListMenuNotifier readingListUnreadCount];
+  if (self.engagementTracker &&
+      self.engagementTracker->ShouldTriggerHelpUI(
+          feature_engagement::kIPHBadgedReadingListFeature)) {
+    self.readingListItem.badgeText = l10n_util::GetNSStringWithFixup(
+        IDS_IOS_READING_LIST_CELL_NEW_FEATURE_BADGE);
+  }
+
   // TODO(crbug.com/828367): Once the "unseen items effect" is defined,
   // implement it.
 
@@ -499,7 +688,7 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
       CreateTableViewItem(IDS_IOS_TOOLS_MENU_SETTINGS, PopupMenuActionSettings,
                           @"popup_menu_settings", kToolsMenuSettingsId);
 
-  return @[ bookmarks, self.readingList, recentTabs, history, settings ];
+  return @[ bookmarks, self.readingListItem, recentTabs, history, settings ];
 }
 
 // Returns the UserAgentType currently in use.

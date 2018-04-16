@@ -97,7 +97,6 @@ extern const char kEnableCloudPrintProxy[];
 extern const char kEnableDeviceDiscoveryNotifications[];
 extern const char kEnableDevToolsExperiments[];
 extern const char kEnableDomainReliability[];
-extern const char kEnableExperimentalFullscreenExitUI[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableFastUnload[];
@@ -140,22 +139,6 @@ extern const char kKioskModePrinting[];
 extern const char kLoadMediaRouterComponentExtension[];
 extern const char kMakeDefaultBrowser[];
 extern const char kMediaCacheSize[];
-extern const char kMemlog[];
-extern const char kMemlogKeepSmallAllocations[];
-extern const char kMemlogModeAll[];
-extern const char kMemlogModeAllRenderers[];
-extern const char kMemlogModeBrowser[];
-extern const char kMemlogModeGpu[];
-extern const char kMemlogModeManual[];
-extern const char kMemlogModeMinimal[];
-extern const char kMemlogModeRendererSampling[];
-extern const char kMemlogSampling[];
-extern const char kMemlogSamplingRate[];
-extern const char kMemlogStackMode[];
-extern const char kMemlogStackModeMixed[];
-extern const char kMemlogStackModeNative[];
-extern const char kMemlogStackModeNativeWithThreadNames[];
-extern const char kMemlogStackModePseudo[];
 extern const char kMonitoringDestinationID[];
 extern const char kNetLogCaptureMode[];
 extern const char kNoDefaultBrowserCheck[];
@@ -214,6 +197,9 @@ extern const char kUserAgent[];
 extern const char kUserDataDir[];
 extern const char kValidateCrx[];
 extern const char kVersion[];
+extern const char kWebRtcRemoteEventLog[];
+extern const char kWebRtcRemoteEventLogProactivePruningDelta[];
+extern const char kWebRtcRemoteEventLogUploadNoSuppression[];
 extern const char kWindowPosition[];
 extern const char kWindowSize[];
 extern const char kWindowWorkspace[];
@@ -303,10 +289,6 @@ extern const char kDebugPrint[];
 extern const char kAllowNaClCrxFsAPI[];
 extern const char kAllowNaClFileHandleAPI[];
 extern const char kAllowNaClSocketAPI[];
-#endif
-
-#if BUILDFLAG(ENABLE_WAYLAND_SERVER)
-extern const char kEnableWaylandServer[];
 #endif
 
 #if defined(OS_WIN) || defined(OS_LINUX)

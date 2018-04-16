@@ -32,6 +32,7 @@
 #include "components/ukm/test_ukm_recorder.h"
 #include "components/ukm/ukm_source.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/web_contents_tester.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
@@ -186,6 +187,10 @@ class ManagePasswordsBubbleModelTest : public ::testing::Test {
   std::vector<std::unique_ptr<autofill::PasswordForm>> GetCurrentForms() const;
 
  private:
+  // TODO(lukasza): https://crbug.com/832100: Move the factory into
+  // TestingProfile, so individual tests don't need to worry about it.
+  content::ScopedMockRenderProcessHostFactory test_process_factory_;
+
   content::TestBrowserThreadBundle thread_bundle_;
   TestingProfile profile_;
   std::unique_ptr<content::WebContents> test_web_contents_;
@@ -482,8 +487,9 @@ TEST_F(ManagePasswordsBubbleModelTest, SignInPromoOK) {
   account.account_id = "foo_account_id";
   account.gaia = "foo_gaia_id";
   account.email = "foo@bar.com";
-  EXPECT_CALL(*controller(), EnableSync(AccountEq(account)));
-  model()->OnSignInToChromeClicked(account);
+  EXPECT_CALL(*controller(), EnableSync(AccountEq(account), false));
+  model()->OnSignInToChromeClicked(account,
+                                   false /* is_default_promo_account */);
   DestroyModelAndVerifyControllerExpectations();
   histogram_tester.ExpectUniqueSample(
       kUIDismissalReasonSaveMetric,

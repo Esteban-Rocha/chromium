@@ -98,9 +98,9 @@ ui::NativeTheme::ColorId GetLegacyColorId(ui::NativeTheme* native_theme,
 
     case OmniboxPart::LOCATION_BAR_SECURITY_CHIP:
     case OmniboxPart::LOCATION_BAR_TEXT_DIMMED:
+    case OmniboxPart::LOCATION_BAR_BUBBLE_OUTLINE:
     case OmniboxPart::RESULTS_ICON:
     case OmniboxPart::RESULTS_TEXT_INVISIBLE:
-    case OmniboxPart::RESULTS_SEPARATOR:
       NOTREACHED();
       break;
   }
@@ -231,17 +231,12 @@ SkColor GetOmniboxColor(OmniboxPart part,
     case OmniboxPart::LOCATION_BAR_SELECTED_KEYWORD:
       return dark ? gfx::kGoogleGrey100 : gfx::kGoogleBlue600;
     case OmniboxPart::RESULTS_BACKGROUND:
-      // The spec calls for transparent black (or white) overlays for hover (6%)
-      // and select (8%), which can overlap (for 14%). Pre-blend these with the
+      // The spec calls for transparent black (or white) overlays for hover (8%)
+      // and select (6%), which can overlap (for 14%). Pre-blend these with the
       // background for the best text AA result.
       return color_utils::BlendTowardOppositeLuma(
           dark ? gfx::kGoogleGrey800 : SK_ColorWHITE,
           NormalHoveredSelectedOrBoth<SkAlpha>(state, 0x00, 0x0F, 0x14, 0x24));
-    case OmniboxPart::RESULTS_SEPARATOR:
-      // The dark base color doesn't appear in the Material spec, just Chrome's.
-      return dark ? SkColorSetARGB(0x6E, 0x16, 0x17, 0x1A)   // 43% alpha.
-                  : SkColorSetA(gfx::kGoogleGrey900, 0x24);  // 14% alpha.
-
     case OmniboxPart::LOCATION_BAR_TEXT_DEFAULT:
     case OmniboxPart::RESULTS_TEXT_DEFAULT:
       return dark ? gfx::kGoogleGrey100 : gfx::kGoogleGrey800;
@@ -260,6 +255,10 @@ SkColor GetOmniboxColor(OmniboxPart part,
       return dark ? gfx::kGoogleGreenDark600 : gfx::kGoogleGreen600;
     case OmniboxPart::RESULTS_TEXT_URL:
       return dark ? gfx::kGoogleBlueDark600 : gfx::kGoogleBlue600;
+
+    case OmniboxPart::LOCATION_BAR_BUBBLE_OUTLINE:
+      return dark ? gfx::kGoogleGrey100
+                  : SkColorSetA(gfx::kGoogleGrey900, 0x24);
 
     // TODO(tapted): Add these.
     case OmniboxPart::LOCATION_BAR_CLEAR_ALL:

@@ -31,6 +31,7 @@ source_set("authentication") {
   ]
   deps = [
     ":authentication_ui",
+    "resources:identity_picker_view_arrow_down",
     "resources:signin_confirmation_more",
     "resources:signin_promo_close_gray",
     "//base",
@@ -134,6 +135,7 @@ source_set("unit_tests") {
     "//base/test:test_support",
     "//components/consent_auditor",
     "//components/pref_registry",
+    "//components/signin/core/browser:browser",
     "//components/sync_preferences",
     "//components/sync_preferences:test_support",
     "//components/version_info",

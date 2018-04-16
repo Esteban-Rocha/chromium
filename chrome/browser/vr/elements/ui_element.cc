@@ -13,7 +13,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "chrome/browser/vr/model/camera_model.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
 #include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/gfx/geometry/angle_conversions.h"
@@ -23,6 +23,7 @@ namespace vr {
 
 namespace {
 
+constexpr bool kEnableOptimizedTreeWalks = false;
 constexpr float kHitTestResolutionInMeter = 0.000001f;
 
 int AllocateId() {
@@ -113,9 +114,13 @@ void UiElement::SetType(UiElementType type) {
 }
 
 UiElement* UiElement::GetDescendantByType(UiElementType type) {
-  for (auto& descendant : *this) {
-    if (descendant.type() == type)
-      return &descendant;
+  if (type_ == type)
+    return this;
+
+  for (auto& child : children_) {
+    auto* result = child->GetDescendantByType(type);
+    if (result)
+      return result;
   }
   return nullptr;
 }
@@ -236,28 +241,40 @@ void UiElement::UpdateInput(const EditedText& info) {
   NOTREACHED();
 }
 
+bool UiElement::DoBeginFrame(const gfx::Transform& head_pose) {
+  // TODO(mthiesse): This is overly cautious. We may have keyframe_models but
+  // not trigger any updates, so we should refine this logic and have
+  // Animation::Tick return a boolean. Similarly, the bindings update may have
+  // had no visual effect and dirtiness should be related to setting properties
+  // that do indeed cause visual updates.
+  bool keyframe_models_updated = animation_.keyframe_models().size() > 0;
+  animation_.Tick(last_frame_time_);
+  set_update_phase(kUpdatedAnimations);
+  bool begin_frame_updated = OnBeginFrame(head_pose);
+  UpdateComputedOpacity();
+  bool was_visible_at_any_point = IsVisible() || updated_visibility_this_frame_;
+  bool dirty = (begin_frame_updated || keyframe_models_updated ||
+                updated_bindings_this_frame_) &&
+               was_visible_at_any_point;
+
+  if (!kEnableOptimizedTreeWalks || was_visible_at_any_point ||
+      visibility_bindings_depend_on_child_visibility_) {
+    for (auto& child : children_)
+      dirty |= child->DoBeginFrame(head_pose);
+  }
+
+  return dirty;
+}
+
+bool UiElement::OnBeginFrame(const gfx::Transform& head_pose) {
+  return false;
+}
+
 bool UiElement::PrepareToDraw() {
   return false;
 }
 
-bool UiElement::DoBeginFrame(const base::TimeTicks& time,
-                             const gfx::Transform& head_pose) {
-  // TODO(mthiesse): This is overly cautious. We may have keyframe_models but
-  // not trigger any updates, so we should refine this logic and have
-  // Animation::Tick return a boolean.
-  bool keyframe_models_updated = animation_.keyframe_models().size() > 0;
-  animation_.Tick(time);
-  last_frame_time_ = time;
-  set_update_phase(kUpdatedAnimations);
-  bool begin_frame_updated = OnBeginFrame(time, head_pose);
-  UpdateComputedOpacity();
-  bool was_visible_at_any_point = IsVisible() || updated_visibility_this_frame_;
-  return (begin_frame_updated || keyframe_models_updated) &&
-         was_visible_at_any_point;
-}
-
-bool UiElement::OnBeginFrame(const base::TimeTicks& time,
-                             const gfx::Transform& head_pose) {
+bool UiElement::UpdateTexture() {
   return false;
 }
 
@@ -283,11 +300,19 @@ void UiElement::SetVisibleImmediately(bool visible) {
 }
 
 bool UiElement::IsVisible() const {
-  return opacity() > 0.0f && computed_opacity() > 0.0f;
+  DCHECK(update_phase_ >= kUpdatedComputedOpacity ||
+         FrameLifecycle::phase() >= kUpdatedComputedOpacity);
+  // TODO(crbug.com/832216): we shouldn't need to check opacity() here.
+  return update_phase_ != kDirty && opacity() > 0.0f &&
+         computed_opacity() > 0.0f;
+}
+
+bool UiElement::IsOrWillBeLocallyVisible() const {
+  return opacity() > 0.0f || GetTargetOpacity() > 0.0f;
 }
 
 gfx::SizeF UiElement::size() const {
-  DCHECK_LE(kUpdatedTexturesAndSizes, phase_);
+  DCHECK_LE(kUpdatedSize, update_phase_);
   return size_;
 }
 
@@ -410,8 +435,12 @@ float UiElement::ComputeTargetOpacity() const {
 }
 
 float UiElement::computed_opacity() const {
-  DCHECK_LE(kUpdatedComputedOpacity, phase_);
+  DCHECK_LE(kUpdatedComputedOpacity, update_phase_) << DebugName();
   return computed_opacity_;
+}
+
+float UiElement::ComputedAndLocalOpacityForTest() const {
+  return computed_opacity();
 }
 
 bool UiElement::LocalHitTest(const gfx::PointF& point) const {
@@ -470,7 +499,7 @@ void UiElement::HitTest(const HitTestRequest& request,
 }
 
 const gfx::Transform& UiElement::world_space_transform() const {
-  DCHECK_LE(kUpdatedWorldSpaceTransform, phase_);
+  DCHECK_LE(kUpdatedWorldSpaceTransform, update_phase_);
   return world_space_transform_;
 }
 
@@ -529,20 +558,24 @@ void UiElement::DumpHierarchy(std::vector<size_t> counts,
   }
   *os << kReset;
 
-  if (!IsVisible() || draw_phase() == kPhaseNone) {
+  if (update_phase_ < kUpdatedComputedOpacity || !IsVisible()) {
     *os << kBlue;
   }
 
   *os << DebugName() << kReset << " " << kCyan << DrawPhaseToString(draw_phase_)
       << " " << kReset;
 
-  if (size().width() != 0.0f || size().height() != 0.0f) {
-    *os << kRed << "[" << size().width() << ", " << size().height() << "] "
-        << kReset;
+  if (update_phase_ >= kUpdatedSize) {
+    if (size().width() != 0.0f || size().height() != 0.0f) {
+      *os << kRed << "[" << size().width() << ", " << size().height() << "] "
+          << kReset;
+    }
   }
 
-  *os << kGreen;
-  DumpGeometry(os);
+  if (update_phase_ >= kUpdatedWorldSpaceTransform) {
+    *os << kGreen;
+    DumpGeometry(os);
+  }
 
   counts.push_back(0u);
 
@@ -590,17 +623,21 @@ void UiElement::SetSounds(Sounds sounds, AudioDelegate* delegate) {
 
 void UiElement::OnUpdatedWorldSpaceTransform() {}
 
+// TODO(cgrant): Remove this method, and use bindings instead.
 gfx::SizeF UiElement::stale_size() const {
-  DCHECK_LE(kUpdatedBindings, phase_);
   return size_;
 }
 
 void UiElement::AddChild(std::unique_ptr<UiElement> child) {
+  for (UiElement* current = this; current; current = current->parent())
+    current->set_descendants_updated(true);
   child->parent_ = this;
   children_.push_back(std::move(child));
 }
 
 std::unique_ptr<UiElement> UiElement::RemoveChild(UiElement* to_remove) {
+  for (UiElement* current = this; current; current = current->parent())
+    current->set_descendants_updated(true);
   DCHECK_EQ(this, to_remove->parent_);
   to_remove->parent_ = nullptr;
   size_t old_size = children_.size();
@@ -622,11 +659,20 @@ void UiElement::AddBinding(std::unique_ptr<BindingBase> binding) {
 }
 
 void UiElement::UpdateBindings() {
+  bool should_recur = IsOrWillBeLocallyVisible();
   updated_bindings_this_frame_ = false;
   for (auto& binding : bindings_) {
     if (binding->Update())
       updated_bindings_this_frame_ = true;
   }
+  should_recur |= IsOrWillBeLocallyVisible();
+
+  set_update_phase(kUpdatedBindings);
+  if (!should_recur && kEnableOptimizedTreeWalks)
+    return;
+
+  for (auto& child : children_)
+    child->UpdateBindings();
 }
 
 gfx::Point3F UiElement::GetCenter() const {
@@ -726,12 +772,15 @@ bool UiElement::IsAnimatingProperty(TargetProperty property) const {
 }
 
 bool UiElement::SizeAndLayOut() {
+  if (!IsVisible() && kEnableOptimizedTreeWalks)
+    return false;
   bool changed = false;
-  for (auto& child : children_) {
+  for (auto& child : children_)
     changed |= child->SizeAndLayOut();
-  }
   changed |= PrepareToDraw();
+  set_update_phase(kUpdatedSize);
   DoLayOutChildren();
+  set_update_phase(kUpdatedLayout);
   return changed;
 }
 
@@ -748,6 +797,9 @@ void UiElement::DoLayOutChildren() {
   bool requires_relayout = false;
   gfx::RectF bounds;
   for (auto& child : children_) {
+    if (!child->IsVisible())
+      continue;
+
     gfx::RectF outer_bounds(child->size());
     gfx::RectF inner_bounds(child->size());
     if (!child->bounds_contain_padding_) {
@@ -759,10 +811,9 @@ void UiElement::DoLayOutChildren() {
       DCHECK(!child->contributes_to_parent_bounds());
       requires_relayout = true;
     }
-    if (!child->IsVisible() || size.IsEmpty() ||
-        !child->contributes_to_parent_bounds()) {
+    if (size.IsEmpty() || !child->contributes_to_parent_bounds())
       continue;
-    }
+
     gfx::Vector2dF delta =
         outer_bounds.CenterPoint() - inner_bounds.CenterPoint();
     gfx::Point3F child_center(child->local_origin() - delta);
@@ -797,8 +848,10 @@ void UiElement::DoLayOutChildren() {
 }
 
 void UiElement::LayOutChildren() {
-  DCHECK_LE(kUpdatedTexturesAndSizes, phase_);
+  DCHECK_LE(kUpdatedSize, update_phase_);
   for (auto& child : children_) {
+    if (!child->IsVisible())
+      continue;
     // To anchor a child, use the parent's size to find its edge.
     float x_offset = 0.0f;
     if (child->x_anchoring() == LEFT) {
@@ -840,7 +893,11 @@ void UiElement::UpdateComputedOpacity() {
   updated_visibility_this_frame_ = IsVisible() != was_visible;
 }
 
-void UiElement::UpdateWorldSpaceTransformRecursive(bool parent_changed) {
+void UiElement::UpdateWorldSpaceTransform(bool parent_changed) {
+  if (!IsVisible() && !updated_visibility_this_frame_ &&
+      kEnableOptimizedTreeWalks)
+    return;
+
   bool changed = false;
   if (ShouldUpdateWorldSpaceTransform(parent_changed)) {
     gfx::Transform transform;
@@ -866,7 +923,7 @@ void UiElement::UpdateWorldSpaceTransformRecursive(bool parent_changed) {
 
   set_update_phase(kUpdatedWorldSpaceTransform);
   for (auto& child : children_) {
-    child->UpdateWorldSpaceTransformRecursive(changed);
+    child->UpdateWorldSpaceTransform(changed);
   }
 
   OnUpdatedWorldSpaceTransform();

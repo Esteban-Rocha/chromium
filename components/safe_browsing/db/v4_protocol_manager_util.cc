@@ -143,6 +143,10 @@ ListIdentifier GetUrlSubresourceFilterId() {
   return ListIdentifier(GetCurrentPlatformType(), URL, SUBRESOURCE_FILTER);
 }
 
+ListIdentifier GetUrlSuspiciousSiteId() {
+  return ListIdentifier(GetCurrentPlatformType(), URL, SUSPICIOUS);
+}
+
 ListIdentifier GetUrlUwsId() {
   return ListIdentifier(GetCurrentPlatformType(), URL, UNWANTED_SOFTWARE);
 }
@@ -257,10 +261,10 @@ base::TimeDelta V4ProtocolManagerUtil::GetNextBackOffInterval(
 // static
 void V4ProtocolManagerUtil::RecordHttpResponseOrErrorCode(
     const char* metric_name,
-    const net::URLRequestStatus& status,
+    int net_error,
     int response_code) {
-  base::UmaHistogramSparse(
-      metric_name, status.is_success() ? response_code : status.error());
+  base::UmaHistogramSparse(metric_name,
+                           net_error == net::OK ? response_code : net_error);
 }
 
 // static

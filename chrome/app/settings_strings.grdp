@@ -10,7 +10,7 @@
 
   <!-- Shared across multiple pages -->
   <message name="IDS_SETTINGS_MORE_ACTIONS" desc="Tooltip text (shows on hover or for screenreaders) for a button that shows a menu with more actions when clicked or tapped">
-    More actions...
+    More actions
   </message>
 
   <!-- About Page -->
@@ -172,6 +172,18 @@
     </message>
     <message name="IDS_SETTINGS_TTS_LINK_DESCRIPTION" desc="Description of link to manage text-to-speech settings">
       Select and customize text-to-speech voices
+    </message>
+    <message name="IDS_SETTINGS_MANAGE_GOOGLE_TTS_ENGINE_SETTINGS" desc="Link to manage Google text-to-speech engine settings">
+      Manage Google text-to-speech
+    </message>
+    <message name="IDS_SETTINGS_GOOGLE_TTS_ENGINE_LINK_DESCRIPTION" desc="Description of link to manage Google text-to-speech engine settings">
+      Add or remove Google text-to-speech voices
+    </message>
+    <message name="IDS_SETTINGS_GOOGLE_TTS_ENGINE_TITLE" desc="Title of the Google text-to-speech engine settings page">
+      Google Text-To-Speech Settings
+    </message>
+    <message name="IDS_SETTINGS_ENABLE_TTS_VOICE_LABEL" desc="Title of the checkbox which enables or disables a text-to-speech voice.">
+      Enable voice
     </message>
     <message name="IDS_SETTINGS_LARGE_MOUSE_CURSOR_LABEL" desc="Label for checkbox which enables showing a larger mouse cursor than normal.">
       Show large mouse cursor
@@ -352,6 +364,18 @@
     </message>
     <message name="IDS_SETTINGS_TEXT_TO_SPEECH_PITCH" desc="The pitch of speech in text-to-speech settings.">
       Pitch
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_PREVIEW_HEADING" desc="The heading for a section of the text-to-speech settings page where a user can preview text to speech">
+      Preview
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_PREVIEW_INPUT_LABEL" desc="The label for sample input for a section of the text-to-speech settings page where a user can preview text to speech.">
+      Text to preview
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_PREVIEW_INPUT" desc="The sample input for a section of the text-to-speech settings page where a user can preview text to speech. Users will hear this read aloud.">
+      Hi there! I'm your text-to-speech voice.
+    </message>
+    <message name="IDS_SETTINGS_TEXT_TO_SPEECH_PREVIEW_PLAY" desc="A button on the text-to-speech settings page to start playing a preview of text to speech">
+      Play
     </message>
     <message name="IDS_SETTINGS_TEXT_TO_SPEECH_ENGINES" desc="Heading for a section of text-to-speech settings to do per-engine settings">
       Speech Engines
@@ -709,6 +733,12 @@
   </message>
   <message name="IDS_SETTINGS_PASSWORDS_EXPORTING_FAILURE_TIP_ANOTHER_FOLDER" desc="Message that is shown when exporting passwords has failed. This is part of a list of things the user can try to resolve the problem. This advice implies that Chrome couldn't write into the specified folder.">
     Export your passwords to another folder
+  </message>
+  <message name="IDS_SETTINGS_PASSWORD_ROW_MORE_ACTIONS" desc="The ARIA (accessibility) message for the More Actions button, which sits in every row of the password list. It opens a menu with a list of actions, which apply to the username-password pair on this row.">
+    More actions, password for <ph name="USERNAME">$1<ex>example@gmail.com</ex></ph> on <ph name="DOMAIN">$2<ex>www.google.com</ex></ph>
+  </message>
+  <message name="IDS_SETTINGS_PASSWORD_ROW_FEDERATED_MORE_ACTIONS" desc="The ARIA (accessibility) message for the More Actions button, which sits in every row of the password list. For this row does not include a password, only information of the account. It opens a menu with a list of actions, which apply to the account presented on this row.">
+    More actions, saved account for <ph name="USERNAME">$1<ex>example@gmail.com</ex></ph> on <ph name="DOMAIN">$2<ex>www.google.com</ex></ph>
   </message>
 
 
@@ -2560,8 +2590,17 @@
   <message name="IDS_SETTINGS_SITE_SETTINGS_SENSORS" desc="Label for the sensors permission in Site Settings. Sensors are motion and light sensors, specifically accelerometers, gyroscope, magnetometers, and ambient-light sensors">
     Motion or light sensors
   </message>
-  <message name="IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES" desc="Label for the USB devices in site settings.">
+  <message name="IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES" desc="Label for USB devices in site settings.">
     USB devices
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES_ASK" desc="The ask label for USB devices in site settings.">
+    Ask when a site wants to access USB devices
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES_ASK_RECOMMENDED" desc="The ask label for USB devices in site settings (with the 'recommended' suffix).">
+    Ask when a site wants to access USB devices (recommended)
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES_BLOCK" desc="The block label for USB devices in site settings.">
+    Do not allow any sites to access USB devices
   </message>
   <message name="IDS_SETTINGS_SITE_SETTINGS_REMOVE_ZOOM_LEVEL" desc="Title tooltip and accessibility text for the button to remove zoom levels in site settings">
     Remove zoom level
@@ -3160,14 +3199,17 @@
     <message name="IDS_SETTINGS_PEOPLE_SYNC_AS_NAME" desc="The label for the button that lets the user start syncing with the selected account.">
       Sync as <ph name="FULL_NAME">$1<ex>Bob Smith</ex></ph>
     </message>
-    <message name="IDS_SETTINGS_PEOPLE_SYNCED_AS_NAME" desc="The text displayed to the user that the profile is currently synced to a specific account.">
-      Synced as <ph name="FULL_NAME">$1<ex>Bob Smith</ex></ph>
+    <message name="IDS_SETTINGS_PEOPLE_SYNCING_TO_ACCOUNT" desc="The text displayed to the user that the profile is currently syncing to a specific account.">
+      Syncing to <ph name="EMAIL">$1<ex>abcd@google.com</ex></ph>
     </message>
     <message name="IDS_SETTINGS_PEOPLE_SYNC_TURN_OFF" desc="The label for the button that lets the user turn off profile syncing with their gaia account.">
       Turn off
     </message>
     <message name="IDS_SETTINGS_PEOPLE_SYNC_NOT_WORKING" desc="The label informing the user that sync is currently not working.">
       Sync isn't working
+    </message>
+    <message name="IDS_SETTINGS_PEOPLE_SYNC_PAUSED" desc="The label informing the user that sync is currently paused.">
+      Sync is paused
     </message>
     <message name="IDS_SETTINGS_SYNC_DISCONNECT_MANAGED_PROFILE_EXPLANATION" desc="The text to display in the 'Sign out of Chrome' dialog to stop syncing for managed profiles.">
       Because this account is managed by <ph name="DOMAIN">$1<ex>example.com</ex></ph>, your bookmarks, history, passwords, and other settings will be cleared from this device. However, your data will remain stored in your Google Account and can be managed on <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
@@ -3217,6 +3259,12 @@
   <message name="IDS_SETTINGS_SYNC" desc="Name of the sync service.">
     Sync
   </message>
+  <message name="IDS_SETTINGS_SYNC_DESCRIPTION" desc="Text explaining what the sync system does.">
+    Passwords, bookmarks, history, and more are synced to your account
+  </message>
+  <message name="IDS_SETTINGS_SYNC_SECTION_ACCESSIBILITY_LABEL" desc="Label for the button that toggles showing the sync settings. Only visible by screen reader software.">
+    Show sync settings
+  </message>
   <message name="IDS_SETTINGS_SYNC_SYNC_AND_PERSONALIZATION" desc="The label of button that takes the user to manage their sync and personalization settings.">
     Sync and personalization
   </message>
@@ -3234,7 +3282,7 @@
       Cancel sync
     </message>
     <message name="IDS_SETTINGS_SYNC_SIGN_IN_PROMPT" desc="The text displayed to prompt users to sign in to chrome.">
-      Sync and personalize Chrome across your device
+      Sync and personalize Chrome across your devices
     </message>
     <message name="IDS_SETTINGS_SYNC_SIGN_IN_PROMPT_SECONDARY" desc="The secondary text displayed to prompt users to sign in to chrome.">
       Turns on the features listed here. Uses your browser activity, content on some sites you visit, and other browser interactions for personalization.
@@ -3896,9 +3944,6 @@
 
   <!-- Password protection -->
   <message name="IDS_SETTINGS_CHANGE_PASSWORD_TITLE" desc="Title of the reset password warning.">
-    A site may have stolen your password
-  </message>
-  <message name="IDS_SETTINGS_CHANGE_PASSWORD_TITLE_SOFTER" desc="Title of the reset password warning.">
     Your password may be compromised
   </message>
   <message name="IDS_SETTINGS_CHANGE_PASSWORD_DETAIL" desc="Detailed description of the reset password warning.">

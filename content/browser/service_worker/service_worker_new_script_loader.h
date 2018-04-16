@@ -52,7 +52,7 @@ class CONTENT_EXPORT ServiceWorkerNewScriptLoader
       int32_t routing_id,
       int32_t request_id,
       uint32_t options,
-      const network::ResourceRequest& resource_request,
+      const network::ResourceRequest& original_request,
       network::mojom::URLLoaderClientPtr client,
       scoped_refptr<ServiceWorkerVersion> version,
       scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter,
@@ -119,13 +119,16 @@ class CONTENT_EXPORT ServiceWorkerNewScriptLoader
 
   // This is the last method that is called on this class. Notifies the final
   // result to |client_| and clears all mojo connections etc.
-  void CommitCompleted(const network::URLLoaderCompletionStatus& status);
+  void CommitCompleted(const network::URLLoaderCompletionStatus& status,
+                       const std::string& status_message);
 
   const GURL request_url_;
 
   // This is RESOURCE_TYPE_SERVICE_WORKER for the main script or
   // RESOURCE_TYPE_SCRIPT for an imported script.
   const ResourceType resource_type_;
+
+  std::unique_ptr<network::ResourceRequest> resource_request_;
 
   scoped_refptr<ServiceWorkerVersion> version_;
 

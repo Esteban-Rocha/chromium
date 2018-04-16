@@ -13,6 +13,7 @@
 #include "ash/wm/tablet_mode/tablet_mode_observer.h"
 #include "base/macros.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/ui_base_types.h"
 #include "ui/views/view.h"
 
 namespace gfx {
@@ -77,6 +78,9 @@ class ASH_EXPORT HeaderView : public views::View,
   SkColor GetActiveFrameColor() const;
   SkColor GetInactiveFrameColor() const;
 
+  // Called when the target widget show state changed.
+  void OnShowStateChanged(ui::WindowShowState show_state);
+
   // views::View:
   void Layout() override;
   void OnPaint(gfx::Canvas* canvas) override;
@@ -92,18 +96,21 @@ class ASH_EXPORT HeaderView : public views::View,
 
   views::View* avatar_icon() const;
 
+  bool in_immersive_mode() const { return in_immersive_mode_; }
+
   void SetShouldPaintHeader(bool paint);
 
   FrameCaptionButton* GetBackButton();
 
- private:
   // ImmersiveFullscreenControllerDelegate:
   void OnImmersiveRevealStarted() override;
   void OnImmersiveRevealEnded() override;
+  void OnImmersiveFullscreenEntered() override;
   void OnImmersiveFullscreenExited() override;
   void SetVisibleFraction(double visible_fraction) override;
   std::vector<gfx::Rect> GetVisibleBoundsInScreen() const override;
 
+ private:
   // The widget that the caption buttons act on.
   views::Widget* target_widget_;
 
@@ -126,6 +133,8 @@ class ASH_EXPORT HeaderView : public views::View,
 
   // False to skip painting. Used for overview mode to hide the header.
   bool should_paint_;
+
+  bool in_immersive_mode_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(HeaderView);
 };

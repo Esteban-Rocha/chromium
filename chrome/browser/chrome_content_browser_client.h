@@ -108,6 +108,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                        const GURL& url) override;
   bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
                                const GURL& effective_url) override;
+  bool ShouldUseSpareRenderProcessHost(content::BrowserContext* browser_context,
+                                       const GURL& site_url) override;
   bool DoesSiteRequireDedicatedProcess(content::BrowserContext* browser_context,
                                        const GURL& effective_site_url) override;
   bool ShouldLockToOrigin(content::BrowserContext* browser_context,
@@ -401,6 +403,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context,
       const GURL& url,
       base::OnceCallback<void(bool, int, int)> callback) override;
+
   bool ShouldPermitIndividualAttestationForWebauthnRPID(
       content::BrowserContext* browser_context,
       const std::string& rp_id) override;
@@ -409,6 +412,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const std::string& rp_id,
       const url::Origin& origin,
       base::OnceCallback<void(bool)> callback) override;
+  bool ShouldEnforceFocusChecksForWebauthn() override;
+
   std::unique_ptr<net::ClientCertStore> CreateClientCertStore(
       content::ResourceContext* resource_context) override;
   scoped_refptr<content::LoginDelegate> CreateLoginDelegate(
@@ -427,6 +432,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       bool is_main_frame,
       ui::PageTransition page_transition,
       bool has_user_gesture) override;
+  std::unique_ptr<content::OverlayWindow> CreateWindowForPictureInPicture(
+      content::PictureInPictureWindowController* controller) override;
 
  protected:
   static bool HandleWebUI(GURL* url, content::BrowserContext* browser_context);

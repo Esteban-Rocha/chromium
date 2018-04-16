@@ -85,7 +85,8 @@ public class BottomSheet extends FrameLayout
 
     /** The different reasons that the sheet's state can change. */
     @IntDef({StateChangeReason.NONE, StateChangeReason.SWIPE, StateChangeReason.BACK_PRESS,
-            StateChangeReason.TAP_SCRIM, StateChangeReason.NAVIGATION})
+            StateChangeReason.TAP_SCRIM, StateChangeReason.NAVIGATION,
+            StateChangeReason.COMPOSITED_UI})
     @Retention(RetentionPolicy.SOURCE)
     public @interface StateChangeReason {
         int NONE = 0;
@@ -93,6 +94,7 @@ public class BottomSheet extends FrameLayout
         int BACK_PRESS = 2;
         int TAP_SCRIM = 3;
         int NAVIGATION = 4;
+        int COMPOSITED_UI = 5;
     }
 
     /** The different priorities that the sheet's content can have. */
@@ -1020,7 +1022,9 @@ public class BottomSheet extends FrameLayout
             }
         });
 
-        setInternalCurrentState(SHEET_STATE_SCROLLING, reason);
+        if (targetState != SHEET_STATE_HIDDEN) {
+            setInternalCurrentState(SHEET_STATE_SCROLLING, reason);
+        }
         mSettleAnimator.start();
     }
 
@@ -1158,6 +1162,11 @@ public class BottomSheet extends FrameLayout
 
         for (BottomSheetObserver o : mObservers) o.onSheetOffsetChanged(mLastOffsetRatioSent);
 
+        if (MathUtils.areFloatsEqual(
+                    offsetWithBrowserControls, getSheetHeightForState(SHEET_STATE_PEEK))) {
+            for (BottomSheetObserver o : mObservers) o.onSheetFullyPeeked();
+        }
+
         // This ratio is relative to the peek and half positions of the sheet.
         float peekHalfRatio = MathUtils.clamp(
                 (screenRatio - getPeekRatio()) / (getHalfRatio() - getPeekRatio()), 0, 1);
@@ -1251,6 +1260,8 @@ public class BottomSheet extends FrameLayout
             return;
         }
 
+        @SheetState
+        final int previousState = mCurrentState;
         mCurrentState = state;
 
         if (mCurrentState == SHEET_STATE_HALF || mCurrentState == SHEET_STATE_FULL) {
@@ -1273,11 +1284,29 @@ public class BottomSheet extends FrameLayout
             o.onSheetStateChanged(mCurrentState);
         }
 
-        if (state <= SHEET_STATE_PEEK) {
+        if (isSheetOpen() && isClosedState(getSheetState())) {
             onSheetClosed(reason);
-        } else {
+        } else if (!isSheetOpen() && isClosedState(previousState)
+                && isOpenedState(getSheetState())) {
             onSheetOpened(reason);
         }
+    }
+
+    /**
+     * @param state A state of the {@link BottomSheet}.
+     * @return Whether the provided state is considered open.
+     */
+    private boolean isOpenedState(@SheetState int state) {
+        return state == SHEET_STATE_HALF || state == SHEET_STATE_FULL
+                || state == SHEET_STATE_SCROLLING;
+    }
+
+    /**
+     * @param state A state of the {@link BottomSheet}.
+     * @return Whether the provided state is considered closed.
+     */
+    private boolean isClosedState(@SheetState int state) {
+        return state == SHEET_STATE_PEEK || state == SHEET_STATE_HIDDEN;
     }
 
     /**

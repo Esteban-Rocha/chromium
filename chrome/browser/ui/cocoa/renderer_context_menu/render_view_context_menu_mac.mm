@@ -22,7 +22,9 @@
 #include "content/public/browser/render_widget_host_view.h"
 #import "ui/base/cocoa/menu_controller.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/strings/grit/ui_strings.h"
 
 using content::WebContents;
@@ -222,7 +224,7 @@ bool RenderViewContextMenuMac::IsCommandIdChecked(int command_id) const {
 bool RenderViewContextMenuMac::IsCommandIdEnabled(int command_id) const {
   switch (command_id) {
     case IDC_CONTENT_CONTEXT_EMOJI:
-      return true;
+      return params_.is_editable;
 
     case IDC_CONTENT_CONTEXT_LOOK_UP:
       return true;
@@ -346,11 +348,17 @@ void RenderViewContextMenuMac::InitToolkitMenu() {
     menu_model_.InsertSeparatorAt(index++, ui::NORMAL_SEPARATOR);
   }
 
-  if (base::FeatureList::IsEnabled(features::kEnableEmojiContextMenu)) {
+  // The Emoji menu item is available for editable text fields, unless the
+  // selected text is a misspelling.
+  if (params_.is_editable && params_.misspelled_word.empty() &&
+      base::FeatureList::IsEnabled(features::kEnableEmojiContextMenu)) {
     // The "Emoji" item is available near the top of the context menu, after
     // any "Look Up" of selected text.
-    menu_model_.InsertItemWithStringIdAt(index++, IDC_CONTENT_CONTEXT_EMOJI,
+    menu_model_.InsertItemWithStringIdAt(index, IDC_CONTENT_CONTEXT_EMOJI,
                                          IDS_CONTENT_CONTEXT_EMOJI);
+    menu_model_.SetIcon(index++,
+                        ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+                            IDR_EMOJI_FAVICON));
     menu_model_.InsertSeparatorAt(index++, ui::NORMAL_SEPARATOR);
   }
 

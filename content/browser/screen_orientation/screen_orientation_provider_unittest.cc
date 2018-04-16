@@ -11,7 +11,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
-#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationLockType.h"
+#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_lock_type.h"
 
 namespace content {
 
@@ -179,8 +179,8 @@ TEST_F(ScreenOrientationProviderTest, DelegateRequireFullScreenLockOnce) {
   EXPECT_EQ(0, delegate.lock_count());
 
   // Simulates entering full screen.
-  main_test_rfh()->OnMessageReceived(
-      FrameHostMsg_ToggleFullscreen(main_test_rfh()->GetRoutingID(), true));
+  main_test_rfh()->OnMessageReceived(FrameHostMsg_EnterFullscreen(
+      main_test_rfh()->GetRoutingID(), blink::WebFullscreenOptions()));
   ASSERT_TRUE(contents()->IsFullscreenForCurrentTab());
 
   base::Optional<ScreenOrientationLockResult> result_2;
@@ -282,8 +282,8 @@ TEST_F(ScreenOrientationProviderTest, UnlockWhenExitingFullScreen) {
                        std::string());
 
   // Simulates entering full screen.
-  main_test_rfh()->OnMessageReceived(
-      FrameHostMsg_ToggleFullscreen(main_test_rfh()->GetRoutingID(), true));
+  main_test_rfh()->OnMessageReceived(FrameHostMsg_EnterFullscreen(
+      main_test_rfh()->GetRoutingID(), blink::WebFullscreenOptions()));
   ASSERT_TRUE(contents()->IsFullscreenForCurrentTab());
 
   base::Optional<ScreenOrientationLockResult> result;
@@ -298,7 +298,7 @@ TEST_F(ScreenOrientationProviderTest, UnlockWhenExitingFullScreen) {
 
   // Simulates exiting full screen.
   main_test_rfh()->OnMessageReceived(
-      FrameHostMsg_ToggleFullscreen(main_test_rfh()->GetRoutingID(), false));
+      FrameHostMsg_ExitFullscreen(main_test_rfh()->GetRoutingID()));
   ASSERT_FALSE(contents()->IsFullscreenForCurrentTab());
   // The pending lock request is cancelled.
   EXPECT_EQ(ScreenOrientationLockResult::

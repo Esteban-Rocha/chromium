@@ -44,6 +44,7 @@ const PreviewAreaState_ = {
   OPEN_IN_PREVIEW: 'open-in-preview',
   INVALID_SETTINGS: 'invalid-settings',
   PREVIEW_FAILED: 'preview-failed',
+  UNSUPPORTED_CLOUD_PRINTER: 'unsupported-cloud-printer',
 };
 
 Polymer({
@@ -121,6 +122,9 @@ Polymer({
 
   /** @private {HTMLEmbedElement|print_preview_new.PDFPlugin} */
   plugin_: null,
+
+  /** @private {?function(!KeyboardEvent)} */
+  keyEventCallback_: null,
 
   /** @override */
   attached: function() {
@@ -236,6 +240,15 @@ Polymer({
   },
 
   /**
+   * @return {boolean} Whether the "learn more" link to the cloud print help
+   *     page should be shown.
+   * @private
+   */
+  shouldShowLearnMoreLink_: function() {
+    return this.previewState_ == PreviewAreaState_.UNSUPPORTED_CLOUD_PRINTER;
+  },
+
+  /**
    * @return {string} The current preview area message to display.
    * @private
    */
@@ -248,6 +261,8 @@ Polymer({
       return this.i18n('invalidPrinterSettings');
     if (this.previewState_ == PreviewAreaState_.PREVIEW_FAILED)
       return this.i18n('previewFailed');
+    if (this.previewState_ == PreviewAreaState_.UNSUPPORTED_CLOUD_PRINTER)
+      return this.i18n('unsupportedCloudPrinter');
     return '';
   },
 
@@ -267,9 +282,10 @@ Polymer({
           }
         },
         type => {
-          if (/** @type{string} */ (type) == 'SETTINGS_INVALID')
+          if (/** @type{string} */ (type) == 'SETTINGS_INVALID') {
             this.previewState_ = PreviewAreaState_.INVALID_SETTINGS;
-          else if (/** @type{string} */ (type) != 'CANCELLED') {
+            this.fire('invalid-printer');
+          } else if (/** @type{string} */ (type) != 'CANCELLED') {
             this.previewState_ = PreviewAreaState_.PREVIEW_FAILED;
             this.fire('preview-failed');
           }
@@ -291,14 +307,15 @@ Polymer({
         }
         break;
       case (print_preview_new.State.INVALID_PRINTER):
-        this.previewState_ = PreviewAreaState_.INVALID_SETTINGS;
+        if (this.previewState_ != PreviewAreaState_.INVALID_SETTINGS)
+          this.previewState_ = PreviewAreaState_.UNSUPPORTED_CLOUD_PRINTER;
         break;
       default:
         break;
     }
   },
 
-  // <if expr="macosx">
+  // <if expr="is_macosx">
   /** Set the preview state to display the "opening in preview" message. */
   setOpeningPdfInPreview: function() {
     assert(cr.isMac);
@@ -366,10 +383,9 @@ Polymer({
    * Called when the document page count is received from the native layer.
    * Always occurs as a result of a preview request.
    * @param {number} pageCount The document's page count.
-   * @param {number} previewResponseId The request ID that corresponds to this
-   *     page count.
+   * @param {number} previewResponseId The request ID for this page count event.
    * @param {number} fitToPageScaling The scaling required to fit the document
-   *     to page (unused).
+   *     to page.
    * @private
    */
   onPageCountReady_: function(pageCount, previewResponseId, fitToPageScaling) {
@@ -450,6 +466,61 @@ Polymer({
   },
 
   /**
+   * Processes a keyboard event that could possibly be used to change state of
+   * the preview plugin.
+   * @param {!KeyboardEvent} e Keyboard event to process.
+   */
+  handleDirectionalKeyEvent: function(e) {
+    // Make sure the PDF plugin is there.
+    // We only care about: PageUp, PageDown, Left, Up, Right, Down.
+    // If the user is holding a modifier key, ignore.
+    if (!this.plugin_ ||
+        !arrayContains(
+            [
+              'PageUp', 'PageDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp',
+              'ArrowDown'
+            ],
+            e.code) ||
+        hasKeyModifiers(e)) {
+      return;
+    }
+
+    // Don't handle the key event for these elements.
+    const tagName = e.path[0].tagName;
+    if (['INPUT', 'SELECT', 'EMBED'].includes(tagName))
+      return;
+
+    // For the most part, if any div of header was the last clicked element,
+    // then the active element is the body. Starting with the last clicked
+    // element, and work up the DOM tree to see if any element has a
+    // scrollbar. If there exists a scrollbar, do not handle the key event
+    // here.
+    let element = e.target;
+    while (element) {
+      if (element.scrollHeight > element.clientHeight ||
+          element.scrollWidth > element.clientWidth) {
+        return;
+      }
+      element = element.parentElement;
+    }
+
+    // No scroll bar anywhere, or the active element is something else, like a
+    // button. Note: buttons have a bigger scrollHeight than clientHeight.
+    this.plugin_.sendKeyEvent(e);
+    e.preventDefault();
+  },
+
+  /**
+   * Set a callback that gets called when a key event is received that
+   * originates in the plugin.
+   * @param {function(KeyboardEvent)} callback The callback to be called with
+   *     a key event.
+   */
+  setPluginKeyEventCallback: function(callback) {
+    this.keyEventCallback_ = callback;
+  },
+
+  /**
    * Creates a preview plugin and adds it to the DOM.
    * @param {number} previewUid The unique ID of the preview. Used to determine
    *     the URL for the plugin.
@@ -462,6 +533,7 @@ Polymer({
     const srcUrl = this.getPreviewUrl_(previewUid, index);
     this.plugin_ = /** @type {print_preview_new.PDFPlugin} */ (
         PDFCreateOutOfProcessPlugin(srcUrl, 'chrome://print/pdf'));
+    this.plugin_.setKeyEventCallback(this.keyEventCallback_);
     this.plugin_.classList.add('preview-area-plugin');
     this.plugin_.setAttribute('aria-live', 'polite');
     this.plugin_.setAttribute('aria-atomic', 'true');
@@ -489,6 +561,17 @@ Polymer({
     // we don't want this to happen as it can cause the margin to stop
     // being draggable.
     this.plugin_.style.pointerEvents = e.detail ? 'none' : 'auto';
+  },
+
+  /**
+   * Called when the learn more link for a cloud destination with an invalid
+   * certificate is clicked. Calls nativeLayer to open a new tab with the help
+   * page.
+   * @private
+   */
+  onGcpErrorLearnMoreClick_: function() {
+    this.nativeLayer_.forceOpenNewTab(
+        this.i18n('gcpCertificateErrorLearnMoreURL'));
   },
 
   /**

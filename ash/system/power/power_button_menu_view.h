@@ -42,9 +42,15 @@ class ASH_EXPORT PowerButtonMenuView : public views::View,
       PowerButtonController::PowerButtonPosition power_button_position);
   ~PowerButtonMenuView() override;
 
-  bool sign_out_item_for_testing() const { return sign_out_item_; }
+  PowerButtonMenuItemView* sign_out_item_for_test() const {
+    return sign_out_item_;
+  }
+  PowerButtonMenuItemView* power_off_item_for_test() const {
+    return power_off_item_;
+  }
 
-  PowerButtonMenuItemView* power_off_item() const { return power_off_item_; }
+  // Requests focus for |power_off_item_|.
+  void FocusPowerOffButton();
 
   // Schedules an animation to show or hide the view.
   void ScheduleShowHideAnimation(bool show);
@@ -60,6 +66,7 @@ class ASH_EXPORT PowerButtonMenuView : public views::View,
   void Layout() override;
   void OnPaint(gfx::Canvas* canvas) override;
   gfx::Size CalculatePreferredSize() const override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
 
   // views::ButtonListener:
   void ButtonPressed(views::Button* sender, const ui::Event& event) override;

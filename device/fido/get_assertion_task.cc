@@ -14,6 +14,20 @@
 
 namespace device {
 
+namespace {
+
+bool ResponseContainsUserIdentifiableInfo(
+    const AuthenticatorGetAssertionResponse& response) {
+  const auto& user_entity = response.user_entity();
+  if (!user_entity)
+    return false;
+
+  return user_entity->user_display_name() || user_entity->user_name() ||
+         user_entity->user_icon_url();
+}
+
+}  // namespace
+
 GetAssertionTask::GetAssertionTask(FidoDevice* device,
                                    CtapGetAssertionRequest request,
                                    GetAssertionTaskCallback callback)
@@ -32,6 +46,12 @@ void GetAssertionTask::StartTask() {
 }
 
 void GetAssertionTask::GetAssertion() {
+  if (!CheckUserVerificationCompatible()) {
+    std::move(callback_).Run(CtapDeviceResponseCode::kCtap2ErrOther,
+                             base::nullopt);
+    return;
+  }
+
   device()->DeviceTransact(
       request_.EncodeAsCBOR(),
       base::BindOnce(&GetAssertionTask::OnCtapGetAssertionResponseReceived,
@@ -49,10 +69,10 @@ void GetAssertionTask::U2fSign() {
 
 bool GetAssertionTask::CheckRequirementsOnReturnedUserEntities(
     const AuthenticatorGetAssertionResponse& response) {
-  // If assertion has been made without user verification, user entity must not
-  // be included.
+  // If assertion has been made without user verification, user identifiable
+  // information must not be included.
   if (!response.auth_data().obtained_user_verification() &&
-      response.user_entity()) {
+      ResponseContainsUserIdentifiableInfo(response)) {
     return false;
   }
 
@@ -104,12 +124,41 @@ void GetAssertionTask::OnCtapGetAssertionResponseReceived(
   if (!parsed_response ||
       !CheckRequirementsOnReturnedCredentialId(*parsed_response) ||
       !CheckRequirementsOnReturnedUserEntities(*parsed_response)) {
-    std::move(callback_).Run(CtapDeviceResponseCode::kCtap2ErrInvalidCredential,
+    std::move(callback_).Run(CtapDeviceResponseCode::kCtap2ErrOther,
                              base::nullopt);
     return;
   }
 
   std::move(callback_).Run(response_code, std::move(parsed_response));
+}
+
+bool GetAssertionTask::CheckUserVerificationCompatible() {
+  DCHECK(device()->device_info());
+  const auto uv_availability =
+      device()->device_info()->options().user_verification_availability();
+
+  switch (request_.user_verification()) {
+    case UserVerificationRequirement::kRequired:
+      return uv_availability ==
+             AuthenticatorSupportedOptions::UserVerificationAvailability::
+                 kSupportedAndConfigured;
+
+    case UserVerificationRequirement::kDiscouraged:
+      return true;
+
+    case UserVerificationRequirement::kPreferred:
+      if (uv_availability ==
+          AuthenticatorSupportedOptions::UserVerificationAvailability::
+              kSupportedAndConfigured) {
+        request_.SetUserVerification(UserVerificationRequirement::kRequired);
+      } else {
+        request_.SetUserVerification(UserVerificationRequirement::kDiscouraged);
+      }
+      return true;
+  }
+
+  NOTREACHED();
+  return false;
 }
 
 }  // namespace device

@@ -51,7 +51,6 @@ class BluetoothDeviceCast : public BluetoothDevice {
   bool IsGattConnected() const override;
   bool IsConnectable() const override;
   bool IsConnecting() const override;
-  UUIDSet GetUUIDs() const override;
   base::Optional<int8_t> GetInquiryRSSI() const override;
   base::Optional<int8_t> GetInquiryTxPower() const override;
   bool ExpectingPinCode() const override;
@@ -88,8 +87,7 @@ class BluetoothDeviceCast : public BluetoothDevice {
   // Called by BluetoothAdapterCast to update the device to reflect the
   // information obtained from a scan. Returns true if the device changed as a
   // result.
-  bool UpdateWithScanResult(
-      const chromecast::bluetooth::LeScanManager::ScanResult& result);
+  bool UpdateWithScanResult(const chromecast::bluetooth::LeScanResult& result);
 
   // Called by BluetoothAdapterCast when the connection state changes, and
   // by OnConnect() and OnDisconnect() when asynchronous requests return. Calls

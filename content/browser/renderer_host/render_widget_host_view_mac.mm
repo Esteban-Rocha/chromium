@@ -27,7 +27,6 @@
 #include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #import "content/browser/renderer_host/render_widget_host_ns_view_bridge.h"
 #import "content/browser/renderer_host/render_widget_host_view_cocoa.h"
-#import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
 #import "content/browser/renderer_host/text_input_client_mac.h"
 #include "content/common/text_input_state.h"
 #include "content/common/view_messages.h"
@@ -38,7 +37,7 @@
 #include "content/public/browser/web_contents.h"
 #include "skia/ext/platform_canvas.h"
 #include "skia/ext/skia_utils_mac.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #import "ui/base/clipboard/clipboard_util_mac.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/base/cocoa/cocoa_base_utils.h"
@@ -308,6 +307,18 @@ RenderWidgetHostViewMac::GetFocusedRenderWidgetHostDelegate() {
   return host()->delegate();
 }
 
+RenderWidgetHostImpl* RenderWidgetHostViewMac::GetWidgetForKeyboardEvent() {
+  DCHECK(in_keyboard_event_);
+  return RenderWidgetHostImpl::FromID(keyboard_event_widget_process_id_,
+                                      keyboard_event_widget_routing_id_);
+}
+
+RenderWidgetHostImpl* RenderWidgetHostViewMac::GetWidgetForIme() {
+  if (in_keyboard_event_)
+    return GetWidgetForKeyboardEvent();
+  return GetActiveWidget();
+}
+
 void RenderWidgetHostViewMac::UpdateNSViewAndDisplayProperties() {
   if (!browser_compositor_)
     return;
@@ -461,13 +472,13 @@ void RenderWidgetHostViewMac::OnUpdateTextInputStateCalled(
   // |updated_view| is the last view to change its TextInputState which can be
   // used to start/stop monitoring composition info when it has a focused
   // editable text input field.
-  RenderWidgetHostImpl* widgetHost =
+  RenderWidgetHostImpl* widget_host =
       RenderWidgetHostImpl::From(updated_view->GetRenderWidgetHost());
 
   // We might end up here when |updated_view| has had active TextInputState and
   // then got destroyed. In that case, |updated_view->GetRenderWidgetHost()|
   // returns nullptr.
-  if (!widgetHost)
+  if (!widget_host)
     return;
 
   // Set the monitor state based on the text input focus state.
@@ -476,8 +487,8 @@ void RenderWidgetHostViewMac::OnUpdateTextInputStateCalled(
   bool need_monitor_composition =
       has_focus && state && state->type != ui::TEXT_INPUT_TYPE_NONE;
 
-  widgetHost->RequestCompositionUpdates(false /* immediate_request */,
-                                        need_monitor_composition);
+  widget_host->RequestCompositionUpdates(false /* immediate_request */,
+                                         need_monitor_composition);
 
   if (has_focus) {
     SetTextInputActive(true);
@@ -499,7 +510,7 @@ void RenderWidgetHostViewMac::OnUpdateTextInputStateCalled(
 void RenderWidgetHostViewMac::OnImeCancelComposition(
     TextInputManager* text_input_manager,
     RenderWidgetHostViewBase* updated_view) {
-  ns_view_bridge_->ClearMarkedText();
+  ns_view_bridge_->CancelComposition();
 }
 
 void RenderWidgetHostViewMac::OnImeCompositionRangeChanged(
@@ -511,7 +522,7 @@ void RenderWidgetHostViewMac::OnImeCompositionRangeChanged(
     return;
   // The RangeChanged message is only sent with valid values. The current
   // caret position (start == end) will be sent if there is no IME range.
-  ns_view_bridge_->SetMarkedRange(info->range);
+  ns_view_bridge_->SetCompositionRangeInfo(info->range);
 }
 
 void RenderWidgetHostViewMac::OnSelectionBoundsChanged(
@@ -555,8 +566,8 @@ void RenderWidgetHostViewMac::OnTextSelectionChanged(
   const TextInputManager::TextSelection* selection = GetTextSelection();
   if (!selection)
     return;
-
-  ns_view_bridge_->SetSelectedRange(selection->range());
+  ns_view_bridge_->SetTextSelection(selection->text(), selection->offset(),
+                                    selection->range());
 }
 
 void RenderWidgetHostViewMac::OnRenderFrameMetadataChanged() {
@@ -610,7 +621,8 @@ void RenderWidgetHostViewMac::SetTooltipText(
 
 viz::ScopedSurfaceIdAllocator RenderWidgetHostViewMac::ResizeDueToAutoResize(
     const gfx::Size& new_size,
-    uint64_t sequence_number) {
+    uint64_t sequence_number,
+    const viz::LocalSurfaceId& child_local_surface_id) {
   // TODO(cblume): This doesn't currently suppress allocation.
   // It maintains existing behavior while using the suppression style.
   // This will be addressed in a follow-up patch.
@@ -735,6 +747,12 @@ void RenderWidgetHostViewMac::SetWantsAnimateOnlyBeginFrames() {
   browser_compositor_->SetWantsAnimateOnlyBeginFrames();
 }
 
+void RenderWidgetHostViewMac::TakeFallbackContentFrom(
+    RenderWidgetHostView* view) {
+  SetBackgroundColor(view->background_color());
+  // TODO(crbug.com/829523): Implement this.
+}
+
 bool RenderWidgetHostViewMac::GetLineBreakIndex(
     const std::vector<gfx::Rect>& bounds,
     const gfx::Range& range,
@@ -835,9 +853,9 @@ WebContents* RenderWidgetHostViewMac::GetWebContents() {
 }
 
 bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
-    NSRange range,
-    NSRect* rect,
-    NSRange* actual_range) {
+    const gfx::Range& requested_range,
+    gfx::Rect* rect,
+    gfx::Range* actual_range) {
   if (!GetTextInputManager())
     return false;
 
@@ -850,16 +868,14 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
   if (!selection)
     return false;
 
-  const gfx::Range requested_range(range);
   // If requested range is same as caret location, we can just return it.
   if (selection->range().is_empty() && requested_range == selection->range()) {
     DCHECK(GetFocusedWidget());
     if (actual_range)
-      *actual_range = range;
-    *rect =
-        NSRectFromCGRect(GetTextInputManager()
-                             ->GetSelectionRegion(GetFocusedWidget()->GetView())
-                             ->caret_rect.ToCGRect());
+      *actual_range = requested_range;
+    *rect = GetTextInputManager()
+                ->GetSelectionRegion(GetFocusedWidget()->GetView())
+                ->caret_rect;
     return true;
   }
 
@@ -870,11 +886,10 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
       return false;
     DCHECK(GetFocusedWidget());
     if (actual_range)
-      *actual_range = selection->range().ToNSRange();
-    *rect =
-        NSRectFromCGRect(GetTextInputManager()
-                             ->GetSelectionRegion(GetFocusedWidget()->GetView())
-                             ->first_selection_rect.ToCGRect());
+      *actual_range = selection->range();
+    *rect = GetTextInputManager()
+                ->GetSelectionRegion(GetFocusedWidget()->GetView())
+                ->first_selection_rect;
     return true;
   }
 
@@ -891,14 +906,12 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
             composition_info->range.length());
 
   gfx::Range ui_actual_range;
-  *rect = NSRectFromCGRect(GetFirstRectForCompositionRange(
-                               request_range_in_composition,
-                               &ui_actual_range).ToCGRect());
+  *rect = GetFirstRectForCompositionRange(request_range_in_composition,
+                                          &ui_actual_range);
   if (actual_range) {
     *actual_range =
         gfx::Range(composition_info->range.start() + ui_actual_range.start(),
-                   composition_info->range.start() + ui_actual_range.end())
-            .ToNSRange();
+                   composition_info->range.start() + ui_actual_range.end());
   }
   return true;
 }
@@ -910,7 +923,7 @@ bool RenderWidgetHostViewMac::ShouldContinueToPauseForFrame() {
 void RenderWidgetHostViewMac::FocusedNodeChanged(
     bool is_editable_node,
     const gfx::Rect& node_bounds_in_screen) {
-  ns_view_bridge_->ClearMarkedText();
+  ns_view_bridge_->CancelComposition();
 
   // If the Mac Zoom feature is enabled, update it with the bounds of the
   // current focused node so that it can ensure that it's scrolled into view.
@@ -1001,6 +1014,7 @@ void RenderWidgetHostViewMac::GestureEventAck(const WebGestureEvent& event,
     default:
       break;
   }
+  mouse_wheel_phase_handler_.GestureEventAck(event, ack_result);
 }
 
 void RenderWidgetHostViewMac::DidOverscroll(
@@ -1017,10 +1031,14 @@ RenderWidgetHostViewMac::CreateSyntheticGestureTarget() {
 }
 
 viz::LocalSurfaceId RenderWidgetHostViewMac::GetLocalSurfaceId() const {
+  if (!browser_compositor_)
+    return viz::LocalSurfaceId();
   return browser_compositor_->GetRendererLocalSurfaceId();
 }
 
 viz::FrameSinkId RenderWidgetHostViewMac::GetFrameSinkId() {
+  if (!browser_compositor_)
+    return viz::FrameSinkId();
   return browser_compositor_->GetDelegatedFrameHost()->frame_sink_id();
 }
 
@@ -1078,10 +1096,14 @@ bool RenderWidgetHostViewMac::TransformPointToCoordSpaceForView(
 }
 
 viz::FrameSinkId RenderWidgetHostViewMac::GetRootFrameSinkId() {
+  if (!browser_compositor_)
+    return viz::FrameSinkId();
   return browser_compositor_->GetRootFrameSinkId();
 }
 
 viz::SurfaceId RenderWidgetHostViewMac::GetCurrentSurfaceId() const {
+  if (!browser_compositor_)
+    return viz::SurfaceId();
   return browser_compositor_->GetDelegatedFrameHost()->GetCurrentSurfaceId();
 }
 
@@ -1115,8 +1137,8 @@ void RenderWidgetHostViewMac::SetActive(bool active) {
 }
 
 void RenderWidgetHostViewMac::ShowDefinitionForSelection() {
-  RenderWidgetHostViewMacDictionaryHelper helper(this);
-  helper.ShowDefinitionForSelection();
+  // This will round-trip to the NSView to determine the selection range.
+  ns_view_bridge_->ShowDictionaryOverlayForSelection();
 }
 
 void RenderWidgetHostViewMac::SetBackgroundColor(SkColor color) {
@@ -1220,6 +1242,16 @@ RenderWidgetHostViewMac* RenderWidgetHostViewMac::GetRenderWidgetHostViewMac() {
   return this;
 }
 
+BrowserAccessibilityManager*
+RenderWidgetHostViewMac::GetRootBrowserAccessibilityManager() {
+  return host()->GetRootBrowserAccessibilityManager();
+}
+
+void RenderWidgetHostViewMac::OnNSViewSyncIsRenderViewHost(
+    bool* is_render_view) {
+  *is_render_view = RenderViewHost::From(host()) != nullptr;
+}
+
 void RenderWidgetHostViewMac::OnNSViewRequestShutdown() {
   if (!weak_factory_.HasWeakPtrs()) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -1287,6 +1319,44 @@ void RenderWidgetHostViewMac::OnNSViewDisplayChanged(
   UpdateNSViewAndDisplayProperties();
 }
 
+void RenderWidgetHostViewMac::OnNSViewBeginKeyboardEvent() {
+  DCHECK(!in_keyboard_event_);
+  in_keyboard_event_ = true;
+  RenderWidgetHostImpl* widget_host = host();
+  if (widget_host && widget_host->delegate()) {
+    widget_host =
+        widget_host->delegate()->GetFocusedRenderWidgetHost(widget_host);
+  }
+  if (widget_host) {
+    keyboard_event_widget_process_id_ = widget_host->GetProcess()->GetID();
+    keyboard_event_widget_routing_id_ = widget_host->GetRoutingID();
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewEndKeyboardEvent() {
+  in_keyboard_event_ = false;
+  keyboard_event_widget_process_id_ = 0;
+  keyboard_event_widget_routing_id_ = 0;
+}
+
+void RenderWidgetHostViewMac::OnNSViewForwardKeyboardEvent(
+    const NativeWebKeyboardEvent& key_event,
+    const ui::LatencyInfo& latency_info) {
+  if (auto* widget_host = GetWidgetForKeyboardEvent()) {
+    widget_host->ForwardKeyboardEventWithLatencyInfo(key_event, latency_info);
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewForwardKeyboardEventWithCommands(
+    const NativeWebKeyboardEvent& key_event,
+    const ui::LatencyInfo& latency_info,
+    const std::vector<EditCommand>& commands) {
+  if (auto* widget_host = GetWidgetForKeyboardEvent()) {
+    widget_host->ForwardKeyboardEventWithCommands(key_event, latency_info,
+                                                  &commands);
+  }
+}
+
 void RenderWidgetHostViewMac::OnNSViewRouteOrProcessMouseEvent(
     const blink::WebMouseEvent& const_web_event) {
   blink::WebMouseEvent web_event = const_web_event;
@@ -1342,6 +1412,304 @@ void RenderWidgetHostViewMac::OnNSViewForwardWheelEvent(
     ui::LatencyInfo latency_info(ui::SourceEventType::WHEEL);
     latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
     host()->ForwardWheelEventWithLatencyInfo(web_event, latency_info);
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewGestureBegin(
+    blink::WebGestureEvent begin_event) {
+  gesture_begin_event_.reset(new WebGestureEvent(begin_event));
+
+  // If the page is at the minimum zoom level, require a threshold be reached
+  // before the pinch has an effect.
+  if (page_at_minimum_scale_) {
+    pinch_has_reached_zoom_threshold_ = false;
+    pinch_unused_amount_ = 1;
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewGestureUpdate(
+    blink::WebGestureEvent update_event) {
+  // If, due to nesting of multiple gestures (e.g, from multiple touch
+  // devices), the beginning of the gesture has been lost, skip the remainder
+  // of the gesture.
+  if (!gesture_begin_event_)
+    return;
+
+  if (!pinch_has_reached_zoom_threshold_) {
+    pinch_unused_amount_ *= update_event.data.pinch_update.scale;
+    if (pinch_unused_amount_ < 0.667 || pinch_unused_amount_ > 1.5)
+      pinch_has_reached_zoom_threshold_ = true;
+  }
+
+  // Send a GesturePinchBegin event if none has been sent yet.
+  if (!gesture_begin_pinch_sent_) {
+    if (wheel_scroll_latching_enabled()) {
+      // Before starting a pinch sequence, send the pending wheel end event to
+      // finish scrolling.
+      mouse_wheel_phase_handler_.DispatchPendingWheelEndEvent();
+    }
+    WebGestureEvent begin_event(*gesture_begin_event_);
+    begin_event.SetType(WebInputEvent::kGesturePinchBegin);
+    begin_event.SetSourceDevice(
+        blink::WebGestureDevice::kWebGestureDeviceTouchpad);
+    SendGesturePinchEvent(&begin_event);
+    gesture_begin_pinch_sent_ = YES;
+  }
+
+  // Send a GesturePinchUpdate event.
+  update_event.data.pinch_update.zoom_disabled =
+      !pinch_has_reached_zoom_threshold_;
+  SendGesturePinchEvent(&update_event);
+}
+
+void RenderWidgetHostViewMac::OnNSViewGestureEnd(
+    blink::WebGestureEvent end_event) {
+  gesture_begin_event_.reset();
+  if (gesture_begin_pinch_sent_) {
+    SendGesturePinchEvent(&end_event);
+    gesture_begin_pinch_sent_ = false;
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewSmartMagnify(
+    const blink::WebGestureEvent& smart_magnify_event) {
+  host()->ForwardGestureEvent(smart_magnify_event);
+}
+
+void RenderWidgetHostViewMac::OnNSViewImeSetComposition(
+    const base::string16& text,
+    const std::vector<ui::ImeTextSpan>& ime_text_spans,
+    const gfx::Range& replacement_range,
+    int selection_start,
+    int selection_end) {
+  if (auto* widget_host = GetWidgetForIme()) {
+    widget_host->ImeSetComposition(text, ime_text_spans, replacement_range,
+                                   selection_start, selection_end);
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewImeCommitText(
+    const base::string16& text,
+    const gfx::Range& replacement_range) {
+  if (auto* widget_host = GetWidgetForIme()) {
+    widget_host->ImeCommitText(text, std::vector<ui::ImeTextSpan>(),
+                               replacement_range, 0);
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewImeFinishComposingText() {
+  if (auto* widget_host = GetWidgetForIme()) {
+    widget_host->ImeFinishComposingText(false);
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewImeCancelComposition() {
+  if (auto* widget_host = GetWidgetForIme()) {
+    widget_host->ImeCancelComposition();
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewLookUpDictionaryOverlayFromRange(
+    const gfx::Range& range) {
+  content::RenderWidgetHostViewBase* focused_view =
+      GetFocusedViewForTextSelection();
+  if (!focused_view)
+    return;
+
+  RenderWidgetHostImpl* widget_host =
+      RenderWidgetHostImpl::From(focused_view->GetRenderWidgetHost());
+  if (!widget_host)
+    return;
+
+  int32_t target_widget_process_id = widget_host->GetProcess()->GetID();
+  int32_t target_widget_routing_id = widget_host->GetRoutingID();
+  TextInputClientMac::GetInstance()->GetStringFromRange(
+      widget_host, range,
+      base::BindOnce(&RenderWidgetHostViewMac::OnGotStringForDictionaryOverlay,
+                     weak_factory_.GetWeakPtr(), target_widget_process_id,
+                     target_widget_routing_id));
+}
+
+void RenderWidgetHostViewMac::OnNSViewLookUpDictionaryOverlayAtPoint(
+    const gfx::PointF& root_point) {
+  if (!host() || !host()->delegate() ||
+      !host()->delegate()->GetInputEventRouter())
+    return;
+
+  gfx::PointF transformed_point;
+  RenderWidgetHostImpl* widget_host =
+      host()->delegate()->GetInputEventRouter()->GetRenderWidgetHostAtPoint(
+          this, root_point, &transformed_point);
+  if (!widget_host)
+    return;
+
+  int32_t target_widget_process_id = widget_host->GetProcess()->GetID();
+  int32_t target_widget_routing_id = widget_host->GetRoutingID();
+  TextInputClientMac::GetInstance()->GetStringAtPoint(
+      widget_host, gfx::ToFlooredPoint(transformed_point),
+      base::BindOnce(&RenderWidgetHostViewMac::OnGotStringForDictionaryOverlay,
+                     weak_factory_.GetWeakPtr(), target_widget_process_id,
+                     target_widget_routing_id));
+}
+
+void RenderWidgetHostViewMac::OnNSViewSyncGetTextInputType(
+    ui::TextInputType* text_input_type) {
+  *text_input_type = GetTextInputType();
+}
+
+void RenderWidgetHostViewMac::OnNSViewSyncGetCharacterIndexAtPoint(
+    const gfx::PointF& root_point,
+    uint32_t* index) {
+  *index = UINT32_MAX;
+
+  if (!host() || !host()->delegate() ||
+      !host()->delegate()->GetInputEventRouter())
+    return;
+
+  gfx::PointF transformed_point;
+  RenderWidgetHostImpl* widget_host =
+      host()->delegate()->GetInputEventRouter()->GetRenderWidgetHostAtPoint(
+          this, root_point, &transformed_point);
+  if (!widget_host)
+    return;
+
+  *index = TextInputClientMac::GetInstance()->GetCharacterIndexAtPoint(
+      widget_host, gfx::ToFlooredPoint(transformed_point));
+}
+
+void RenderWidgetHostViewMac::OnNSViewSyncGetFirstRectForRange(
+    const gfx::Range& requested_range,
+    gfx::Rect* rect,
+    gfx::Range* actual_range) {
+  if (!GetCachedFirstRectForCharacterRange(requested_range, rect,
+                                           actual_range)) {
+    *rect = TextInputClientMac::GetInstance()->GetFirstRectForRange(
+        GetFocusedWidget(), requested_range);
+    // TODO(thakis): Pipe |actualRange| through TextInputClientMac machinery.
+    *actual_range = requested_range;
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewExecuteEditCommand(
+    const std::string& command) {
+  if (host()->delegate()) {
+    host()->delegate()->ExecuteEditCommand(command, base::nullopt);
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewUndo() {
+  WebContents* web_contents = GetWebContents();
+  if (web_contents)
+    web_contents->Undo();
+}
+
+void RenderWidgetHostViewMac::OnNSViewRedo() {
+  WebContents* web_contents = GetWebContents();
+  if (web_contents)
+    web_contents->Redo();
+}
+
+void RenderWidgetHostViewMac::OnNSViewCut() {
+  if (auto* delegate = GetFocusedRenderWidgetHostDelegate()) {
+    delegate->Cut();
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewCopy() {
+  if (auto* delegate = GetFocusedRenderWidgetHostDelegate()) {
+    delegate->Copy();
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewCopyToFindPboard() {
+  WebContents* web_contents = GetWebContents();
+  if (web_contents)
+    web_contents->CopyToFindPboard();
+}
+
+void RenderWidgetHostViewMac::OnNSViewPaste() {
+  if (auto* delegate = GetFocusedRenderWidgetHostDelegate()) {
+    delegate->Paste();
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewPasteAndMatchStyle() {
+  WebContents* web_contents = GetWebContents();
+  if (web_contents)
+    web_contents->PasteAndMatchStyle();
+}
+
+void RenderWidgetHostViewMac::OnNSViewSelectAll() {
+  if (auto* delegate = GetFocusedRenderWidgetHostDelegate()) {
+    delegate->SelectAll();
+  }
+}
+
+void RenderWidgetHostViewMac::OnNSViewSyncIsSpeaking(bool* is_speaking) {
+  *is_speaking = ui::TextServicesContextMenu::IsSpeaking();
+}
+
+void RenderWidgetHostViewMac::OnNSViewSpeakSelection() {
+  RenderWidgetHostView* target = this;
+  WebContents* web_contents = GetWebContents();
+  if (web_contents) {
+    content::BrowserPluginGuestManager* guest_manager =
+        web_contents->GetBrowserContext()->GetGuestManager();
+    if (guest_manager) {
+      content::WebContents* guest =
+          guest_manager->GetFullPageGuest(web_contents);
+      if (guest) {
+        target = guest->GetRenderWidgetHostView();
+      }
+    }
+  }
+  target->SpeakSelection();
+}
+
+void RenderWidgetHostViewMac::OnNSViewStopSpeaking() {
+  ui::TextServicesContextMenu::StopSpeaking();
+}
+
+void RenderWidgetHostViewMac::OnGotStringForDictionaryOverlay(
+    int32_t target_widget_process_id,
+    int32_t target_widget_routing_id,
+    const mac::AttributedStringCoder::EncodedString& encoded_string,
+    gfx::Point baseline_point) {
+  if (encoded_string.string().empty()) {
+    // The PDF plugin does not support getting the attributed string at point.
+    // Until it does, use NSPerformService(), which opens Dictionary.app.
+    // TODO(shuchen): Support GetStringAtPoint() & GetStringFromRange() for PDF.
+    // https://crbug.com/152438
+    // This often just opens a blank dictionary, not the definition of |string|.
+    // https://crbug.com/830047
+    // This path will be taken, inappropriately, when a lookup gesture was
+    // performed at a location that doesn't have text, but some text is
+    // selected.
+    // https://crbug.com/830906
+    if (auto* selection = GetTextSelection()) {
+      const base::string16& selected_text = selection->selected_text();
+      NSString* ns_selected_text = base::SysUTF16ToNSString(selected_text);
+      if ([ns_selected_text length] == 0)
+        return;
+      scoped_refptr<ui::UniquePasteboard> pasteboard = new ui::UniquePasteboard;
+      NSArray* types = [NSArray arrayWithObject:NSStringPboardType];
+      [pasteboard->get() declareTypes:types owner:nil];
+      if ([pasteboard->get() setString:ns_selected_text
+                               forType:NSStringPboardType]) {
+        NSPerformService(@"Look Up in Dictionary", pasteboard->get());
+      }
+    }
+  } else {
+    // By the time we get here |widget_host| might have been destroyed.
+    // https://crbug.com/737032
+    auto* widget_host = content::RenderWidgetHost::FromID(
+        target_widget_process_id, target_widget_routing_id);
+    if (widget_host) {
+      if (auto* rwhv = widget_host->GetView())
+        baseline_point = rwhv->TransformPointToRootCoordSpace(baseline_point);
+    }
+    if (ns_view_bridge_)
+      ns_view_bridge_->ShowDictionaryOverlay(encoded_string, baseline_point);
   }
 }
 

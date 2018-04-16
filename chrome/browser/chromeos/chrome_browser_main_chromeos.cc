@@ -82,10 +82,10 @@
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/power/freezer_cgroup_process_manager.h"
 #include "chrome/browser/chromeos/power/idle_action_warning_observer.h"
+#include "chrome/browser/chromeos/power/ml/adaptive_screen_brightness_manager.h"
 #include "chrome/browser/chromeos/power/ml/user_activity_controller.h"
 #include "chrome/browser/chromeos/power/power_data_collector.h"
 #include "chrome/browser/chromeos/power/power_metrics_reporter.h"
-#include "chrome/browser/chromeos/power/power_prefs.h"
 #include "chrome/browser/chromeos/power/renderer_freezer.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/resource_reporter/resource_reporter.h"
@@ -327,8 +327,11 @@ class DBusServices {
         DBusThreadManager::Get()->GetSystemBus(),
         chromeos::DBusThreadManager::Get()->IsUsingFakes());
 
-    PowerPolicyController::Initialize(
-        DBusThreadManager::Get()->GetPowerManagerClient());
+    if (GetAshConfig() != ash::Config::MASH) {
+      // In Mash, power policy is sent to powerd by ash.
+      PowerPolicyController::Initialize(
+          DBusThreadManager::Get()->GetPowerManagerClient());
+    }
 
     CrosDBusService::ServiceProviderList service_providers;
     CrosDBusService::ServiceProviderList display_service_providers;
@@ -339,18 +342,21 @@ class DBusServices {
           std::make_unique<DisplayPowerServiceProvider>(
               std::make_unique<ChromeDisplayPowerServiceProviderDelegate>()));
     }
-    // TODO(teravest): Remove this provider once all callers are using
-    // |liveness_service_| instead: http://crbug.com/644322
+    // TODO(derat): Remove this provider once all callers are using
+    // |liveness_service_| instead: https://crbug.com/644322
     service_providers.push_back(
         std::make_unique<LivenessServiceProvider>(kLibCrosServiceInterface));
-    service_providers.push_back(std::make_unique<ScreenLockServiceProvider>());
+    // TODO(derat): Remove this provider once session_manager is using
+    // |screen_lock_service_| instead: https://crbug.com/827680
+    service_providers.push_back(std::make_unique<ScreenLockServiceProvider>(
+        kLibCrosServiceInterface, kLockScreen));
 
     display_service_providers.push_back(
         std::make_unique<ConsoleServiceProvider>(
             &console_service_provider_delegate_));
 
-    // TODO(teravest): Remove this provider once all callers are using
-    // |kiosk_info_service_| instead: http://crbug.com/703229
+    // TODO(derat): Remove this provider once all callers are using
+    // |kiosk_info_service_| instead: https://crbug.com/703229
     service_providers.push_back(std::make_unique<KioskInfoService>(
         kLibCrosServiceInterface, kGetKioskAppRequiredPlatforVersion));
     cros_dbus_service_ = CrosDBusService::Create(
@@ -380,6 +386,13 @@ class DBusServices {
         CrosDBusService::CreateServiceProviderList(
             std::make_unique<LivenessServiceProvider>(
                 kLivenessServiceInterface)));
+
+    screen_lock_service_ = CrosDBusService::Create(
+        kScreenLockServiceName, dbus::ObjectPath(kScreenLockServicePath),
+        CrosDBusService::CreateServiceProviderList(
+            std::make_unique<ScreenLockServiceProvider>(
+                kScreenLockServiceInterface,
+                kScreenLockServiceShowLockScreenMethod)));
 
     virtual_file_request_service_ = CrosDBusService::Create(
         kVirtualFileRequestServiceName,
@@ -457,7 +470,8 @@ class DBusServices {
     finch_features_service_.reset();
     vm_applications_service_.reset();
     PowerDataCollector::Shutdown();
-    PowerPolicyController::Shutdown();
+    if (GetAshConfig() != ash::Config::MASH)
+      PowerPolicyController::Shutdown();
     device::BluetoothAdapterFactory::Shutdown();
     bluez::BluezDBusManager::Shutdown();
   }
@@ -479,6 +493,7 @@ class DBusServices {
   std::unique_ptr<CrosDBusService> proxy_resolution_service_;
   std::unique_ptr<CrosDBusService> kiosk_info_service_;
   std::unique_ptr<CrosDBusService> liveness_service_;
+  std::unique_ptr<CrosDBusService> screen_lock_service_;
   std::unique_ptr<CrosDBusService> virtual_file_request_service_;
   std::unique_ptr<CrosDBusService> component_updater_service_;
   std::unique_ptr<CrosDBusService> finch_features_service_;
@@ -807,10 +822,6 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
     WizardController::SetZeroDelays();
   }
 
-  power_prefs_ = std::make_unique<PowerPrefs>(
-      PowerPolicyController::Get(),
-      DBusThreadManager::Get()->GetPowerManagerClient());
-
   arc_kiosk_app_manager_.reset(new ArcKioskAppManager());
 
   // On Chrome OS, Chrome does not exit when all browser windows are closed.
@@ -1062,6 +1073,12 @@ void ChromeBrowserMainPartsChromeos::PostBrowserStart() {
   // fetch of the initial CrosSettings DeviceRebootOnShutdown policy.
   shutdown_policy_forwarder_ = std::make_unique<ShutdownPolicyForwarder>();
 
+  if (base::FeatureList::IsEnabled(
+          features::kAdaptiveScreenBrightnessLogging)) {
+    adaptive_screen_brightness_manager_ =
+        power::ml::AdaptiveScreenBrightnessManager::CreateInstance();
+  }
+
   if (base::FeatureList::IsEnabled(features::kUserActivityEventLogging)) {
     user_activity_controller_ =
         std::make_unique<power::ml::UserActivityController>();
@@ -1116,7 +1133,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // DBusThreadManager is shut down.
   network_pref_state_observer_.reset();
   extension_volume_observer_.reset();
-  power_prefs_.reset();
   power_metrics_reporter_.reset();
   renderer_freezer_.reset();
   wake_on_wifi_manager_.reset();
@@ -1125,6 +1141,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   keyboard_event_rewriters_.reset();
   low_disk_notification_.reset();
   user_activity_controller_.reset();
+  adaptive_screen_brightness_manager_.reset();
 
   // Detach D-Bus clients before DBusThreadManager is shut down.
   idle_action_warning_observer_.reset();

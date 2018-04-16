@@ -17,9 +17,18 @@
 #include "components/ntp_snippets/callbacks.h"
 #include "components/ntp_snippets/content_suggestion.h"
 #include "components/ntp_snippets/contextual/contextual_suggestions_fetcher.h"
+#include "components/ntp_snippets/contextual/contextual_suggestions_metrics_reporter.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 
+namespace contextual_suggestions {
+class ContextualContentSuggestionsServiceProxy;
+}
+
 namespace ntp_snippets {
+
+using contextual_suggestions::Cluster;
+using contextual_suggestions::FetchClustersCallback;
+using contextual_suggestions::ReportFetchMetricsCallback;
 
 class CachedImageFetcher;
 class RemoteSuggestionsDatabase;
@@ -28,68 +37,41 @@ class RemoteSuggestionsDatabase;
 // for contextual suggestion, using caching.
 class ContextualContentSuggestionsService : public KeyedService {
  public:
-  // A structure representing a suggestion cluster.
-  struct Cluster {
-   public:
-    Cluster();
-    Cluster(Cluster&& other);
-    ~Cluster();
-
-    std::string title;
-    std::vector<ContentSuggestion> suggestions;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(Cluster);
-  };
-
   ContextualContentSuggestionsService(
       std::unique_ptr<ContextualSuggestionsFetcher>
           contextual_suggestions_fetcher,
       std::unique_ptr<CachedImageFetcher> image_fetcher,
       std::unique_ptr<RemoteSuggestionsDatabase>
-          contextual_suggestions_database);
+          contextual_suggestions_database,
+      std::unique_ptr<
+          contextual_suggestions::ContextualSuggestionsMetricsReporterProvider>
+          metrics_reporter_provider);
   ~ContextualContentSuggestionsService() override;
 
-  using FetchContextualSuggestionsCallback =
-      base::OnceCallback<void(Status status_code,
-                              const GURL& url,
-                              std::vector<ContentSuggestion> suggestions)>;
-
-  using FetchContextualSuggestionClustersCallback =
-      base::OnceCallback<void(std::vector<Cluster> clusters)>;
-
   // Asynchronously fetches contextual suggestions for the given URL.
-  void FetchContextualSuggestions(const GURL& url,
-                                  FetchContextualSuggestionsCallback callback);
-
-  // Asynchronously fetches contextual suggestions for the given URL.
-  void FetchContextualSuggestionClusters(
+  virtual void FetchContextualSuggestionClusters(
       const GURL& url,
-      FetchContextualSuggestionClustersCallback callback);
+      FetchClustersCallback callback,
+      ReportFetchMetricsCallback metrics_callback);
+
+  // Fetches an image pointed to by |url| and internally caches it using
+  // |suggestion_id|. Asynchronous if cache or network is queried.
+  virtual void FetchContextualSuggestionImage(
+      const ContentSuggestion::ID& suggestion_id,
+      const GURL& url,
+      ImageFetchedCallback callback);
 
   // Fetches an image for a given contextual suggestion ID.
   // Asynchronous if cache or network is queried.
-  void FetchContextualSuggestionImage(
+  virtual void FetchContextualSuggestionImageLegacy(
       const ContentSuggestion::ID& suggestion_id,
       ImageFetchedCallback callback);
 
-  // Used to report events using various metrics (e.g. UMA, UKM).
-  // TODO(donnd): Change type of event ID, implement.
-  void ReportEvent(ukm::SourceId sourceId, int event_id);
+  std::unique_ptr<
+      contextual_suggestions::ContextualContentSuggestionsServiceProxy>
+  CreateProxy();
 
  private:
-  void DidFetchContextualSuggestions(
-      const GURL& url,
-      FetchContextualSuggestionsCallback callback,
-      Status status,
-      ContextualSuggestionsFetcher::OptionalSuggestions fetched_suggestions);
-
-  // Temporary function to wire new bridge to the old prototype.
-  void DidFetchContextualSuggestionsClusterWrapper(
-      FetchContextualSuggestionClustersCallback callback,
-      Status status,
-      ContextualSuggestionsFetcher::OptionalSuggestions fetched_suggestions);
-
   // Cache for images of contextual suggestions, needed by CachedImageFetcher.
   std::unique_ptr<RemoteSuggestionsDatabase> contextual_suggestions_database_;
 
@@ -97,6 +79,10 @@ class ContextualContentSuggestionsService : public KeyedService {
   std::unique_ptr<ContextualSuggestionsFetcher> contextual_suggestions_fetcher_;
 
   std::unique_ptr<CachedImageFetcher> image_fetcher_;
+
+  std::unique_ptr<
+      contextual_suggestions::ContextualSuggestionsMetricsReporterProvider>
+      metrics_reporter_provider_;
 
   // Look up by ContentSuggestion::ID::id_within_category() aka std::string to
   // get image URL.

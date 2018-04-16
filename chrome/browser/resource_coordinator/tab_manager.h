@@ -25,6 +25,7 @@
 #include "chrome/browser/resource_coordinator/lifecycle_unit_observer.h"
 #include "chrome/browser/resource_coordinator/lifecycle_unit_source_observer.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_observer.h"
+#include "chrome/browser/resource_coordinator/tab_load_tracker.h"
 #include "chrome/browser/sessions/session_restore_observer.h"
 #include "chrome/browser/ui/browser_tab_strip_tracker.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
@@ -97,9 +98,6 @@ class TabManager : public LifecycleUnitObserver,
   // vector after a LifecycleUnit has been destroyed.
   LifecycleUnitVector GetSortedLifecycleUnits();
 
-  // Returns true if |contents| is currently discarded.
-  bool IsTabDiscarded(content::WebContents* contents) const;
-
   // Discards a tab to free the memory occupied by its renderer. The tab still
   // exists in the tab-strip; clicking on it will reload it. If the |reason| is
   // urgent, an aggressive fast-kill will be attempted if the sudden termination
@@ -136,13 +134,6 @@ class TabManager : public LifecycleUnitObserver,
   // https://crbug.com/775644
   void AddObserver(TabLifecycleObserver* observer);
   void RemoveObserver(TabLifecycleObserver* observer);
-
-  // Returns the auto-discardable state of the tab. When true, the tab is
-  // eligible to be automatically discarded when critical memory pressure hits,
-  // otherwise the tab is ignored and will never be automatically discarded.
-  // Note that this property doesn't block the discarding of the tab via other
-  // methods (about:discards for instance).
-  bool IsTabAutoDiscardable(content::WebContents* contents) const;
 
   // Sets/clears the auto-discardable state of the tab.
   void SetTabAutoDiscardableState(int32_t tab_id, bool state);
@@ -205,10 +196,10 @@ class TabManager : public LifecycleUnitObserver,
   // non-zero only during session restore.
   int restored_tab_count() const;
 
-  // Duration during which a tab cannot be automatically discarded after having
-  // been active.
-  static constexpr base::TimeDelta kDiscardProtectionTime =
-      base::TimeDelta::FromMinutes(10);
+  // Accessor for the tab load tracker. This lets interested external classes
+  // add themselves as observers.
+  TabLoadTracker& tab_load_tracker() { return tab_load_tracker_; }
+  const TabLoadTracker& tab_load_tracker() const { return tab_load_tracker_; }
 
  private:
   friend class TabManagerStatsCollectorTest;
@@ -263,6 +254,8 @@ class TabManager : public LifecycleUnitObserver,
   FRIEND_TEST_ALL_PREFIXES(TabManagerTest, IsTabRestoredInForeground);
   FRIEND_TEST_ALL_PREFIXES(TabManagerTest, EnablePageAlmostIdleSignal);
   FRIEND_TEST_ALL_PREFIXES(TabManagerTest, FreezeTab);
+  FRIEND_TEST_ALL_PREFIXES(TabManagerTest,
+                           TrackingNumberOfLoadedLifecycleUnits);
 
   // The time of the first purging after a renderer is backgrounded.
   // The initial value was chosen because most of users activate backgrounded
@@ -413,12 +406,17 @@ class TabManager : public LifecycleUnitObserver,
 
   // LifecycleUnitObserver:
   void OnLifecycleUnitDestroyed(LifecycleUnit* lifecycle_unit) override;
+  void OnLifecycleUnitStateChanged(LifecycleUnit* lifecycle_unit) override;
 
   // LifecycleUnitSourceObserver:
   void OnLifecycleUnitCreated(LifecycleUnit* lifecycle_unit) override;
 
   // LifecycleUnits managed by this.
   LifecycleUnitSet lifecycle_units_;
+
+  // Number of LifecycleUnits in |lifecycle_units_| that are State::LOADED. Used
+  // to determine threshold for proactive tab discarding experiments.
+  int num_loaded_lifecycle_units_ = 0;
 
   // Timer to periodically update the stats of the renderers.
   base::RepeatingTimer update_timer_;
@@ -471,6 +469,10 @@ class TabManager : public LifecycleUnitObserver,
   // Records UMAs for tab and system-related events and properties during
   // session restore.
   std::unique_ptr<TabManagerStatsCollector> stats_collector_;
+
+  // Tracks tab loads, taking into account PageAlmostIdle, NavigationThrottles
+  // and other complications.
+  TabLoadTracker tab_load_tracker_;
 
   // Weak pointer factory used for posting delayed tasks.
   base::WeakPtrFactory<TabManager> weak_ptr_factory_;

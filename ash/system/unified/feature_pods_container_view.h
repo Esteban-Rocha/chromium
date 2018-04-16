@@ -17,7 +17,7 @@ namespace ash {
 // horizontally placed.
 class ASH_EXPORT FeaturePodsContainerView : public views::View {
  public:
-  FeaturePodsContainerView();
+  explicit FeaturePodsContainerView(bool initially_expanded);
   ~FeaturePodsContainerView() override;
 
   // Change the expanded state. 0.0 if collapsed, and 1.0 if expanded.
@@ -31,18 +31,20 @@ class ASH_EXPORT FeaturePodsContainerView : public views::View {
   void Layout() override;
 
  private:
-  void LayoutExpanded();
-  void LayoutCollapsed();
   void UpdateChildVisibility();
 
-  // The last |expanded_amount| passed to SetExpandedAmount().
-  double expanded_amount_ = 1.0;
+  // Calculate the current position of the button from |visible_index| and
+  // |expanded_amount_|.
+  gfx::Point GetButtonPosition(int visible_index) const;
 
-  // True if the last state was expanded or collapsed. Changes when
-  // SetExpandedAmount is called with 0.0 or 1.0.
-  // TODO(tetsui): Remove this flag when the animation for this view is
-  // implemented.
-  bool expanded_ = true;
+  // Update |collapsed_state_padding_|.
+  void UpdateCollapsedSidePadding();
+
+  // The last |expanded_amount| passed to SetExpandedAmount().
+  double expanded_amount_;
+
+  // Horizontal side padding in dip for collapsed state.
+  int collapsed_side_padding_ = 0;
 
   bool changing_visibility_ = false;
 

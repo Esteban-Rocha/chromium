@@ -111,6 +111,13 @@ constexpr int kMaxPasswordTries = 3;
 constexpr base::TimeDelta kTouchLongPressTimeout =
     base::TimeDelta::FromMilliseconds(300);
 
+// Windows has native panning capabilities. No need to use our own.
+#if defined(OS_WIN)
+constexpr bool kViewerImplementedPanning = false;
+#else
+constexpr bool kViewerImplementedPanning = true;
+#endif
+
 // See Table 3.20 in
 // http://www.adobe.com/devnet/acrobat/pdfs/pdf_reference_1-7.pdf
 const uint32_t kPDFPermissionPrintLowQualityMask = 1 << 2;
@@ -1110,6 +1117,7 @@ void PDFiumEngine::ScrolledToXPosition(int position) {
   position_.set_x(position);
   CalculateVisiblePages();
   client_->DidScroll(pp::Point(old_x - position, 0));
+  OnSelectionPositionChanged();
 }
 
 void PDFiumEngine::ScrolledToYPosition(int position) {
@@ -1119,6 +1127,7 @@ void PDFiumEngine::ScrolledToYPosition(int position) {
   position_.set_y(position);
   CalculateVisiblePages();
   client_->DidScroll(pp::Point(0, old_y - position));
+  OnSelectionPositionChanged();
 }
 
 void PDFiumEngine::PrePaint() {
@@ -1550,7 +1559,13 @@ FPDF_DOCUMENT PDFiumEngine::CreateSinglePageRasterPdf(
   FPDF_RenderPageBitmap(bitmap, page_to_print->GetPrintPage(), page_rect.x(),
                         page_rect.y(), page_rect.width(), page_rect.height(),
                         print_settings.orientation,
-                        FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH);
+                        FPDF_PRINTING | FPDF_NO_CATCH);
+
+  // Draw the forms.
+  FPDF_FFLDraw(form_, bitmap, page_to_print->GetPrintPage(), page_rect.x(),
+               page_rect.y(), page_rect.width(), page_rect.height(),
+               print_settings.orientation,
+               FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH);
 
   unsigned char* bitmap_data =
       static_cast<unsigned char*>(FPDFBitmap_GetBuffer(bitmap));
@@ -1973,6 +1988,11 @@ bool PDFiumEngine::OnMiddleMouseDown(const pp::MouseInputEvent& event) {
   if (IsLinkArea(area))
     return true;
 
+  if (kViewerImplementedPanning) {
+    // Switch to hand cursor when panning.
+    client_->UpdateCursor(PP_CURSORTYPE_HAND);
+  }
+
   // Prevent middle mouse button from selecting texts.
   return false;
 }
@@ -2098,9 +2118,15 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
     }
   }
 
-  // Prevent middle mouse button from selecting texts.
-  if (event.GetButton() == PP_INPUTEVENT_MOUSEBUTTON_MIDDLE)
+  if (event.GetButton() == PP_INPUTEVENT_MOUSEBUTTON_MIDDLE) {
+    if (kViewerImplementedPanning) {
+      // Update the cursor when panning stops.
+      client_->UpdateCursor(DetermineCursorType(area, form_type));
+    }
+
+    // Prevent middle mouse button from selecting texts.
     return false;
+  }
 
   if (page_index != -1) {
     double page_x;
@@ -2153,7 +2179,7 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
       SetFormSelectedText(form_, pages_[last_page_mouse_down_]->GetPage());
     }
 
-    if (mouse_middle_button_down_) {
+    if (kViewerImplementedPanning && mouse_middle_button_down_) {
       // Subtract (origin - destination) so delta is already the delta for
       // moving the page, rather than the delta the mouse moved.
       // GetMovement() does not work here, as small mouse movements are
@@ -2182,7 +2208,7 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
 
 PP_CursorType_Dev PDFiumEngine::DetermineCursorType(PDFiumPage::Area area,
                                                     int form_type) const {
-  if (mouse_middle_button_down_) {
+  if (kViewerImplementedPanning && mouse_middle_button_down_) {
     return PP_CURSORTYPE_HAND;
   }
 
@@ -3746,8 +3772,10 @@ PDFiumEngine::SelectionChangeInvalidator::~SelectionChangeInvalidator() {
     }
   }
 
-  if (selection_changed)
-    engine_->OnSelectionChanged();
+  if (selection_changed) {
+    engine_->OnSelectionTextChanged();
+    engine_->OnSelectionPositionChanged();
+  }
 }
 
 std::vector<pp::Rect>
@@ -3997,10 +4025,12 @@ void PDFiumEngine::GetRegion(const pp::Point& location,
   *region = buffer;
 }
 
-void PDFiumEngine::OnSelectionChanged() {
+void PDFiumEngine::OnSelectionTextChanged() {
   DCHECK(!in_form_text_area_);
   pp::PDF::SetSelectedText(GetPluginInstance(), GetSelectedText().c_str());
+}
 
+void PDFiumEngine::OnSelectionPositionChanged() {
   // We need to determine the top-left and bottom-right points of the selection
   // in order to report those to the embedder. This code assumes that the
   // selection list is out of order.
@@ -4599,7 +4629,8 @@ PDFEngineExports::RenderingSettings::RenderingSettings(int dpi_x,
                                                        bool stretch_to_bounds,
                                                        bool keep_aspect_ratio,
                                                        bool center_in_bounds,
-                                                       bool autorotate)
+                                                       bool autorotate,
+                                                       bool use_color)
     : dpi_x(dpi_x),
       dpi_y(dpi_y),
       bounds(bounds),
@@ -4607,7 +4638,8 @@ PDFEngineExports::RenderingSettings::RenderingSettings(int dpi_x,
       stretch_to_bounds(stretch_to_bounds),
       keep_aspect_ratio(keep_aspect_ratio),
       center_in_bounds(center_in_bounds),
-      autorotate(autorotate) {}
+      autorotate(autorotate),
+      use_color(use_color) {}
 
 PDFEngineExports::RenderingSettings::RenderingSettings(
     const RenderingSettings& that) = default;
@@ -4648,6 +4680,10 @@ bool PDFiumEngineExports::RenderPDFPageToDC(const void* pdf_buffer,
                     settings.bounds.x() + settings.bounds.width(),
                     settings.bounds.y() + settings.bounds.height());
 
+  int flags = FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH;
+  if (!settings.use_color)
+    flags |= FPDF_GRAYSCALE;
+
   // A "temporary" hack. Some PDFs seems to render very slowly if
   // FPDF_RenderPage() is directly used on a printer DC. I suspect it is
   // because of the code to talk Postscript directly to the printer if
@@ -4661,7 +4697,7 @@ bool PDFiumEngineExports::RenderPDFPageToDC(const void* pdf_buffer,
     // Clear the bitmap
     FPDFBitmap_FillRect(bitmap, 0, 0, dest.width(), dest.height(), 0xFFFFFFFF);
     FPDF_RenderPageBitmap(bitmap, page, 0, 0, dest.width(), dest.height(),
-                          rotate, FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH);
+                          rotate, flags);
     int stride = FPDFBitmap_GetStride(bitmap);
     BITMAPINFO bmi;
     memset(&bmi, 0, sizeof(bmi));
@@ -4678,7 +4714,7 @@ bool PDFiumEngineExports::RenderPDFPageToDC(const void* pdf_buffer,
     FPDFBitmap_Destroy(bitmap);
   } else {
     FPDF_RenderPage(dc, page, dest.x(), dest.y(), dest.width(), dest.height(),
-                    rotate, FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH);
+                    rotate, flags);
   }
   RestoreDC(dc, save_state);
   FPDF_ClosePage(page);
@@ -4725,9 +4761,13 @@ bool PDFiumEngineExports::RenderPDFPageToBitmap(
                       settings.bounds.height(), 0xFFFFFFFF);
   // Shift top-left corner of bounds to (0, 0) if it's not there.
   dest.set_point(dest.point() - settings.bounds.point());
+
+  int flags = FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH;
+  if (!settings.use_color)
+    flags |= FPDF_GRAYSCALE;
+
   FPDF_RenderPageBitmap(bitmap, page, dest.x(), dest.y(), dest.width(),
-                        dest.height(), rotate,
-                        FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH);
+                        dest.height(), rotate, flags);
   FPDFBitmap_Destroy(bitmap);
   FPDF_ClosePage(page);
   return true;

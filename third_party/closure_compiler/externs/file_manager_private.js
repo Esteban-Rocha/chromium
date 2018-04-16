@@ -365,6 +365,20 @@ chrome.fileManagerPrivate.getEntryProperties = function(entries, names,
 chrome.fileManagerPrivate.pinDriveFile = function(entry, pin, callback) {};
 
 /**
+ * If |entry| is a Drive file, ensures the file is downloaded to the cache.
+ * Otherwise, finishes immediately in success. For example, when the file is
+ * under Downloads, MTP, removeable media, or provided by extensions for
+ * other cloud storage services than Google Drive, this does nothing.
+ * This is a workaround to avoid intermittent and duplicated downloading of
+ * a Drive file by current implementation of Drive integration when an
+ * extension reads a file sequentially but intermittently.
+ * @param {!Entry} entry A regular file entry to be read.
+ * @param {function()} callback Callback called after having the file in cache.
+ *     runtime.lastError will be set if there was an error.
+ */
+chrome.fileManagerPrivate.ensureFileDownloaded = function(entry, callback) {};
+
+/**
  * Resolves file entries in the isolated file system and returns corresponding
  * entries in the external file system mounted to Chrome OS file manager
  * backend. If resolving entry fails, the entry will be just ignored and the
@@ -612,6 +626,12 @@ chrome.fileManagerPrivate.getProfiles = function(callback) {};
  * @param {string} type
  */
 chrome.fileManagerPrivate.openInspector = function(type) {};
+
+/**
+ * Opens settings sub page. |sub_page| Name of a sub page.
+ * @param {string} sub_page
+ */
+chrome.fileManagerPrivate.openSettingsSubpage = function(sub_page) {};
 
 /**
  * Computes an MD5 checksum for the given file.

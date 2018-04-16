@@ -42,6 +42,7 @@ class LoginAuthUserView;
 class LoginBigUserView;
 class LoginBubble;
 class LoginDetachableBaseModel;
+class LoginExpandedPublicAccountView;
 class LoginPublicAccountUserView;
 class LoginUserView;
 class NoteActionLaunchButton;
@@ -79,9 +80,19 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
     LoginBubble* auth_error_bubble() const;
     LoginBubble* detachable_base_error_bubble() const;
     views::View* dev_channel_info() const;
+    LoginExpandedPublicAccountView* expanded_view() const;
+    views::View* main_view() const;
 
    private:
     LockContentsView* const view_;
+  };
+
+  enum class DisplayStyle {
+    // Display all the user views, top header view in LockContentsView.
+    kAll,
+    // Display only the public account expanded view, other views in
+    // LockContentsView are hidden.
+    kExclusivePublicAccountExpandedView,
   };
 
   LockContentsView(
@@ -98,6 +109,8 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
 
   // LoginScreenController::Observer:
+  void SetAvatarForUser(const AccountId& account_id,
+                        const mojom::UserAvatarPtr& avatar) override;
   void OnFocusLeavingLockScreenApps(bool reverse) override;
 
   // LoginDataDispatcher::Observer:
@@ -182,6 +195,9 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
   // Lay out the top header. This is called when the children of the top header
   // change contents or visibility.
   void LayoutTopHeader();
+
+  // Lay out the expanded public session view.
+  void LayoutPublicSessionView();
 
   // Creates a new view with |landscape| and |portrait| preferred sizes.
   // |landscape| and |portrait| specify the width of the preferred size; the
@@ -282,6 +298,9 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
                              LoginAuthUserView* opt_to_hide,
                              bool animate);
 
+  // Change the visibility of child views based on the |style|.
+  void SetDisplayStyle(DisplayStyle style);
+
   std::vector<UserState> users_;
 
   LoginDataDispatcher* const data_dispatcher_;  // Unowned.
@@ -331,6 +350,9 @@ class ASH_EXPORT LockContentsView : public NonAccessibleView,
   // Whether a lock screen app is currently active (i.e. lock screen note action
   // state is reported as kActive by the data dispatcher).
   bool lock_screen_apps_active_ = false;
+
+  // Expanded view for public account user to select language and keyboard.
+  LoginExpandedPublicAccountView* expanded_view_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(LockContentsView);
 };

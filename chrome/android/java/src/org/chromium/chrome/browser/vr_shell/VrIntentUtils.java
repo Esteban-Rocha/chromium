@@ -8,6 +8,8 @@ import android.app.Activity;
 import android.app.ActivityOptions;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
 
 import org.chromium.base.VisibleForTesting;
@@ -55,13 +57,6 @@ public class VrIntentUtils {
          * @return Whether the intent should be allowed to auto-present.
          */
         boolean isTrustedAutopresentIntent(Intent intent);
-
-        /**
-         * Determines whether the installed version of Chrome can handle VR intents.
-         * @param context The context for the caller.
-         * @return Whether VR intents can be handled.
-         */
-        boolean canHandleVrIntent(Context context);
     }
 
     private static VrIntentHandler createInternalVrIntentHandler() {
@@ -81,16 +76,6 @@ public class VrIntentUtils {
                 // we're sure that most clients have the change.
                 return isTrustedDaydreamIntent(intent)
                         && IntentUtils.safeGetBooleanExtra(intent, AUTOPRESENT_WEVBVR_EXTRA, false);
-            }
-
-            @Override
-            public boolean canHandleVrIntent(Context context) {
-                VrClassesWrapper wrapper = VrShellDelegate.getVrClassesWrapper();
-                if (wrapper == null) return false;
-                int supportLevel =
-                        VrShellDelegate.getVrSupportLevel(wrapper.createVrDaydreamApi(context),
-                                wrapper.createVrCoreVersionChecker(), null);
-                return supportLevel == VrSupportLevel.VR_DAYDREAM;
             }
         };
     }
@@ -134,13 +119,6 @@ public class VrIntentUtils {
         if (intent == null) return false;
         return IntentHandler.getUrlFromIntent(intent) != null
                 && getHandlerInstance().isTrustedDaydreamIntent(intent);
-    }
-
-    /**
-     * @return whether the installed version of Chrome can handle VR intents.
-     */
-    public static boolean canHandleVrIntent(Context context) {
-        return getHandlerInstance().canHandleVrIntent(context);
     }
 
     /**
@@ -192,12 +170,38 @@ public class VrIntentUtils {
      * @param activity The activity context to launch the intent from.
      */
     public static void launchInVr(Intent intent, Activity activity) {
+        VrShellDelegate.getVrDaydreamApi().launchInVr(intent);
+    }
+
+    /**
+     * @param intent The intent to possibly forward to the VR launcher.
+     * @return whether the intent was forwarded to the VR launcher.
+     */
+    public static boolean maybeForwardToVrLauncher(Intent intent, Activity activity) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) return false;
+        if (wouldUse2DInVrRenderingMode(activity) && VrShellDelegate.deviceSupportsVrLaunches()) {
+            Intent vrIntent = new Intent(intent);
+            vrIntent.setComponent(null);
+            vrIntent.setPackage(activity.getPackageName());
+            vrIntent.addCategory(VrIntentUtils.DAYDREAM_CATEGORY);
+            if (vrIntent.resolveActivity(activity.getPackageManager()) != null) {
+                VrIntentUtils.launchInVr(vrIntent, activity);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param activity A context for reading the current device configuration.
+     * @return Whether launching a non-VR Activity would trigger the 2D-in-VR rendering path.
+     */
+    public static boolean wouldUse2DInVrRenderingMode(Activity activity) {
+        Configuration config = activity.getResources().getConfiguration();
+        int uiMode = config.uiMode & Configuration.UI_MODE_TYPE_MASK;
+        if (uiMode != Configuration.UI_MODE_TYPE_VR_HEADSET) return false;
         VrClassesWrapper wrapper = VrShellDelegate.getVrClassesWrapper();
-        if (wrapper == null) return;
-        VrDaydreamApi api = wrapper.createVrDaydreamApi(activity);
-        if (api == null) return;
-        api.launchInVr(intent);
-        api.close();
+        return wrapper != null && wrapper.supports2dInVr();
     }
 
     /**
@@ -210,7 +214,7 @@ public class VrIntentUtils {
     /**
      * Removes VR specific extras from the given intent to make it a non-VR intent.
      */
-    /* package */ static void removeVrExtras(Intent intent) {
+    public static void removeVrExtras(Intent intent) {
         if (intent == null) return;
         intent.removeCategory(DAYDREAM_CATEGORY);
         assert !isVrIntent(intent);

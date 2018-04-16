@@ -48,6 +48,7 @@ class PrescientNetworkingDispatcher;
 #if BUILDFLAG(ENABLE_SPELLCHECK)
 class SpellCheck;
 #endif
+class ThreadProfiler;
 
 namespace content {
 class BrowserPluginDelegate;
@@ -138,6 +139,10 @@ class ChromeContentRendererClient
       std::string* error_html,
       base::string16* error_description) override;
 
+  void GetErrorDescription(const blink::WebURLRequest& failed_request,
+                           const blink::WebURLError& error,
+                           base::string16* error_description) override;
+
   void DeferMediaLoad(content::RenderFrame* render_frame,
                       bool has_played_media_before,
                       const base::Closure& closure) override;
@@ -173,6 +178,8 @@ class ChromeContentRendererClient
   bool IsOriginIsolatedPepperPlugin(const base::FilePath& plugin_path) override;
   std::unique_ptr<blink::WebSocketHandshakeThrottle>
   CreateWebSocketHandshakeThrottle() override;
+  std::unique_ptr<content::WebSocketHandshakeThrottleProvider>
+  CreateWebSocketHandshakeThrottleProvider() override;
   std::unique_ptr<blink::WebSpeechSynthesizer> OverrideSpeechSynthesizer(
       blink::WebSpeechSynthesizerClient* client) override;
   bool ShouldReportDetailedMessageForSource(
@@ -279,6 +286,10 @@ class ChromeContentRendererClient
                                 std::string* error_html,
                                 base::string16* error_description);
 
+  void GetErrorDescriptionInternal(const blink::WebURLRequest& failed_request,
+                                   const error_page::Error& error,
+                                   base::string16* error_description);
+
   // Time at which this object was created. This is very close to the time at
   // which the RendererMain function was entered.
   base::TimeTicks main_entry_time_;
@@ -294,6 +305,9 @@ class ChromeContentRendererClient
 #endif
 
   service_manager::Connector* GetConnector();
+
+  // Used to profile main thread.
+  std::unique_ptr<ThreadProfiler> main_thread_profiler_;
 
   rappor::mojom::RapporRecorderPtr rappor_recorder_;
 

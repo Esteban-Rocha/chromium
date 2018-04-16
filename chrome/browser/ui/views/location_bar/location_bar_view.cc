@@ -163,8 +163,7 @@ LocationBarView::LocationBarView(Browser* browser,
       browser_(browser),
       delegate_(delegate),
       is_popup_mode_(is_popup_mode),
-      tint_(GetTintForProfile(profile)),
-      popup_observer_(this) {
+      tint_(GetTintForProfile(profile)) {
   edit_bookmarks_enabled_.Init(
       bookmarks::prefs::kEditBookmarksEnabled, profile->GetPrefs(),
       base::Bind(&LocationBarView::UpdateWithoutTabRestore,
@@ -195,8 +194,6 @@ void LocationBarView::Init() {
   const gfx::FontList& font_list = views::style::GetFont(
       CONTEXT_OMNIBOX_PRIMARY, views::style::STYLE_PRIMARY);
 
-  const SkColor background_color =
-      GetColor(OmniboxPart::LOCATION_BAR_BACKGROUND);
   location_icon_view_ = new LocationIconView(font_list, this);
   location_icon_view_->set_drag_controller(this);
   AddChildView(location_icon_view_);
@@ -209,7 +206,6 @@ void LocationBarView::Init() {
   AddChildView(omnibox_view_);
 
   RefreshBackground();
-  popup_observer_.Add(omnibox_view_->model()->popup_model());
 
   // Initialize the inline autocomplete view which is visible only when IME is
   // turned on.  Use the same font with the omnibox and highlighted background.
@@ -227,11 +223,7 @@ void LocationBarView::Init() {
   selected_keyword_view_ = new SelectedKeywordView(this, font_list, profile());
   AddChildView(selected_keyword_view_);
 
-  const gfx::FontList& bubble_font_list = views::style::GetFont(
-      CONTEXT_OMNIBOX_DECORATION, views::style::STYLE_PRIMARY);
-  keyword_hint_view_ = new KeywordHintView(
-      this, profile(), font_list, bubble_font_list,
-      GetColor(OmniboxPart::LOCATION_BAR_TEXT_DIMMED), background_color);
+  keyword_hint_view_ = new KeywordHintView(this, profile(), tint());
   AddChildView(keyword_hint_view_);
 
   std::vector<std::unique_ptr<ContentSettingImageModel>> models =
@@ -346,15 +338,6 @@ gfx::Point LocationBarView::GetOmniboxViewOrigin() const {
   return origin;
 }
 
-int LocationBarView::GetTextInsetForNormalInputStart() const {
-  // Note that this does not need to account for the internal Textfield border,
-  // since that's subtracted during layout.
-  return GetHorizontalEdgeThickness() +
-         GetLayoutConstant(LOCATION_BAR_ICON_SIZE) +
-         2 * GetLayoutConstant(LOCATION_BAR_ICON_INTERIOR_PADDING) +
-         GetLayoutConstant(LOCATION_BAR_ELEMENT_PADDING);
-}
-
 void LocationBarView::SetImeInlineAutocompletion(const base::string16& text) {
   ime_inline_autocomplete_view_->SetText(text);
   ime_inline_autocomplete_view_->SetVisible(!text.empty());
@@ -367,14 +350,6 @@ void LocationBarView::SetShowFocusRect(bool show) {
 
 void LocationBarView::SelectAll() {
   omnibox_view_->SelectAll(true);
-}
-
-gfx::Point LocationBarView::GetInfoBarAnchorPoint() const {
-  const views::ImageView* image = location_icon_view_->GetImageView();
-  const gfx::Rect image_bounds(image->GetImageBounds());
-  gfx::Point point(image_bounds.CenterPoint().x(), image_bounds.bottom());
-  ConvertPointToTarget(image, this, &point);
-  return point;
 }
 
 views::View* LocationBarView::GetSecurityBubbleAnchorView() {
@@ -573,7 +548,8 @@ void LocationBarView::Layout() {
     trailing_decorations.AddDecoration(vertical_padding, location_height, true,
                                        0, item_padding, item_padding,
                                        keyword_hint_view_);
-    keyword_hint_view_->SetKeyword(keyword);
+    keyword_hint_view_->SetKeyword(keyword, GetOmniboxPopupView()->IsOpen(),
+                                   tint());
   }
 
   add_trailing_decoration(clear_all_button_);
@@ -597,6 +573,11 @@ void LocationBarView::Layout() {
                             location_height);
   leading_decorations.LayoutPass3(&location_bounds, &available_width);
   trailing_decorations.LayoutPass3(&location_bounds, &available_width);
+
+  // |omnibox_view_| has an opaque background, so ensure it doesn't paint atop
+  // the rounded ends.
+  location_bounds.Intersect(GetLocalBoundsWithoutEndcaps());
+  entry_width = location_bounds.width();
 
   // Layout |ime_inline_autocomplete_view_| next to the user input.
   if (ime_inline_autocomplete_view_->visible()) {
@@ -767,6 +748,18 @@ int LocationBarView::IncrementalMinimumWidth(views::View* view) const {
 SkColor LocationBarView::GetBorderColor() const {
   return GetThemeProvider()->GetColor(
       ThemeProperties::COLOR_LOCATION_BAR_BORDER);
+}
+
+gfx::Rect LocationBarView::GetLocalBoundsWithoutEndcaps() const {
+  const float device_scale_factor = layer()->device_scale_factor();
+  const int border_radius =
+      BackgroundWith1PxBorder::IsRounded()
+          ? height() / 2
+          : gfx::ToCeiledInt(BackgroundWith1PxBorder::kLegacyBorderRadiusPx /
+                             device_scale_factor);
+  gfx::Rect bounds_without_endcaps(GetLocalBounds());
+  bounds_without_endcaps.Inset(border_radius, 0);
+  return bounds_without_endcaps;
 }
 
 int LocationBarView::GetHorizontalEdgeThickness() const {
@@ -1014,13 +1007,16 @@ void LocationBarView::UpdateZoomViewVisibility() {
 void LocationBarView::UpdateLocationBarVisibility(bool visible, bool animate) {
   if (!animate) {
     size_animation_.Reset(visible ? 1 : 0);
+    SetVisible(visible);
     return;
   }
 
-  if (visible)
+  if (visible) {
+    SetVisible(true);
     size_animation_.Show();
-  else
+  } else {
     size_animation_.Hide();
+  }
 }
 
 void LocationBarView::SaveStateToContents(WebContents* contents) {
@@ -1141,6 +1137,8 @@ void LocationBarView::AnimationProgressed(const gfx::Animation* animation) {
 
 void LocationBarView::AnimationEnded(const gfx::Animation* animation) {
   AnimationProgressed(animation);
+  if (animation->GetCurrentValue() == 0)
+    SetVisible(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1156,6 +1154,10 @@ void LocationBarView::OnChanged() {
   SchedulePaint();
 }
 
+void LocationBarView::OnPopupVisibilityChanged() {
+  RefreshBackground();
+}
+
 const ToolbarModel* LocationBarView::GetToolbarModel() const {
   return delegate_->GetToolbarModel();
 }
@@ -1165,13 +1167,6 @@ const ToolbarModel* LocationBarView::GetToolbarModel() const {
 
 void LocationBarView::SetFocusAndSelection(bool select_all) {
   FocusLocation(select_all);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// LocationBarView, private OmniboxPopupModelObserver implementation:
-
-void LocationBarView::OnOmniboxPopupShownOrHidden() {
-  RefreshBackground();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

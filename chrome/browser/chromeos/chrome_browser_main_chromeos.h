@@ -37,7 +37,6 @@ class LowDiskNotification;
 class NetworkPrefStateObserver;
 class NetworkThrottlingObserver;
 class PowerMetricsReporter;
-class PowerPrefs;
 class RendererFreezer;
 class ShutdownPolicyForwarder;
 class WakeOnWifiManager;
@@ -60,6 +59,7 @@ class SystemTokenCertDBInitializer;
 
 namespace power {
 namespace ml {
+class AdaptiveScreenBrightnessManager;
 class UserActivityController;
 }  // namespace ml
 }  // namespace power
@@ -95,7 +95,6 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   std::unique_ptr<default_app_order::ExternalLoader> app_order_loader_;
   std::unique_ptr<NetworkPrefStateObserver> network_pref_state_observer_;
   std::unique_ptr<ExtensionVolumeObserver> extension_volume_observer_;
-  std::unique_ptr<PowerPrefs> power_prefs_;
   std::unique_ptr<IdleActionWarningObserver> idle_action_warning_observer_;
   std::unique_ptr<RendererFreezer> renderer_freezer_;
   std::unique_ptr<PowerMetricsReporter> power_metrics_reporter_;
@@ -136,6 +135,9 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   // default (as it will be instantiated elsewhere). For now it's necessary to
   // send notifier settings information to Ash.
   std::unique_ptr<NotificationPlatformBridge> notification_client_;
+
+  std::unique_ptr<power::ml::AdaptiveScreenBrightnessManager>
+      adaptive_screen_brightness_manager_;
 
   std::unique_ptr<power::ml::UserActivityController> user_activity_controller_;
 

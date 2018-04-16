@@ -114,6 +114,9 @@ class CustomFrameView : public ash::CustomFrameViewAsh {
       CustomFrameViewAsh::SetShouldPaintHeader(paint);
       return;
     }
+    // TODO(oshima): The caption area will be unknown
+    // if a client draw a caption. (It may not even be
+    // rectangular). Remove mask.
     aura::Window* window = GetWidget()->GetNativeWindow();
     ui::Layer* layer = window->layer();
     if (paint) {
@@ -516,7 +519,8 @@ void ShellSurfaceBase::SetApplicationId(aura::Window* window,
 }
 
 // static
-const std::string* ShellSurfaceBase::GetApplicationId(aura::Window* window) {
+const std::string* ShellSurfaceBase::GetApplicationId(
+    const aura::Window* window) {
   return window->GetProperty(kApplicationIdKey);
 }
 
@@ -729,22 +733,41 @@ bool ShellSurfaceBase::IsInputEnabled(Surface*) const {
   return true;
 }
 
-void ShellSurfaceBase::OnSetFrame(SurfaceFrameType type) {
-  // TODO(reveman): Allow frame to change after surface has been enabled.
-  switch (type) {
+void ShellSurfaceBase::OnSetFrame(SurfaceFrameType frame_type) {
+  bool frame_was_disabled = !frame_enabled();
+  frame_type_ = frame_type;
+  switch (frame_type) {
     case SurfaceFrameType::NONE:
-      frame_enabled_ = false;
       shadow_bounds_.reset();
       break;
     case SurfaceFrameType::NORMAL:
-      frame_enabled_ = true;
-      shadow_bounds_ = gfx::Rect();
+    case SurfaceFrameType::AUTOHIDE:
+    case SurfaceFrameType::OVERLAY:
+      // Initialize the shadow if it didn't exist.  Do not reset if
+      // the frame type just switched from another enabled type.
+      if (!shadow_bounds_ || frame_was_disabled)
+        shadow_bounds_ = gfx::Rect();
       break;
     case SurfaceFrameType::SHADOW:
-      frame_enabled_ = false;
       shadow_bounds_ = gfx::Rect();
       break;
   }
+  if (!widget_)
+    return;
+  CustomFrameView* frame_view =
+      static_cast<CustomFrameView*>(widget_->non_client_view()->frame_view());
+  if (frame_view->enabled() == frame_enabled())
+    return;
+
+  frame_view->SetEnabled(frame_enabled());
+  frame_view->SetVisible(frame_enabled());
+  frame_view->SetShouldPaintHeader(frame_enabled());
+  frame_view->SetHeaderHeight(base::nullopt);
+  widget_->GetRootView()->Layout();
+  // TODO(oshima): We probably should wait applying these if the
+  // window is animating.
+  UpdateWidgetBounds();
+  UpdateSurfaceBounds();
 }
 
 void ShellSurfaceBase::OnSetFrameColors(SkColor active_color,
@@ -796,6 +819,10 @@ void ShellSurfaceBase::OnSetParent(Surface* parent,
 
 void ShellSurfaceBase::OnSetStartupId(const char* startup_id) {
   SetStartupId(startup_id);
+}
+
+void ShellSurfaceBase::OnSetApplicationId(const char* application_id) {
+  SetApplicationId(application_id);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -884,11 +911,11 @@ views::NonClientFrameView* ShellSurfaceBase::CreateNonClientFrameView(
   // ShellSurfaces always use immersive mode.
   window->SetProperty(aura::client::kImmersiveFullscreenKey, true);
   ash::wm::WindowState* window_state = ash::wm::GetWindowState(window);
-  if (!frame_enabled_ && !window_state->HasDelegate()) {
+  if (!frame_enabled() && !window_state->HasDelegate()) {
     window_state->SetDelegate(std::make_unique<CustomWindowStateDelegate>());
   }
   CustomFrameView* frame_view = new CustomFrameView(
-      widget, frame_enabled_, client_controlled_move_resize_);
+      widget, frame_enabled(), client_controlled_move_resize_);
   if (has_frame_colors_)
     frame_view->SetFrameColors(active_frame_color_, inactive_frame_color_);
   return frame_view;
@@ -1245,19 +1272,24 @@ bool ShellSurfaceBase::IsResizing() const {
 void ShellSurfaceBase::UpdateWidgetBounds() {
   DCHECK(widget_);
 
+  aura::Window* window = widget_->GetNativeWindow();
+  ash::wm::WindowState* window_state = ash::wm::GetWindowState(window);
   // Return early if the shell is currently managing the bounds of the widget.
-  // 1) When a window is either maximized/fullscreen/pinned, and the bounds
-  // are not controlled by a client.
-  ash::wm::WindowState* window_state =
-      ash::wm::GetWindowState(widget_->GetNativeWindow());
-  if (window_state->IsMaximizedOrFullscreenOrPinned() &&
-      !window_state->allow_set_bounds_direct()) {
-    return;
+  if (!window_state->allow_set_bounds_direct()) {
+    // 1) When a window is either maximized/fullscreen/pinned.
+    if (window_state->IsMaximizedOrFullscreenOrPinned())
+      return;
+    // 2) When a window is snapped.
+    if (window_state->IsSnapped())
+      return;
+    // 3) When a window is being interactively resized.
+    if (IsResizing())
+      return;
+    // 4) When a window's bounds are being animated.
+    if (window->layer()->GetAnimator()->IsAnimatingProperty(
+            ui::LayerAnimationElement::BOUNDS))
+      return;
   }
-
-  // 2) When a window is being dragged by |resizer_|.
-  if (IsResizing())
-    return;
 
   // Return early if there is pending configure requests.
   if (!pending_configs_.empty() || scoped_configure_)
@@ -1316,7 +1348,7 @@ void ShellSurfaceBase::UpdateShadow() {
     if (!activatable_)
       shadow->SetElevation(wm::kShadowElevationMenuOrTooltip);
     // We don't have rounded corners unless frame is enabled.
-    if (!frame_enabled_)
+    if (!frame_enabled())
       shadow->SetRoundedCornerRadius(0);
   }
 }

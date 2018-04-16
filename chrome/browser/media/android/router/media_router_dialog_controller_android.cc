@@ -141,9 +141,9 @@ MediaRouterDialogControllerAndroid::~MediaRouterDialogControllerAndroid() {
 
 void MediaRouterDialogControllerAndroid::CreateMediaRouterDialog() {
   // TODO(crbug.com/736568): Re-enable dialog in VR.
-  if (vr::VrTabHelper::IsInVr(initiator()) &&
-      !base::FeatureList::IsEnabled(
-          chrome::android::kVrBrowsingNativeAndroidUi)) {
+  if (vr::VrTabHelper::IsUiSuppressedInVr(
+          initiator(),
+          vr::UiSuppressedElement::kMediaRouterPresentationRequest)) {
     CancelPresentationRequest();
     return;
   }

@@ -25,6 +25,7 @@
 #include "ash/wallpaper/wallpaper_utils/wallpaper_resizer.h"
 #include "ash/wallpaper/wallpaper_view.h"
 #include "ash/wallpaper/wallpaper_widget_controller.h"
+#include "ash/wallpaper/wallpaper_window_state_manager.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -320,8 +321,6 @@ bool IsActiveUser(const AccountId& account_id) {
 
 }  // namespace
 
-const SkColor WallpaperController::kInvalidColor = SK_ColorTRANSPARENT;
-
 const char WallpaperController::kSmallWallpaperSubDir[] = "small";
 const char WallpaperController::kLargeWallpaperSubDir[] = "large";
 const char WallpaperController::kOriginalWallpaperSubDir[] = "original";
@@ -347,7 +346,7 @@ WallpaperController::WallpaperController()
       scoped_session_observer_(this),
       weak_factory_(this) {
   prominent_colors_ =
-      std::vector<SkColor>(color_profiles_.size(), kInvalidColor);
+      std::vector<SkColor>(color_profiles_.size(), kInvalidWallpaperColor);
   Shell::Get()->window_tree_host_manager()->AddObserver(this);
   Shell::Get()->AddShellObserver(this);
 }
@@ -679,6 +678,11 @@ void WallpaperController::ShowWallpaperImage(const gfx::ImageSkia& image,
   if (confirm_preview_wallpaper_callback_ && !preview_mode)
     return;
 
+  if (preview_mode) {
+    for (auto& observer : observers_)
+      observer.OnWallpaperPreviewStarted();
+  }
+
   // 1x1 wallpaper should be stretched to fill the entire screen.
   // (WALLPAPER_LAYOUT_TILE also serves this purpose.)
   if (image.width() == 1 && image.height() == 1)
@@ -707,15 +711,13 @@ void WallpaperController::ShowWallpaperImage(const gfx::ImageSkia& image,
   current_wallpaper_->AddObserver(this);
   current_wallpaper_->StartResize();
 
-  for (auto& observer : observers_)
-    observer.OnWallpaperDataChanged();
   mojo_observers_.ForAllPtrs([this](mojom::WallpaperObserver* observer) {
     observer->OnWallpaperChanged(current_wallpaper_->original_image_id());
   });
 
   wallpaper_mode_ = WALLPAPER_IMAGE;
   InstallDesktopControllerForAllWindows();
-  wallpaper_count_for_testing_++;
+  ++wallpaper_count_for_testing_;
 }
 
 bool WallpaperController::IsPolicyControlled(const AccountId& account_id,
@@ -747,10 +749,11 @@ void WallpaperController::PrepareWallpaperForLockScreenChange(bool locking) {
                      : login_constants::kClearBlurSigma);
     }
     is_wallpaper_blurred_ = needs_blur;
-    // TODO(crbug.com/776464): Replace the observer with mojo calls so that
-    // it works under mash and it's easier to add tests.
     for (auto& observer : observers_)
       observer.OnWallpaperBlurChanged();
+    mojo_observers_.ForAllPtrs([this](mojom::WallpaperObserver* observer) {
+      observer->OnWallpaperBlurChanged(is_wallpaper_blurred_);
+    });
   }
 }
 
@@ -1331,6 +1334,24 @@ void WallpaperController::OpenWallpaperPickerIfAllowed() {
   }
 }
 
+void WallpaperController::MinimizeInactiveWindows(
+    const std::string& user_id_hash) {
+  if (!window_state_manager_)
+    window_state_manager_ = std::make_unique<WallpaperWindowStateManager>();
+
+  window_state_manager_->MinimizeInactiveWindows(user_id_hash);
+}
+
+void WallpaperController::RestoreMinimizedWindows(
+    const std::string& user_id_hash) {
+  if (!window_state_manager_) {
+    DCHECK(false) << "This should only be called after calling "
+                  << "MinimizeInactiveWindows.";
+    return;
+  }
+  window_state_manager_->RestoreMinimizedWindows(user_id_hash);
+}
+
 void WallpaperController::AddObserver(
     mojom::WallpaperObserverAssociatedPtrInfo observer) {
   mojom::WallpaperObserverAssociatedPtr observer_ptr;
@@ -1347,6 +1368,11 @@ void WallpaperController::GetWallpaperImage(
 void WallpaperController::GetWallpaperColors(
     GetWallpaperColorsCallback callback) {
   std::move(callback).Run(prominent_colors_);
+}
+
+void WallpaperController::IsWallpaperBlurred(
+    IsWallpaperBlurredCallback callback) {
+  std::move(callback).Run(is_wallpaper_blurred_);
 }
 
 void WallpaperController::IsActiveUserWallpaperControlledByPolicy(
@@ -1397,7 +1423,7 @@ void WallpaperController::ShowDefaultWallpaperForTesting() {
 
 void WallpaperController::CreateEmptyWallpaperForTesting() {
   SetProminentColors(
-      std::vector<SkColor>(color_profiles_.size(), kInvalidColor));
+      std::vector<SkColor>(color_profiles_.size(), kInvalidWallpaperColor));
   current_wallpaper_.reset();
   wallpaper_mode_ = WALLPAPER_IMAGE;
   InstallDesktopControllerForAllWindows();
@@ -1424,10 +1450,11 @@ void WallpaperController::InstallDesktopController(aura::Window* root_window) {
 
   if (is_wallpaper_blurred_ != is_wallpaper_blurred) {
     is_wallpaper_blurred_ = is_wallpaper_blurred;
-    // TODO(crbug.com/776464): Replace the observer with mojo calls so that it
-    // works under mash and it's easier to add tests.
     for (auto& observer : observers_)
       observer.OnWallpaperBlurChanged();
+    mojo_observers_.ForAllPtrs([this](mojom::WallpaperObserver* observer) {
+      observer->OnWallpaperBlurChanged(is_wallpaper_blurred_);
+    });
   }
 
   const int container_id = GetWallpaperContainerId(locked_);
@@ -1718,6 +1745,7 @@ void WallpaperController::OnWallpaperDecoded(
 }
 
 void WallpaperController::ReloadWallpaper(bool clear_cache) {
+  current_wallpaper_.reset();
   if (clear_cache)
     wallpaper_cache_map_.clear();
 
@@ -1765,7 +1793,7 @@ void WallpaperController::CalculateWallpaperColors() {
   // an invalid color if a previous calculation during active session failed.
   if (!ShouldCalculateColors()) {
     SetProminentColors(
-        std::vector<SkColor>(color_profiles_.size(), kInvalidColor));
+        std::vector<SkColor>(color_profiles_.size(), kInvalidWallpaperColor));
     return;
   }
 
@@ -1774,7 +1802,7 @@ void WallpaperController::CalculateWallpaperColors() {
   color_calculator_->AddObserver(this);
   if (!color_calculator_->StartCalculation()) {
     SetProminentColors(
-        std::vector<SkColor>(color_profiles_.size(), kInvalidColor));
+        std::vector<SkColor>(color_profiles_.size(), kInvalidWallpaperColor));
   }
 }
 

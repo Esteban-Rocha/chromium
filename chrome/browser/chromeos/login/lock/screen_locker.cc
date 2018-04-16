@@ -123,7 +123,9 @@ class ScreenLockObserver : public SessionManagerClient::StubDelegate,
   bool session_started() const { return session_started_; }
 
   // SessionManagerClient::StubDelegate overrides:
-  void LockScreenForStub() override { ScreenLocker::HandleLockScreenRequest(); }
+  void LockScreenForStub() override {
+    ScreenLocker::HandleShowLockScreenRequest();
+  }
 
   // NotificationObserver overrides:
   void Observe(int type,
@@ -148,7 +150,7 @@ class ScreenLockObserver : public SessionManagerClient::StubDelegate,
   // UserAddingScreen::Observer overrides:
   void OnUserAddingFinished() override {
     UserAddingScreen::Get()->RemoveObserver(this);
-    ScreenLocker::HandleLockScreenRequest();
+    ScreenLocker::HandleShowLockScreenRequest();
   }
 
  private:
@@ -224,6 +226,11 @@ void ScreenLocker::Init() {
         [](ViewsScreenLocker* screen_locker, bool did_show) {
           CHECK(did_show);
           screen_locker->OnLockScreenReady();
+
+          content::NotificationService::current()->Notify(
+              chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
+              content::NotificationService::AllSources(),
+              content::NotificationService::NoDetails());
         },
         views_screen_locker_.get()));
 
@@ -297,7 +304,7 @@ void ScreenLocker::OnAuthSuccess(const UserContext& user_context) {
     quick_unlock::QuickUnlockStorage* quick_unlock_storage =
         quick_unlock::QuickUnlockFactory::GetForUser(user);
     if (quick_unlock_storage) {
-      quick_unlock_storage->pin_storage()->ResetUnlockAttemptCount();
+      quick_unlock_storage->pin_storage_prefs()->ResetUnlockAttemptCount();
       quick_unlock_storage->fingerprint_storage()->ResetUnlockAttemptCount();
     }
 
@@ -488,8 +495,8 @@ void ScreenLocker::ShutDownClass() {
 }
 
 // static
-void ScreenLocker::HandleLockScreenRequest() {
-  VLOG(1) << "Received LockScreen request from session manager";
+void ScreenLocker::HandleShowLockScreenRequest() {
+  VLOG(1) << "Received ShowLockScreen request from session manager";
   DCHECK(g_screen_lock_observer);
   if (UserAddingScreen::Get()->IsRunning()) {
     VLOG(1) << "Waiting for user adding screen to stop";

@@ -298,8 +298,13 @@ SelectToSpeak.prototype = {
       // which is computed based on which window is the event handler for the
       // hit point, isn't the part of the tree that contains the actual
       // content. In such cases, use focus to get the root.
-      if (!findAllMatching(root, rect, nodes) && focusedNode)
+      // TODO(katie): Determine if this work-around needs to be ARC++ only. If
+      // so, look for classname exoshell on the root or root parent to confirm
+      // that a node is in ARC++.
+      if (!findAllMatching(root, rect, nodes) && focusedNode &&
+          focusedNode.root.role != RoleType.DESKTOP) {
         findAllMatching(focusedNode.root, rect, nodes);
+      }
       this.startSpeechQueue_(nodes);
       this.recordStartEvent_(START_SPEECH_METHOD_MOUSE);
     }.bind(this));
@@ -937,6 +942,8 @@ SelectToSpeak.prototype = {
 
           voices.sort(function(a, b) {
             function score(voice) {
+              if (voice.lang === undefined)
+                return -1;
               var lang = voice.lang.toLowerCase();
               var s = 0;
               if (lang == uiLocale)
@@ -1122,10 +1129,10 @@ SelectToSpeak.prototype = {
         opt_startIndex - this.currentNode_.startChar;
     let nodeEnd = Math.min(
         nextWordEnd - this.currentNode_.startChar,
-        this.currentNode_.node.name.length);
+        nameLength(this.currentNode_.node));
     if ((this.currentNodeWord_ == null ||
          nodeStart >= this.currentNodeWord_.end) &&
-        nodeStart < nodeEnd) {
+        nodeStart <= nodeEnd) {
       // Only update the bounds if they have increased from the
       // previous node. Because tts may send multiple callbacks
       // for the end of one word and the beginning of the next,

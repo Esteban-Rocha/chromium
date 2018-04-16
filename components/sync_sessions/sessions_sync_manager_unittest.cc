@@ -29,6 +29,7 @@ using syncer::SyncData;
 using syncer::SyncDataList;
 using syncer::SyncDataLocal;
 using syncer::SyncError;
+using testing::ElementsAre;
 using testing::Eq;
 using testing::IsNull;
 
@@ -36,6 +37,7 @@ namespace sync_sessions {
 
 namespace {
 
+const char kCacheGuid[] = "cache_guid";
 const char kFoo1[] = "http://foo1/";
 const char kFoo2[] = "http://foo2/";
 const char kBar1[] = "http://bar1/";
@@ -190,8 +192,8 @@ class SessionsSyncManagerTest : public testing::Test {
         .WillByDefault(testing::Return(window_getter_.router()));
 
     local_device_ = std::make_unique<LocalDeviceInfoProviderMock>(
-        "cache_guid", "Wayne Gretzky's Hacking Box", "Chromium 10k",
-        "Chrome 10k", sync_pb::SyncEnums_DeviceType_TYPE_LINUX, "device_id");
+        kCacheGuid, "Wayne Gretzky's Hacking Box", "Chromium 10k", "Chrome 10k",
+        sync_pb::SyncEnums_DeviceType_TYPE_LINUX, "device_id");
     sync_client_ = std::make_unique<syncer::FakeSyncClient>();
     sync_prefs_ =
         std::make_unique<syncer::SyncPrefs>(sync_client_->GetPrefService());
@@ -218,7 +220,7 @@ class SessionsSyncManagerTest : public testing::Test {
 
   SessionsSyncManager* manager() { return manager_.get(); }
   SessionSyncTestHelper* helper() { return &helper_; }
-  LocalDeviceInfoProvider* local_device() { return local_device_.get(); }
+  LocalDeviceInfoProviderMock* local_device() { return local_device_.get(); }
   SessionNotificationObserver* observer() { return &observer_; }
   syncer::SyncPrefs* sync_prefs() { return sync_prefs_.get(); }
 
@@ -676,6 +678,29 @@ TEST_F(SessionsSyncManagerTest, MergeLocalSessionExistingTabs) {
   // Verify tab delegates have Sync ids.
   EXPECT_EQ(0, window->GetTabAt(0)->GetSyncId());
   EXPECT_EQ(1, window->GetTabAt(1)->GetSyncId());
+}
+
+// Ensure that the last known device name is reported.
+TEST_F(SessionsSyncManagerTest, MergeLocalSessionName) {
+  const std::string kModifiedDeviceName = "New Device Name";
+
+  SyncChangeList out;
+  InitWithSyncDataTakeOutput(SyncDataList(), &out);
+  syncer::SyncDataList initial_data = GetDataFromChanges(out);
+  // Local header expected.
+  ASSERT_EQ(1U, initial_data.size());
+
+  // Change local device name to |kModifiedDeviceName|.
+  local_device()->Initialize(std::make_unique<DeviceInfo>(
+      kCacheGuid, kModifiedDeviceName, "Chromium 10k", "Chrome 10k",
+      sync_pb::SyncEnums_DeviceType_TYPE_LINUX, "device_id"));
+
+  // Restart the manager, now that the local device name has changed.
+  manager()->StopSyncing(syncer::SESSIONS);
+  out.clear();
+  InitWithSyncDataTakeOutput(ConvertToRemote(initial_data), &out);
+
+  EXPECT_EQ(kModifiedDeviceName, manager()->GetCurrentSessionNameForTest());
 }
 
 // This is a combination of MergeWithInitialForeignSession and
@@ -1140,16 +1165,10 @@ TEST_F(SessionsSyncManagerTest, ProcessForeignDeleteTabsWithShadowing) {
       manager()->session_tracker_.LookupSessionTab(session_tag, kTabIds1[1]),
       IsNull());
 
-  std::set<int> tab_node_ids;
-  manager()->session_tracker_.LookupForeignTabNodeIds(session_tag,
-                                                      &tab_node_ids);
-  EXPECT_EQ(6U, tab_node_ids.size());
-  EXPECT_TRUE(tab_node_ids.find(tab1A.tab_node_id()) != tab_node_ids.end());
-  EXPECT_TRUE(tab_node_ids.find(tab1B.tab_node_id()) != tab_node_ids.end());
-  EXPECT_TRUE(tab_node_ids.find(tab1C.tab_node_id()) != tab_node_ids.end());
-  EXPECT_TRUE(tab_node_ids.find(tab2A.tab_node_id()) != tab_node_ids.end());
-  EXPECT_TRUE(tab_node_ids.find(tab2B.tab_node_id()) != tab_node_ids.end());
-  EXPECT_TRUE(tab_node_ids.find(tab2C.tab_node_id()) != tab_node_ids.end());
+  EXPECT_THAT(manager()->session_tracker_.LookupTabNodeIds(session_tag),
+              ElementsAre(tab1A.tab_node_id(), tab1B.tab_node_id(),
+                          tab1C.tab_node_id(), tab2A.tab_node_id(),
+                          tab2B.tab_node_id(), tab2C.tab_node_id()));
 
   SyncChangeList changes;
   changes.push_back(MakeRemoteChange(tab1A, SyncChange::ACTION_DELETE));
@@ -1157,13 +1176,9 @@ TEST_F(SessionsSyncManagerTest, ProcessForeignDeleteTabsWithShadowing) {
   changes.push_back(MakeRemoteChange(tab2C, SyncChange::ACTION_DELETE));
   manager()->ProcessSyncChanges(FROM_HERE, changes);
 
-  tab_node_ids.clear();
-  manager()->session_tracker_.LookupForeignTabNodeIds(session_tag,
-                                                      &tab_node_ids);
-  EXPECT_EQ(3U, tab_node_ids.size());
-  EXPECT_TRUE(tab_node_ids.find(tab1C.tab_node_id()) != tab_node_ids.end());
-  EXPECT_TRUE(tab_node_ids.find(tab2A.tab_node_id()) != tab_node_ids.end());
-  EXPECT_TRUE(tab_node_ids.find(tab2B.tab_node_id()) != tab_node_ids.end());
+  EXPECT_THAT(manager()->session_tracker_.LookupTabNodeIds(session_tag),
+              ElementsAre(tab1C.tab_node_id(), tab2A.tab_node_id(),
+                          tab2B.tab_node_id()));
 
   manager()->DoGarbageCollection();
   ASSERT_EQ(3U, output.size());
@@ -1200,22 +1215,15 @@ TEST_F(SessionsSyncManagerTest, ProcessForeignDeleteTabsWithReusedNodeIds) {
   ASSERT_EQ(2U, output.size());
   output.clear();
 
-  std::set<int> tab_node_ids;
-  manager()->session_tracker_.LookupForeignTabNodeIds(session_tag,
-                                                      &tab_node_ids);
-  EXPECT_EQ(2U, tab_node_ids.size());
-  EXPECT_TRUE(tab_node_ids.find(tab_node_id_shared) != tab_node_ids.end());
-  EXPECT_TRUE(tab_node_ids.find(tab_node_id_unique) != tab_node_ids.end());
+  EXPECT_THAT(manager()->session_tracker_.LookupTabNodeIds(session_tag),
+              ElementsAre(tab_node_id_shared, tab_node_id_unique));
 
   SyncChangeList changes;
   changes.push_back(MakeRemoteChange(tab1A, SyncChange::ACTION_DELETE));
   manager()->ProcessSyncChanges(FROM_HERE, changes);
 
-  tab_node_ids.clear();
-  manager()->session_tracker_.LookupForeignTabNodeIds(session_tag,
-                                                      &tab_node_ids);
-  EXPECT_EQ(1U, tab_node_ids.size());
-  EXPECT_TRUE(tab_node_ids.find(tab_node_id_unique) != tab_node_ids.end());
+  EXPECT_THAT(manager()->session_tracker_.LookupTabNodeIds(session_tag),
+              ElementsAre(tab_node_id_unique));
 
   manager()->DoGarbageCollection();
   EXPECT_EQ(1U, output.size());

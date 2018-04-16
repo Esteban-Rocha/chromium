@@ -9,8 +9,6 @@
 #include <string>
 
 #include "base/macros.h"
-#include "base/metrics/histogram_macros.h"
-#include "base/metrics/user_metrics.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/app/vector_icons/vector_icons.h"
@@ -690,8 +688,9 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
   } else if (sender == signin_with_gaia_account_button_) {
     DCHECK(dice_signin_button_view_->account());
     Hide();
-    signin_ui_util::EnableSync(
-        browser_, dice_signin_button_view_->account().value(), access_point_);
+    signin_ui_util::EnableSyncFromPromo(
+        browser_, dice_signin_button_view_->account().value(), access_point_,
+        true /* is_default_promo_account */);
   } else if (sender == sync_to_another_account_button_) {
     // Extract the promo accounts for the submenu, i.e. remove the first
     // one from the list because it is already shown in a separate button.
@@ -926,14 +925,22 @@ views::View* ProfileChooserView::CreateDiceSyncErrorView(
   view->SetLayoutManager(std::make_unique<views::BoxLayout>(
       views::BoxLayout::kVertical, gfx::Insets(kMenuEdgeMargin),
       kMenuEdgeMargin));
+
+  const bool show_sync_paused_ui = error == sync_ui_util::AUTH_ERROR;
   // Add profile hover button.
   auto current_profile_photo = std::make_unique<BadgedProfilePhoto>(
-      BadgedProfilePhoto::BADGE_TYPE_SYNC_ERROR, avatar_item.icon);
-  HoverButton* current_profile =
-      new HoverButton(this, std::move(current_profile_photo),
-                      l10n_util::GetStringUTF16(IDS_SYNC_ERROR_USER_MENU_TITLE),
-                      avatar_item.username);
-  current_profile->SetStyle(HoverButton::STYLE_ERROR);
+      show_sync_paused_ui ? BadgedProfilePhoto::BADGE_TYPE_SYNC_PAUSED
+                          : BadgedProfilePhoto::BADGE_TYPE_SYNC_ERROR,
+      avatar_item.icon);
+  HoverButton* current_profile = new HoverButton(
+      this, std::move(current_profile_photo),
+      l10n_util::GetStringUTF16(show_sync_paused_ui
+                                    ? IDS_PROFILES_DICE_SYNC_PAUSED_TITLE
+                                    : IDS_SYNC_ERROR_USER_MENU_TITLE),
+      avatar_item.username);
+
+  if (!show_sync_paused_ui)
+    current_profile->SetStyle(HoverButton::STYLE_ERROR);
   current_profile->SetEnabled(false);
   // Remove the default |HoverButton| border from |current_profile| so the
   // insets of |BoxLayout| are used for aligment instead.
@@ -979,7 +986,7 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
       !is_guest && avatar_item.signed_in && !account_consistency_enabled;
   const base::string16 hover_button_title =
       dice_enabled_ && browser_->profile()->IsSyncAllowed()
-          ? l10n_util::GetStringUTF16(IDS_PROFILES_SYNCED_TO_TITLE)
+          ? l10n_util::GetStringUTF16(IDS_PROFILES_SYNC_COMPLETE_TITLE)
           : profile_name;
   HoverButton* profile_card = new HoverButton(
       this, std::move(current_profile_photo), hover_button_title,
@@ -1043,8 +1050,8 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
                       IDS_SYNC_START_SYNC_BUTTON_LABEL,
                       l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
     extra_links_view->AddChildView(signin_current_profile_button_);
-    base::RecordAction(
-        base::UserMetricsAction("Signin_Impression_FromAvatarBubbleSignin"));
+    signin_metrics::RecordSigninImpressionUserActionForAccessPoint(
+        signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN);
     extra_links_view->SetBorder(views::CreateEmptyBorder(
         0, 0,
         provider->GetDistanceMetric(DISTANCE_RELATED_CONTROL_VERTICAL_SMALL),
@@ -1097,6 +1104,13 @@ views::View* ProfileChooserView::CreateDiceSigninView() {
   promo->SetBorder(views::CreateEmptyBorder(
       promotext_top_spacing, kMenuEdgeMargin, 0, kMenuEdgeMargin));
   view->AddChildView(promo);
+
+  // Log sign-in impressions user metrics.
+  signin_metrics::RecordSigninImpressionUserActionForAccessPoint(
+      signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN);
+  signin_metrics::RecordSigninImpressionWithAccountUserActionForAccessPoint(
+      signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN,
+      show_personalized_promo);
 
   if (!show_personalized_promo) {
     // Create a sign-in button without account information.
@@ -1465,7 +1479,9 @@ void ProfileChooserView::EnableSync(
     const base::Optional<AccountInfo>& account) {
   Hide();
   if (account)
-    signin_ui_util::EnableSync(browser_, account.value(), access_point_);
+    signin_ui_util::EnableSyncFromPromo(browser_, account.value(),
+                                        access_point_,
+                                        false /* is_default_promo_account */);
   else
     ShowViewFromMode(profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN);
 }

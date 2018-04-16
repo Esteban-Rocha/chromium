@@ -31,6 +31,9 @@ enum LayoutConstant {
   BOOKMARK_BAR_NTP_PADDING,
 #endif
 
+  // The size of the app menu button in a hosted app browser window.
+  HOSTED_APP_MENU_BUTTON_SIZE,
+
   // The vertical padding (additional to TOOLBAR_ELEMENT_PADDING) above and
   // below location bar bubbles.
   LOCATION_BAR_BUBBLE_VERTICAL_PADDING,
@@ -97,10 +100,6 @@ enum LayoutConstant {
   // The standard tab width excluding the overlap (which is the endcap width on
   // one side)
   TAB_STANDARD_WIDTH,
-
-  // Additional left horizontal padding between the browser actions and the
-  // omnibox.
-  TOOLBAR_ACTION_LEFT_PADDING,
 
   // Additional horizontal padding between the elements in the toolbar.
   TOOLBAR_ELEMENT_PADDING,

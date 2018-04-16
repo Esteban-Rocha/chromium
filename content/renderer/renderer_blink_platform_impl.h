@@ -26,10 +26,10 @@
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/WebKit/public/platform/modules/cache_storage/cache_storage.mojom.h"
-#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBFactory.h"
-#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
-#include "third_party/WebKit/public/platform/modules/webdatabase/web_database.mojom.h"
+#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
+#include "third_party/blink/public/platform/modules/indexeddb/web_idb_factory.h"
+#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_type.h"
+#include "third_party/blink/public/platform/modules/webdatabase/web_database.mojom.h"
 
 namespace IPC {
 class SyncMessageFilter;
@@ -37,7 +37,7 @@ class SyncMessageFilter;
 
 namespace blink {
 namespace scheduler {
-class RendererScheduler;
+class WebMainThreadScheduler;
 class WebThreadBase;
 }
 class WebCanvasCaptureHandler;
@@ -67,7 +67,7 @@ class WebDatabaseObserverImpl;
 class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
  public:
   explicit RendererBlinkPlatformImpl(
-      blink::scheduler::RendererScheduler* renderer_scheduler);
+      blink::scheduler::WebMainThreadScheduler* main_thread_scheduler);
   ~RendererBlinkPlatformImpl() override;
 
   // Shutdown must be called just prior to shutting down blink.
@@ -334,7 +334,9 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   base::IDMap<std::unique_ptr<PlatformEventObserverBase>>
       platform_event_observers_;
 
-  blink::scheduler::RendererScheduler* renderer_scheduler_;  // NOT OWNED
+  // NOT OWNED
+  blink::scheduler::WebMainThreadScheduler* main_thread_scheduler_;
+
   TopLevelBlameContext top_level_blame_context_;
 
   std::unique_ptr<LocalStorageCachedAreas> local_storage_cached_areas_;

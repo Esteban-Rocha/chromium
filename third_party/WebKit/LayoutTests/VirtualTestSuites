@@ -449,6 +449,31 @@
              "--enable-slimming-paint-v175"]
   },
   {
+    "prefix": "layout_ng_experimental",
+    "base": "external/wpt/css/css-multicol",
+    "args": ["--enable-blink-features=LayoutNGBlockFragmentation"]
+  },
+  {
+    "prefix": "layout_ng_experimental",
+    "base": "fast/multicol",
+    "args": ["--enable-blink-features=LayoutNGBlockFragmentation"]
+  },
+  {
+    "prefix": "layout_ng_experimental",
+    "base": "fast/pagination",
+    "args": ["--enable-blink-features=LayoutNGBlockFragmentation"]
+  },
+  {
+    "prefix": "layout_ng_experimental",
+    "base": "fragmentation",
+    "args": ["--enable-blink-features=LayoutNGBlockFragmentation"]
+  },
+  {
+    "prefix": "layout_ng_experimental",
+    "base": "printing",
+    "args": ["--enable-blink-features=LayoutNGBlockFragmentation"]
+  },
+  {
     "prefix": "print_browser",
     "base": "print_testharness",
     "args": ["--enable-print-browser"]
@@ -600,14 +625,14 @@
     "args": ["--sampling-heap-profiler"]
   },
   {
-    "prefix": "navigation-mojo-response",
-    "base": "http/tests/serviceworker",
-    "args": ["--enable-features=NavigationMojoResponse"]
+    "prefix": "htxg",
+    "base": "http/tests/loading/htxg",
+    "args": ["--enable-features=SignedHTTPExchange"]
   },
   {
-    "prefix": "navigation-mojo-response",
-    "base": "external/wpt/service-workers/service-worker",
-    "args": ["--enable-features=NavigationMojoResponse"]
+    "prefix": "htxg-with-network-service",
+    "base": "http/tests/loading/htxg",
+    "args": ["--enable-features=SignedHTTPExchange,NetworkService"]
   },
   {
     "prefix": "picture-in-picture",
@@ -638,5 +663,10 @@
     "prefix": "off-main-thread-websocket",
     "base": "http/tests/security/mixedContent/websocket",
     "args": ["--enable-features=OffMainThreadWebSocket"]
+  },
+  {
+    "prefix": "webrtc-wpt-unified-plan",
+    "base": "external/wpt/webrtc",
+    "args": ["--enable-blink-features=RTCUnifiedPlanByDefault"]
   }
 ]

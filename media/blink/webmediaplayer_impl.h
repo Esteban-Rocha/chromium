@@ -41,10 +41,10 @@
 #include "media/blink/webmediaplayer_util.h"
 #include "media/filters/pipeline_controller.h"
 #include "media/renderers/paint_canvas_video_renderer.h"
-#include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
-#include "third_party/WebKit/public/platform/WebContentDecryptionModuleResult.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayer.h"
-#include "third_party/WebKit/public/platform/WebSurfaceLayerBridge.h"
+#include "third_party/blink/public/platform/web_audio_source_provider.h"
+#include "third_party/blink/public/platform/web_content_decryption_module_result.h"
+#include "third_party/blink/public/platform/web_media_player.h"
+#include "third_party/blink/public/platform/web_surface_layer_bridge.h"
 #include "url/gurl.h"
 
 #if defined(OS_ANDROID)  // WMPI_CAST
@@ -266,7 +266,10 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void ActivateViewportIntersectionMonitoring(bool activate) override;
   void UpdateRemotePlaybackCompatibility(bool is_compatible) override;
 
-  // Test helper methods for exercising media suspension.
+  // Test helper methods for exercising media suspension. Once called, when
+  // |target_state| is reached or exceeded the stale flag will be set when
+  // computing the play state, which will trigger suspend if the player is
+  // paused; see UpdatePlayState_ComputePlayState() for the exact details.
   void ForceStaleStateForTesting(ReadyState target_state) override;
   bool IsSuspendedForTesting() override;
 
@@ -899,6 +902,9 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   // Callback to pass updated information about the current surface info.
   WebMediaPlayerParams::PipSurfaceInfoCB pip_surface_info_cb_;
+
+  // Callback to signal Picture-in-Picture mode has ended.
+  WebMediaPlayerParams::ExitPipCB exit_pip_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerImpl);
 };

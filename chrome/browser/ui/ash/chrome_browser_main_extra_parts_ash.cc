@@ -19,7 +19,6 @@
 #include "ash/public/interfaces/window_properties.mojom.h"
 #include "ash/public/interfaces/window_state_type.mojom.h"
 #include "ash/shell.h"
-#include "base/memory/ptr_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/ash_config.h"
 #include "chrome/browser/chromeos/docked_magnifier/docked_magnifier_client.h"
@@ -198,9 +197,8 @@ void ChromeBrowserMainExtraPartsAsh::PreProfileInit() {
     immersive_handler_factory_ = std::make_unique<ImmersiveHandlerFactoryMus>();
 
     // Enterprise support in the browser can monitor user activity. Connect to
-    // the UI service to monitor activity, as this detector cannot observe the
-    // platform event source directly. The ash process has its own detector.
-    user_activity_detector_ = std::make_unique<ui::UserActivityDetector>(false);
+    // the UI service to monitor activity. The ash process has its own monitor.
+    user_activity_detector_ = std::make_unique<ui::UserActivityDetector>();
     ui::mojom::UserActivityMonitorPtr user_activity_monitor;
     content::ServiceManagerConnection::GetForProcess()
         ->GetConnector()

@@ -175,9 +175,6 @@ DEFINE_SCOPED_UMA_HISTOGRAM_TIMER(PendingTreeDurationHistogramTimer,
                                   "Scheduling.%s.PendingTreeDuration");
 DEFINE_SCOPED_UMA_HISTOGRAM_TIMER(PendingTreeRasterDurationHistogramTimer,
                                   "Scheduling.%s.PendingTreeRasterDuration");
-DEFINE_SCOPED_UMA_HISTOGRAM_TIMER(
-    ImageInvalidationUpdateDurationHistogramTimer,
-    "Scheduling.%s.ImageInvalidationUpdateDuration");
 
 LayerTreeHostImpl::FrameData::FrameData() = default;
 LayerTreeHostImpl::FrameData::~FrameData() = default;
@@ -415,8 +412,6 @@ void LayerTreeHostImpl::UpdateSyncTreeAfterCommitOrImplSideInvalidation() {
   // Defer invalidating images until UpdateDrawProperties is performed since
   // that updates whether an image should be animated based on its visibility
   // and the updated data for the image from the main frame.
-  {
-    ImageInvalidationUpdateDurationHistogramTimer image_invalidation_timer;
     PaintImageIdFlatSet images_to_invalidate =
         tile_manager_.TakeImagesToInvalidateOnSyncTree();
     if (ukm_manager_)
@@ -427,7 +422,6 @@ void LayerTreeHostImpl::UpdateSyncTreeAfterCommitOrImplSideInvalidation() {
             CurrentBeginFrameArgs().frame_time);
     images_to_invalidate.insert(animated_images.begin(), animated_images.end());
     sync_tree()->InvalidateRegionForImages(images_to_invalidate);
-  }
 
   // Note that it is important to push the state for checkerboarded and animated
   // images prior to PrepareTiles here when committing to the active tree. This
@@ -2236,7 +2230,12 @@ bool LayerTreeHostImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
     DCHECK(ok);
     DamageTracker::UpdateDamageTracking(active_tree_.get(),
                                         active_tree_->GetRenderSurfaceList());
-    return HasDamage();
+    bool has_damage = HasDamage();
+    // Animations are updated after we attempt to draw. If the frame is aborted,
+    // update animations now.
+    if (!has_damage)
+      UpdateAnimationState(true);
+    return has_damage;
   }
   // Assume there is damage if we cannot check for damage.
   return true;
@@ -3894,6 +3893,8 @@ InputHandlerScrollResult LayerTreeHostImpl::ScrollBy(
 
   scroll_result.current_offset = ScrollOffsetToVector2dF(
       scroll_tree.current_scroll_offset(scroll_node->element_id));
+  float scale_factor = active_tree()->current_page_scale_factor();
+  scroll_result.current_offset.Scale(scale_factor);
 
   // Run animations which need to respond to updated scroll offset.
   mutator_host_->TickScrollAnimations(
@@ -3946,7 +3947,7 @@ bool LayerTreeHostImpl::SnapAtScrollEnd() {
 }
 
 bool LayerTreeHostImpl::GetSnapFlingInfo(
-    const gfx::Vector2dF& natural_displacement,
+    const gfx::Vector2dF& natural_displacement_in_viewport,
     gfx::Vector2dF* initial_offset,
     gfx::Vector2dF* target_offset) const {
   const ScrollNode* scroll_node = CurrentlyScrollingNode();
@@ -3954,21 +3955,29 @@ bool LayerTreeHostImpl::GetSnapFlingInfo(
     return false;
 
   const SnapContainerData& data = scroll_node->snap_container_data.value();
+  float scale_factor = active_tree()->current_page_scale_factor();
+  gfx::Vector2dF natural_displacement_in_content =
+      gfx::ScaleVector2d(natural_displacement_in_viewport, 1.f / scale_factor);
+
   const ScrollTree& scroll_tree = active_tree()->property_trees()->scroll_tree;
   *initial_offset = ScrollOffsetToVector2dF(
       scroll_tree.current_scroll_offset(scroll_node->element_id));
-  bool did_scroll_x =
-      did_scroll_x_for_scroll_gesture_ || natural_displacement.x() != 0;
-  bool did_scroll_y =
-      did_scroll_y_for_scroll_gesture_ || natural_displacement.y() != 0;
+
+  bool did_scroll_x = did_scroll_x_for_scroll_gesture_ ||
+                      natural_displacement_in_content.x() != 0;
+  bool did_scroll_y = did_scroll_y_for_scroll_gesture_ ||
+                      natural_displacement_in_content.y() != 0;
+
   gfx::ScrollOffset snap_offset;
   if (!data.FindSnapPosition(
-          gfx::ScrollOffset(*initial_offset + natural_displacement),
+          gfx::ScrollOffset(*initial_offset + natural_displacement_in_content),
           did_scroll_x, did_scroll_y, &snap_offset)) {
     return false;
   }
 
   *target_offset = ScrollOffsetToVector2dF(snap_offset);
+  target_offset->Scale(scale_factor);
+  initial_offset->Scale(scale_factor);
   return true;
 }
 

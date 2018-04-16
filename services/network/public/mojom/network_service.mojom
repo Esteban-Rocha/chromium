@@ -109,6 +109,13 @@ struct NetworkContextParams {
   // other channels (navigation, issuing requests, etc)? Or can
   // ProxyConfigServices be modified not to need this notification?
   ProxyConfigPollerClient? proxy_config_poller_client;
+
+  // Only used on OS_CHROMEOS platform.
+  bool allow_gssapi_library_load = false;
+
+  // The GSSAPI library name.
+  // Only used on (OS_POSIX && !OS_ANDROID) platform.
+  string gssapi_library_name;
 };
 
 struct NetworkConditions {
@@ -187,6 +194,12 @@ interface NetworkContext {
 
   // Updates the Accept-Language header to be used for requests.
   SetAcceptLanguage(string new_accept_language);
+
+  // Updates the CT policy to be used for requests.
+  SetCTPolicy(array<string> required_hosts,
+              array<string> excluded_hosts,
+              array<string> excluded_spkis,
+              array<string> excluded_legacy_spkis);
 
   // Creates a UDP socket. Caller can supply a |receiver| interface pointer
   // to listen for incoming datagrams. A null |receiver| is acceptable if caller

@@ -600,8 +600,8 @@ std::unique_ptr<base::DictionaryValue>
 ProximityAuthWebUIHandler::IneligibleDeviceToDictionary(
     const cryptauth::IneligibleDevice& ineligible_device) {
   std::unique_ptr<base::ListValue> ineligibility_reasons(new base::ListValue());
-  for (const std::string& reason : ineligible_device.reasons()) {
-    ineligibility_reasons->AppendString(reason);
+  for (const auto& reason : ineligible_device.reasons()) {
+    ineligibility_reasons->AppendInteger(reason);
   }
 
   std::unique_ptr<base::DictionaryValue> device_dictionary =
@@ -633,8 +633,8 @@ void ProximityAuthWebUIHandler::OnLifeCycleStateChanged(
     // call stack of |life_cycle_|.
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::Bind(&ProximityAuthWebUIHandler::CleanUpRemoteDeviceLifeCycle,
-                   weak_ptr_factory_.GetWeakPtr()));
+        base::BindOnce(&ProximityAuthWebUIHandler::CleanUpRemoteDeviceLifeCycle,
+                       weak_ptr_factory_.GetWeakPtr()));
   } else if (new_state ==
              RemoteDeviceLifeCycle::State::SECURE_CHANNEL_ESTABLISHED) {
     life_cycle_->GetMessenger()->AddObserver(this);

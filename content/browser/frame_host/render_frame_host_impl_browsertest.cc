@@ -39,7 +39,7 @@
 #include "net/test/embedded_test_server/http_request.h"
 #include "services/network/public/cpp/features.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 
 namespace content {
 
@@ -1315,6 +1315,9 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   const GURL kUrl3(embedded_test_server()->GetURL("/title3.html"));
   const GURL kUrl4(embedded_test_server()->GetURL("/empty.html"));
 
+  // The 31-bit hash of the string "content::mojom::BrowserTarget".
+  const int32_t kHashOfContentMojomBrowserTarget = 0x1CA01D37;
+
   // Client ends of the fake interface provider requests injected for the first
   // and second navigations.
   service_manager::mojom::InterfaceProviderPtr interface_provider_1;
@@ -1359,6 +1362,9 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
     ASSERT_TRUE(NavigateToURL(shell(), kUrl3));
     histogram_tester.ExpectUniqueSample(
         "RenderFrameHostImpl.DroppedInterfaceRequests", 2, 1);
+    histogram_tester.ExpectUniqueSample(
+        "RenderFrameHostImpl.DroppedInterfaceRequestName",
+        kHashOfContentMojomBrowserTarget, 2);
   }
 
   // Simulate one interface request dropped for the second URL.
@@ -1371,6 +1377,9 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
     ASSERT_TRUE(NavigateToURL(shell(), kUrl4));
     histogram_tester.ExpectUniqueSample(
         "RenderFrameHostImpl.DroppedInterfaceRequests", 1, 1);
+    histogram_tester.ExpectUniqueSample(
+        "RenderFrameHostImpl.DroppedInterfaceRequestName",
+        kHashOfContentMojomBrowserTarget, 1);
   }
 
   // Both the DroppedInterfaceRequestLogger for the first and second URLs are

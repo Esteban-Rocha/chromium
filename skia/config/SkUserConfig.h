@@ -217,12 +217,16 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_SUPPORT_LEGACY_YUV_COLORSPACE
 #endif
 
+#ifndef SK_SUPPORT_LEGACY_BACKEND_OBJECTS
+#define SK_SUPPORT_LEGACY_BACKEND_OBJECTS
+#endif
+
 // Max. verb count for paths rendered by the edge-AA tessellating path renderer.
 #define GR_AA_TESSELLATOR_MAX_VERB_COUNT 10
 
 
-#ifndef SK_SUPPORT_LEGACY_AA_CHOICE
-#define SK_SUPPORT_LEGACY_AA_CHOICE
+#ifndef SK_SUPPORT_LEGACY_PATH_DAA_BIT
+#define SK_SUPPORT_LEGACY_PATH_DAA_BIT
 #endif
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi

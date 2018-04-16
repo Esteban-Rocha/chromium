@@ -36,6 +36,7 @@
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
 #include "chrome/browser/resource_coordinator/tab_manager.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
@@ -986,8 +987,6 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
     TabStripModel* tab_strip = browser->tab_strip_model();
     for (int i = 0; i < tab_strip->count(); ++i) {
       WebContents* web_contents = tab_strip->GetWebContentsAt(i);
-      resource_coordinator::TabManager* tab_manager =
-          g_browser_process->GetTabManager();
 
       if (index > -1 && i != index)
         continue;
@@ -1016,13 +1015,17 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
         continue;
       }
 
+      auto* tab_lifecycle_unit_external =
+          resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
+              web_contents);
+
       if (!MatchesBool(params->query_info.discarded.get(),
-                       tab_manager->IsTabDiscarded(web_contents))) {
+                       tab_lifecycle_unit_external->IsDiscarded())) {
         continue;
       }
 
       if (!MatchesBool(params->query_info.auto_discardable.get(),
-                       tab_manager->IsTabAutoDiscardable(web_contents))) {
+                       tab_lifecycle_unit_external->IsAutoDiscardable())) {
         continue;
       }
 
@@ -1252,7 +1255,7 @@ bool TabsUpdateFunction::RunAsync() {
       error_ = keys::kNoSelectedTabError;
       return false;
     }
-    tab_id = SessionTabHelper::IdForTab(contents);
+    tab_id = SessionTabHelper::IdForTab(contents).id();
   } else {
     tab_id = *params->tab_id;
   }
@@ -1722,25 +1725,28 @@ bool TabsCaptureVisibleTabFunction::ClientAllowsTransparency() {
   return false;
 }
 
-WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(int window_id) {
+WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(
+    int window_id,
+    std::string* error) {
   Browser* browser = NULL;
-  if (!GetBrowserFromWindowID(chrome_details_, window_id, &browser, &error_))
-    return NULL;
+  if (!GetBrowserFromWindowID(chrome_details_, window_id, &browser, error))
+    return nullptr;
 
   WebContents* contents = browser->tab_strip_model()->GetActiveWebContents();
   if (!contents) {
-    error_ = "No active web contents to capture";
-    return NULL;
+    *error = "No active web contents to capture";
+    return nullptr;
   }
 
   if (!extension()->permissions_data()->CanCaptureVisiblePage(
-          SessionTabHelper::IdForTab(contents), &error_)) {
-    return NULL;
+          contents->GetLastCommittedURL(), extension(),
+          SessionTabHelper::IdForTab(contents).id(), error)) {
+    return nullptr;
   }
   return contents;
 }
 
-bool TabsCaptureVisibleTabFunction::RunAsync() {
+ExtensionFunction::ResponseAction TabsCaptureVisibleTabFunction::Run() {
   using api::extension_types::ImageDetails;
 
   EXTENSION_FUNCTION_VALIDATE(args_);
@@ -1755,16 +1761,21 @@ bool TabsCaptureVisibleTabFunction::RunAsync() {
     image_details = ImageDetails::FromValue(*spec);
   }
 
-  WebContents* contents = GetWebContentsForID(context_id);
+  std::string error;
+  WebContents* contents = GetWebContentsForID(context_id, &error);
+  if (!contents)
+    return RespondNow(Error(error));
 
   const CaptureResult capture_result = CaptureAsync(
       contents, image_details.get(),
       base::BindOnce(&TabsCaptureVisibleTabFunction::CopyFromSurfaceComplete,
                      this));
-  if (capture_result == OK)
-    return true;
-  SetErrorMessage(capture_result);
-  return false;
+  if (capture_result == OK) {
+    // CopyFromSurfaceComplete might have already responded.
+    return did_respond() ? AlreadyResponded() : RespondLater();
+  }
+
+  return RespondNow(Error(CaptureResultToErrorMessage(capture_result)));
 }
 
 void TabsCaptureVisibleTabFunction::OnCaptureSuccess(const SkBitmap& bitmap) {
@@ -1774,16 +1785,16 @@ void TabsCaptureVisibleTabFunction::OnCaptureSuccess(const SkBitmap& bitmap) {
     return;
   }
 
-  SetResult(std::make_unique<base::Value>(base64_result));
-  SendResponse(true);
+  Respond(OneArgument(std::make_unique<base::Value>(base64_result)));
 }
 
 void TabsCaptureVisibleTabFunction::OnCaptureFailure(CaptureResult result) {
-  SetErrorMessage(result);
-  SendResponse(false);
+  Respond(Error(CaptureResultToErrorMessage(result)));
 }
 
-void TabsCaptureVisibleTabFunction::SetErrorMessage(CaptureResult result) {
+// static.
+std::string TabsCaptureVisibleTabFunction::CaptureResultToErrorMessage(
+    CaptureResult result) {
   const char* reason_description = "internal error";
   switch (result) {
     case FAILURE_REASON_READBACK_FAILED:
@@ -1796,15 +1807,14 @@ void TabsCaptureVisibleTabFunction::SetErrorMessage(CaptureResult result) {
       reason_description = "view is invisible";
       break;
     case FAILURE_REASON_SCREEN_SHOTS_DISABLED:
-      error_ = keys::kScreenshotsDisabled;
-      return;
+      return keys::kScreenshotsDisabled;
     case OK:
-      NOTREACHED()
-          << "SetErrorMessage should not be called with a successful result";
-      return;
+      NOTREACHED() << "CaptureResultToErrorMessage should not be called"
+                      " with a successful result";
+      return kUnknownErrorDoNotUse;
   }
-  error_ = ErrorUtils::FormatErrorMessage("Failed to capture tab: *",
-                                          reason_description);
+  return ErrorUtils::FormatErrorMessage("Failed to capture tab: *",
+                                        reason_description);
 }
 
 void TabsCaptureVisibleTabFunction::RegisterProfilePrefs(
@@ -1955,14 +1965,14 @@ ExecuteCodeFunction::InitResult ExecuteCodeInTabFunction::Init() {
   return set_init_result(SUCCESS);
 }
 
-bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage() {
-  content::WebContents* contents = NULL;
+bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage(std::string* error) {
+  content::WebContents* contents = nullptr;
 
   // If |tab_id| is specified, look for the tab. Otherwise default to selected
   // tab in the current window.
   CHECK_GE(execute_tab_id_, 0);
   if (!GetTabById(execute_tab_id_, browser_context(), include_incognito(),
-                  nullptr, nullptr, &contents, nullptr, &error_)) {
+                  nullptr, nullptr, &contents, nullptr, error)) {
     return false;
   }
 
@@ -1973,7 +1983,7 @@ bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage() {
   content::RenderFrameHost* rfh =
       ExtensionApiFrameIdMap::GetRenderFrameHostById(contents, frame_id);
   if (!rfh) {
-    error_ = ErrorUtils::FormatErrorMessage(keys::kFrameNotFoundError,
+    *error = ErrorUtils::FormatErrorMessage(keys::kFrameNotFoundError,
                                             base::IntToString(frame_id),
                                             base::IntToString(execute_tab_id_));
     return false;
@@ -1998,11 +2008,11 @@ bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage() {
   // NOTE: This can give the wrong answer due to race conditions, but it is OK,
   // we check again in the renderer.
   if (!extension()->permissions_data()->CanAccessPage(
-          extension(), effective_document_url, execute_tab_id_, &error_)) {
+          extension(), effective_document_url, execute_tab_id_, error)) {
     if (is_about_url &&
         extension()->permissions_data()->active_permissions().HasAPIPermission(
             APIPermission::kTab)) {
-      error_ = ErrorUtils::FormatErrorMessage(
+      *error = ErrorUtils::FormatErrorMessage(
           manifest_errors::kCannotAccessAboutUrl,
           rfh->GetLastCommittedURL().spec(),
           rfh->GetLastCommittedOrigin().Serialize());
@@ -2013,17 +2023,18 @@ bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage() {
   return true;
 }
 
-ScriptExecutor* ExecuteCodeInTabFunction::GetScriptExecutor() {
-  Browser* browser = NULL;
-  content::WebContents* contents = NULL;
+ScriptExecutor* ExecuteCodeInTabFunction::GetScriptExecutor(
+    std::string* error) {
+  Browser* browser = nullptr;
+  content::WebContents* contents = nullptr;
 
   bool success =
       GetTabById(execute_tab_id_, browser_context(), include_incognito(),
-                 &browser, nullptr, &contents, nullptr, &error_) &&
+                 &browser, nullptr, &contents, nullptr, error) &&
       contents && browser;
 
   if (!success)
-    return NULL;
+    return nullptr;
 
   return TabHelper::FromWebContents(contents)->script_executor();
 }
@@ -2038,15 +2049,6 @@ const GURL& ExecuteCodeInTabFunction::GetWebViewSrc() const {
 
 bool TabsExecuteScriptFunction::ShouldInsertCSS() const {
   return false;
-}
-
-void TabsExecuteScriptFunction::OnExecuteCodeFinished(
-    const std::string& error,
-    const GURL& on_url,
-    const base::ListValue& result) {
-  if (error.empty())
-    SetResult(result.CreateDeepCopy());
-  ExecuteCodeInTabFunction::OnExecuteCodeFinished(error, on_url, result);
 }
 
 bool TabsInsertCSSFunction::ShouldInsertCSS() const {

@@ -1734,19 +1734,6 @@ IPC_MESSAGE_CONTROL2(PpapiPluginMsg_HostResolver_ResolveReply,
                      std::string /* canonical_name */,
                      std::vector<PP_NetAddress_Private> /* net_address_list */)
 
-// Platform Verification -------------------------------------------------------
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_PlatformVerification_Create)
-IPC_MESSAGE_CONTROL2(PpapiHostMsg_PlatformVerification_ChallengePlatform,
-                     std::string /* service_id  */,
-                     std::vector<uint8_t> /* challenge */)
-IPC_MESSAGE_CONTROL3(PpapiHostMsg_PlatformVerification_ChallengePlatformReply,
-                     std::vector<uint8_t> /* signed_data */,
-                     std::vector<uint8_t> /* signed_data_signature */,
-                     std::string /* platform_key_certificate */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_PlatformVerification_GetStorageId)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_PlatformVerification_GetStorageIdReply,
-                     std::vector<uint8_t> /* storage_id */)
-
 // Printing.
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_Printing_Create)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_Printing_GetDefaultPrintSettings)
@@ -2047,17 +2034,6 @@ IPC_MESSAGE_CONTROL4(PpapiPluginMsg_WebSocket_ClosedReply,
                      bool /* was_clean */,
                      uint16_t /* code */,
                      std::string /* reason */)
-
-// OutputProtection -----------------------------------------------------------
-
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_OutputProtection_Create)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_OutputProtection_EnableProtection,
-                     uint32_t /* desired_method_mask */)
-IPC_MESSAGE_CONTROL0(PpapiPluginMsg_OutputProtection_EnableProtectionReply)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_OutputProtection_QueryStatus)
-IPC_MESSAGE_CONTROL2(PpapiPluginMsg_OutputProtection_QueryStatusReply,
-                     uint32_t /* link_mask */,
-                     uint32_t /* protection_mask */)
 
 // VideoDecoder ------------------------------------------------------
 
@@ -2450,9 +2426,6 @@ IPC_MESSAGE_CONTROL4(PpapiHostMsg_PDF_SelectionChanged,
                      int32_t /* left_height */,
                      PP_FloatPoint /* right */,
                      int32_t /* right_height */)
-
-// Notify that the plugin has scrolled.
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_PDF_DidScroll)
 
 // VideoCapture ----------------------------------------------------------------
 

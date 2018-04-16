@@ -28,13 +28,15 @@
 #include "content/test/did_commit_provisional_load_interceptor.h"
 #include "device/fido/fake_fido_discovery.h"
 #include "device/fido/fake_hid_impl_for_testing.h"
+#include "device/fido/fido_test_data.h"
+#include "device/fido/mock_fido_device.h"
 #include "device/fido/test_callback_receiver.h"
 #include "net/dns/mock_host_resolver.h"
 #include "services/device/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/modules/webauth/authenticator.mojom.h"
+#include "third_party/blink/public/platform/modules/webauth/authenticator.mojom.h"
 
 namespace content {
 
@@ -55,16 +57,33 @@ using TestGetCallbackReceiver = ::device::test::StatusAndValueCallbackReceiver<
     AuthenticatorStatus,
     GetAssertionAuthenticatorResponsePtr>;
 
-constexpr char kNotAllowedErrorMessage[] =
-    "NotAllowedError: The operation either timed out or was not allowed. See: "
-    "https://w3c.github.io/webauthn/#sec-assertion-privacy.";
-
 constexpr char kRelyingPartySecurityErrorMessage[] =
     "SecurityError: The relying party ID 'localhost' is not a registrable "
     "domain suffix of, nor equal to 'https://www.example.com";
 
-constexpr char kNotSupportedErrorMessage[] =
-    "NotSupportedError: Parameters for this operation are not supported.";
+constexpr char kAlgorithmUnsupportedErrorMessage[] =
+    "NotSupportedError: None of the algorithms specified in "
+    "`pubKeyCredParams` are compatible with "
+    "CTAP1/U2F authenticators, and CTAP2 "
+    "authenticators are not yet supported.";
+
+constexpr char kAuthenticatorCriteriaErrorMessage[] =
+    "NotSupportedError: The specified `authenticatorSelection` "
+    "criteria cannot be fulfilled by CTAP1/U2F "
+    "authenticators, and CTAP2 authenticators "
+    "are not yet supported.";
+
+constexpr char kUserVerificationErrorMessage[] =
+    "NotSupportedError: The specified `userVerification` "
+    "requirement cannot be fulfilled by "
+    "CTAP1/U2F authenticators, and CTAP2 "
+    "authenticators are not yet supported.";
+
+constexpr char kEmptyAllowCredentialsErrorMessage[] =
+    "NotSupportedError: The `allowCredentials` list cannot be left "
+    "empty for CTAP1/U2F authenticators, and "
+    "support for CTAP2 authenticators is not yet "
+    "implemented.";
 
 // Templates to be used with base::ReplaceStringPlaceholders. Can be
 // modified to include up to 9 replacements. The default values for
@@ -119,10 +138,25 @@ constexpr char kGetPublicKeyTemplate[] =
     "  rp: 'example.com',"
     "  timeout: 60000,"
     "  userVerification: '$1',"
-    "  allowCredentials: [{ type: 'public-key',"
-    "     id: new TextEncoder().encode('allowedCredential'),"
-    "     transports: ['usb', 'nfc', 'ble']}] }"
+    "  $2}"
     "}).catch(c => window.domAutomationController.send(c.toString()));";
+
+// Default values for kGetPublicKeyTemplate.
+struct GetParameters {
+  const char* user_verification = kPreferredVerification;
+  const char* allow_credentials =
+      "allowCredentials: [{ type: 'public-key',"
+      "     id: new TextEncoder().encode('allowedCredential'),"
+      "     transports: ['usb', 'nfc', 'ble']}]";
+};
+
+std::string BuildGetCallWithParameters(const GetParameters& parameters) {
+  std::vector<std::string> substititions;
+  substititions.push_back(parameters.user_verification);
+  substititions.push_back(parameters.allow_credentials);
+  return base::ReplaceStringPlaceholders(kGetPublicKeyTemplate, substititions,
+                                         nullptr);
+}
 
 // Helper class that executes the given |closure| the very last moment before
 // the next navigation commits in a given WebContents.
@@ -287,9 +321,11 @@ class WebAuthLocalClientBrowserTest : public WebAuthBrowserTestBase {
     std::vector<webauth::mojom::AuthenticatorTransport> transports;
     transports.push_back(webauth::mojom::AuthenticatorTransport::USB);
 
-    std::vector<uint8_t> kCredentialId{0, 0, 0};
     auto descriptor = webauth::mojom::PublicKeyCredentialDescriptor::New(
-        webauth::mojom::PublicKeyCredentialType::PUBLIC_KEY, kCredentialId,
+        webauth::mojom::PublicKeyCredentialType::PUBLIC_KEY,
+        std::vector<uint8_t>(
+            std::begin(device::test_data::kTestGetAssertionCredentialId),
+            std::end(device::test_data::kTestGetAssertionCredentialId)),
         transports);
     credentials.push_back(std::move(descriptor));
 
@@ -404,7 +440,7 @@ IN_PROC_BROWSER_TEST_F(WebAuthLocalClientBrowserTest,
   // serviced at all, so the fake request should still be pending on the fake
   // factory.
   auto hid_discovery = ::device::FidoDiscovery::Create(
-      ::device::U2fTransportProtocol::kUsbHumanInterfaceDevice, nullptr);
+      ::device::FidoTransportProtocol::kUsbHumanInterfaceDevice, nullptr);
   ASSERT_TRUE(!!hid_discovery);
 
   // The next active document should be able to successfully call
@@ -496,7 +532,7 @@ class WebAuthJavascriptClientBrowserTest : public WebAuthBrowserTestBase {
 };
 
 // Tests that when navigator.credentials.create() is called with user
-// verification required we get a NotAllowedError.
+// verification required we get a NotSupportedError.
 IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
                        CreatePublicKeyCredentialWithUserVerification) {
   CreateParameters parameters;
@@ -505,11 +541,11 @@ IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
   ASSERT_TRUE(content::ExecuteScriptAndExtractString(
       shell()->web_contents()->GetMainFrame(),
       BuildCreateCallWithParameters(parameters), &result));
-  ASSERT_EQ(kNotAllowedErrorMessage, result);
+  ASSERT_EQ(kAuthenticatorCriteriaErrorMessage, result);
 }
 
 // Tests that when navigator.credentials.create() is called with resident key
-// required, we get a NotAllowedError.
+// required, we get a NotSupportedError.
 IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
                        CreatePublicKeyCredentialWithResidentKeyRequired) {
   CreateParameters parameters;
@@ -519,20 +555,7 @@ IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
       shell()->web_contents()->GetMainFrame(),
       BuildCreateCallWithParameters(parameters), &result));
 
-  ASSERT_EQ(kNotAllowedErrorMessage, result);
-}
-
-// Tests that when navigator.credentials.get() is called with user verification
-// required, we get a NotAllowedError.
-IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
-                       GetPublicKeyCredentialUserVerification) {
-  const std::string kScript = base::ReplaceStringPlaceholders(
-      kGetPublicKeyTemplate, {"required"}, nullptr);
-
-  std::string result;
-  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
-      shell()->web_contents()->GetMainFrame(), kScript, &result));
-  ASSERT_EQ(kNotAllowedErrorMessage, result);
+  ASSERT_EQ(kAuthenticatorCriteriaErrorMessage, result);
 }
 
 // Tests that when navigator.credentials.create() is called with an invalid
@@ -561,11 +584,11 @@ IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
       shell()->web_contents()->GetMainFrame(),
       BuildCreateCallWithParameters(parameters), &result));
 
-  ASSERT_EQ(kNotSupportedErrorMessage, result);
+  ASSERT_EQ(kAlgorithmUnsupportedErrorMessage, result);
 }
 
 // Tests that when navigator.credentials.create() is called with a
-// platform authenticator requested, we get a NotAllowedError.
+// platform authenticator requested, we get a NotSupportedError.
 IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
                        CreatePublicKeyCredentialPlatformAuthenticator) {
   CreateParameters parameters;
@@ -575,7 +598,33 @@ IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
       shell()->web_contents()->GetMainFrame(),
       BuildCreateCallWithParameters(parameters), &result));
 
-  ASSERT_EQ(kNotAllowedErrorMessage, result);
+  ASSERT_EQ(kAuthenticatorCriteriaErrorMessage, result);
+}
+
+// Tests that when navigator.credentials.get() is called with user verification
+// required, we get a NotSupportedError.
+IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
+                       GetPublicKeyCredentialUserVerification) {
+  GetParameters parameters;
+  parameters.user_verification = "required";
+  std::string result;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      shell()->web_contents()->GetMainFrame(),
+      BuildGetCallWithParameters(parameters), &result));
+  ASSERT_EQ(kUserVerificationErrorMessage, result);
+}
+
+// Tests that when navigator.credentials.get() is called with an empty
+// allowCredentials list, we get a NotSupportedError.
+IN_PROC_BROWSER_TEST_F(WebAuthJavascriptClientBrowserTest,
+                       GetPublicKeyCredentialEmptyAllowCredentialsList) {
+  GetParameters parameters;
+  parameters.allow_credentials = "";
+  std::string result;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      shell()->web_contents()->GetMainFrame(),
+      BuildGetCallWithParameters(parameters), &result));
+  ASSERT_EQ(kEmptyAllowCredentialsErrorMessage, result);
 }
 
 // WebAuthBrowserBleDisabledTest
@@ -610,6 +659,72 @@ IN_PROC_BROWSER_TEST_F(WebAuthBrowserBleDisabledTest, CheckBleDisabled) {
   fake_hid_discovery->WaitForCallToStart();
   EXPECT_TRUE(fake_hid_discovery->is_start_requested());
   EXPECT_FALSE(fake_ble_discovery->is_start_requested());
+}
+
+// WebAuthBrowserCtapTest ----------------------------------------------
+
+// A test fixture that enables CTAP only flag.
+class WebAuthBrowserCtapTest : public WebAuthLocalClientBrowserTest {
+ public:
+  WebAuthBrowserCtapTest() = default;
+
+ protected:
+  std::vector<base::Feature> GetFeaturesToEnable() override {
+    return {features::kWebAuth, features::kWebAuthCtap2};
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+  DISALLOW_COPY_AND_ASSIGN(WebAuthBrowserCtapTest);
+};
+
+// TODO(hongjunchoi): Implement VirtualCtap2Device to replace mocking.
+// See: https://crbugs.com/829413
+IN_PROC_BROWSER_TEST_F(WebAuthBrowserCtapTest, TestCtapMakeCredential) {
+  auto* fake_hid_discovery = discovery_factory()->ForgeNextHidDiscovery();
+
+  TestCreateCallbackReceiver create_callback_receiver;
+  authenticator()->MakeCredential(BuildBasicCreateOptions(),
+                                  create_callback_receiver.callback());
+
+  fake_hid_discovery->WaitForCallToStartAndSimulateSuccess();
+  auto device = std::make_unique<device::MockFidoDevice>();
+  EXPECT_CALL(*device, GetId()).WillRepeatedly(testing::Return("device0"));
+  device->ExpectCtap2CommandAndRespondWith(
+      device::CtapRequestCommand::kAuthenticatorGetInfo,
+      device::test_data::kTestAuthenticatorGetInfoResponse);
+  device->ExpectCtap2CommandAndRespondWith(
+      device::CtapRequestCommand::kAuthenticatorMakeCredential,
+      device::test_data::kTestMakeCredentialResponse);
+
+  fake_hid_discovery->AddDevice(std::move(device));
+
+  create_callback_receiver.WaitForCallback();
+  EXPECT_EQ(AuthenticatorStatus::SUCCESS, create_callback_receiver.status());
+}
+
+IN_PROC_BROWSER_TEST_F(WebAuthBrowserCtapTest, TestCtapGetAssertion) {
+  auto* fake_hid_discovery = discovery_factory()->ForgeNextHidDiscovery();
+
+  TestGetCallbackReceiver get_callback_receiver;
+  auto get_assertion_request_params = BuildBasicGetOptions();
+  authenticator()->GetAssertion(std::move(get_assertion_request_params),
+                                get_callback_receiver.callback());
+
+  fake_hid_discovery->WaitForCallToStartAndSimulateSuccess();
+  auto device = std::make_unique<device::MockFidoDevice>();
+  EXPECT_CALL(*device, GetId()).WillRepeatedly(testing::Return("device0"));
+  device->ExpectCtap2CommandAndRespondWith(
+      device::CtapRequestCommand::kAuthenticatorGetInfo,
+      device::test_data::kTestAuthenticatorGetInfoResponse);
+  device->ExpectCtap2CommandAndRespondWith(
+      device::CtapRequestCommand::kAuthenticatorGetAssertion,
+      device::test_data::kTestGetAssertionResponse);
+
+  fake_hid_discovery->AddDevice(std::move(device));
+
+  get_callback_receiver.WaitForCallback();
+  EXPECT_EQ(AuthenticatorStatus::SUCCESS, get_callback_receiver.status());
 }
 
 }  // namespace content

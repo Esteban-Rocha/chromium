@@ -18,11 +18,13 @@
 #include <pthread.h>
 #endif
 
-namespace profiling {
+namespace heap_profiling {
 class MemlogAllocatorShimInternal;
-}  // namespace profiling
+}  // namespace heap_profiling
 
 namespace base {
+
+class SamplingHeapProfiler;
 
 namespace trace_event {
 class MallocDumpProvider;
@@ -151,9 +153,10 @@ class BASE_EXPORT ThreadLocalStorage {
   // thread destruction. Attempting to call Slot::Get() during destruction is
   // disallowed and will hit a DCHECK. Any code that relies on TLS during thread
   // destruction must first check this method before calling Slot::Get().
+  friend class base::SamplingHeapProfiler;
   friend class base::internal::ThreadLocalStorageTestInternal;
   friend class base::trace_event::MallocDumpProvider;
-  friend class profiling::MemlogAllocatorShimInternal;
+  friend class heap_profiling::MemlogAllocatorShimInternal;
   static bool HasBeenDestroyed();
 
   DISALLOW_COPY_AND_ASSIGN(ThreadLocalStorage);

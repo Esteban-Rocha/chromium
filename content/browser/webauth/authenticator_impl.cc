@@ -14,20 +14,29 @@
 #include "base/rand_util.h"
 #include "base/timer/timer.h"
 #include "content/browser/bad_message.h"
+#include "content/browser/webauth/authenticator_type_converters.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/origin_util.h"
 #include "content/public/common/service_manager_connection.h"
 #include "crypto/sha2.h"
+#include "device/fido/authenticator_selection_criteria.h"
+#include "device/fido/ctap_get_assertion_request.h"
+#include "device/fido/ctap_make_credential_request.h"
+#include "device/fido/fido_transport_protocol.h"
+#include "device/fido/get_assertion_request_handler.h"
+#include "device/fido/make_credential_request_handler.h"
+#include "device/fido/public_key_credential_descriptor.h"
+#include "device/fido/public_key_credential_params.h"
 #include "device/fido/u2f_register.h"
 #include "device/fido/u2f_request.h"
 #include "device/fido/u2f_sign.h"
-#include "device/fido/u2f_transport_protocol.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -195,6 +204,45 @@ std::vector<std::vector<uint8_t>> FilterCredentialList(
   return handles;
 }
 
+device::CtapMakeCredentialRequest CreateCtapMakeCredentialRequest(
+    std::vector<uint8_t> client_data_hash,
+    const webauth::mojom::PublicKeyCredentialCreationOptionsPtr& options) {
+  auto credential_params = mojo::ConvertTo<
+      std::vector<device::PublicKeyCredentialParams::CredentialInfo>>(
+      options->public_key_parameters);
+
+  device::CtapMakeCredentialRequest make_credential_param(
+      std::move(client_data_hash),
+      mojo::ConvertTo<device::PublicKeyCredentialRpEntity>(
+          options->relying_party),
+      mojo::ConvertTo<device::PublicKeyCredentialUserEntity>(options->user),
+      device::PublicKeyCredentialParams(std::move(credential_params)));
+
+  auto exclude_list =
+      mojo::ConvertTo<std::vector<device::PublicKeyCredentialDescriptor>>(
+          options->exclude_credentials);
+
+  make_credential_param.SetExcludeList(std::move(exclude_list));
+  return make_credential_param;
+}
+
+device::CtapGetAssertionRequest CreateCtapGetAssertionRequest(
+    std::vector<uint8_t> client_data_hash,
+    const webauth::mojom::PublicKeyCredentialRequestOptionsPtr& options) {
+  device::CtapGetAssertionRequest request_parameter(
+      options->relying_party_id, std::move(client_data_hash));
+
+  auto allowed_list =
+      mojo::ConvertTo<std::vector<device::PublicKeyCredentialDescriptor>>(
+          options->allow_credentials);
+
+  request_parameter.SetAllowList(std::move(allowed_list));
+  request_parameter.SetUserVerification(
+      mojo::ConvertTo<device::UserVerificationRequirement>(
+          options->user_verification));
+  return request_parameter;
+}
+
 std::vector<uint8_t> ConstructClientDataHash(const std::string& client_data) {
   // SHA-256 hash of the JSON data structure.
   std::vector<uint8_t> client_data_hash(crypto::kSHA256Length);
@@ -288,9 +336,9 @@ AuthenticatorImpl::AuthenticatorImpl(RenderFrameHost* render_frame_host)
   DCHECK(render_frame_host_);
   DCHECK(timer_);
 
-  protocols_.insert(device::U2fTransportProtocol::kUsbHumanInterfaceDevice);
+  protocols_.insert(device::FidoTransportProtocol::kUsbHumanInterfaceDevice);
   if (base::FeatureList::IsEnabled(features::kWebAuthBle)) {
-    protocols_.insert(device::U2fTransportProtocol::kBluetoothLowEnergy);
+    protocols_.insert(device::FidoTransportProtocol::kBluetoothLowEnergy);
   }
 }
 
@@ -373,9 +421,16 @@ std::string AuthenticatorImpl::SerializeCollectedClientDataToJson(
 void AuthenticatorImpl::MakeCredential(
     webauth::mojom::PublicKeyCredentialCreationOptionsPtr options,
     MakeCredentialCallback callback) {
-  if (u2f_request_) {
+  if (u2f_request_ || ctap_request_) {
     std::move(callback).Run(
         webauth::mojom::AuthenticatorStatus::PENDING_REQUEST, nullptr);
+    return;
+  }
+
+  if (GetContentClient()->browser()->ShouldEnforceFocusChecksForWebauthn() &&
+      !render_frame_host_->GetView()->HasFocus()) {
+    std::move(callback).Run(webauth::mojom::AuthenticatorStatus::NOT_FOCUSED,
+                            nullptr);
     return;
   }
 
@@ -403,19 +458,21 @@ void AuthenticatorImpl::MakeCredential(
   // Verify that the request doesn't contain parameters that U2F authenticators
   // cannot fulfill.
   // TODO(crbug.com/819256): Improve messages for "Not Allowed" errors.
-  if (!AreOptionsSupportedByU2fAuthenticators(options)) {
+  if (!base::FeatureList::IsEnabled(features::kWebAuthCtap2) &&
+      !AreOptionsSupportedByU2fAuthenticators(options)) {
     InvokeCallbackAndCleanup(
         std::move(callback),
-        webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
+        webauth::mojom::AuthenticatorStatus::AUTHENTICATOR_CRITERIA_UNSUPPORTED,
+        nullptr);
     return;
   }
 
-  // TODO(crbug.com/819256): Improve messages for "Not Supported" errors.
-  if (!IsAlgorithmSupportedByU2fAuthenticators(
+  if (!base::FeatureList::IsEnabled(features::kWebAuthCtap2) &&
+      !IsAlgorithmSupportedByU2fAuthenticators(
           options->public_key_parameters)) {
     InvokeCallbackAndCleanup(
         std::move(callback),
-        webauth::mojom::AuthenticatorStatus::NOT_SUPPORTED_ERROR, nullptr);
+        webauth::mojom::AuthenticatorStatus::ALGORITHM_UNSUPPORTED, nullptr);
     return;
   }
 
@@ -450,27 +507,50 @@ void AuthenticatorImpl::MakeCredential(
 
   attestation_preference_ = options->attestation;
 
-  // TODO(kpaulhamus): Mock U2fRegister for unit tests.
-  // http://crbug.com/785955.
-  // Per fido-u2f-raw-message-formats:
-  // The challenge parameter is the SHA-256 hash of the Client Data,
-  // Among other things, the Client Data contains the challenge from the
-  // relying party (hence the name of the parameter).
-  u2f_request_ = device::U2fRegister::TryRegistration(
-      connector_, protocols_, registered_keys,
-      ConstructClientDataHash(client_data_json_),
-      CreateApplicationParameter(relying_party_id_), individual_attestation,
-      base::BindOnce(&AuthenticatorImpl::OnRegisterResponse,
-                     weak_factory_.GetWeakPtr()));
+  if (base::FeatureList::IsEnabled(features::kWebAuthCtap2)) {
+    auto authenticator_selection_criteria =
+        options->authenticator_selection
+            ? mojo::ConvertTo<device::AuthenticatorSelectionCriteria>(
+                  options->authenticator_selection)
+            : device::AuthenticatorSelectionCriteria();
+
+    ctap_request_ = std::make_unique<device::MakeCredentialRequestHandler>(
+        connector_, protocols_,
+        CreateCtapMakeCredentialRequest(
+            ConstructClientDataHash(client_data_json_), options),
+        std::move(authenticator_selection_criteria),
+        base::BindOnce(&AuthenticatorImpl::OnRegisterResponse,
+                       weak_factory_.GetWeakPtr()));
+  } else {
+    // TODO(kpaulhamus): Mock U2fRegister for unit tests.
+    // http://crbug.com/785955.
+    // Per fido-u2f-raw-message-formats:
+    // The challenge parameter is the SHA-256 hash of the Client Data,
+    // Among other things, the Client Data contains the challenge from the
+    // relying party (hence the name of the parameter).
+    u2f_request_ = device::U2fRegister::TryRegistration(
+        connector_, protocols_, registered_keys,
+        ConstructClientDataHash(client_data_json_),
+        CreateApplicationParameter(relying_party_id_), individual_attestation,
+        base::BindOnce(&AuthenticatorImpl::OnRegisterResponse,
+                       weak_factory_.GetWeakPtr()));
+  }
 }
 
 // mojom:Authenticator
 void AuthenticatorImpl::GetAssertion(
     webauth::mojom::PublicKeyCredentialRequestOptionsPtr options,
     GetAssertionCallback callback) {
-  if (u2f_request_) {
+  if (u2f_request_ || ctap_request_) {
     std::move(callback).Run(
         webauth::mojom::AuthenticatorStatus::PENDING_REQUEST, nullptr);
+    return;
+  }
+
+  if (GetContentClient()->browser()->ShouldEnforceFocusChecksForWebauthn() &&
+      !render_frame_host_->GetView()->HasFocus()) {
+    std::move(callback).Run(webauth::mojom::AuthenticatorStatus::NOT_FOCUSED,
+                            nullptr);
     return;
   }
 
@@ -495,11 +575,13 @@ void AuthenticatorImpl::GetAssertion(
   }
 
   // To use U2F, the relying party must not require user verification.
-  if (options->user_verification ==
-      webauth::mojom::UserVerificationRequirement::REQUIRED) {
+  if (!base::FeatureList::IsEnabled(features::kWebAuthCtap2) &&
+      options->user_verification ==
+          webauth::mojom::UserVerificationRequirement::REQUIRED) {
     InvokeCallbackAndCleanup(
         std::move(callback),
-        webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
+        webauth::mojom::AuthenticatorStatus::USER_VERIFICATION_UNSUPPORTED,
+        nullptr);
     return;
   }
 
@@ -520,12 +602,31 @@ void AuthenticatorImpl::GetAssertion(
     echo_appid_extension_ = true;
   }
 
-  DCHECK(get_assertion_response_callback_.is_null());
-  get_assertion_response_callback_ = std::move(callback);
-
-  // Pass along valid keys from allow_list, if any.
+  // Pass along valid keys from allow_list.
   std::vector<std::vector<uint8_t>> handles =
       FilterCredentialList(std::move(options->allow_credentials));
+
+  // There are two different descriptions of what should happen when
+  // "allowCredentials" is empty.
+  // a) WebAuthN 6.2.3 step 6[1] implies "NotAllowedError".
+  // b) CTAP step 7.2 step 2[2] says the device should error out with
+  // "CTAP2_ERR_OPTION_NOT_SUPPORTED". This also resolves to "NotAllowedError".
+  // The behavior in both cases is consistent with the current implementation.
+  // TODO(crbug.com/831712): When CTAP2 authenticators are supported, this check
+  // should be enforced by handlers in fido/device on a per-device basis.
+
+  // [1] https://w3c.github.io/webauthn/#authenticatorgetassertion
+  // [2]
+  // https://fidoalliance.org/specs/fido-v2.0-ps-20170927/fido-client-to-authenticator-protocol-v2.0-ps-20170927.html
+  if (handles.empty()) {
+    InvokeCallbackAndCleanup(
+        std::move(callback),
+        webauth::mojom::AuthenticatorStatus::EMPTY_ALLOW_CREDENTIALS, nullptr);
+    return;
+  }
+
+  DCHECK(get_assertion_response_callback_.is_null());
+  get_assertion_response_callback_ = std::move(callback);
 
   timer_->Start(
       FROM_HERE, options->adjusted_timeout,
@@ -541,12 +642,21 @@ void AuthenticatorImpl::GetAssertion(
       client_data::kGetType, caller_origin, std::move(options->challenge),
       base::nullopt);
 
-  u2f_request_ = device::U2fSign::TrySign(
-      connector_, protocols_, handles,
-      ConstructClientDataHash(client_data_json_), application_parameter,
-      alternative_application_parameter,
-      base::BindOnce(&AuthenticatorImpl::OnSignResponse,
-                     weak_factory_.GetWeakPtr()));
+  if (base::FeatureList::IsEnabled(features::kWebAuthCtap2)) {
+    ctap_request_ = std::make_unique<device::GetAssertionRequestHandler>(
+        connector_, protocols_,
+        CreateCtapGetAssertionRequest(
+            ConstructClientDataHash(client_data_json_), options),
+        base::BindOnce(&AuthenticatorImpl::OnSignResponse,
+                       weak_factory_.GetWeakPtr()));
+  } else {
+    u2f_request_ = device::U2fSign::TrySign(
+        connector_, protocols_, handles,
+        ConstructClientDataHash(client_data_json_), application_parameter,
+        alternative_application_parameter,
+        base::BindOnce(&AuthenticatorImpl::OnSignResponse,
+                       weak_factory_.GetWeakPtr()));
+  }
 }
 
 void AuthenticatorImpl::DidFinishNavigation(
@@ -566,26 +676,25 @@ void AuthenticatorImpl::OnRegisterResponse(
     device::FidoReturnCode status_code,
     base::Optional<device::AuthenticatorMakeCredentialResponse> response_data) {
   // If callback is called immediately, this code will call |Cleanup| before
-  // |u2f_request_| has been assigned – violating invariants.
-  DCHECK(u2f_request_) << "unsupported callback hairpin";
+  // |u2f_request_| or |ctap_request_| has been assigned – violating invariants.
+  DCHECK(u2f_request_ || ctap_request_);
 
   switch (status_code) {
-    case device::FidoReturnCode::kInvalidState:
+    case device::FidoReturnCode::kUserConsentButCredentialExcluded:
       // Duplicate registration: the new credential would be created on an
       // authenticator that already contains one of the credentials in
       // |exclude_credentials|.
       InvokeCallbackAndCleanup(
           std::move(make_credential_response_callback_),
-          webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
+          webauth::mojom::AuthenticatorStatus::CREDENTIAL_EXCLUDED, nullptr);
       return;
-    case device::FidoReturnCode::kFailure:
+    case device::FidoReturnCode::kAuthenticatorResponseInvalid:
       // The response from the authenticator was corrupted.
       InvokeCallbackAndCleanup(
           std::move(make_credential_response_callback_),
           webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
       return;
-    case device::FidoReturnCode::kInvalidParams:
-    case device::FidoReturnCode::kConditionsNotSatisfied:
+    case device::FidoReturnCode::kUserConsentButCredentialNotRecognized:
       NOTREACHED();
       return;
     case device::FidoReturnCode::kSuccess:
@@ -662,24 +771,24 @@ void AuthenticatorImpl::OnSignResponse(
     device::FidoReturnCode status_code,
     base::Optional<device::AuthenticatorGetAssertionResponse> response_data) {
   // If callback is called immediately, this code will call |Cleanup| before
-  // |u2f_request_| has been assigned – violating invariants.
-  DCHECK(u2f_request_) << "unsupported callback hairpin";
+  // |u2f_request_| or |ctap_request_| has been assigned – violating invariants.
+  DCHECK(u2f_request_ || ctap_request_);
 
   switch (status_code) {
-    case device::FidoReturnCode::kConditionsNotSatisfied:
+    case device::FidoReturnCode::kUserConsentButCredentialNotRecognized:
       // No authenticators contained the credential.
       InvokeCallbackAndCleanup(
           std::move(get_assertion_response_callback_),
-          webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
+          webauth::mojom::AuthenticatorStatus::CREDENTIAL_NOT_RECOGNIZED,
+          nullptr);
       return;
-    case device::FidoReturnCode::kFailure:
+    case device::FidoReturnCode::kAuthenticatorResponseInvalid:
       // The response from the authenticator was corrupted.
       InvokeCallbackAndCleanup(
           std::move(make_credential_response_callback_),
           webauth::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
       return;
-    case device::FidoReturnCode::kInvalidParams:
-    case device::FidoReturnCode::kInvalidState:
+    case device::FidoReturnCode::kUserConsentButCredentialExcluded:
       NOTREACHED();
       return;
     case device::FidoReturnCode::kSuccess:
@@ -715,7 +824,14 @@ void AuthenticatorImpl::InvokeCallbackAndCleanup(
     MakeCredentialCallback callback,
     webauth::mojom::AuthenticatorStatus status,
     webauth::mojom::MakeCredentialAuthenticatorResponsePtr response) {
-  std::move(callback).Run(status, std::move(response));
+  if (GetContentClient()->browser()->ShouldEnforceFocusChecksForWebauthn() &&
+      !render_frame_host_->GetView()->HasFocus()) {
+    std::move(callback).Run(webauth::mojom::AuthenticatorStatus::NOT_FOCUSED,
+                            nullptr);
+  } else {
+    std::move(callback).Run(status, std::move(response));
+  }
+
   Cleanup();
 }
 
@@ -723,13 +839,21 @@ void AuthenticatorImpl::InvokeCallbackAndCleanup(
     GetAssertionCallback callback,
     webauth::mojom::AuthenticatorStatus status,
     webauth::mojom::GetAssertionAuthenticatorResponsePtr response) {
-  std::move(callback).Run(status, std::move(response));
+  if (GetContentClient()->browser()->ShouldEnforceFocusChecksForWebauthn() &&
+      !render_frame_host_->GetView()->HasFocus()) {
+    std::move(callback).Run(webauth::mojom::AuthenticatorStatus::NOT_FOCUSED,
+                            nullptr);
+  } else {
+    std::move(callback).Run(status, std::move(response));
+  }
+
   Cleanup();
 }
 
 void AuthenticatorImpl::Cleanup() {
   timer_->Stop();
   u2f_request_.reset();
+  ctap_request_.reset();
   make_credential_response_callback_.Reset();
   get_assertion_response_callback_.Reset();
   client_data_json_.clear();

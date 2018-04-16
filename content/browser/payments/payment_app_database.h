@@ -19,7 +19,7 @@
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/public/browser/stored_payment_app.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "third_party/WebKit/public/platform/modules/payments/payment_app.mojom.h"
+#include "third_party/blink/public/platform/modules/payments/payment_app.mojom.h"
 
 namespace content {
 
@@ -82,7 +82,7 @@ class CONTENT_EXPORT PaymentAppDatabase {
       const std::string& instrument_key,
       const std::string& name,
       const std::string& icon,
-      const std::vector<std::string>& enabled_methods,
+      const std::string& method,
       SetPaymentAppInfoCallback callback);
 
  private:
@@ -210,13 +210,13 @@ class CONTENT_EXPORT PaymentAppDatabase {
       const std::string& instrument_key,
       const std::string& name,
       const std::string& icon,
-      const std::vector<std::string>& enabled_methods,
+      const std::string& method,
       SetPaymentAppInfoCallback callback,
       ServiceWorkerStatusCode status,
       scoped_refptr<ServiceWorkerRegistration> registration);
   void DidWritePaymentAppForSetPaymentApp(
       const std::string& instrument_key,
-      const std::vector<std::string>& enabled_methods,
+      const std::string& method,
       SetPaymentAppInfoCallback callback,
       scoped_refptr<ServiceWorkerRegistration> registration,
       ServiceWorkerStatusCode status);

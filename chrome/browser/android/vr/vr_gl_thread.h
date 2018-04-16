@@ -50,15 +50,16 @@ class VrGLThread : public base::android::JavaHandlerThread,
 
   ~VrGLThread() override;
   base::WeakPtr<VrShellGl> GetVrShellGl();
-  void SetInputConnection(base::WeakPtr<VrInputConnection> weak_connection);
+  void SetInputConnection(VrInputConnection* input_connection);
 
   // GlBrowserInterface implementation (GL calling to VrShell).
   void ContentSurfaceCreated(jobject surface,
                              gl::SurfaceTexture* texture) override;
   void ContentOverlaySurfaceCreated(jobject surface,
                                     gl::SurfaceTexture* texture) override;
-  void GvrDelegateReady(
-      gvr::ViewerType viewer_type,
+  void GvrDelegateReady(gvr::ViewerType viewer_type) override;
+  void SendRequestPresentReply(
+      bool success,
       device::mojom::VRDisplayFrameTransportOptionsPtr) override;
   void DialogSurfaceCreated(jobject surface,
                             gl::SurfaceTexture* texture) override;
@@ -117,6 +118,7 @@ class VrGLThread : public base::android::JavaHandlerThread,
                       const base::Version& component_version) override;
   void OnAssetsUnavailable() override;
   void SetIncognitoTabsOpen(bool open) override;
+  void SetOverlayTextureEmpty(bool empty) override;
   void ShowSoftInput(bool show) override;
   void UpdateWebInputIndices(int selection_start,
                              int selection_end,
@@ -140,6 +142,10 @@ class VrGLThread : public base::android::JavaHandlerThread,
   base::WeakPtr<VrShell> weak_vr_shell_;
   base::WeakPtr<BrowserUiInterface> weak_browser_ui_;
   base::WeakPtr<VrInputConnection> weak_input_connection_;
+  // Both VrInputConnection and VrGlThread are owned by VrShell. In VrShell, we
+  // made sure that this input_connection_ is up to date and destroyed after
+  // VrGlThread. So it is safe to use raw pointer here.
+  VrInputConnection* input_connection_;
 
   // This state is used for initializing vr_shell_gl_.
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;

@@ -120,7 +120,8 @@ TEST(CTAPRequestTest, TestConstructMakeCredentialRequestParam) {
   CtapMakeCredentialRequest make_credential_param(
       std::vector<uint8_t>(kClientDataHash, std::end(kClientDataHash)),
       std::move(rp), std::move(user),
-      PublicKeyCredentialParams({{"public-key", 7}, {"public-key", 257}}));
+      PublicKeyCredentialParams({{CredentialType::kPublicKey, 7},
+                                 {CredentialType::kPublicKey, 257}}));
   auto serialized_data = make_credential_param.SetResidentKeySupported(true)
                              .SetUserVerificationRequired(true)
                              .EncodeAsCBOR();
@@ -184,11 +185,11 @@ TEST(CTAPRequestTest, TestConstructGetAssertionRequest) {
       // "public-key"
       0x70, 0x75, 0x62, 0x6C, 0x69, 0x63, 0x2D, 0x6B, 0x65, 0x79,
 
-      0x07,        // unsigned(7) - options
+      0x05,        // unsigned(5) - options
       0xa2,        // map(2)
       0x62,        // text(2)
       0x75, 0x70,  // "up"
-      0xf5,        // True(21)
+      0xf4,        // False(20)
       0x62,        // text(2)
       0x75, 0x76,  // "uv"
       0xf5         // True(21)
@@ -218,8 +219,8 @@ TEST(CTAPRequestTest, TestConstructGetAssertionRequest) {
        0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03}));
 
   get_assertion_req.SetAllowList(std::move(allowed_list))
-      .SetUserPresenceRequired(true)
-      .SetUserVerificationRequired(true);
+      .SetUserPresenceRequired(false)
+      .SetUserVerification(UserVerificationRequirement::kRequired);
 
   auto serialized_data = get_assertion_req.EncodeAsCBOR();
   EXPECT_THAT(serialized_data, ::testing::ElementsAreArray(kSerializedRequest));
@@ -228,15 +229,12 @@ TEST(CTAPRequestTest, TestConstructGetAssertionRequest) {
 TEST(CTAPRequestTest, TestConstructCtapAuthenticatorRequestParam) {
   static constexpr uint8_t kSerializedGetInfoCmd = 0x04;
   static constexpr uint8_t kSerializedGetNextAssertionCmd = 0x08;
-  static constexpr uint8_t kSerializedCancelCmd = 0x03;
   static constexpr uint8_t kSerializedResetCmd = 0x07;
 
   EXPECT_THAT(AuthenticatorGetInfoRequest().Serialize(),
               ::testing::ElementsAre(kSerializedGetInfoCmd));
   EXPECT_THAT(AuthenticatorGetNextAssertionRequest().Serialize(),
               ::testing::ElementsAre(kSerializedGetNextAssertionCmd));
-  EXPECT_THAT(AuthenticatorCancelRequest().Serialize(),
-              ::testing::ElementsAre(kSerializedCancelCmd));
   EXPECT_THAT(AuthenticatorResetRequest().Serialize(),
               ::testing::ElementsAre(kSerializedResetCmd));
 }

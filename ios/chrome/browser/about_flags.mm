@@ -46,6 +46,7 @@
 #include "ios/chrome/browser/mailto/features.h"
 #include "ios/chrome/browser/ssl/captive_portal_features.h"
 #include "ios/chrome/browser/ui/external_search/features.h"
+#import "ios/chrome/browser/ui/fullscreen/fullscreen_features.h"
 #import "ios/chrome/browser/ui/history/history_base_feature.h"
 #include "ios/chrome/browser/ui/main/main_feature_flags.h"
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_flags.h"
@@ -124,21 +125,6 @@ const FeatureEntry::Choice kAutofillIOSDelayBetweenFieldsChoices[] = {
     {"200", autofill::switches::kAutofillIOSDelayBetweenFields, "200"},
     {"500", autofill::switches::kAutofillIOSDelayBetweenFields, "500"},
     {"1000", autofill::switches::kAutofillIOSDelayBetweenFields, "1000"},
-};
-
-const FeatureEntry::Choice kToolbarButtonPositionsChoices[] = {
-    {flags_ui::kGenericExperimentChoiceDefault, "", ""},
-    {"Bottom navigation, no top", kToolbarButtonPositionsSwitch, "0"},
-    {"Bottom navigation, share on top", kToolbarButtonPositionsSwitch, "1"},
-    {"Top navigation", kToolbarButtonPositionsSwitch, "2"},
-};
-
-const FeatureEntry::Choice kSearchButtonIconChoices[] = {
-    {flags_ui::kGenericExperimentChoiceDefault, "", ""},
-    {"Grey search engine logo", kIconSearchButtonSwitch, kIconSearchButtonGrey},
-    {"Colorful search engine logo", kIconSearchButtonSwitch,
-     kIconSearchButtonColorful},
-    {"Magnifying glass", kIconSearchButtonSwitch, kIconSearchButtonMagnifying},
 };
 
 // To add a new entry, add to the end of kFeatureEntries. There are four
@@ -268,12 +254,6 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
     {"new-tools_menu", flag_descriptions::kNewToolsMenuName,
      flag_descriptions::kNewToolsMenuDescription, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(kNewToolsMenu)},
-    {"toolbar-button-positions", flag_descriptions::kToolbarButtonPositionsName,
-     flag_descriptions::kToolbarButtonPositionsDescription, flags_ui::kOsIos,
-     MULTI_VALUE_TYPE(kToolbarButtonPositionsChoices)},
-    {"search-icon-toggle", flag_descriptions::kSearchIconToggleName,
-     flag_descriptions::kSearchIconToggleDescription, flags_ui::kOsIos,
-     MULTI_VALUE_TYPE(kSearchButtonIconChoices)},
     {"itunes-links-store-kit-handling",
      flag_descriptions::kITunesLinksStoreKitHandlingName,
      flag_descriptions::kITunesLinksStoreKitHandlingDescription,
@@ -281,6 +261,15 @@ const flags_ui::FeatureEntry kFeatureEntries[] = {
     {"unified-consent", flag_descriptions::kUnifiedConsentName,
      flag_descriptions::kUnifiedConsentDescription, flags_ui::kOsIos,
      FEATURE_VALUE_TYPE(signin::kUnifiedConsent)},
+    {"autofill-dynamic-forms", flag_descriptions::kAutofillDynamicFormsName,
+     flag_descriptions::kAutofillDynamicFormsDescription, flags_ui::kOsIos,
+     FEATURE_VALUE_TYPE(autofill::features::kAutofillDynamicForms)},
+    {"ui-refresh-location-bar", flag_descriptions::kUIRefreshLocationBarName,
+     flag_descriptions::kUIRefreshLocationBarDescription, flags_ui::kOsIos,
+     FEATURE_VALUE_TYPE(kUIRefreshLocationBar)},
+    {"fullscreen-content-inset", flag_descriptions::kFullscreenContentInsetName,
+     flag_descriptions::kFullscreenContentInsetDescription, flags_ui::kOsIos,
+     FEATURE_VALUE_TYPE(fullscreen::features::kFullscreenContentInset)},
 };
 
 // Add all switches from experimental flags to |command_line|.

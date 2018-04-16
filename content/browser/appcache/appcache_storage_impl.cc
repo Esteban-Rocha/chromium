@@ -40,7 +40,7 @@
 #include "storage/browser/quota/quota_client.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
+#include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
 
 namespace content {
 
@@ -682,7 +682,7 @@ void AppCacheStorageImpl::StoreGroupAndCacheTask::GetQuotaThenSchedule() {
   storage_->pending_quota_queries_.insert(this);
   quota_manager->GetUsageAndQuota(
       group_record_.origin.GetURL(), blink::mojom::StorageType::kTemporary,
-      base::Bind(&StoreGroupAndCacheTask::OnQuotaCallback, this));
+      base::BindOnce(&StoreGroupAndCacheTask::OnQuotaCallback, this));
 }
 
 void AppCacheStorageImpl::StoreGroupAndCacheTask::OnQuotaCallback(

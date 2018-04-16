@@ -29,7 +29,7 @@ extern "C" int WINAPI wWinMain(HINSTANCE instance,
   // chrome/browser/metrics/chrome_metrics_service_client.cc.
   base::PersistentHistogramStorage persistent_histogram_storage(
       "NotificationHelperMetrics",
-      base::PersistentHistogramStorage::StorageDirCreation::kEnable);
+      base::PersistentHistogramStorage::StorageDirManagement::kCreate);
 
   // Initialize the CommandLine singleton from the environment.
   base::CommandLine::Init(0, nullptr);
@@ -39,21 +39,17 @@ extern "C" int WINAPI wWinMain(HINSTANCE instance,
   // process should exit immediately.
   // https://msdn.microsoft.com/en-us/library/windows/desktop/ms683844.aspx
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch("embedding")) {
+    // Histogram storage is enabled at the very top of this wWinMain. Disable it
+    // in this case as there is no directory in which to write them nor a
+    // browser to subsequently upload them.
     persistent_histogram_storage.Disable();
     return 0;
   }
 
-  install_static::InitializeProductDetailsForPrimaryModule();
-
-  // The histogram storage folder should be under folder "User Data".
-  base::string16 user_data_dir;
-  install_static::GetUserDataDirectory(&user_data_dir, nullptr);
-
-  persistent_histogram_storage.set_storage_base_dir(
-      base::FilePath(std::move(user_data_dir)));
-
   // The exit manager is in charge of calling the dtors of singletons.
   base::AtExitManager exit_manager;
+
+  install_static::InitializeProductDetailsForPrimaryModule();
 
   // Use crashpad embedded in chrome.exe as the crash handler.
   base::FilePath chrome_exe_path = notification_helper::GetChromeExePath();
@@ -61,6 +57,13 @@ extern "C" int WINAPI wWinMain(HINSTANCE instance,
     NotificationHelperCrashReporterClient::
         InitializeCrashReportingForProcessWithHandler(chrome_exe_path);
   }
+
+  // The histogram storage folder should be under folder "User Data".
+  base::string16 user_data_dir;
+  install_static::GetUserDataDirectory(&user_data_dir, nullptr);
+
+  persistent_histogram_storage.set_storage_base_dir(
+      base::FilePath(std::move(user_data_dir)));
 
   // Make sure the process exits cleanly on unexpected errors.
   base::EnableTerminationOnHeapCorruption();

@@ -76,8 +76,8 @@
 #include "net/url_request/url_request_filter.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/use_counter/css_property_id.mojom.h"
-#include "third_party/WebKit/public/platform/web_feature.mojom.h"
+#include "third_party/blink/public/mojom/use_counter/css_property_id.mojom.h"
+#include "third_party/blink/public/platform/web_feature.mojom.h"
 #include "url/gurl.h"
 
 namespace {
@@ -144,17 +144,17 @@ class PageLoadMetricsWaiter
     EXPECT_TRUE(expectations_satisfied());
   }
 
-  void OnTimingUpdated(bool is_subframe,
+  void OnTimingUpdated(content::RenderFrameHost* subframe_rfh,
                        const page_load_metrics::mojom::PageLoadTiming& timing,
                        const page_load_metrics::PageLoadExtraInfo& extra_info) {
     if (expectations_satisfied())
       return;
 
     const page_load_metrics::mojom::PageLoadMetadata& metadata =
-        is_subframe ? extra_info.subframe_metadata
-                    : extra_info.main_frame_metadata;
+        subframe_rfh ? extra_info.subframe_metadata
+                     : extra_info.main_frame_metadata;
     TimingFieldBitSet matched_bits = GetMatchedBits(timing, metadata);
-    if (is_subframe) {
+    if (subframe_rfh) {
       subframe_expected_fields_.ClearMatching(matched_bits);
     } else {
       page_expected_fields_.ClearMatching(matched_bits);
@@ -200,11 +200,11 @@ class PageLoadMetricsWaiter
         : waiter_(waiter) {}
 
     void OnTimingUpdate(
-        bool is_subframe,
+        content::RenderFrameHost* subframe_rfh,
         const page_load_metrics::mojom::PageLoadTiming& timing,
         const page_load_metrics::PageLoadExtraInfo& extra_info) override {
       if (waiter_)
-        waiter_->OnTimingUpdated(is_subframe, timing, extra_info);
+        waiter_->OnTimingUpdated(subframe_rfh, timing, extra_info);
     }
 
     void OnLoadedResource(const page_load_metrics::ExtraRequestCompleteInfo&
@@ -686,11 +686,6 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, Ignore204Pages) {
 IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, IgnoreDownloads) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
-  base::ScopedAllowBlockingForTesting allow_blocking;
-  base::ScopedTempDir downloads_directory;
-  ASSERT_TRUE(downloads_directory.CreateUniqueTempDir());
-  browser()->profile()->GetPrefs()->SetFilePath(
-      prefs::kDownloadDefaultDirectory, downloads_directory.GetPath());
   content::DownloadTestObserverTerminal downloads_observer(
       content::BrowserContext::GetDownloadManager(browser()->profile()),
       1,  // == wait_count (only waiting for "download-test3.gif").
@@ -1125,23 +1120,15 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest,
                        PayloadSizeIgnoresDownloads) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
-  bool prev_io_allowed = base::ThreadRestrictions::SetIOAllowed(true);
-  {
-    base::ScopedTempDir downloads_directory;
-    ASSERT_TRUE(downloads_directory.CreateUniqueTempDir());
-    browser()->profile()->GetPrefs()->SetFilePath(
-        prefs::kDownloadDefaultDirectory, downloads_directory.GetPath());
-    content::DownloadTestObserverTerminal downloads_observer(
-        content::BrowserContext::GetDownloadManager(browser()->profile()),
-        1,  // == wait_count (only waiting for "download-test1.lib").
-        content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL);
+  content::DownloadTestObserverTerminal downloads_observer(
+      content::BrowserContext::GetDownloadManager(browser()->profile()),
+      1,  // == wait_count (only waiting for "download-test1.lib").
+      content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL);
 
-    ui_test_utils::NavigateToURL(
-        browser(), embedded_test_server()->GetURL(
-                       "/page_load_metrics/download_anchor_click.html"));
-    downloads_observer.WaitForFinished();
-  }
-  base::ThreadRestrictions::SetIOAllowed(prev_io_allowed);
+  ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL(
+                     "/page_load_metrics/download_anchor_click.html"));
+  downloads_observer.WaitForFinished();
 
   NavigateToUntrackedUrl();
 

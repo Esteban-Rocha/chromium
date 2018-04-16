@@ -383,8 +383,7 @@ public class LocationBarLayout
 
             String suggestionMatchUrl = updateSuggestionUrlIfNeeded(suggestionMatch,
                         suggestionMatchPosition, skipOutOfBoundsCheck);
-            loadUrlFromOmniboxMatch(suggestionMatchUrl, suggestionMatch.getTransition(),
-                    suggestionMatchPosition, suggestionMatch.getType());
+            loadUrlFromOmniboxMatch(suggestionMatchUrl, suggestionMatchPosition, suggestionMatch);
         }
     }
 
@@ -560,8 +559,10 @@ public class LocationBarLayout
             int availableViewportHeight =
                     Math.min(mTempRect.height(), decorHeight) + additionalHeightForBottomNavMenu;
             int availableListHeight = availableViewportHeight - anchorBottomRelativeToContent;
-            // If the bottom sheet is used, the suggestions should consume all available space.
-            int desiredHeight = Math.min(availableListHeight, getIdealHeight());
+            // The suggestions should consume all available space in Modern on phone.
+            int desiredHeight = useModernDesign() && !mIsTablet
+                    ? availableListHeight
+                    : Math.min(availableListHeight, getIdealHeight());
             if (layoutParams.height != desiredHeight) {
                 layoutParams.height = desiredHeight;
                 updateLayout = true;
@@ -1001,7 +1002,7 @@ public class LocationBarLayout
     private void updateFocusedUrlBarSelection() {
         if (!mUrlBar.hasFocus()) return;
 
-        if (mToolbarDataProvider.isDisplayingQueryTerms()) {
+        if (mToolbarDataProvider.shouldDisplaySearchTerms()) {
             mUrlBar.setSelection(mUrlBar.getText().length());
         } else {
             selectAll();
@@ -1315,9 +1316,9 @@ public class LocationBarLayout
         } else {
             // For the default toolbar color, use a green or red icon.
             if (securityLevel == ConnectionSecurityLevel.DANGEROUS) {
-                assert !provider.isDisplayingQueryTerms();
+                assert !provider.shouldDisplaySearchTerms();
                 list = ApiCompatibilityUtils.getColorStateList(resources, R.color.google_red_700);
-            } else if (!provider.isDisplayingQueryTerms()
+            } else if (!provider.shouldDisplaySearchTerms()
                     && (securityLevel == ConnectionSecurityLevel.SECURE
                                || securityLevel == ConnectionSecurityLevel.EV_SECURE)) {
                 list = ApiCompatibilityUtils.getColorStateList(resources, R.color.google_green_700);
@@ -1361,7 +1362,7 @@ public class LocationBarLayout
     }
 
     private void emphasizeUrl() {
-        if (mToolbarDataProvider.isDisplayingQueryTerms()) return;
+        if (mToolbarDataProvider.shouldDisplaySearchTerms()) return;
         mUrlBar.emphasizeUrl();
     }
 
@@ -1638,8 +1639,7 @@ public class LocationBarLayout
                 }
                 String suggestionMatchUrl = updateSuggestionUrlIfNeeded(
                         suggestion, position, false);
-                loadUrlFromOmniboxMatch(suggestionMatchUrl, suggestion.getTransition(), position,
-                        suggestion.getType());
+                loadUrlFromOmniboxMatch(suggestionMatchUrl, position, suggestion);
                 hideSuggestions();
                 UiUtils.hideKeyboard(mUrlBar);
             }
@@ -1665,8 +1665,10 @@ public class LocationBarLayout
             }
 
             @Override
-            public void onDeleteSuggestion(int position) {
-                if (mAutocomplete != null) mAutocomplete.deleteSuggestion(position);
+            public void onDeleteSuggestion(OmniboxSuggestion suggestion, int position) {
+                if (mAutocomplete != null) {
+                    mAutocomplete.deleteSuggestion(position, suggestion.hashCode());
+                }
             }
 
             @Override
@@ -1798,7 +1800,7 @@ public class LocationBarLayout
             long elapsedTimeSinceInputChange = mNewOmniboxEditSessionTimestamp > 0
                     ? (SystemClock.elapsedRealtime() - mNewOmniboxEditSessionTimestamp) : -1;
             updatedUrl = mAutocomplete.updateMatchDestinationUrlWithQueryFormulationTime(
-                    verifiedIndex, elapsedTimeSinceInputChange);
+                    verifiedIndex, suggestion.hashCode(), elapsedTimeSinceInputChange);
         }
 
         return updatedUrl == null ? suggestion.getUrl() : updatedUrl;
@@ -2073,14 +2075,22 @@ public class LocationBarLayout
 
     @Override
     public boolean shouldForceLTR() {
-        return !mToolbarDataProvider.isDisplayingQueryTerms();
+        return !mToolbarDataProvider.shouldDisplaySearchTerms();
     }
 
     @Override
     @UrlBar.ScrollType
     public int getScrollType() {
-        return mToolbarDataProvider.isDisplayingQueryTerms() ? UrlBar.SCROLL_TO_BEGINNING
-                                                             : UrlBar.SCROLL_TO_TLD;
+        return mToolbarDataProvider.shouldDisplaySearchTerms() ? UrlBar.SCROLL_TO_BEGINNING
+                                                               : UrlBar.SCROLL_TO_TLD;
+    }
+
+    @Override
+    public boolean shouldCutCopyVerbatim() {
+        // When cutting/copying text in the URL bar, it will try to copy some version of the actual
+        // URL to the clipboard, not the currently displayed URL bar contents. We want to avoid this
+        // when displaying search terms.
+        return mToolbarDataProvider.shouldDisplaySearchTerms();
     }
 
     /**
@@ -2140,12 +2150,12 @@ public class LocationBarLayout
      */
     @Override
     public void setUrlToPageUrl() {
-        String url = mToolbarDataProvider.getCurrentUrl();
+        String currentUrl = mToolbarDataProvider.getCurrentUrl();
 
         // If the URL is currently focused, do not replace the text they have entered with the URL.
         // Once they stop editing the URL, the current tab's URL will automatically be filled in.
         if (mUrlBar.hasFocus()) {
-            if (mUrlFocusedWithoutAnimations && !NewTabPage.isNTPUrl(url)) {
+            if (mUrlFocusedWithoutAnimations && !NewTabPage.isNTPUrl(currentUrl)) {
                 // If we did not run the focus animations, then the user has not typed any text.
                 // So, clear the focus and accept whatever URL the page is currently attempting to
                 // display. If the NTP is showing, the current page's URL should not be displayed.
@@ -2155,12 +2165,12 @@ public class LocationBarLayout
             }
         }
 
-        mOriginalUrl = url;
+        mOriginalUrl = currentUrl;
         String displayText = getDisplayText();
         if (TextUtils.isEmpty(displayText)) {
             setUrlBarText("", null);
         } else {
-            if (setUrlBarText(url, displayText)) {
+            if (setUrlBarText(currentUrl, displayText)) {
                 emphasizeUrl();
             }
         }
@@ -2197,10 +2207,13 @@ public class LocationBarLayout
         return urlChanged;
     }
 
-    private void loadUrlFromOmniboxMatch(String url, int transition, int matchPosition, int type) {
+    private void loadUrlFromOmniboxMatch(
+            String url, int matchPosition, OmniboxSuggestion suggestion) {
         // loadUrl modifies AutocompleteController's state clearing the native
         // AutocompleteResults needed by onSuggestionsSelected. Therefore,
         // loadUrl should should be invoked last.
+        int transition = suggestion.getTransition();
+        int type = suggestion.getType();
         String currentPageUrl = mToolbarDataProvider.getCurrentUrl();
         WebContents webContents =
                 mToolbarDataProvider.hasTab() ? getCurrentTab().getWebContents() : null;
@@ -2210,10 +2223,9 @@ public class LocationBarLayout
                 && (mDeferredOnSelection != null)
                 && !mDeferredOnSelection.shouldLog();
         if (!shouldSkipNativeLog) {
-            mAutocomplete.onSuggestionSelected(matchPosition, type, currentPageUrl,
-                    mUrlFocusedFromFakebox, elapsedTimeSinceModified,
-                    mUrlBar.getAutocompleteLength(),
-                    webContents);
+            mAutocomplete.onSuggestionSelected(matchPosition, suggestion.hashCode(), type,
+                    currentPageUrl, mUrlFocusedFromFakebox, elapsedTimeSinceModified,
+                    mUrlBar.getAutocompleteLength(), webContents);
         }
         if (((transition & PageTransition.CORE_MASK) == PageTransition.TYPED)
                 && TextUtils.equals(url, mToolbarDataProvider.getCurrentUrl())) {
@@ -2276,17 +2288,11 @@ public class LocationBarLayout
             } else {
                 currentTab.loadUrl(loadUrlParams);
             }
-
-            setUrlToPageUrl();
             RecordUserAction.record("MobileOmniboxUse");
-        } else {
-            setUrlToPageUrl();
         }
-
         LocaleManager.getInstance().recordLocaleBasedSearchMetrics(false, url, transition);
 
         focusCurrentTab();
-
         // Prevent any upcoming omnibox suggestions from showing. We have to do this after we load
         // the URL as this will hide the suggestions and trigger a cancel of the prerendered page.
         stopAutocomplete(true);
@@ -2516,15 +2522,13 @@ public class LocationBarLayout
         return mIsTablet;
     }
 
-    /**
-     * Scroll to ensure the TLD is visible, if necessary.
-     */
-    public void scrollUrlBarToTld() {
-        if (getScrollType() == UrlBar.SCROLL_TO_TLD) mUrlBar.scrollToTLD();
-    }
-
     @Override
     public AutocompleteController getAutocompleteController() {
         return mAutocomplete;
+    }
+
+    @Override
+    public WindowAndroid getWindowAndroid() {
+        return mWindowAndroid;
     }
 }

@@ -12,12 +12,16 @@
 // Tells the receiver to insert a new item at |index|. It is an error to call
 // this method with an |index| greater than the number of items in the model.
 - (void)insertNewItemAtIndex:(NSUInteger)index;
-// Tells the receiver to select the item at |index|. It is an error to call this
-// method with an |index| greater than the largest index in the model.
-- (void)selectItemAtIndex:(NSUInteger)index;
-// Tells the receiver to close the item at |index|. It is an error to call this
-// method with an |index| greater than the largest index in the model.
-- (void)closeItemAtIndex:(NSUInteger)index;
+// Tells the receiver to select the item with identifier |itemID|. If there is
+// no item with that identifier, no change in selection should be made.
+- (void)selectItemWithID:(NSString*)itemID;
+// Tells the receiver to move the item with identifier |itemID| to |index|. If
+// there is no item with that identifier, no move should be made. It is an error
+// to pass a value for |index| outside of the bounds of the items array.
+- (void)moveItemWithID:(NSString*)itemID toIndex:(NSUInteger)index;
+// Tells the receiver to close the item with identifier |itemID|. If there is
+// no item with that identifier, no item is closed.
+- (void)closeItemWithID:(NSString*)itemID;
 // Tells the receiver to close all items.
 - (void)closeAllItems;
 @end

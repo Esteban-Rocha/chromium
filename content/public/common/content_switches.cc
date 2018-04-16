@@ -707,7 +707,8 @@ const char kProxyServer[] = "proxy-server";
 
 // Enables or disables pull-to-refresh gesture in response to vertical
 // overscroll.
-// Set the value to '1' to enable the feature, and set to '0' to disable.
+// Set the value to '0' to disable the feature, set to '1' to enable it for both
+// touchpad and touchscreen, and set to '2' to enable it only for touchscreen.
 // Defaults to disabled.
 const char kPullToRefresh[] = "pull-to-refresh";
 
@@ -903,11 +904,6 @@ const char kWebRtcMaxCaptureFramerate[] = "max-gum-fps";
 // throttling of the capture.
 const char kWebRtcMaxCpuConsumptionPercentage[] =
     "webrtc-max-cpu-consumption-percentage";
-
-// Normally, remote-bound WebRTC event logs are uploaded only when no
-// peer connections are active. With this flag, the upload is never suppressed.
-const char kWebRtcRemoteEventLogUploadNoSuppression[] =
-    "webrtc-event-log-upload-no-suppression";
 
 // Renderer process parameter for WebRTC Stun probe trial to determine the
 // interval. Please see SetupStunProbeTrial in

@@ -4,7 +4,6 @@
 
 #include "cc/paint/paint_op_buffer.h"
 
-#include "base/memory/ptr_util.h"
 #include "cc/paint/decoded_draw_image.h"
 #include "cc/paint/display_item_list.h"
 #include "cc/paint/image_provider.h"
@@ -2055,6 +2054,10 @@ size_t DrawRecordOp::AdditionalBytesUsed() const {
   return record->bytes_used();
 }
 
+size_t DrawRecordOp::AdditionalOpCount() const {
+  return record->total_op_count();
+}
+
 bool DrawRecordOp::HasDiscardableImages() const {
   return record->HasDiscardableImages();
 }
@@ -2102,6 +2105,7 @@ void PaintOpBuffer::operator=(PaintOpBuffer&& other) {
   op_count_ = other.op_count_;
   num_slow_paths_ = other.num_slow_paths_;
   subrecord_bytes_used_ = other.subrecord_bytes_used_;
+  subrecord_op_count_ = other.subrecord_op_count_;
   has_non_aa_paint_ = other.has_non_aa_paint_;
   has_discardable_images_ = other.has_discardable_images_;
 
@@ -2122,6 +2126,7 @@ void PaintOpBuffer::Reset() {
   num_slow_paths_ = 0;
   has_non_aa_paint_ = false;
   subrecord_bytes_used_ = 0;
+  subrecord_op_count_ = 0;
   has_discardable_images_ = false;
 }
 
@@ -2378,6 +2383,8 @@ bool PaintOpBuffer::operator==(const PaintOpBuffer& other) const {
   if (num_slow_paths_ != other.num_slow_paths_)
     return false;
   if (subrecord_bytes_used_ != other.subrecord_bytes_used_)
+    return false;
+  if (subrecord_op_count_ != other.subrecord_op_count_)
     return false;
   if (has_non_aa_paint_ != other.has_non_aa_paint_)
     return false;

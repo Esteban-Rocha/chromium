@@ -20,7 +20,6 @@
 #include "components/prefs/pref_change_registrar.h"
 
 namespace base {
-class DictionaryValue;
 class ListValue;
 }  // namespace base
 
@@ -82,8 +81,6 @@ class EasyUnlockServiceRegular
   EasyUnlockService::Type GetType() const override;
   AccountId GetAccountId() const override;
   void LaunchSetup() override;
-  const base::DictionaryValue* GetPermitAccess() const override;
-  void SetPermitAccess(const base::DictionaryValue& permit) override;
   void ClearPermitAccess() override;
   const base::ListValue* GetRemoteDevices() const override;
   void SetRemoteDevices(const base::ListValue& devices) override;
@@ -96,8 +93,6 @@ class EasyUnlockServiceRegular
   void RecordEasySignInOutcome(const AccountId& account_id,
                                bool success) const override;
   void RecordPasswordLoginEvent(const AccountId& account_id) const override;
-  void StartAutoPairing(const AutoPairingResultCallback& callback) override;
-  void SetAutoPairingResult(bool success, const std::string& error) override;
   void InitializeInternal() override;
   void ShutdownInternal() override;
   bool IsAllowedInternal() const override;
@@ -141,10 +136,6 @@ class EasyUnlockServiceRegular
 
   std::unique_ptr<ShortLivedUserContext> short_lived_user_context_;
 
-  // Updates local state with the preference from the user's profile, so they
-  // can be accessed on the sign-in screen.
-  void SyncProfilePrefsToLocalState();
-
   // Returns the CryptAuthEnrollmentManager, which manages the profile's
   // CryptAuth enrollment.
   cryptauth::CryptAuthEnrollmentManager* GetCryptAuthEnrollmentManager();
@@ -161,8 +152,6 @@ class EasyUnlockServiceRegular
   std::unique_ptr<cryptauth::CryptAuthClient> cryptauth_client_;
   ScopedObserver<cryptauth::CryptAuthDeviceManager, EasyUnlockServiceRegular>
       scoped_crypt_auth_device_manager_observer_;
-
-  AutoPairingResultCallback auto_pairing_callback_;
 
   // True if the user just unlocked the screen using Easy Unlock. Reset once
   // the screen unlocks. Used to distinguish Easy Unlock-powered unlocks from

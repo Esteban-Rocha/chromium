@@ -7,6 +7,7 @@
 -ChromeSecurityExploitBrowserTest.CreateFilesystemURLInExtensionOrigin
 -DisabledSignInIsolationBrowserTest.SyntheticTrial
 -DomainReliabilityBrowserTest.Upload
+-DownloadTest.DownloadDangerousBlobData
 -EnabledSignInIsolationBrowserTest.SyntheticTrial
 -ExpectCTBrowserTest.TestDynamicExpectCTHeaderProcessing
 -ExpectCTBrowserTest.TestDynamicExpectCTReporting
@@ -14,7 +15,6 @@
 -ExtensionApiTest.XHRFileURLs
 -ExtensionApiTestWithSwitch.ExtensionDebugger
 -ExtensionUnloadBrowserTest.UnloadWithContentScripts
--LocalNTPVoiceJavascriptTest.TextTests
 -MediaGalleriesPlatformAppBrowserTest.ToURL
 -NetInternalsTest.netInternalsSessionBandwidthSucceed
 -NewlibPackagedAppTest.SuccessfulLoad
@@ -22,8 +22,6 @@
 -PKPModelClientTest.PKPEnforced
 -PlatformAppBrowserTest.AppWindowAdjustBoundsToBeVisibleOnScreen
 -PlatformAppBrowserTest.CreateAndCloseAppWindow
--PlatformAppDevToolsBrowserTest.ReOpenedWithID
--PlatformAppDevToolsBrowserTest.ReOpenedWithURL
 -PolicyTest.DefaultCookiesSetting
 -PrefetchBrowserTestPredictionDisabled.ExperimentDisabled
 -PreviewsOptimizationGuideBrowserTest.NoScriptPreviewsEnabledByWhitelist
@@ -41,6 +39,14 @@
 -WebViewTests/WebViewTest.ClearDataCache/1
 -WebViewTests/WebViewTest.WebViewInBackgroundPage/0
 -WebViewTests/WebViewTest.WebViewInBackgroundPage/1
+-WebViewTests/WebViewTest.DownloadPermission/0
+-WebViewTests/WebViewTest.DownloadPermission/1
+
+# Need a test interface API that allows us to check on the CT status.
+# Then in ssl_browsertest.cc we can use that instead of the direct
+# call to the transport_security_state()
+-SSLUITest.CertificateTransparencyEnforcementDisabledForUrls/0
+-SSLUITest.CertificateTransparencyEnforcementDisabledForUrls/1
 
 # Redirects to chrome-extension:// should be blocked unless the resource is
 # webaccessible.  https://crbug.com/821586
@@ -75,12 +81,6 @@
 -WebViewTests/WebViewTest.ClearSessionCookies/0
 -WebViewTests/WebViewTest.ClearSessionCookies/1
 
-# http://crbug.com/721400 support WebSockets.
--WebSocketBrowserTest.WebSocketAppliesHSTS
--WebSocketBrowserTest.WebSocketBasicAuthInHTTPSURL
--WebSocketBrowserTest.WebSocketBasicAuthInHTTPURL
--WebSocketBrowserTest.ReuseMainPageBasicAuthCredentialsForWebSocket
-
 # Accessing cookies after they were set in onload handler is flaky:
 # https://crbug.com/820969.
 -ContentSettingsTest.BasicCookies
@@ -101,7 +101,6 @@
 -DownloadExtensionTest.DownloadExtensionTest_Download_FileSystemURL
 -LoadImageBrowserTest.LoadImage
 -MimeHandlerViewTests/MimeHandlerViewTest.SingleRequest/0
--PolicyTest.CertificateTransparencyEnforcementDisabledForUrls
 -PolicyTest.ExtensionInstallSources
 -PolicyTest.ForceGoogleSafeSearch
 -ProfileBrowserTest.SendHPKPReport
@@ -118,6 +117,7 @@
 -DicePrepareMigrationBrowserTest.EnableSyncAfterToken
 -DicePrepareMigrationBrowserTest.EnableSyncBeforeToken
 -DicePrepareMigrationBrowserTest.Signout
+-ChromeResourceDispatcherHostDelegateBrowserTest.MirrorRequestHeader
 
 # Need to add SetRequireCTDelegateForTesting to NetworkContext.
 -SymantecMessageSSLUITest.ManySubresources
@@ -132,10 +132,6 @@
 
 # crbug.com/778814 Null NavigationData is given to NavigationURLLoaderDelegate::OnResponseStarted() as parameter.
 -ChromeResourceDispatcherHostDelegateBrowserTest.NavigationDataProcessed
-
-# crbug.com/778846 DCHECK() failed at URLDataManagerBackend::CheckURLIsValid().
-# Note: these may flake pass, but don't enable them.
--CrSettingsPeoplePageTest.All
 
 # crbug.com/778860 SecurityStyleExplanations::info_explanations is empty.
 -BrowserTestNonsecureURLRequest.DidChangeVisibleSecurityStateObserverObsoleteTLSSettings
@@ -163,8 +159,8 @@
 -SSLUITestWithClientCert.TestWSSClientCert
 
 # https://bugs.chromium.org/p/chromium/issues/detail?id=755309
--SSLUITest.SHA1IsDefaultDisabled/0
--SSLUITest.SHA1IsDefaultDisabled/1
+-SSLUITest.SHA1PrefsCanEnable/0
+-SSLUITest.SHA1PrefsCanEnable/1
 -SSLUITest.TestBadHTTPSDownload/0
 -SSLUITest.TestBadHTTPSDownload/1
 -SSLUITest.TestHTTPSOCSPOk/0
@@ -175,7 +171,6 @@
 # http://crbug.com/721414
 # TODO(rockot): add support for webRequest API.
 -ExtensionWebRequestApiTest.WebRequestBlocking
--ExtensionWebRequestApiTest.WebRequestClientsGoogleComProtection
 -ExtensionWebRequestApiTest.WebRequestDeclarative2
 -ExtensionWebRequestApiTest.WebRequestDiceHeaderProtection
 -ExtensionWebRequestApiTest.WebRequestTypes
@@ -194,7 +189,6 @@
 -MimeHandlerViewTests/MimeHandlerViewTest.SingleRequest/0
 -MimeHandlerViewTests/MimeHandlerViewTest.SingleRequest/1
 -PrerenderBrowserTestWithExtensions.StreamsTest
--SaveType/SavePageOriginalVsSavedComparisonTest.ObjectElementsViaFile/0
 -StreamsPrivateApiTest.Abort
 -StreamsPrivateApiTest.FileURL
 -StreamsPrivateApiTest.Headers
@@ -296,13 +290,15 @@
 -ServiceWorkerTestWithNativeBindings/ServiceWorkerTest.WebAccessibleResourcesIframeSrc/0
 -ServiceWorkerTestWithNativeBindings/ServiceWorkerTest.WorkerRefCount/0
 
-# http://crbug.com/787614
+# https://crbug.com/832749
+# Add DMServer header
 -ChromeResourceDispatcherHostDelegateBrowserTest.PolicyHeader
 -ChromeResourceDispatcherHostDelegateBrowserTest.PolicyHeaderForRedirect
+
+# http://crbug.com/787614
 -ChromeResourceDispatcherHostDelegateBrowserTest.ThrottlesAddedExactlyOnceToADownloads
 -ChromeResourceDispatcherHostDelegateBrowserTest.ThrottlesAddedExactlyOnceToLargeSniffedDownloads
 -ChromeResourceDispatcherHostDelegateBrowserTest.ThrottlesAddedExactlyOnceToTinySniffedDownloads
--ChromeResourceDispatcherHostDelegateBrowserTest.MirrorRequestHeader
 
 # Add support of download_to_file for URLLoader.
 # http://crbug.com/791702
@@ -322,11 +318,7 @@
 
 # Fails because of missing support to navigate to filesystem: URLs.
 # https://crbug.com/797292
--SBNavigationObserverBrowserTest.DownloadViaHTML5FileApi
 -ProcessManagerBrowserTest.NestedURLNavigationsToExtensionBlocked
-
-# Fails because data: URL is not downloaded but navigated to.
--BrowserActionApiTest.BrowserActionPopupDownload
 
 # Flaky in linux tests.
 # https://crbug.com/820995

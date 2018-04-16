@@ -11,7 +11,6 @@
 #include <string>
 #include <utility>
 
-#include "ash/app_list/model/search/search_result.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -22,6 +21,7 @@
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_test.h"
 #include "chrome/browser/ui/app_list/extension_app_model_builder.h"
+#include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "chrome/browser/ui/app_list/test/fake_app_list_model_updater.h"
 #include "chrome/browser/ui/app_list/test/test_app_list_controller_delegate.h"
 #include "chrome/common/chrome_constants.h"
@@ -45,14 +45,15 @@ constexpr char kGmailExtensionName[] = "Gmail Ext";
 constexpr char kGmailArcPackage[] = "com.google.android.gm";
 constexpr char kGmailArcActivity[] =
     "com.google.android.gm.ConversationListActivityGmail";
-constexpr char kKeyboardShortcutHelperInternalName[] =
-    "Keyboard Shortcut Helper";
+constexpr char kKeyboardShortcutHelperInternalName[] = "Shortcuts";
+constexpr char kSettingsInternalName[] = "Settings";
 
 }  // namespace
 
 const base::Time kTestCurrentTime = base::Time::FromInternalValue(100000);
 
-bool MoreRelevant(const SearchResult* result1, const SearchResult* result2) {
+bool MoreRelevant(const ChromeSearchResult* result1,
+                  const ChromeSearchResult* result2) {
   return result1->relevance() > result2->relevance();
 }
 
@@ -79,7 +80,7 @@ class AppSearchProviderTest : public AppListTestBase {
     app_search_->Start(base::UTF8ToUTF16(query));
 
     // Sort results by relevance.
-    std::vector<SearchResult*> sorted_results;
+    std::vector<ChromeSearchResult*> sorted_results;
     for (const auto& result : app_search_->results())
       sorted_results.emplace_back(result.get());
     std::sort(sorted_results.begin(), sorted_results.end(), &MoreRelevant);
@@ -103,7 +104,8 @@ class AppSearchProviderTest : public AppListTestBase {
     app_info.activity = activity;
     app_info.sticky = false;
     app_info.notifications_enabled = false;
-    app_info.orientation_lock = arc::mojom::OrientationLock::NONE;
+    app_info.orientation_lock_deprecated =
+        arc::mojom::OrientationLockDeprecated::NONE;
     arc_test_.app_instance()->SendAppAdded(app_info);
     return ArcAppListPrefs::GetAppId(package, activity);
   }
@@ -261,22 +263,19 @@ TEST_F(AppSearchProviderTest, FetchRecommendations) {
   prefs->SetLastLaunchTime(kHostedAppId, base::Time::FromInternalValue(20));
   prefs->SetLastLaunchTime(kPackagedApp1Id, base::Time::FromInternalValue(10));
   prefs->SetLastLaunchTime(kPackagedApp2Id, base::Time::FromInternalValue(5));
-  EXPECT_EQ("Hosted App,Packaged App 1,Packaged App 2,Keyboard Shortcut Helper",
-            RunQuery(""));
+  EXPECT_EQ("Hosted App,Packaged App 1,Packaged App 2,Settings", RunQuery(""));
 
   prefs->SetLastLaunchTime(kHostedAppId, base::Time::FromInternalValue(5));
   prefs->SetLastLaunchTime(kPackagedApp1Id, base::Time::FromInternalValue(10));
   prefs->SetLastLaunchTime(kPackagedApp2Id, base::Time::FromInternalValue(20));
-  EXPECT_EQ("Packaged App 2,Packaged App 1,Hosted App,Keyboard Shortcut Helper",
-            RunQuery(""));
+  EXPECT_EQ("Packaged App 2,Packaged App 1,Hosted App,Settings", RunQuery(""));
 
   // Times in the future should just be handled as highest priority.
   prefs->SetLastLaunchTime(kHostedAppId,
                            kTestCurrentTime + base::TimeDelta::FromSeconds(5));
   prefs->SetLastLaunchTime(kPackagedApp1Id, base::Time::FromInternalValue(10));
   prefs->SetLastLaunchTime(kPackagedApp2Id, base::Time::FromInternalValue(5));
-  EXPECT_EQ("Hosted App,Packaged App 1,Packaged App 2,Keyboard Shortcut Helper",
-            RunQuery(""));
+  EXPECT_EQ("Hosted App,Packaged App 1,Packaged App 2,Settings", RunQuery(""));
 }
 
 TEST_F(AppSearchProviderTest, FetchUnlaunchedRecommendations) {
@@ -290,8 +289,7 @@ TEST_F(AppSearchProviderTest, FetchUnlaunchedRecommendations) {
   prefs->SetLastLaunchTime(kHostedAppId, base::Time::Now());
   prefs->SetLastLaunchTime(kPackagedApp1Id, base::Time::FromInternalValue(0));
   prefs->SetLastLaunchTime(kPackagedApp2Id, base::Time::FromInternalValue(0));
-  EXPECT_EQ("Hosted App,Packaged App 1,Packaged App 2,Keyboard Shortcut Helper",
-            RunQuery(""));
+  EXPECT_EQ("Hosted App,Packaged App 1,Packaged App 2,Settings", RunQuery(""));
 }
 
 TEST_F(AppSearchProviderTest, FilterDuplicate) {
@@ -330,9 +328,15 @@ TEST_F(AppSearchProviderTest, FilterDuplicate) {
 
 TEST_F(AppSearchProviderTest, FetchInternalApp) {
   CreateSearch();
+
+  // Search Keyboard Shortcut Helper.
   EXPECT_EQ(kKeyboardShortcutHelperInternalName, RunQuery("Keyboard"));
   EXPECT_EQ(kKeyboardShortcutHelperInternalName, RunQuery("Shortcut"));
   EXPECT_EQ(kKeyboardShortcutHelperInternalName, RunQuery("Helper"));
+
+  // Search Settings.
+  EXPECT_EQ(kSettingsInternalName, RunQuery("Settings"));
+  EXPECT_EQ(kSettingsInternalName, RunQuery("Set"));
 }
 
 }  // namespace test

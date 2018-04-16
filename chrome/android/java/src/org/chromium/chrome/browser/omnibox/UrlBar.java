@@ -197,6 +197,12 @@ public class UrlBar extends AutocompleteEditText {
          */
         @ScrollType
         int getScrollType();
+
+        /**
+         * @return Whether or not the copy/cut action should grab the underlying URL or just copy
+         *         whatever's in the URL bar verbatim.
+         */
+        boolean shouldCutCopyVerbatim();
     }
 
     public UrlBar(Context context, AttributeSet attrs) {
@@ -626,10 +632,10 @@ public class UrlBar extends AutocompleteEditText {
         // As long as the full original text was selected, it will replace that with the original
         // URL and keep any further modifications by the user.
         String currentText = getText().toString();
-        if (selectedStartIndex == 0
-                && (id == android.R.id.cut || id == android.R.id.copy)
+        if (selectedStartIndex == 0 && (id == android.R.id.cut || id == android.R.id.copy)
                 && currentText.startsWith(mFormattedUrlLocation)
-                && selectedEndIndex >= mFormattedUrlLocation.length()) {
+                && selectedEndIndex >= mFormattedUrlLocation.length()
+                && !mUrlBarDelegate.shouldCutCopyVerbatim()) {
             String newText = mOriginalUrlLocation
                     + currentText.substring(mFormattedUrlLocation.length());
             selectedEndIndex = selectedEndIndex - mFormattedUrlLocation.length()
@@ -650,6 +656,11 @@ public class UrlBar extends AutocompleteEditText {
             return retVal;
         }
         return super.onTextContextMenuItem(id);
+    }
+
+    @Override
+    protected boolean getDefaultEditable() {
+        return false;
     }
 
     /**
@@ -684,17 +695,31 @@ public class UrlBar extends AutocompleteEditText {
         return textChanged;
     }
 
+    /**
+     * Scrolls the omnibox text to a position determined by the call to
+     * {@link UrlBarDelegate#getScrollType}.
+     */
     public void scrollDisplayText() {
+        @ScrollType
+        int scrollType = mUrlBarDelegate.getScrollType();
         if (isLayoutRequested()) {
-            if (mUrlBarDelegate.getScrollType() == NO_SCROLL) return;
-            mPendingScroll = true;
-        } else {
-            scrollDisplayTextInternal();
+            mPendingScroll = scrollType != NO_SCROLL;
+            return;
         }
+        scrollDisplayTextInternal(scrollType);
     }
 
-    private void scrollDisplayTextInternal() {
-        switch (mUrlBarDelegate.getScrollType()) {
+    /**
+     * Scrolls the omnibox text to the position specified, based on the {@link ScrollType}.
+     *
+     * @param scrollType What type of scroll to perform.
+     *                   SCROLL_TO_TLD: Scrolls the omnibox text to bring the TLD into view.
+     *                   SCROLL_TO_BEGINNING: Scrolls text that's too long to fit in the omnibox
+     *                                        to the beginning so we can see the first character.
+     */
+    private void scrollDisplayTextInternal(@ScrollType int scrollType) {
+        mPendingScroll = false;
+        switch (scrollType) {
             case SCROLL_TO_TLD:
                 scrollToTLD();
                 break;
@@ -706,16 +731,30 @@ public class UrlBar extends AutocompleteEditText {
         }
     }
 
+    /**
+     * Scrolls the omnibox text to show the very beginning of the text entered.
+     */
     private void scrollToBeginning() {
-        int scrollX = 0;
-        if (BidiFormatter.getInstance().isRtl(getTextWithAutocomplete())) {
-            int textWidth = (int) getLayout().getPaint().measureText(getTextWithAutocomplete());
-            scrollX = textWidth - getMeasuredWidth();
+        if (mFocused) return;
+
+        setSelection(0);
+
+        Editable text = getText();
+        float scrollPos = 0f;
+        if (BidiFormatter.getInstance().isRtl(text)) {
+            // RTL.
+            float endPointX = getLayout().getPrimaryHorizontal(text.length());
+            int measuredWidth = getMeasuredWidth();
+            float width = getLayout().getPaint().measureText(text.toString());
+            scrollPos = Math.max(0, endPointX - measuredWidth + width);
         }
-        scrollTo(scrollX, getScrollY());
+        scrollTo((int) scrollPos, getScrollY());
     }
 
-    public void scrollToTLD() {
+    /**
+     * Scrolls the omnibox text to bring the TLD into view.
+     */
+    private void scrollToTLD() {
         if (mFocused) return;
 
         // Ensure any selection from the focus state is cleared.
@@ -800,10 +839,9 @@ public class UrlBar extends AutocompleteEditText {
         super.onLayout(changed, left, top, right, bottom);
 
         if (mPendingScroll) {
-            scrollDisplayTextInternal();
-            mPendingScroll = false;
+            scrollDisplayTextInternal(mUrlBarDelegate.getScrollType());
         } else if (mPreviousWidth != (right - left)) {
-            scrollDisplayTextInternal();
+            scrollDisplayTextInternal(mUrlBarDelegate.getScrollType());
             mPreviousWidth = right - left;
         }
     }
@@ -966,6 +1004,14 @@ public class UrlBar extends AutocompleteEditText {
         Log.w(TAG, "Text change observed, triggering autocomplete.");
 
         mUrlBarDelegate.onTextChangedForAutocomplete();
+    }
+
+    /**
+     * Set whether the URL text should be ellipsized. Note that this is different from
+     * {@link #limitDisplayableLength} in that it limits the visible part of the text.
+     */
+    public void setShouldEllipsizeUrlText(boolean shouldEllipsize) {
+        setEllipsize(shouldEllipsize ? TextUtils.TruncateAt.END : null);
     }
 
     /**

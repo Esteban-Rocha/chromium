@@ -32,7 +32,7 @@
 #include "services/network/url_loader.h"
 #include "services/network/url_request_context_owner.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 
 namespace content {
 
@@ -58,6 +58,7 @@ class TestNavigationLoaderInterceptor : public NavigationLoaderInterceptor {
   }
 
   ~TestNavigationLoaderInterceptor() override {
+    url_loader_ = nullptr;
     resource_scheduler_client_ = nullptr;
     context_->NotifyContextShuttingDown();
   }
@@ -74,10 +75,12 @@ class TestNavigationLoaderInterceptor : public NavigationLoaderInterceptor {
                    network::mojom::URLLoaderRequest request,
                    network::mojom::URLLoaderClientPtr client) {
     *most_recent_resource_request_ = resource_request;
-    // The URLLoader will delete itself upon completion.
-    new network::URLLoader(
-        context_, nullptr, std::move(request), 0 /* options */,
-        resource_request, false /* report_raw_headers */, std::move(client),
+    url_loader_ = std::make_unique<network::URLLoader>(
+        context_, nullptr, base::BindOnce([](network::URLLoader*) {
+          // Ignore self-deletion requests, for simplicity.
+        }),
+        std::move(request), 0 /* options */, resource_request,
+        false /* report_raw_headers */, std::move(client),
         TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */, 0, /* request_id */
         resource_scheduler_client_, nullptr);
   }
@@ -96,6 +99,7 @@ class TestNavigationLoaderInterceptor : public NavigationLoaderInterceptor {
   network::ResourceScheduler resource_scheduler_;
   scoped_refptr<network::NetworkURLRequestContextGetter> context_;
   scoped_refptr<network::ResourceSchedulerClient> resource_scheduler_client_;
+  std::unique_ptr<network::URLLoader> url_loader_;
 };
 
 }  // namespace
@@ -140,7 +144,7 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
             false /* is_form_submission */, GURL() /* searchable_form_url */,
             std::string() /* searchable_form_encoding */,
             url::Origin::Create(url), GURL() /* client_side_redirect_url */,
-            nullptr /* devtools_initiator_info */);
+            base::nullopt /* devtools_initiator_info */);
 
     CommonNavigationParams common_params;
     common_params.url = url;

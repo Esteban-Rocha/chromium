@@ -14,11 +14,6 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-namespace chromeos {
-class DisplayConfigurationObserver;
-class DisplayPrefs;
-}
-
 namespace keyboard {
 class KeyboardUI;
 }
@@ -52,10 +47,6 @@ class ChromeShellDelegate : public ash::ShellDelegate,
   void PlatformInit();
 
   content::NotificationRegistrar registrar_;
-
-  std::unique_ptr<chromeos::DisplayPrefs> display_prefs_;
-  std::unique_ptr<chromeos::DisplayConfigurationObserver>
-      display_configuration_observer_;
 
   std::unique_ptr<ash::NetworkingConfigDelegate> networking_config_delegate_;
 

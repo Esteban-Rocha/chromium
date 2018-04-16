@@ -54,24 +54,24 @@
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/media_buildflags.h"
-#include "third_party/WebKit/public/platform/WebEncryptedMediaTypes.h"
-#include "third_party/WebKit/public/platform/WebLocalizedString.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerEncryptedMediaClient.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerSource.h"
-#include "third_party/WebKit/public/platform/WebMediaSource.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebSurfaceLayerBridge.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/blink/public/platform/web_encrypted_media_types.h"
+#include "third_party/blink/public/platform/web_localized_string.h"
+#include "third_party/blink/public/platform/web_media_player_client.h"
+#include "third_party/blink/public/platform/web_media_player_encrypted_media_client.h"
+#include "third_party/blink/public/platform/web_media_player_source.h"
+#include "third_party/blink/public/platform/web_media_source.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_size.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_surface_layer_bridge.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_frame.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
+#include "third_party/blink/public/web/web_view.h"
 
 #if defined(OS_ANDROID)
 #include "media/base/android/media_codec_util.h"
@@ -236,7 +236,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       request_routing_token_cb_(params->request_routing_token_cb()),
       overlay_routing_token_(OverlayInfo::RoutingToken()),
       media_metrics_provider_(params->take_metrics_provider()),
-      pip_surface_info_cb_(params->pip_surface_info_cb()) {
+      pip_surface_info_cb_(params->pip_surface_info_cb()),
+      exit_pip_cb_(params->exit_pip_cb()) {
   DVLOG(1) << __func__;
   DCHECK(!adjust_allocated_memory_cb_.is_null());
   DCHECK(renderer_factory_selector_);
@@ -318,7 +319,7 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
   client_->MediaRemotingStopped(
       blink::WebLocalizedString::kMediaRemotingStopNoText);
 
-  client_->PictureInPictureStopped();
+  ExitPictureInPicture();
 
   if (!surface_layer_for_video_enabled_ && video_weblayer_) {
     static_cast<cc::VideoLayer*>(video_weblayer_->layer())->StopUsingProvider();
@@ -401,7 +402,7 @@ void WebMediaPlayerImpl::OnSurfaceIdUpdated(viz::SurfaceId surface_id) {
   // TODO(726619): Handle the behavior when Picture-in-Picture mode is
   // disabled.
   if (client_ && client_->IsInPictureInPictureMode())
-    pip_surface_info_cb_.Run(pip_surface_id_);
+    pip_surface_info_cb_.Run(pip_surface_id_, pipeline_metadata_.natural_size);
 }
 
 bool WebMediaPlayerImpl::SupportsOverlayFullscreenVideo() {
@@ -779,7 +780,7 @@ void WebMediaPlayerImpl::EnterPictureInPicture() {
   if (!pip_surface_id_.is_valid())
     return;
 
-  pip_surface_info_cb_.Run(pip_surface_id_);
+  pip_surface_info_cb_.Run(pip_surface_id_, pipeline_metadata_.natural_size);
 
   // Updates the MediaWebContentsObserver with |delegate_id_| to track which
   // media player is in Picture-in-Picture mode.
@@ -799,10 +800,8 @@ void WebMediaPlayerImpl::ExitPictureInPicture() {
   if (!pip_surface_id_.is_valid())
     return;
 
-  // Clears the Picture-in-Picture viz::SurfaceId. The default SurfaceId is not
-  // considered valid as both its FrameSinkId and LocalSurfaceId do not have
-  // have valid values.
-  pip_surface_info_cb_.Run(viz::SurfaceId());
+  // Signals that Picture-in-Picture has ended.
+  exit_pip_cb_.Run();
 
   // Updates the MediaWebContentsObserver with |delegate_id_| to clear the
   // tracked media player that is in Picture-in-Picture mode.
@@ -2396,7 +2395,8 @@ void WebMediaPlayerImpl::StartPipeline() {
   // If possible attempt to avoid decoder spool up until playback starts.
   Pipeline::StartType start_type = Pipeline::StartType::kNormal;
   if (base::FeatureList::IsEnabled(kPreloadMetadataSuspend) &&
-      !chunk_demuxer_ && preload_ == MultibufferDataSource::METADATA) {
+      !chunk_demuxer_ && preload_ == MultibufferDataSource::METADATA &&
+      !client_->CouldPlayIfEnoughData()) {
     start_type = has_poster_
                      ? Pipeline::StartType::kSuspendAfterMetadata
                      : Pipeline::StartType::kSuspendAfterMetadataForAudioOnly;
@@ -2905,6 +2905,10 @@ bool WebMediaPlayerImpl::ShouldDisableVideoWhenHidden() const {
 
 bool WebMediaPlayerImpl::IsBackgroundOptimizationCandidate() const {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+
+  // Don't optimize Picture-in-Picture players.
+  if (client_->IsInPictureInPictureMode())
+    return false;
 
 #if defined(OS_ANDROID)  // WMPI_CAST
   // Don't optimize players being Cast.

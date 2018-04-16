@@ -11,7 +11,6 @@
 #include "base/guid.h"
 #include "base/logging.h"
 #include "build/build_config.h"
-#include "content/browser/site_isolation_policy.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/browser/login_delegate.h"
 #include "content/public/browser/memory_coordinator_delegate.h"
@@ -81,6 +80,12 @@ GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
 bool ContentBrowserClient::ShouldUseProcessPerSite(
     BrowserContext* browser_context, const GURL& effective_url) {
   return false;
+}
+
+bool ContentBrowserClient::ShouldUseSpareRenderProcessHost(
+    BrowserContext* browser_context,
+    const GURL& site_url) {
+  return true;
 }
 
 bool ContentBrowserClient::DoesSiteRequireDedicatedProcess(
@@ -184,11 +189,6 @@ bool ContentBrowserClient::ShouldEnableStrictSiteIsolation() {
   // This ensures that embedders like ChromeCast and/or Opera are not forced
   // into --site-per-process.
   return false;
-}
-
-// static
-bool ContentBrowserClient::IsStrictSiteIsolationEnabled() {
-  return SiteIsolationPolicy::UseDedicatedProcessesForAllSites();
 }
 
 bool ContentBrowserClient::IsFileAccessAllowed(
@@ -683,6 +683,10 @@ void ContentBrowserClient::ShouldReturnAttestationForWebauthnRPID(
   std::move(callback).Run(true);
 }
 
+bool ContentBrowserClient::ShouldEnforceFocusChecksForWebauthn() {
+  return false;
+}
+
 std::unique_ptr<net::ClientCertStore>
 ContentBrowserClient::CreateClientCertStore(ResourceContext* resource_context) {
   return nullptr;
@@ -708,6 +712,12 @@ bool ContentBrowserClient::HandleExternalProtocol(
     ui::PageTransition page_transition,
     bool has_user_gesture) {
   return true;
+}
+
+std::unique_ptr<OverlayWindow>
+ContentBrowserClient::CreateWindowForPictureInPicture(
+    PictureInPictureWindowController* controller) {
+  return nullptr;
 }
 
 }  // namespace content

@@ -83,6 +83,8 @@ namespace net {
 
 using CacheEntryStatus = HttpResponseInfo::CacheEntryStatus;
 
+class WebSocketEndpointLockManager;
+
 namespace {
 
 // Returns a simple text serialization of the given
@@ -644,7 +646,8 @@ class FakeWebSocketHandshakeStreamCreateHelper
   ~FakeWebSocketHandshakeStreamCreateHelper() override = default;
   std::unique_ptr<WebSocketHandshakeStreamBase> CreateBasicStream(
       std::unique_ptr<ClientSocketHandle> connect,
-      bool using_proxy) override {
+      bool using_proxy,
+      WebSocketEndpointLockManager* websocket_endpoint_lock_manager) override {
     return nullptr;
   }
   std::unique_ptr<WebSocketHandshakeStreamBase> CreateHttp2Stream(
@@ -10411,7 +10414,7 @@ TEST(HttpCache, CachePreservesSSLInfo) {
   // The expected SSL state was reported.
   EXPECT_EQ(transaction.ssl_connection_status,
             response_info.ssl_info.connection_status);
-  EXPECT_TRUE(cert->Equals(response_info.ssl_info.cert.get()));
+  EXPECT_TRUE(cert->EqualsIncludingChain(response_info.ssl_info.cert.get()));
 
   // Fetch the resource again.
   RunTransactionTestWithResponseInfo(cache.http_cache(), transaction,
@@ -10424,7 +10427,7 @@ TEST(HttpCache, CachePreservesSSLInfo) {
 
   // The SSL state was preserved.
   EXPECT_EQ(status, response_info.ssl_info.connection_status);
-  EXPECT_TRUE(cert->Equals(response_info.ssl_info.cert.get()));
+  EXPECT_TRUE(cert->EqualsIncludingChain(response_info.ssl_info.cert.get()));
 }
 
 // Tests that SSLInfo gets updated when revalidating a cached response.
@@ -10464,7 +10467,7 @@ TEST(HttpCache, RevalidationUpdatesSSLInfo) {
 
   // The expected SSL state was reported.
   EXPECT_EQ(status1, response_info.ssl_info.connection_status);
-  EXPECT_TRUE(cert1->Equals(response_info.ssl_info.cert.get()));
+  EXPECT_TRUE(cert1->EqualsIncludingChain(response_info.ssl_info.cert.get()));
 
   // The server deploys a more modern configuration but reports 304 on the
   // revalidation attempt.
@@ -10485,7 +10488,7 @@ TEST(HttpCache, RevalidationUpdatesSSLInfo) {
 
   // The new SSL state is reported.
   EXPECT_EQ(status2, response_info.ssl_info.connection_status);
-  EXPECT_TRUE(cert2->Equals(response_info.ssl_info.cert.get()));
+  EXPECT_TRUE(cert2->EqualsIncludingChain(response_info.ssl_info.cert.get()));
 }
 
 TEST(HttpCache, CacheEntryStatusOther) {

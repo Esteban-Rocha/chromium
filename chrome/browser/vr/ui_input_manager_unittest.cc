@@ -24,7 +24,7 @@
 #include "chrome/browser/vr/ui_scene_creator.h"
 #include "chrome/browser/vr/ui_unsupported_mode.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
 
 using ::testing::_;
 using ::testing::InSequence;
@@ -93,6 +93,7 @@ class UiInputManagerTest : public testing::Test {
     auto element = std::make_unique<StrictMock<MockTextInput>>();
     StrictMock<MockTextInput>* p_element = element.get();
     element->SetTranslate(0, 0, z_position);
+    element->SetSize(1, 0.1);
     element->set_hit_testable(true);
     scene_->AddUiElement(kRoot, std::move(element));
     scene_->OnBeginFrame(base::TimeTicks(), kStartHeadPose);
@@ -397,7 +398,7 @@ TEST_F(UiInputManagerTest, HitTestStrategy) {
 }
 
 TEST_F(UiInputManagerContentTest, NoMouseMovesDuringClick) {
-  EXPECT_TRUE(RunFor(MsToDelta(500)));
+  EXPECT_TRUE(RunForMs(500));
   // It would be nice if the controller weren't platform specific and we could
   // mock out the underlying sensor data. For now, we will hallucinate
   // parameters to HandleInput.
@@ -431,7 +432,7 @@ TEST_F(UiInputManagerContentTest, NoMouseMovesDuringClick) {
 TEST_F(UiInputManagerContentTest, AudioPermissionPromptHitTesting) {
   model_->active_modal_prompt_type =
       kModalPromptTypeExitVRForVoiceSearchRecordAudioOsPermission;
-  EXPECT_TRUE(RunFor(MsToDelta(500)));
+  EXPECT_TRUE(RunForMs(500));
 
   UiElement* url_bar = scene_->GetUiElementByName(UiElementName::kUrlBar);
   gfx::Point3F url_bar_center = url_bar->GetCenter();

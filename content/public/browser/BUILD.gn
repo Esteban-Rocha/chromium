@@ -183,6 +183,7 @@ jumbo_source_set("browser_sources") {
     "notification_service.h",
     "notification_source.h",
     "notification_types.h",
+    "overlay_window.h",
     "overscroll_configuration.h",
     "page_navigator.cc",
     "page_navigator.h",
@@ -191,6 +192,7 @@ jumbo_source_set("browser_sources") {
     "pepper_vpn_provider_resource_host_proxy.h",
     "permission_manager.h",
     "permission_type.h",
+    "picture_in_picture_window_controller.h",
     "platform_notification_context.h",
     "platform_notification_service.h",
     "plugin_data_remover.h",
@@ -241,6 +243,8 @@ jumbo_source_set("browser_sources") {
     "session_storage_usage_info.h",
     "shared_worker_service.h",
     "site_instance.h",
+    "site_isolation_policy.cc",
+    "site_isolation_policy.h",
     "speech_recognition_event_listener.h",
     "speech_recognition_manager.h",
     "speech_recognition_manager_delegate.h",
@@ -284,6 +288,7 @@ jumbo_source_set("browser_sources") {
     "web_contents_view_delegate.cc",
     "web_contents_view_delegate.h",
     "web_drag_dest_delegate.h",
+    "web_package_context.h",
     "web_ui.h",
     "web_ui_controller.cc",
     "web_ui_controller.h",
@@ -321,7 +326,7 @@ jumbo_source_set("browser_sources") {
 
     # We expose storage headers for quota and blob storage context in the public API.
     "//storage/browser",
-    "//third_party/WebKit/public:mojo_bindings",
+    "//third_party/blink/public:mojo_bindings",
   ]
   deps = [
     "//cc",
@@ -347,7 +352,7 @@ jumbo_source_set("browser_sources") {
     "//content/browser",
   ]
 
-  if (is_posix) {
+  if (is_posix || is_fuchsia) {
     sources += [ "posix_file_descriptor_info.h" ]
   }
 

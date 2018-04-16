@@ -159,6 +159,7 @@ De exemplu, unele site-uri pot răspunde la această solicitare afișând anunț
 <translation id="3789841737615482174">Instalează</translation>
 <translation id="385051799172605136">Înapoi</translation>
 <translation id="3897092660631435901">Meniu</translation>
+<translation id="3915450441834151894">Informații despre site</translation>
 <translation id="3928666092801078803">Combină datele</translation>
 <translation id="3950820424414687140">Conectează-te</translation>
 <translation id="3963231839620026525">Filă incognito nouă</translation>
@@ -167,6 +168,7 @@ De exemplu, unele site-uri pot răspunde la această solicitare afișând anunț
 <translation id="4002066346123236978">Titlu</translation>
 <translation id="4038354071007134711">Aplicațiile de pe dispozitiv nu deschid fișierul.</translation>
 <translation id="4049507953662678203">Asigură-te că ai o conexiune la rețea și încearcă din nou.</translation>
+<translation id="4084682180776658562">Marcaj</translation>
 <translation id="411254640334432676">Nu s-a descărcat.</translation>
 <translation id="4121993058175073134">Pentru trimitere date de export în rețea, configurați e-mailul în Setări.</translation>
 <translation id="4124987746317609294">Interval de timp</translation>
@@ -222,6 +224,7 @@ Datele sunt criptate cu expresia de acces pentru sincronizare. Introdu-o pentru 
 <translation id="5197255632782567636">Internet</translation>
 <translation id="5228579091201413441">Activează sincronizarea</translation>
 <translation id="5244474230056479698">Se sincronizează cu <ph name="EMAIL" /></translation>
+<translation id="527973086555161537">Deschide o filă pentru a naviga privat pe web.</translation>
 <translation id="5300589172476337783">Afișează</translation>
 <translation id="5317780077021120954">Salvează</translation>
 <translation id="5327248766486351172">Nume</translation>
@@ -301,6 +304,7 @@ Datele au fost criptate cu expresia de acces pentru sincronizare la <ph name="TI
 <translation id="6445981559479772097">Mesaj trimis.</translation>
 <translation id="6464071786529933911">Deschide în Filă incognito nouă</translation>
 <translation id="6482629121755362506">Elemente șterse: <ph name="NUMBER_OF_SELECTED_BOOKMARKS" /></translation>
+<translation id="6528048372317642110">Descărcarea fișierelor este disponibilă</translation>
 <translation id="6541915733953096570">Din ultima oră</translation>
 <translation id="6570040839871198836">Completare auto.</translation>
 <translation id="6656103420185847513">Modificați dosarul</translation>
@@ -426,7 +430,6 @@ Datele au fost criptate cu expresia de acces pentru sincronizare la <ph name="TI
 <translation id="9083392325882095631">Un element</translation>
 <translation id="9100610230175265781">Este necesară o expresie de acces</translation>
 <translation id="9148126808321036104">Conectează-te din nou</translation>
-<translation id="915371508759614899">Anulezi descărcarea?</translation>
 <translation id="9157836665414082580">Închide casetele de dialog</translation>
 <translation id="9188680907066685419">Deconectează-te de la contul gestionat</translation>
 <translation id="9203116392574189331">Handoff</translation>

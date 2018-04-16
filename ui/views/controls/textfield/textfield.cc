@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -537,7 +536,8 @@ void Textfield::SetHorizontalAlignment(gfx::HorizontalAlignment alignment) {
 }
 
 void Textfield::ShowImeIfNeeded() {
-  if (enabled() && !read_only())
+  // GetInputMethod() may return nullptr in tests.
+  if (enabled() && !read_only() && GetInputMethod())
     GetInputMethod()->ShowImeIfNeeded();
 }
 
@@ -1372,6 +1372,15 @@ bool Textfield::GetAcceleratorForCommandId(int command_id,
     case IDS_APP_SELECT_ALL:
       *accelerator = ui::Accelerator(ui::VKEY_A, kPlatformModifier);
       return true;
+
+    case IDS_CONTENT_CONTEXT_EMOJI:
+#if defined(OS_MACOSX)
+      *accelerator = ui::Accelerator(ui::VKEY_SPACE,
+                                     ui::EF_COMMAND_DOWN | ui::EF_CONTROL_DOWN);
+      return true;
+#else
+      return false;
+#endif
 
     default:
       return false;

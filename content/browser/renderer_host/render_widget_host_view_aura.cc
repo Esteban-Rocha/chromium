@@ -14,7 +14,6 @@
 #include "base/debug/stack_trace.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/trace_event.h"
@@ -59,8 +58,8 @@
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/ui/common/switches.h"
 #include "services/ui/public/interfaces/window_manager_constants.mojom.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/web/WebImeTextSpan.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/web/web_ime_text_span.h"
 #include "ui/accessibility/platform/aura_window_properties.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
@@ -382,8 +381,9 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
 
   cursor_manager_.reset(new CursorManager(this));
 
-  SetOverscrollControllerEnabled(OverscrollConfig::GetMode() !=
-                                 OverscrollConfig::Mode::kDisabled);
+  SetOverscrollControllerEnabled(
+      OverscrollConfig::GetHistoryNavigationMode() !=
+      OverscrollConfig::HistoryNavigationMode::kDisabled);
 
   selection_controller_client_.reset(
       new TouchSelectionControllerClientAura(this));
@@ -661,7 +661,7 @@ void RenderWidgetHostViewAura::WasUnOccluded() {
   // If the primary surface was evicted, we should create a new primary.
   if (features::IsSurfaceSynchronizationEnabled() && delegated_frame_host_ &&
       delegated_frame_host_->IsPrimarySurfaceEvicted()) {
-    WasResized(cc::DeadlinePolicy::UseDefaultDeadline());
+    WasResized(cc::DeadlinePolicy::UseDefaultDeadline(), base::nullopt);
   }
 
   TRACE_EVENT_ASYNC_BEGIN0("latency", "TabSwitching::Latency",
@@ -979,6 +979,7 @@ void RenderWidgetHostViewAura::GestureEventAck(
       host()->StopFling();
     }
   }
+  event_handler_->GestureEventAck(event, ack_result);
 }
 
 void RenderWidgetHostViewAura::ProcessAckedTouchEvent(
@@ -1878,7 +1879,7 @@ void RenderWidgetHostViewAura::CreateAuraWindow(aura::client::WindowType type) {
       GetWindowTreeClientFromRenderer(),
       ui::mojom::kEmbedFlagEmbedderInterceptsEvents |
           ui::mojom::kEmbedFlagEmbedderControlsVisibility,
-      base::Bind(&EmbedCallback));
+      base::BindOnce(&EmbedCallback));
 }
 
 void RenderWidgetHostViewAura::CreateDelegatedFrameHostClient() {
@@ -1969,8 +1970,12 @@ void RenderWidgetHostViewAura::UpdateCursorIfOverSelf() {
 }
 
 void RenderWidgetHostViewAura::WasResized(
-    const cc::DeadlinePolicy& deadline_policy) {
-  window_->AllocateLocalSurfaceId();
+    const cc::DeadlinePolicy& deadline_policy,
+    const base::Optional<viz::LocalSurfaceId>&
+        child_allocated_local_surface_id) {
+  DCHECK(window_);
+  window_->UpdateLocalSurfaceIdFromEmbeddedClient(
+      child_allocated_local_surface_id);
   SyncSurfaceProperties(deadline_policy);
 }
 
@@ -2407,15 +2412,16 @@ void RenderWidgetHostViewAura::ScrollFocusedEditableNodeIntoRect(
 }
 
 void RenderWidgetHostViewAura::OnSynchronizedDisplayPropertiesChanged() {
-  WasResized(cc::DeadlinePolicy::UseDefaultDeadline());
+  WasResized(cc::DeadlinePolicy::UseDefaultDeadline(), base::nullopt);
 }
 
 viz::ScopedSurfaceIdAllocator RenderWidgetHostViewAura::ResizeDueToAutoResize(
     const gfx::Size& new_size,
-    uint64_t sequence_number) {
+    uint64_t sequence_number,
+    const viz::LocalSurfaceId& child_local_surface_id) {
   base::OnceCallback<void()> allocation_task = base::BindOnce(
       &RenderWidgetHostViewAura::WasResized, weak_ptr_factory_.GetWeakPtr(),
-      cc::DeadlinePolicy::UseDefaultDeadline());
+      cc::DeadlinePolicy::UseDefaultDeadline(), child_local_surface_id);
   return window_->GetSurfaceIdAllocator(std::move(allocation_task));
 }
 
@@ -2425,7 +2431,7 @@ bool RenderWidgetHostViewAura::IsLocalSurfaceIdAllocationSuppressed() const {
 }
 
 void RenderWidgetHostViewAura::DidNavigate() {
-  WasResized(cc::DeadlinePolicy::UseExistingDeadline());
+  WasResized(cc::DeadlinePolicy::UseExistingDeadline(), base::nullopt);
   if (delegated_frame_host_)
     delegated_frame_host_->DidNavigate();
 }
@@ -2436,6 +2442,22 @@ RenderWidgetHostViewAura::AllocateFrameSinkIdForGuestViewHack() {
   return ImageTransportFactory::GetInstance()
       ->GetContextFactoryPrivate()
       ->AllocateFrameSinkId();
+}
+
+void RenderWidgetHostViewAura::TakeFallbackContentFrom(
+    RenderWidgetHostView* view) {
+  DCHECK(!static_cast<RenderWidgetHostViewBase*>(view)
+              ->IsRenderWidgetHostViewChildFrame());
+  DCHECK(!static_cast<RenderWidgetHostViewBase*>(view)
+              ->IsRenderWidgetHostViewGuest());
+  RenderWidgetHostViewAura* view_aura =
+      static_cast<RenderWidgetHostViewAura*>(view);
+  SetBackgroundColor(view_aura->background_color());
+  if (delegated_frame_host_ && view_aura->delegated_frame_host_) {
+    delegated_frame_host_->TakeFallbackContentFrom(
+        view_aura->delegated_frame_host_.get());
+  }
+  host()->GetContentRenderingTimeoutFrom(view_aura->host());
 }
 
 }  // namespace content

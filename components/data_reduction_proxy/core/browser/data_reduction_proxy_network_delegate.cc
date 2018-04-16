@@ -8,7 +8,6 @@
 #include <limits>
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
@@ -125,10 +124,9 @@ void RecordContentLengthHistograms(bool is_https,
   // Add the current resource to these histograms only when the content length
   // is valid.
   if (original_content_length >= 0) {
-    UMA_HISTOGRAM_COUNTS_1M("Net.HttpContentLengthWithValidOCL",
-                            received_content_length);
-    UMA_HISTOGRAM_COUNTS_1M("Net.HttpOriginalContentLengthWithValidOCL",
-                            original_content_length);
+    // This is only used locally in integration testing.
+    LOCAL_HISTOGRAM_COUNTS_1000000("Net.HttpOriginalContentLengthWithValidOCL",
+                                   original_content_length);
     UMA_HISTOGRAM_COUNTS_1M("Net.HttpContentLengthDifferenceWithValidOCL",
                             original_content_length - received_content_length);
   } else {
@@ -154,19 +152,6 @@ void RecordContentLengthHistograms(bool is_https,
                               freshness_lifetime.InSeconds(),
                               base::TimeDelta::FromHours(1).InSeconds(),
                               base::TimeDelta::FromDays(30).InSeconds(), 100);
-  if (freshness_lifetime.InSeconds() <= 0)
-    return;
-  UMA_HISTOGRAM_COUNTS_1M("Net.HttpContentLengthCacheable",
-                          received_content_length);
-  if (freshness_lifetime.InHours() < 4)
-    return;
-  UMA_HISTOGRAM_COUNTS_1M("Net.HttpContentLengthCacheable4Hours",
-                          received_content_length);
-
-  if (freshness_lifetime.InHours() < 24)
-    return;
-  UMA_HISTOGRAM_COUNTS_1M("Net.HttpContentLengthCacheable24Hours",
-                          received_content_length);
 }
 
 void RecordAcceptTransformEvent(AcceptTransformEvent event) {

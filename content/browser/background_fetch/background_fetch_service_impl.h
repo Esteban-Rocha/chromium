@@ -13,7 +13,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/platform/modules/background_fetch/background_fetch.mojom.h"
+#include "third_party/blink/public/platform/modules/background_fetch/background_fetch.mojom.h"
 #include "url/origin.h"
 
 namespace content {
@@ -44,6 +44,7 @@ class CONTENT_EXPORT BackgroundFetchServiceImpl
              FetchCallback callback) override;
   void GetIconDisplaySize(GetIconDisplaySizeCallback callback) override;
   void UpdateUI(int64_t service_worker_registration_id,
+                const std::string& developer_id,
                 const std::string& unique_id,
                 const std::string& title,
                 UpdateUICallback callback) override;

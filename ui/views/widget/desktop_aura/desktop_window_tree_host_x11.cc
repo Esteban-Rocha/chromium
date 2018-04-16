@@ -515,7 +515,7 @@ aura::WindowTreeHost* DesktopWindowTreeHostX11::AsWindowTreeHost() {
 void DesktopWindowTreeHostX11::ShowWindowWithState(
     ui::WindowShowState show_state) {
   if (compositor())
-    SetVisible(true);
+    SetVisible(show_state != ui::SHOW_STATE_MINIMIZED);
   if (!IsVisible() || !window_mapped_in_server_)
     MapWindow(show_state);
 
@@ -1312,6 +1312,10 @@ bool DesktopWindowTreeHostX11::CaptureSystemKeyEventsImpl(
 
 void DesktopWindowTreeHostX11::ReleaseSystemKeyEventCapture() {
   keyboard_hook_.reset();
+}
+
+bool DesktopWindowTreeHostX11::IsKeyLocked(int native_key_code) {
+  return keyboard_hook_ && keyboard_hook_->IsKeyLocked(native_key_code);
 }
 
 void DesktopWindowTreeHostX11::SetCursorNative(gfx::NativeCursor cursor) {

@@ -32,10 +32,20 @@ UserEventSpecifics CreateTestEvent(int microseconds) {
   return specifics;
 }
 
+std::string GetAccountId() {
+#if defined(OS_CHROMEOS)
+  // TODO(vitaliii): Unify the two, because it takes ages to debug and
+  // impossible to discover otherwise.
+  return "user@gmail.com";
+#else
+  return "gaia-id-user@gmail.com";
+#endif
+}
+
 UserEventSpecifics CreateUserConsent(int microseconds) {
   UserEventSpecifics specifics;
   specifics.set_event_time_usec(microseconds);
-  specifics.mutable_user_consent();
+  specifics.mutable_user_consent()->set_account_id(GetAccountId());
   return specifics;
 }
 
@@ -337,6 +347,22 @@ IN_PROC_BROWSER_TEST_F(SingleClientUserEventsSyncTest, FieldTrial) {
   UserEventCaseChecker(GetSyncService(0), GetFakeServer(),
                        {UserEventSpecifics::kFieldTrialEvent})
       .Wait();
+}
+
+IN_PROC_BROWSER_TEST_F(SingleClientUserEventsSyncTest,
+                       PreserveConsentsOnDisableSync) {
+  const UserEventSpecifics testEvent1 = CreateTestEvent(1);
+  const UserEventSpecifics consent1 = CreateUserConsent(2);
+
+  ASSERT_TRUE(SetupSync());
+  syncer::UserEventService* event_service =
+      browser_sync::UserEventServiceFactory::GetForProfile(GetProfile(0));
+  event_service->RecordUserEvent(testEvent1);
+  event_service->RecordUserEvent(consent1);
+
+  ASSERT_TRUE(GetClient(0)->RestartSyncService());
+
+  EXPECT_TRUE(ExpectUserEvents({consent1}));
 }
 
 }  // namespace

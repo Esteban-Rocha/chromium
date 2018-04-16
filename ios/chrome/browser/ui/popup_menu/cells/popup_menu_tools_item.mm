@@ -10,6 +10,7 @@
 #import "ios/chrome/browser/ui/reading_list/number_badge_view.h"
 #import "ios/chrome/browser/ui/reading_list/text_badge_view.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
+#import "ios/chrome/browser/ui/uikit_ui_util.h"
 #import "ios/chrome/browser/ui/util/constraints_ui_util.h"
 #import "ios/chrome/common/material_timing.h"
 
@@ -18,13 +19,17 @@
 #endif
 
 namespace {
+const int kEnabledColor = 0x1A73E8;
 const CGFloat kImageLength = 28;
 const CGFloat kCellHeight = 44;
 const CGFloat kInnerMargin = 11;
 const CGFloat kMargin = 15;
 const CGFloat kTopMargin = 8;
 const CGFloat kTopMarginBadge = 14;
-}
+const CGFloat kMaxHeight = 100;
+NSString* const kToolsMenuTextBadgeAccessibilityIdentifier =
+    @"kToolsMenuTextBadgeAccessibilityIdentifier";
+}  // namespace
 
 @implementation PopupMenuToolsItem
 
@@ -49,6 +54,7 @@ const CGFloat kTopMarginBadge = 14;
   [super configureCell:cell withStyler:styler];
   cell.titleLabel.text = self.title;
   cell.imageView.image = self.image;
+  cell.accessibilityTraits = UIAccessibilityTraitButton;
   cell.userInteractionEnabled = self.enabled;
   [cell setBadgeNumber:self.badgeNumber];
   [cell setBadgeText:self.badgeText];
@@ -65,10 +71,10 @@ const CGFloat kTopMarginBadge = 14;
   });
 
   [self configureCell:cell withStyler:[[ChromeTableViewStyler alloc] init]];
-  cell.frame = CGRectMake(0, 0, width, 0);
+  cell.frame = CGRectMake(0, 0, width, kMaxHeight);
   [cell setNeedsLayout];
   [cell layoutIfNeeded];
-  return [cell systemLayoutSizeFittingSize:UILayoutFittingCompressedSize];
+  return [cell systemLayoutSizeFittingSize:CGSizeMake(width, kMaxHeight)];
 }
 
 @end
@@ -120,6 +126,8 @@ const CGFloat kTopMarginBadge = 14;
 
     _textBadgeView = [[TextBadgeView alloc] initWithText:nil];
     _textBadgeView.translatesAutoresizingMaskIntoConstraints = NO;
+    _textBadgeView.accessibilityIdentifier =
+        kToolsMenuTextBadgeAccessibilityIdentifier;
     _textBadgeView.hidden = YES;
 
     [self.contentView addSubview:_titleLabel];
@@ -158,6 +166,8 @@ const CGFloat kTopMarginBadge = 14;
                        constant:-kMargin];
     trailingEdge.priority = UILayoutPriorityDefaultHigh - 2;
     trailingEdge.active = YES;
+
+    self.isAccessibilityElement = YES;
   }
   return self;
 }
@@ -231,16 +241,18 @@ const CGFloat kTopMarginBadge = 14;
 - (void)prepareForReuse {
   [super prepareForReuse];
   self.userInteractionEnabled = YES;
+  self.accessibilityTraits &= ~UIAccessibilityTraitNotEnabled;
 }
 
 - (void)setUserInteractionEnabled:(BOOL)userInteractionEnabled {
   [super setUserInteractionEnabled:userInteractionEnabled];
   if (userInteractionEnabled) {
-    self.titleLabel.textColor = self.tintColor;
-    self.imageView.tintColor = self.tintColor;
+    self.titleLabel.textColor = UIColorFromRGB(kEnabledColor);
+    self.imageView.tintColor = UIColorFromRGB(kEnabledColor);
   } else {
     self.titleLabel.textColor = [[self class] disabledColor];
     self.imageView.tintColor = [[self class] disabledColor];
+    self.accessibilityTraits |= UIAccessibilityTraitNotEnabled;
   }
 }
 

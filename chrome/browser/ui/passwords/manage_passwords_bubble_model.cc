@@ -39,12 +39,6 @@ namespace metrics_util = password_manager::metrics_util;
 
 namespace {
 
-Profile* GetProfileFromWebContents(content::WebContents* web_contents) {
-  if (!web_contents)
-    return nullptr;
-  return Profile::FromBrowserContext(web_contents->GetBrowserContext());
-}
-
 void CleanStatisticsForSite(Profile* profile, const GURL& origin) {
   DCHECK(profile);
   password_manager::PasswordStore* password_store =
@@ -437,7 +431,8 @@ void ManagePasswordsBubbleModel::OnPasswordAction(
 }
 
 void ManagePasswordsBubbleModel::OnSignInToChromeClicked(
-    const AccountInfo& account) {
+    const AccountInfo& account,
+    bool is_default_promo_account) {
   // Enabling sync for an existing account and starting a new sign-in are
   // triggered by the user interacting with the sign-in promo.
   interaction_keeper_->set_sign_in_promo_dismissal_reason(
@@ -445,7 +440,7 @@ void ManagePasswordsBubbleModel::OnSignInToChromeClicked(
   GetProfile()->GetPrefs()->SetBoolean(
       password_manager::prefs::kWasSignInPasswordPromoClicked, true);
   if (delegate_)
-    delegate_->EnableSync(account);
+    delegate_->EnableSync(account, is_default_promo_account);
 }
 
 void ManagePasswordsBubbleModel::OnSkipSignInClicked() {
@@ -456,7 +451,10 @@ void ManagePasswordsBubbleModel::OnSkipSignInClicked() {
 }
 
 Profile* ManagePasswordsBubbleModel::GetProfile() const {
-  return GetProfileFromWebContents(GetWebContents());
+  content::WebContents* web_contents = GetWebContents();
+  if (!web_contents)
+    return nullptr;
+  return Profile::FromBrowserContext(web_contents->GetBrowserContext());
 }
 
 content::WebContents* ManagePasswordsBubbleModel::GetWebContents() const {

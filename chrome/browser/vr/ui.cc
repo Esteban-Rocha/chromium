@@ -155,6 +155,13 @@ void Ui::ShowExitVrPrompt(UiUnsupportedMode reason) {
     case UiUnsupportedMode::kNeedsKeyboardUpdate:
       model_->active_modal_prompt_type = kModalPromptTypeUpdateKeyboard;
       return;
+    case UiUnsupportedMode::kUnhandledConnectionInfo:
+      model_->active_modal_prompt_type =
+          kModalPromptTypeExitVRForConnectionInfo;
+      return;
+    // kSearchEnginePromo should DOFF directly. It should never try to change
+    // the state of UI.
+    case UiUnsupportedMode::kSearchEnginePromo:
     case UiUnsupportedMode::kCount:
       NOTREACHED();  // Should never be used as a mode (when |enabled| is true).
       return;
@@ -450,6 +457,10 @@ void Ui::OnAssetsUnavailable() {
 
 void Ui::SetIncognitoTabsOpen(bool open) {
   model_->incognito_tabs_open = open;
+}
+
+void Ui::SetOverlayTextureEmpty(bool empty) {
+  model_->content_overlay_texture_non_empty = !empty;
 }
 
 void Ui::ReinitializeForTest(const UiInitialState& ui_initial_state) {

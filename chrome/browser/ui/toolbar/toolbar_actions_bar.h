@@ -58,10 +58,6 @@ class ToolbarActionsBar : public ToolbarActionsModel::Observer,
     // container and the first item, and between the last item and end of
     // the container.
     int item_spacing;
-
-    // The additional spacing between the container and omnibox.
-    int left_padding;
-
     // The number of icons per row in the overflow menu.
     int icons_per_overflow_menu_row;
   };
@@ -86,18 +82,18 @@ class ToolbarActionsBar : public ToolbarActionsModel::Observer,
                     ToolbarActionsBar* main_bar);
   ~ToolbarActionsBar() override;
 
-  // Returns the size of ToolbarActionView.
-  static gfx::Size GetViewSize();
-
   // Registers profile preferences.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  // Returns the size of ToolbarActionView.
+  virtual gfx::Size GetViewSize() const;
 
   // Returns the default/full size for the toolbar; this does *not* reflect any
   // animations that may be running.
   gfx::Size GetFullSize() const;
 
   // Returns the [minimum|maximum] possible width for the toolbar.
-  int GetMinimumWidth() const;
+  virtual int GetMinimumWidth() const;
   int GetMaximumWidth() const;
 
   // Returns the width for the given number of icons.

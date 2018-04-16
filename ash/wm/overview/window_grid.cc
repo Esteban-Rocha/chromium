@@ -13,6 +13,7 @@
 
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/public/cpp/shell_window_ids.h"
+#include "ash/public/cpp/wallpaper_types.h"
 #include "ash/public/cpp/window_state_type.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_util.h"
@@ -82,10 +83,6 @@ constexpr float kOldShieldOpacity = 0.7f;
 // The base color which is mixed with the dark muted color from wallpaper to
 // form the shield widgets color.
 constexpr SkColor kShieldBaseColor = SkColorSetARGB(179, 0, 0, 0);
-
-// Amount of blur to apply on the wallpaper when we enter or exit overview mode.
-constexpr float kWallpaperBlurSigma = 10.f;
-constexpr float kWallpaperClearBlurSigma = 0.f;
 
 // In the conceptual overview table, the window margin is the space reserved
 // around the window within the cell. This margin does not overlap so the
@@ -241,13 +238,6 @@ WindowGrid::WindowGrid(aura::Window* root_window,
     window_list_.push_back(
         std::make_unique<WindowSelectorItem>(window, window_selector_, this));
   }
-
-  if (IsNewOverviewUi() &&
-      Shell::Get()->wallpaper_controller()->IsBlurEnabled()) {
-    RootWindowController::ForWindow(root_window_)
-        ->wallpaper_widget_controller()
-        ->SetWallpaperBlur(kWallpaperBlurSigma);
-  }
 }
 
 WindowGrid::~WindowGrid() = default;
@@ -279,13 +269,6 @@ void WindowGrid::Shutdown() {
     window_selector_->delegate()->AddDelayedAnimationObserver(
         std::move(observer));
     shield_widget->SetOpacity(0.f);
-  }
-
-  if (IsNewOverviewUi() &&
-      Shell::Get()->wallpaper_controller()->IsBlurEnabled()) {
-    RootWindowController::ForWindow(root_window_)
-        ->wallpaper_widget_controller()
-        ->SetWallpaperBlur(kWallpaperClearBlurSigma);
   }
 }
 
@@ -794,7 +777,7 @@ void WindowGrid::InitShieldWidget() {
     SkColor dark_muted_color =
         Shell::Get()->wallpaper_controller()->GetProminentColor(
             color_utils::ColorProfile());
-    if (dark_muted_color != ash::WallpaperController::kInvalidColor) {
+    if (dark_muted_color != ash::kInvalidWallpaperColor) {
       shield_color = color_utils::GetResultingPaintColor(kShieldBaseColor,
                                                          dark_muted_color);
     }

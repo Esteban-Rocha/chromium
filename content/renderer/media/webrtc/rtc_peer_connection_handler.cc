@@ -42,19 +42,19 @@
 #include "content/renderer/media/webrtc/webrtc_uma_histograms.h"
 #include "content/renderer/render_thread_impl.h"
 #include "media/base/media_switches.h"
-#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
-#include "third_party/WebKit/public/platform/WebRTCAnswerOptions.h"
-#include "third_party/WebKit/public/platform/WebRTCConfiguration.h"
-#include "third_party/WebKit/public/platform/WebRTCDataChannelInit.h"
-#include "third_party/WebKit/public/platform/WebRTCError.h"
-#include "third_party/WebKit/public/platform/WebRTCICECandidate.h"
-#include "third_party/WebKit/public/platform/WebRTCLegacyStats.h"
-#include "third_party/WebKit/public/platform/WebRTCOfferOptions.h"
-#include "third_party/WebKit/public/platform/WebRTCRtpSender.h"
-#include "third_party/WebKit/public/platform/WebRTCSessionDescription.h"
-#include "third_party/WebKit/public/platform/WebRTCSessionDescriptionRequest.h"
-#include "third_party/WebKit/public/platform/WebRTCVoidRequest.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/blink/public/platform/web_media_constraints.h"
+#include "third_party/blink/public/platform/web_rtc_answer_options.h"
+#include "third_party/blink/public/platform/web_rtc_configuration.h"
+#include "third_party/blink/public/platform/web_rtc_data_channel_init.h"
+#include "third_party/blink/public/platform/web_rtc_error.h"
+#include "third_party/blink/public/platform/web_rtc_ice_candidate.h"
+#include "third_party/blink/public/platform/web_rtc_legacy_stats.h"
+#include "third_party/blink/public/platform/web_rtc_offer_options.h"
+#include "third_party/blink/public/platform/web_rtc_rtp_sender.h"
+#include "third_party/blink/public/platform/web_rtc_session_description.h"
+#include "third_party/blink/public/platform/web_rtc_session_description_request.h"
+#include "third_party/blink/public/platform/web_rtc_void_request.h"
+#include "third_party/blink/public/platform/web_url.h"
 #include "third_party/webrtc/api/rtceventlogoutput.h"
 #include "third_party/webrtc/pc/mediasession.h"
 
@@ -260,8 +260,6 @@ void GetNativeRtcConfiguration(
 
   switch (blink_config.sdp_semantics) {
     case blink::WebRTCSdpSemantics::kDefault:
-      webrtc_config->sdp_semantics = webrtc::SdpSemantics::kDefault;
-      break;
     case blink::WebRTCSdpSemantics::kPlanB:
       webrtc_config->sdp_semantics = webrtc::SdpSemantics::kPlanB;
       break;
@@ -748,12 +746,6 @@ class PeerConnectionUMAObserver : public webrtc::UMAObserver {
             static_cast<webrtc::KeyExchangeProtocolType>(counter),
             webrtc::kEnumCounterKeyProtocolMax);
         break;
-      case webrtc::kEnumCounterSdpSemanticRequested:
-        UMA_HISTOGRAM_ENUMERATION(
-            "WebRTC.PeerConnection.SdpSemanticRequested",
-            static_cast<webrtc::SdpSemanticRequested>(counter),
-            webrtc::kSdpSemanticRequestMax);
-        break;
       case webrtc::kEnumCounterSdpSemanticNegotiated:
         UMA_HISTOGRAM_ENUMERATION(
             "WebRTC.PeerConnection.SdpSemanticNegotiated",
@@ -765,6 +757,12 @@ class PeerConnectionUMAObserver : public webrtc::UMAObserver {
             "WebRTC.PeerConnection.KeyProtocolByMedia",
             static_cast<webrtc::KeyExchangeProtocolMedia>(counter),
             webrtc::kEnumCounterKeyProtocolMediaTypeMax);
+        break;
+      case webrtc::kEnumCounterSdpFormatReceived:
+        UMA_HISTOGRAM_ENUMERATION(
+            "WebRTC.PeerConnection.SdpFormatReceived",
+            static_cast<webrtc::SdpFormatReceived>(counter),
+            webrtc::kSdpFormatReceivedMax);
         break;
       default:
         // The default clause is expected to be reached when new enum types are
@@ -922,6 +920,27 @@ size_t GetRemoteStreamUsageCount(
       ++usage_count;
   }
   return usage_count;
+}
+
+enum SdpSemanticRequested {
+  kSdpSemanticRequestedDefault,
+  kSdpSemanticRequestedPlanB,
+  kSdpSemanticRequestedUnifiedPlan,
+  kSdpSemanticRequestedMax
+};
+
+SdpSemanticRequested GetSdpSemanticRequested(
+    blink::WebRTCSdpSemantics sdp_semantics) {
+  switch (sdp_semantics) {
+    case blink::WebRTCSdpSemantics::kDefault:
+      return kSdpSemanticRequestedDefault;
+    case blink::WebRTCSdpSemantics::kPlanB:
+      return kSdpSemanticRequestedPlanB;
+    case blink::WebRTCSdpSemantics::kUnifiedPlan:
+      return kSdpSemanticRequestedUnifiedPlan;
+  }
+  NOTREACHED();
+  return kSdpSemanticRequestedDefault;
 }
 
 }  // namespace
@@ -1348,6 +1367,12 @@ bool RTCPeerConnectionHandler::Initialize(
 
   uma_observer_ = new rtc::RefCountedObject<PeerConnectionUMAObserver>();
   native_peer_connection_->RegisterUMAObserver(uma_observer_.get());
+
+  UMA_HISTOGRAM_ENUMERATION(
+      "WebRTC.PeerConnection.SdpSemanticRequested",
+      GetSdpSemanticRequested(server_configuration.sdp_semantics),
+      kSdpSemanticRequestedMax);
+
   return true;
 }
 

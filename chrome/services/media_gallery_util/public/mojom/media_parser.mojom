@@ -9,7 +9,7 @@ import "mojo/public/mojom/base/file.mojom";
 import "mojo/public/mojom/base/time.mojom";
 
 interface MediaParser {
-  // Extracts metadata from a |mime_type| blob of data of |total_size| and
+  // Extracts metadata from media data with |mime_type|, |total_size| and
   // available from |media_data_source|. If there are images referred to in the
   // metadata, and |get_attached_images| is true, return the images in
   // |attached_images|.
@@ -29,12 +29,27 @@ interface MediaParser {
   CheckMediaFile(mojo_base.mojom.TimeDelta decode_time,
                  mojo_base.mojom.File file)
       => (bool success);
+
+  // Used by tests to validate the right CPU information is set on third-party
+  // libraries.
+  GetCpuInfo() => (int64 libyuv_cpu_flags, int64 ffmpeg_cpu_flags);
+};
+
+interface MediaParserFactory {
+  // Creates a MediaParser. |libyuv_cpuf_lags| are the flags returned by
+  // libyuv::InitCpuFlags() from third-party/libyuv and |libavutil_cpu_flags|
+  // the flags returned by av_get_cpu_flags() from FFmpeg. These flags have to
+  // be passed in as retrieving them may require file access (to /proc/cpuinfo
+  // for instance) and the media parser may be run in a sandboxed process with
+  // no such access.
+  CreateMediaParser(int64 libyuv_cpu_flags, int64 libavutil_cpu_flags)
+      => (MediaParser media_parser);
 };
 
 interface MediaDataSource {
-  // ParseMediaMetadata interface used to read blob data for parsing from the
+  // ParseMediaMetadata interface used to read data for parsing from the
   // calling process.
-  ReadBlob(int64 position, int64 length) => (array<uint8> data);
+  Read(int64 position, int64 length) => (array<uint8> data);
 };
 
 struct AttachedImage {

@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/process/process_metrics.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
 #include "chrome/browser/profiles/profile.h"
@@ -110,6 +111,11 @@ LifecycleUnit::SortKey TabLifecycleUnitSource::TabLifecycleUnit::GetSortKey()
   return SortKey(last_focused_time_);
 }
 
+content::Visibility TabLifecycleUnitSource::TabLifecycleUnit::GetVisibility()
+    const {
+  return GetWebContents()->GetVisibility();
+}
+
 bool TabLifecycleUnitSource::TabLifecycleUnit::Freeze() {
   // Can't freeze tabs that are already discarded or frozen.
   // TODO(fmeawad): Don't freeze already frozen tabs.
@@ -122,8 +128,16 @@ bool TabLifecycleUnitSource::TabLifecycleUnit::Freeze() {
 
 int TabLifecycleUnitSource::TabLifecycleUnit::
     GetEstimatedMemoryFreedOnDiscardKB() const {
+#if defined(OS_CHROMEOS)
+  std::unique_ptr<base::ProcessMetrics> process_metrics(
+      base::ProcessMetrics::CreateProcessMetrics(GetProcessHandle()));
+  base::ProcessMetrics::TotalsSummary summary =
+      process_metrics->GetTotalsSummary();
+  return summary.private_clean_kb + summary.private_dirty_kb + summary.swap_kb;
+#else
   // TODO(fdoray): Implement this. https://crbug.com/775644
   return 0;
+#endif
 }
 
 bool TabLifecycleUnitSource::TabLifecycleUnit::CanPurge() const {
@@ -166,7 +180,7 @@ bool TabLifecycleUnitSource::TabLifecycleUnit::CanDiscard(
   if (GetWebContents()->GetPageImportanceSignals().had_form_interaction)
     return false;
 
-  // Do discard media tabs as it's too distruptive to the user experience.
+  // Do not discard media tabs as it's too distruptive to the user experience.
   if (IsMediaTab())
     return false;
 
@@ -192,11 +206,6 @@ bool TabLifecycleUnitSource::TabLifecycleUnit::CanDiscard(
   // TODO(fdoray): Allow tabs to be discarded more than once.
   // https://crbug.com/794622
   if (discard_count_ > 0)
-    return false;
-
-  // Do not discard a tab that has recently been focused.
-  const base::TimeDelta time_since_focused = NowTicks() - last_focused_time_;
-  if (time_since_focused < kTabFocusedProtectionTime)
     return false;
 
   return true;

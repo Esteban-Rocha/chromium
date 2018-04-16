@@ -19,9 +19,9 @@
 #include "chrome/browser/vr/databinding/binding_base.h"
 #include "chrome/browser/vr/elements/corner_radii.h"
 #include "chrome/browser/vr/elements/draw_phase.h"
-#include "chrome/browser/vr/elements/ui_element_iterator.h"
 #include "chrome/browser/vr/elements/ui_element_name.h"
 #include "chrome/browser/vr/elements/ui_element_type.h"
+#include "chrome/browser/vr/frame_lifecycle.h"
 #include "chrome/browser/vr/model/camera_model.h"
 #include "chrome/browser/vr/model/reticle_model.h"
 #include "chrome/browser/vr/model/sounds.h"
@@ -108,17 +108,6 @@ class UiElement : public cc::AnimationTarget {
     kScaleIndex = 2,
   };
 
-  enum UpdatePhase {
-    kDirty = 0,
-    kUpdatedBindings,
-    kUpdatedAnimations,
-    kUpdatedComputedOpacity,
-    kUpdatedTexturesAndSizes,
-    kUpdatedLayout,
-    kUpdatedWorldSpaceTransform,
-    kClean = kUpdatedWorldSpaceTransform,
-  };
-
   UiElementName name() const { return name_; }
   void SetName(UiElementName name);
   virtual void OnSetName();
@@ -137,14 +126,18 @@ class UiElement : public cc::AnimationTarget {
   void SetDrawPhase(DrawPhase draw_phase);
   virtual void OnSetDrawPhase();
 
-  // Returns true if the element needs to be re-drawn.
-  virtual bool PrepareToDraw();
+  void UpdateBindings();
 
   // Returns true if the element has been updated in any visible way.
-  bool DoBeginFrame(const base::TimeTicks& time,
-                    const gfx::Transform& head_pose);
+  bool DoBeginFrame(const gfx::Transform& head_pose);
 
-  // Indicates whether the element should be tested for cursor input.
+  // Returns true if the element has changed size or position, or otherwise
+  // warrants re-rendering the scene.
+  virtual bool PrepareToDraw();
+
+  // Returns true if the element updated its texture.
+  virtual bool UpdateTexture();
+
   bool IsHitTestable() const;
 
   virtual void Render(UiElementRenderer* renderer,
@@ -185,6 +178,7 @@ class UiElement : public cc::AnimationTarget {
 
   // If true, the object has a non-zero opacity.
   bool IsVisible() const;
+
   // For convenience, sets opacity to |opacity_when_visible_|.
   virtual void SetVisible(bool visible);
   virtual void SetVisibleImmediately(bool visible);
@@ -266,6 +260,8 @@ class UiElement : public cc::AnimationTarget {
   void set_computed_opacity(float computed_opacity) {
     computed_opacity_ = computed_opacity;
   }
+
+  virtual float ComputedAndLocalOpacityForTest() const;
 
   LayoutAlignment x_anchoring() const { return x_anchoring_; }
   void set_x_anchoring(LayoutAlignment x_anchoring) {
@@ -355,7 +351,9 @@ class UiElement : public cc::AnimationTarget {
     return bindings_;
   }
 
-  void UpdateBindings();
+  void set_visibility_bindings_depend_on_child_visibility(bool value) {
+    visibility_bindings_depend_on_child_visibility_ = value;
+  }
 
   gfx::Point3F GetCenter() const;
   gfx::Vector3dF GetNormal() const;
@@ -414,40 +412,20 @@ class UiElement : public cc::AnimationTarget {
   virtual gfx::Transform GetTargetLocalTransform() const;
 
   void UpdateComputedOpacity();
-  void UpdateWorldSpaceTransformRecursive(bool parent_changed);
+  void UpdateWorldSpaceTransform(bool parent_changed);
 
   std::vector<std::unique_ptr<UiElement>>& children() { return children_; }
   const std::vector<std::unique_ptr<UiElement>>& children() const {
     return children_;
   }
 
-  typedef ForwardUiElementIterator iterator;
-  typedef ConstForwardUiElementIterator const_iterator;
-  typedef ReverseUiElementIterator reverse_iterator;
-  typedef ConstReverseUiElementIterator const_reverse_iterator;
-
-  iterator begin() { return iterator(this); }
-  iterator end() { return iterator(nullptr); }
-  const_iterator begin() const { return const_iterator(this); }
-  const_iterator end() const { return const_iterator(nullptr); }
-
-  reverse_iterator rbegin() { return reverse_iterator(this); }
-  reverse_iterator rend() { return reverse_iterator(nullptr); }
-  const_reverse_iterator rbegin() const { return const_reverse_iterator(this); }
-  const_reverse_iterator rend() const {
-    return const_reverse_iterator(nullptr);
-  }
-
-  void set_update_phase(UpdatePhase phase) { phase_ = phase; }
+  void set_update_phase(UpdatePhase phase) { update_phase_ = phase; }
+  UpdatePhase update_phase() const { return update_phase_; }
 
   // This is true for all elements that respect the given view model matrix. If
   // this is ignored (say for head-locked elements that draw in screen space),
   // then this function should return false.
   virtual bool IsWorldPositioned() const;
-
-  bool updated_bindings_this_frame() const {
-    return updated_bindings_this_frame_;
-  }
 
   bool updated_visiblity_this_frame() const {
     return updated_visibility_this_frame_;
@@ -486,10 +464,16 @@ class UiElement : public cc::AnimationTarget {
     resizable_by_layout_ = resizable;
   }
 
- protected:
-  Animation& animation() { return animation_; }
+  bool descendants_updated() const { return descendants_updated_; }
+  void set_descendants_updated(bool updated) { descendants_updated_ = updated; }
 
   base::TimeTicks last_frame_time() const { return last_frame_time_; }
+  void set_last_frame_time(const base::TimeTicks& time) {
+    last_frame_time_ = time;
+  }
+
+ protected:
+  Animation& animation() { return animation_; }
 
   virtual const Sounds& GetSounds() const;
 
@@ -506,8 +490,11 @@ class UiElement : public cc::AnimationTarget {
   virtual void OnUpdatedWorldSpaceTransform();
 
   // Returns true if the element has been updated in any visible way.
-  virtual bool OnBeginFrame(const base::TimeTicks& time,
-                            const gfx::Transform& head_pose);
+  virtual bool OnBeginFrame(const gfx::Transform& head_pose);
+
+  // If true, the element is either locally visible (independent of its
+  // ancestors), or its animation will cause it to become locally visible.
+  bool IsOrWillBeLocallyVisible() const;
 
   // Valid IDs are non-negative.
   int id_ = -1;
@@ -549,7 +536,10 @@ class UiElement : public cc::AnimationTarget {
   // The computed opacity, incorporating opacity of parent objects.
   float computed_opacity_ = 1.0f;
 
-  // Returns true if the last call to UpdateBindings had any effect.
+  // Returns true if the last call to UpdateBindings had any effect. NB: this
+  // value is *not* updated for all elements in the tree each frame. It is
+  // important to only query this value for elements whose visibility has
+  // changed this frame or will be visible.
   bool updated_bindings_this_frame_ = false;
 
   // Return true if the last call to UpdateComputedOpacity had any effect on
@@ -582,8 +572,7 @@ class UiElement : public cc::AnimationTarget {
 
   DrawPhase draw_phase_ = kPhaseNone;
 
-  // This is the time as of the last call to |Animate|. It is needed when
-  // reversing transitions.
+  // The time of the most recent frame.
   base::TimeTicks last_frame_time_;
 
   // This transform can be used by children to derive position of its parent.
@@ -623,9 +612,19 @@ class UiElement : public cc::AnimationTarget {
   UiElement* parent_ = nullptr;
   std::vector<std::unique_ptr<UiElement>> children_;
 
+  // This is true if a descendant has been added and the total list has not yet
+  // been collected by the scene.
+  bool descendants_updated_ = false;
+
   std::vector<std::unique_ptr<BindingBase>> bindings_;
 
-  UpdatePhase phase_ = kClean;
+  // This value causes us to recurse into our children in DoBeginFrame. This
+  // should not be necessary, but we currently have instances where a parent
+  // node's behavior depends on the visibility of its children.
+  // TODO(crbug.com/829880): remove this once we've simplified our bindings.
+  bool visibility_bindings_depend_on_child_visibility_ = false;
+
+  UpdatePhase update_phase_ = kClean;
 
   AudioDelegate* audio_delegate_ = nullptr;
   Sounds sounds_;

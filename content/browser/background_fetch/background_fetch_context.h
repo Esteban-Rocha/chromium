@@ -18,7 +18,7 @@
 #include "content/browser/background_fetch/background_fetch_event_dispatcher.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_thread.h"
-#include "third_party/WebKit/public/platform/modules/background_fetch/background_fetch.mojom.h"
+#include "third_party/blink/public/platform/modules/background_fetch/background_fetch.mojom.h"
 
 namespace storage {
 class BlobDataHandle;
@@ -92,14 +92,11 @@ class CONTENT_EXPORT BackgroundFetchContext
       const std::string& unique_id,
       blink::mojom::BackgroundFetchRegistrationObserverPtr observer);
 
-  // Updates the title of the Background Fetch identified by |unique_id| and
-  // |service_worker_registration_id| contained. The |callback| will be invoked
-  // when the title has been updated, or an error occurred that prevents it from
-  // doing so.
+  // Updates the title of the Background Fetch identified by |registration_id|.
+  // The |callback| will be invoked when the title has been updated, or an error
+  // occurred that prevents it from doing so.
   void UpdateUI(
-      int64_t service_worker_registration_id,
-      const url::Origin& origin,
-      const std::string& unique_id,
+      const BackgroundFetchRegistrationId& registration_id,
       const std::string& title,
       blink::mojom::BackgroundFetchService::UpdateUICallback callback);
 

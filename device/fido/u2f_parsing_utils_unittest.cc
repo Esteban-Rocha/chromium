@@ -12,6 +12,8 @@ namespace u2f_parsing_utils {
 
 namespace {
 constexpr uint8_t kOne[] = {0x01};
+constexpr uint8_t kOneTwo[] = {0x01, 0x02};
+constexpr uint8_t kTwo[] = {0x02};
 constexpr uint8_t kTwoThree[] = {0x02, 0x03};
 constexpr uint8_t kThree[] = {0x03};
 constexpr uint8_t kOneTwoThree[] = {0x01, 0x02, 0x03};
@@ -51,6 +53,17 @@ TEST(U2fParsingUtils, Append) {
 
   Append(&target, kTwoThree);
   EXPECT_THAT(target, ::testing::ElementsAreArray(kOneTwoThree));
+}
+
+TEST(U2fParsingUtils, AppendSelfCrashes) {
+  std::vector<uint8_t> target(std::begin(kOneTwoThree), std::end(kOneTwoThree));
+  auto span = base::make_span(target);
+
+  // Tests the case where |in_values| overlap with the beginning of |*target|.
+  EXPECT_DEATH_IF_SUPPORTED(Append(&target, span.first(1)), "");
+
+  // Tests the case where |in_values| overlap with the end of |*target|.
+  EXPECT_DEATH_IF_SUPPORTED(Append(&target, span.last(1)), "");
 }
 
 // ExtractSpan and ExtractSuffixSpan are implicitly tested as they used by
@@ -115,6 +128,64 @@ TEST(U2fParsingUtils, ExtractSuffixOutOfBounds) {
   EXPECT_THAT(ExtractSuffix(empty, 1), ::testing::IsEmpty());
   EXPECT_THAT(ExtractSuffix(kOne, 2), ::testing::IsEmpty());
   EXPECT_THAT(ExtractSuffix(kOneTwoThree, 4), ::testing::IsEmpty());
+}
+
+TEST(U2fParsingUtils, ExtractArray) {
+  const std::vector<uint8_t> empty;
+  std::array<uint8_t, 0> array_empty;
+  EXPECT_TRUE(ExtractArray(empty, 0, &array_empty));
+
+  std::array<uint8_t, 2> array_two_three;
+  EXPECT_TRUE(ExtractArray(kTwoThree, 0, &array_two_three));
+  EXPECT_THAT(array_two_three, ::testing::ElementsAreArray(kTwoThree));
+
+  EXPECT_FALSE(ExtractArray(kOneTwoThree, 2, &array_two_three));
+
+  std::array<uint8_t, 1> array_three;
+  EXPECT_TRUE(ExtractArray(kOneTwoThree, 2, &array_three));
+  EXPECT_THAT(array_three, ::testing::ElementsAreArray(kThree));
+}
+
+TEST(U2fParsingUtils, SplitSpan) {
+  std::vector<uint8_t> empty;
+  EXPECT_THAT(SplitSpan(empty, 1), ::testing::IsEmpty());
+  EXPECT_THAT(SplitSpan(empty, 2), ::testing::IsEmpty());
+  EXPECT_THAT(SplitSpan(empty, 3), ::testing::IsEmpty());
+
+  EXPECT_THAT(SplitSpan(kOne, 1),
+              ::testing::ElementsAre(::testing::ElementsAreArray(kOne)));
+  EXPECT_THAT(SplitSpan(kOne, 2),
+              ::testing::ElementsAre(::testing::ElementsAreArray(kOne)));
+  EXPECT_THAT(SplitSpan(kOne, 3),
+              ::testing::ElementsAre(::testing::ElementsAreArray(kOne)));
+
+  EXPECT_THAT(SplitSpan(kOneTwo, 1),
+              ::testing::ElementsAre(::testing::ElementsAreArray(kOne),
+                                     ::testing::ElementsAreArray(kTwo)));
+  EXPECT_THAT(SplitSpan(kOneTwo, 2),
+              ::testing::ElementsAre(::testing::ElementsAreArray(kOneTwo)));
+  EXPECT_THAT(SplitSpan(kOneTwo, 3),
+              ::testing::ElementsAre(::testing::ElementsAreArray(kOneTwo)));
+
+  EXPECT_THAT(SplitSpan(kOneTwoThree, 1),
+              ::testing::ElementsAre(::testing::ElementsAreArray(kOne),
+                                     ::testing::ElementsAreArray(kTwo),
+                                     ::testing::ElementsAreArray(kThree)));
+  EXPECT_THAT(SplitSpan(kOneTwoThree, 2),
+              ::testing::ElementsAre(::testing::ElementsAreArray(kOneTwo),
+                                     ::testing::ElementsAreArray(kThree)));
+  EXPECT_THAT(
+      SplitSpan(kOneTwoThree, 3),
+      ::testing::ElementsAre(::testing::ElementsAreArray(kOneTwoThree)));
+  EXPECT_THAT(
+      SplitSpan(kOneTwoThree, 4),
+      ::testing::ElementsAre(::testing::ElementsAreArray(kOneTwoThree)));
+  EXPECT_THAT(
+      SplitSpan(kOneTwoThree, 5),
+      ::testing::ElementsAre(::testing::ElementsAreArray(kOneTwoThree)));
+  EXPECT_THAT(
+      SplitSpan(kOneTwoThree, 6),
+      ::testing::ElementsAre(::testing::ElementsAreArray(kOneTwoThree)));
 }
 
 }  // namespace u2f_parsing_utils

@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
@@ -331,7 +330,6 @@ TEST_F(DownloadUIControllerTest, DownloadUIController_HistoryDownload) {
   std::unique_ptr<MockDownloadItem> item = CreateMockInProgressDownload();
 
   EXPECT_CALL(*item, GetOriginalMimeType());
-  EXPECT_CALL(*manager(), CheckForHistoryFilesRemoval());
   EXPECT_CALL(
       *manager(),
       PostInitialization(content::DownloadManager::

@@ -22,6 +22,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_stream_factory.h"
+#include "net/http/http_stream_request.h"
 #include "net/http/http_transaction.h"
 #include "net/log/net_log_with_source.h"
 #include "net/proxy_resolution/proxy_resolution_service.h"
@@ -40,7 +41,6 @@ class BidirectionalStreamImpl;
 class HttpAuthController;
 class HttpNetworkSession;
 class HttpStream;
-class HttpStreamRequest;
 class IOBuffer;
 class ProxyInfo;
 class SSLPrivateKey;
@@ -127,6 +127,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
  private:
   FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionTest, ResetStateForRestart);
+  FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionTest,
+                           CreateWebSocketHandshakeStream);
   FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest, WindowUpdateReceived);
   FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest, WindowUpdateSent);
   FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest, WindowUpdateOverflow);
@@ -336,6 +338,13 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // SSLClientAuthCache, rather than provided externally by the caller.
   bool server_ssl_client_cert_was_cached_;
 
+  // SSL configuration used for the server and proxy, respectively. Note
+  // |server_ssl_config_| may be updated from the HttpStreamFactory, which will
+  // be applied on retry.
+  //
+  // TODO(davidben): Mutating it is weird and relies on HttpStreamFactory
+  // modifications being idempotent. Address this as part of other work to make
+  // sense of SSLConfig (related to https://crbug.com/488043).
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
 
@@ -414,6 +423,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   // Number of times the transaction was restarted via a RestartWith* call.
   size_t num_restarts_;
+
+  // The net::Error which triggered a TLS 1.3 version interference probe, or OK
+  // if none was triggered.
+  int ssl_version_interference_error_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpNetworkTransaction);
 };

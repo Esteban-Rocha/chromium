@@ -1471,6 +1471,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.ChromeHome.Survey.ShowSurveyInfoBar">
+  <obsolete>
+    Deprecated 4/2018. Replaced with Android.Survey.ShowSurveyInfoBar action.
+  </obsolete>
   <owner>danielpark@chromium.org</owner>
   <description>The survey infobar was displayed.</description>
 </action>
@@ -1857,6 +1860,11 @@ should be able to be added at any place in this file.
   <description>
     A user clicked on a telephone number link in Chrome content.
   </description>
+</action>
+
+<action name="Android.Survey.ShowSurveyInfoBar">
+  <owner>danielpark@chromium.org</owner>
+  <description>The survey infobar was displayed.</description>
 </action>
 
 <action name="AppCloseButton_Clk">
@@ -5792,6 +5800,15 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="InProductHelp.NotifyEvent.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered an event related to the contextual suggestions in-product
+    help. See //components/feature_engagement/README.md#Configuring-UMA for
+    details.
+  </description>
+</action>
+
 <action name="InProductHelp.NotifyEvent.IPH_DataSaverDetail">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -5986,6 +6003,15 @@ should be able to be added at any place in this file.
     The user triggered a used event related to the Contextual Search in-product
     help. See //components/feature_engagement/README.md#Configuring-UMA for
     details.
+  </description>
+</action>
+
+<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered a used event related to the contextual suggestions
+    in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
   </description>
 </action>
 
@@ -6189,6 +6215,15 @@ should be able to be added at any place in this file.
   <description>
     The feature engagement tracker tried to determine whether the Contextual
     Search in-product help should be shown to the user. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The feature engagement tracker tried to determine whether the contextual
+    suggestions in-product help should be shown to the user. See
     //components/feature_engagement/README.md#Configuring-UMA for details.
   </description>
 </action>
@@ -6432,6 +6467,16 @@ should be able to be added at any place in this file.
 </action>
 
 <action
+    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action that could have triggered the contextual suggestions
+    in-product help did not. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
     name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_DataSaverDetail">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6657,6 +6702,17 @@ should be able to be added at any place in this file.
 </action>
 
 <action
+    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSuggestions">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action triggered the contextual suggestions in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
     name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_DataSaverDetail">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6774,6 +6830,17 @@ should be able to be added at any place in this file.
   <description>
     A pull-to-refresh would have triggered the Chrome Home in-product help, but
     the feature was configured for tracking only. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.WouldHaveTriggered.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <owner>mdjones@chromium.org</owner>
+  <description>
+    A user action would have triggered the contextual suggestions in-product
+    help, but the feature was configured for tracking only. See
     //components/feature_engagement/README.md#Configuring-UMA for details.
   </description>
 </action>
@@ -13031,6 +13098,14 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="NewIncognitoTabTipTargetSelected">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    The user opened the tools menu while the 'New Incognito Tab' in-product help
+    is displayed.
+  </description>
+</action>
+
 <action name="NewIncognitoWindow">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -13264,6 +13339,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="OfflinePages.ReloadButtonClickedViewingUntrustedPage">
+  <owner>romax@chromium.org</owner>
+  <description>
+    Recorded when &quot;Reload&quot; button is clicked in the snackbar that is
+    shown when an untrusted offline page is loaded.
+  </description>
+</action>
+
 <action name="OfflinePages.ReloadButtonNotClicked">
   <owner>jianli@chromium.org</owner>
   <description>
@@ -13307,6 +13390,25 @@ should be able to be added at any place in this file.
     Recorded when the user navigates away without clicking &quot;Free Up
     Space&quot; button is clicked in the storage space promotion section of
     &quot;Saved Offline&quot; page.
+  </description>
+</action>
+
+<action name="OfflinePages.Sharing.SharePageFromDownloadHome">
+  <owner>romax@chromium.org</owner>
+  <description>
+    Recorded when the user shares offline pages from Download Home. Each page
+    will be counted once if there are multiple items being shared in a batch.
+    This will not increment if the sharing process fails at the page publishing
+    step.
+  </description>
+</action>
+
+<action name="OfflinePages.Sharing.SharePageFromOverflowMenu">
+  <owner>romax@chromium.org</owner>
+  <description>
+    Recorded when the user shares an offline page loaded in the current tab
+    through the &quot;Share...&quot; button in the overflow menu. This will not
+    increment if the sharing process fails at the page publishing step.
   </description>
 </action>
 
@@ -17103,12 +17205,39 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_ImpressionWithAccount_FromAvatarBubbleSignin">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with an account in the
+    avatar bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithAccount_FromBookmarkBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with an account in the
+    bookmark bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE).
+  </description>
+</action>
+
 <action name="Signin_ImpressionWithAccount_FromBookmarkManager">
   <owner>jlebel@chromium.org</owner>
   <description>
-    Recorded when starting sign-in using the promo view, with a default account,
-    from bookmarks manager
+    Recorded when the personalized sign-in promo is shown with an account in the
+    in the bookmark manager.
     (signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_MANAGER).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithAccount_FromExtensionInstallBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with an account in the
+    extension install bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE).
   </description>
 </action>
 
@@ -17118,6 +17247,15 @@ should be able to be added at any place in this file.
     Recorded when starting sign-in using the promo view, with a default account,
     from NTP content suggestions
     (signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithAccount_FromPasswordBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    password saved bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE).
   </description>
 </action>
 
@@ -17145,6 +17283,24 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_ImpressionWithNoAccount_FromAvatarBubbleSignin">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    avatar bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithNoAccount_FromBookmarkBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    bookmark bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE).
+  </description>
+</action>
+
 <action name="Signin_ImpressionWithNoAccount_FromBookmarkManager">
   <owner>jlebel@chromium.org</owner>
   <description>
@@ -17154,12 +17310,30 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_ImpressionWithNoAccount_FromExtensionInstallBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    extension install bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE).
+  </description>
+</action>
+
 <action name="Signin_ImpressionWithNoAccount_FromNTPContentSuggestions">
   <owner>bsazonov@chromium.org</owner>
   <description>
     Recorded when starting sign-in using the promo view, with no default
     account, from NTP content suggestions
     (signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithNoAccount_FromPasswordBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    password saved bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE).
   </description>
 </action>
 

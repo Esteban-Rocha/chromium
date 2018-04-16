@@ -10,17 +10,12 @@ Bug(none) external/wpt/content-security-policy/inside-worker/dedicated-script.ht
 Bug(none) external/wpt/cookies/secure/set-from-wss.https.sub.html [ Failure ]
 Bug(none) external/wpt/css/css-fonts/font-display/font-display.html [ Failure Timeout ]
 Bug(none) external/wpt/html/browsers/offline/appcache/workers/appcache-worker.html [ Timeout ]
-Bug(none) external/wpt/service-workers/service-worker/claim-shared-worker-fetch.https.html [ Failure ]
+crbug.com/829417 external/wpt/html/browsers/offline/appcache/workers/appcache-worker.https.html [ Timeout ]
 Bug(none) external/wpt/service-workers/service-worker/clients-get-client-types.https.html [ Failure ]
 crbug.com/807271 external/wpt/service-workers/service-worker/fetch-canvas-tainting-video-cache.https.html [ Failure ]
 Bug(none) external/wpt/service-workers/service-worker/fetch-header-visibility.https.html [ Pass Failure Crash ]
 Bug(none) external/wpt/service-workers/service-worker/fetch-request-xhr-sync-on-worker.https.html [ Timeout ]
 crbug.com/771118 external/wpt/service-workers/service-worker/mime-sniffing.https.html [ Failure ]
-Bug(none) external/wpt/service-workers/service-worker/registration-updateviacache.https.html [ Failure Timeout ]
-Bug(none) external/wpt/service-workers/service-worker/shared-worker-controlled.https.html [ Timeout ]
-Bug(none) external/wpt/service-workers/service-worker/worker-interception.https.html [ Pass Crash Failure ]
-Bug(none) external/wpt/service-workers/service-worker/navigation-preload/broken-chunked-encoding.https.html [ Failure ]
-Bug(none) external/wpt/service-workers/service-worker/ready.https.html [ Pass Crash Failure ]
 Bug(none) http/tests/appcache/top-frame-3.html [ Pass Timeout ]
 Bug(none) http/tests/appcache/top-frame-4.html [ Pass Timeout ]
 Bug(none) http/tests/appcache/local-content.html [ Pass Timeout ]
@@ -32,6 +27,7 @@ Bug(none) http/tests/appcache/reload.html [ Pass Timeout ]
 # Passes on NetworkService and fails on non-NetworkService because
 # NetworkService isn't affected by https://crbug.com/595993.
 Bug(none) external/wpt/service-workers/service-worker/request-end-to-end.https.html [ Pass ]
+crbug.com/830472 external/wpt/service-workers/service-worker/navigation-preload/broken-chunked-encoding.https.html [ Pass ]
 
 Bug(none) external/wpt/streams/readable-byte-streams/properties.serviceworker.https.html [ Timeout Pass ]
 Bug(none) external/wpt/wasm/wasm_service_worker_test.https.html [ Crash Timeout ]
@@ -68,8 +64,6 @@ Bug(none) http/tests/security/mime-type-execute-as-html-01.html [ Failure ]
 Bug(none) http/tests/security/mime-type-execute-as-html-04.html [ Failure ]
 Bug(none) http/tests/security/mixedContent/filesystem-url-in-iframe.html [ Failure Timeout ]
 Bug(none) http/tests/security/offscreen-canvas-worker-read-blocked-by-setting.html [ Crash Pass Timeout ]
-Bug(none) http/tests/serviceworker/chromium.update-served-from-cache.html [ Failure ]
-Bug(none) http/tests/serviceworker/chromium/register-error-messages.html [ Failure ]
 Bug(none) plugins/iframe-plugin-bgcolor.html [ Timeout ]
 
 # Plugin throttle is not implemented.
@@ -86,6 +80,12 @@ crbug.com/764474 plugins/plugin-document-back-forward.html [ Crash Failure Timeo
 # Started failing @ r529490
 Bug(none) virtual/layout_ng/fast/inline/positioned-object-between-replaced-elements.html [ Failure ]
 
-crbug.com/825687 http/tests/devtools/websocket/websocket-handshake.js [ Failure ]
-
 crbug.com/816556 external/wpt/html/semantics/text-level-semantics/the-a-element/a-download-click-404.html [ Failure ]
+crbug.com/829721 external/wpt/html/semantics/embedded-content/the-area-element/area-download-click.html [ Crash ]
+crbug.com/829721 external/wpt/html/semantics/text-level-semantics/the-a-element/a-download-click.html [ Crash ]
+crbug.com/829721 fast/dom/HTMLAnchorElement/anchor-download.html [ Crash ]
+crbug.com/829721 fast/dom/HTMLAnchorElement/anchor-nodownload-set.html [ Crash ]
+crbug.com/829721 fast/dom/HTMLAreaElement/area-download.html [ Crash ]
+crbug.com/829721 http/tests/security/anchor-download-allow-blob.html [ Crash ]
+
+crbug.com/812464 inspector-protocol/network/interception-file-url.js [ Pass Crash ]

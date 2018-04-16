@@ -2004,7 +2004,9 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionPublicSessionTest, NonWhitelisted) {
   EXPECT_FALSE(func->scope_ui_shown());
 }
 
-IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionPublicSessionTest, Whitelisted) {
+// TODO(crbug.com/830052): This test is flaky.
+IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionPublicSessionTest,
+                       DISABLED_Whitelisted) {
   // GetAuthToken() should return a token for whitelisted extensions.
   user_manager::ScopedUserManager user_manager_enabler(
       base::WrapUnique(user_manager_));
@@ -2094,7 +2096,14 @@ class LaunchWebAuthFlowFunctionTest : public AsyncExtensionBrowserTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, UserCloseWindow) {
+#if defined(OS_LINUX)
+// This test times out on Linux MSan Tests.
+// See https://crbug.com/831848 .
+#define MAYBE_UserCloseWindow DISABLED_UserCloseWindow
+#else
+#define MAYBE_UserCloseWindow UserCloseWindow
+#endif
+IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, MAYBE_UserCloseWindow) {
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_server.ServeFilesFromSourceDirectory(
       "chrome/test/data/extensions/api_test/identity");

@@ -30,10 +30,6 @@ class TabLifecycleObserver;
 static constexpr base::TimeDelta kTabAudioProtectionTime =
     base::TimeDelta::FromMinutes(1);
 
-// Time during which a tab cannot be discarded after having been focused.
-static constexpr base::TimeDelta kTabFocusedProtectionTime =
-    base::TimeDelta::FromMinutes(10);
-
 // Represents a tab.
 class TabLifecycleUnitSource::TabLifecycleUnit
     : public LifecycleUnitBase,
@@ -76,6 +72,7 @@ class TabLifecycleUnitSource::TabLifecycleUnit
   std::string GetIconURL() const override;
   base::ProcessHandle GetProcessHandle() const override;
   SortKey GetSortKey() const override;
+  content::Visibility GetVisibility() const override;
   bool Freeze() override;
   int GetEstimatedMemoryFreedOnDiscardKB() const override;
   bool CanPurge() const override;

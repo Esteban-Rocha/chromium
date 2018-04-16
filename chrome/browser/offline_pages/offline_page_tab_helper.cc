@@ -8,7 +8,6 @@
 #include "base/bind_helpers.h"
 #include "base/guid.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
 #include "chrome/browser/offline_pages/offline_page_model_factory.h"
@@ -176,8 +175,10 @@ void OfflinePageTabHelper::FinalizeOfflineInfo(
   GURL navigated_url = navigation_handle->GetURL();
 
   content::WebContents* web_contents = navigation_handle->GetWebContents();
-  if (web_contents->GetContentsMimeType() != "multipart/related")
+  if (web_contents->GetContentsMimeType() != "multipart/related" &&
+      web_contents->GetContentsMimeType() != "message/rfc822") {
     return;
+  }
 
   if (SchemeIsForUntrustedOfflinePages(navigated_url)) {
     // If a MHTML archive is being loaded for file: or content: URL, and we did

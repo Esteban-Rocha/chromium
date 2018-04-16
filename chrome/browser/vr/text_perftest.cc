@@ -9,7 +9,6 @@
 #include "chrome/browser/vr/ganesh_surface_provider.h"
 #include "chrome/browser/vr/test/constants.h"
 #include "chrome/browser/vr/test/gl_test_environment.h"
-#include "chrome/browser/vr/test/perf_test_utils.h"
 #include "skia/ext/texture_handle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
@@ -22,7 +21,6 @@ namespace {
 constexpr size_t kNumberOfRuns = 35;
 constexpr float kFontHeightMeters = 0.05f;
 constexpr float kTextWidthMeters = 1.0f;
-constexpr char kSuiteName[] = "TextPerfTest";
 
 }  // namespace
 
@@ -34,7 +32,7 @@ class TextPerfTest : public testing::Test {
     provider_ = std::make_unique<GaneshSurfaceProvider>();
 
     text_element_ = std::make_unique<Text>(kFontHeightMeters);
-    text_element_->SetSize(kTextWidthMeters, 0);
+    text_element_->SetFieldWidth(kTextWidthMeters);
     text_element_->Initialize(provider_.get());
   }
 
@@ -44,8 +42,16 @@ class TextPerfTest : public testing::Test {
   }
 
  protected:
+  void PrintResults(const std::string& name) {
+    perf_test::PrintResult("TextPerfTest", ".render_time_avg", name,
+                           timer_.MsPerLap(), "ms", true);
+    perf_test::PrintResult("TextPerfTest", ".number_of_runs", name,
+                           static_cast<size_t>(timer_.NumLaps()), "runs", true);
+  }
+
   void RenderAndLapTimer() {
-    static_cast<UiElement*>(text_element_.get())->PrepareToDraw();
+    text_element_->PrepareToDrawForTest();
+    text_element_->UpdateTexture();
     // Make sure all GL commands are applied before we measure the time.
     glFinish();
     timer_.NextLap();
@@ -67,7 +73,7 @@ TEST_F(TextPerfTest, RenderLoremIpsum100Chars) {
     text_element_->SetText(text);
     RenderAndLapTimer();
   }
-  PrintResults(kSuiteName, "render_lorem_ipsum_100_chars", &timer_);
+  PrintResults("render_lorem_ipsum_100_chars");
 }
 
 TEST_F(TextPerfTest, RenderLoremIpsum700Chars) {
@@ -78,31 +84,7 @@ TEST_F(TextPerfTest, RenderLoremIpsum700Chars) {
     text_element_->SetText(text);
     RenderAndLapTimer();
   }
-  PrintResults(kSuiteName, "render_lorem_ipsum_700_chars", &timer_);
-}
-
-TEST_F(TextPerfTest, RenderLoremIpsum100Chars_NoTextChange) {
-  base::string16 text = base::UTF8ToUTF16(kLoremIpsum100Chars);
-  text_element_->SetText(text);
-  TexturedElement::SetRerenderIfNotDirtyForTesting();
-  timer_.Reset();
-  for (size_t i = 0; i < kNumberOfRuns; i++) {
-    RenderAndLapTimer();
-  }
-  PrintResults(kSuiteName, "render_lorem_ipsum_100_chars_no_text_change",
-               &timer_);
-}
-
-TEST_F(TextPerfTest, RenderLoremIpsum700Chars_NoTextChange) {
-  base::string16 text = base::UTF8ToUTF16(kLoremIpsum700Chars);
-  text_element_->SetText(text);
-  TexturedElement::SetRerenderIfNotDirtyForTesting();
-  timer_.Reset();
-  for (size_t i = 0; i < kNumberOfRuns; i++) {
-    RenderAndLapTimer();
-  }
-  PrintResults(kSuiteName, "render_lorem_ipsum_700_chars_no_text_change",
-               &timer_);
+  PrintResults("render_lorem_ipsum_700_chars");
 }
 
 }  // namespace vr

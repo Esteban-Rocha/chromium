@@ -59,7 +59,7 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "services/viz/public/interfaces/hit_test/input_target_client.mojom.h"
-#include "third_party/WebKit/public/platform/WebDisplayMode.h"
+#include "third_party/blink/public/platform/web_display_mode.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/ui_base_types.h"
@@ -699,6 +699,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Indicates whether keyboard lock is active.
   bool IsKeyboardLocked() const;
 
+  void GetContentRenderingTimeoutFrom(RenderWidgetHostImpl* other);
+
  protected:
   // ---------------------------------------------------------------------------
   // The following method is overridden by RenderViewHost to send upwards to
@@ -754,6 +756,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                            AutoResizeWithBrowserInitiatedResize);
   FRIEND_TEST_ALL_PREFIXES(DevToolsManagerTest,
                            NoUnresponsiveDialogInInspectedContents);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           ChildAllocationAcceptedInParent);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           ConflictingAllocationsResolve);
   friend class MockRenderWidgetHost;
   friend class TestRenderViewHost;
 
@@ -949,6 +955,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   uint64_t last_auto_resize_request_number_ = 0ul;
   uint64_t last_auto_resize_response_number_ = 0ul;
+  base::Optional<viz::LocalSurfaceId> last_auto_resize_surface_id_;
 
   bool waiting_for_screen_rects_ack_;
   gfx::Rect last_view_screen_rect_;
@@ -1156,6 +1163,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   RenderFrameMetadataProviderImpl render_frame_metadata_provider_;
 
   const viz::FrameSinkId frame_sink_id_;
+
+  bool did_receive_first_frame_after_navigation_ = true;
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 

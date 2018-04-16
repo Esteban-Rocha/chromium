@@ -16,6 +16,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/sequenced_task_runner.h"
 #include "base/time/clock.h"
+#include "base/time/time.h"
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager_common.h"
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager_local.h"
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager_remote.h"
@@ -141,8 +142,19 @@ class WebRtcEventLogManager final : public content::RenderProcessHostObserver,
       int render_process_id,
       const std::string& peer_connection_id,
       size_t max_file_size_bytes,
-      const std::string& metadata = "",
-      base::OnceCallback<void(bool)> reply = base::OnceCallback<void(bool)>());
+      const std::string& metadata,
+      base::OnceCallback<void(bool, const std::string&)> reply =
+          base::OnceCallback<void(bool, const std::string&)>());
+
+  // Clear WebRTC event logs associated with a given browser context, in a given
+  // time range (|delete_begin| inclusive, |delete_end| exclusive), then
+  // post |reply| back to the thread from which the method was originally
+  // invoked (which can be any thread).
+  void ClearCacheForBrowserContext(
+      const content::BrowserContext* browser_context,
+      const base::Time& delete_begin,
+      const base::Time& delete_end,
+      base::OnceClosure reply);
 
   // Set (or unset) an observer that will be informed whenever a local log file
   // is started/stopped. The observer needs to be able to either run from
@@ -165,6 +177,7 @@ class WebRtcEventLogManager final : public content::RenderProcessHostObserver,
                              base::OnceClosure reply = base::OnceClosure());
 
  private:
+  friend class SigninManagerAndroidTest;       // Calls *ForTesting() methods.
   friend class WebRtcEventLogManagerTestBase;  // Calls *ForTesting() methods.
 
   using PeerConnectionKey = WebRtcEventLogPeerConnectionKey;
@@ -179,6 +192,9 @@ class WebRtcEventLogManager final : public content::RenderProcessHostObserver,
   using LoggingTargetBitmap = std::underlying_type<LoggingTarget>::type;
 
   WebRtcEventLogManager();
+
+  // Checks whether remote-bound logging is enabled.
+  bool IsRemoteLoggingEnabled() const;
 
   // RenderProcessHostObserver implementation.
   void RenderProcessExited(content::RenderProcessHost* host,
@@ -227,13 +243,18 @@ class WebRtcEventLogManager final : public content::RenderProcessHostObserver,
       const std::string& message,
       base::OnceCallback<void(std::pair<bool, bool>)> reply);
 
-  void StartRemoteLoggingInternal(int render_process_id,
-                                  BrowserContextId browser_context_id,
-                                  const std::string& peer_connection_id,
-                                  const base::FilePath& browser_context_dir,
-                                  size_t max_file_size_bytes,
-                                  const std::string& metadata,
-                                  base::OnceCallback<void(bool)> reply);
+  void StartRemoteLoggingInternal(
+      int render_process_id,
+      BrowserContextId browser_context_id,
+      const std::string& peer_connection_id,
+      const base::FilePath& browser_context_dir,
+      size_t max_file_size_bytes,
+      const std::string& metadata,
+      base::OnceCallback<void(bool, const std::string&)> reply);
+
+  void ClearCacheForBrowserContextInternal(BrowserContextId browser_context_id,
+                                           const base::Time& delete_begin,
+                                           const base::Time& delete_end);
 
   void RenderProcessExitedInternal(int render_process_id);
 
@@ -246,6 +267,9 @@ class WebRtcEventLogManager final : public content::RenderProcessHostObserver,
   // Non-empty replies get posted to BrowserThread::UI.
   void MaybeReply(base::OnceClosure reply);
   void MaybeReply(base::OnceCallback<void(bool)> reply, bool value);
+  void MaybeReply(base::OnceCallback<void(bool, const std::string&)> reply,
+                  bool bool_val,
+                  const std::string& str_val);
   void MaybeReply(base::OnceCallback<void(std::pair<bool, bool>)> reply,
                   bool first,
                   bool second);

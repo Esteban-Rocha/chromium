@@ -1405,7 +1405,8 @@ ScrollEvent::ScrollEvent(const PlatformEvent& native_event)
       x_offset_ordinal_(0.0f),
       y_offset_ordinal_(0.0f),
       finger_count_(0),
-      momentum_phase_(EventMomentumPhase::NONE) {
+      momentum_phase_(EventMomentumPhase::NONE),
+      scroll_event_phase_(ScrollEventPhase::kNone) {
   if (type() == ET_SCROLL) {
     GetScrollOffsets(native_event, &x_offset_, &y_offset_, &x_offset_ordinal_,
                      &y_offset_ordinal_, &finger_count_, &momentum_phase_);
@@ -1434,14 +1435,16 @@ ScrollEvent::ScrollEvent(EventType type,
                          float x_offset_ordinal,
                          float y_offset_ordinal,
                          int finger_count,
-                         EventMomentumPhase momentum_phase)
+                         EventMomentumPhase momentum_phase,
+                         ScrollEventPhase scroll_event_phase)
     : MouseEvent(type, location, location, time_stamp, flags, 0),
       x_offset_(x_offset),
       y_offset_(y_offset),
       x_offset_ordinal_(x_offset_ordinal),
       y_offset_ordinal_(y_offset_ordinal),
       finger_count_(finger_count),
-      momentum_phase_(momentum_phase) {
+      momentum_phase_(momentum_phase),
+      scroll_event_phase_(scroll_event_phase) {
   CHECK(IsScrollEvent());
   latency()->set_source_event_type(ui::SourceEventType::WHEEL);
 }

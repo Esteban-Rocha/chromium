@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/macros.h"
@@ -62,6 +63,36 @@ class MockObject {
   DISALLOW_COPY_AND_ASSIGN(MockObject);
 };
 
+class MockRunsTasksInCurrentSequenceTaskRunner : public TestMockTimeTaskRunner {
+ public:
+  MockRunsTasksInCurrentSequenceTaskRunner(
+      TestMockTimeTaskRunner::Type type =
+          TestMockTimeTaskRunner::Type::kStandalone)
+      : TestMockTimeTaskRunner(type) {}
+
+  void RunUntilIdleWithRunsTasksInCurrentSequence() {
+    AutoReset<bool> reset(&runs_tasks_in_current_sequence_, true);
+    RunUntilIdle();
+  }
+
+  void ClearPendingTasksWithRunsTasksInCurrentSequence() {
+    AutoReset<bool> reset(&runs_tasks_in_current_sequence_, true);
+    ClearPendingTasks();
+  }
+
+  // TestMockTimeTaskRunner:
+  bool RunsTasksInCurrentSequence() const override {
+    return runs_tasks_in_current_sequence_;
+  }
+
+ private:
+  ~MockRunsTasksInCurrentSequenceTaskRunner() override = default;
+
+  bool runs_tasks_in_current_sequence_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(MockRunsTasksInCurrentSequenceTaskRunner);
+};
+
 class PostTaskAndReplyImplTest : public testing::Test {
  protected:
   PostTaskAndReplyImplTest() = default;
@@ -84,10 +115,10 @@ class PostTaskAndReplyImplTest : public testing::Test {
     EXPECT_FALSE(delete_reply_flag_);
   }
 
-  scoped_refptr<TestMockTimeTaskRunner> post_runner_ =
-      MakeRefCounted<TestMockTimeTaskRunner>();
-  scoped_refptr<TestMockTimeTaskRunner> reply_runner_ =
-      MakeRefCounted<TestMockTimeTaskRunner>(
+  scoped_refptr<MockRunsTasksInCurrentSequenceTaskRunner> post_runner_ =
+      MakeRefCounted<MockRunsTasksInCurrentSequenceTaskRunner>();
+  scoped_refptr<MockRunsTasksInCurrentSequenceTaskRunner> reply_runner_ =
+      MakeRefCounted<MockRunsTasksInCurrentSequenceTaskRunner>(
           TestMockTimeTaskRunner::Type::kBoundToThread);
   testing::StrictMock<MockObject> mock_object_;
   bool delete_task_flag_ = false;
@@ -103,7 +134,7 @@ TEST_F(PostTaskAndReplyImplTest, PostTaskAndReply) {
   PostTaskAndReplyToMockObject();
 
   EXPECT_CALL(mock_object_, Task(_));
-  post_runner_->RunUntilIdle();
+  post_runner_->RunUntilIdleWithRunsTasksInCurrentSequence();
   testing::Mock::VerifyAndClear(&mock_object_);
   // The task should have been deleted right after being run.
   EXPECT_TRUE(delete_task_flag_);
@@ -114,7 +145,7 @@ TEST_F(PostTaskAndReplyImplTest, PostTaskAndReply) {
   EXPECT_TRUE(reply_runner_->HasPendingTask());
 
   EXPECT_CALL(mock_object_, Reply(_));
-  reply_runner_->RunUntilIdle();
+  reply_runner_->RunUntilIdleWithRunsTasksInCurrentSequence();
   testing::Mock::VerifyAndClear(&mock_object_);
   EXPECT_TRUE(delete_task_flag_);
   // The reply should have been deleted right after being run.
@@ -125,11 +156,28 @@ TEST_F(PostTaskAndReplyImplTest, PostTaskAndReply) {
   EXPECT_FALSE(reply_runner_->HasPendingTask());
 }
 
-TEST_F(PostTaskAndReplyImplTest, PostTaskAndReplyDoesNotRun) {
+TEST_F(PostTaskAndReplyImplTest, TaskDoesNotRun) {
+  PostTaskAndReplyToMockObject();
+
+  // Clear the |post_runner_|. Both callbacks should be scheduled for deletion
+  // on the |reply_runner_|.
+  post_runner_->ClearPendingTasksWithRunsTasksInCurrentSequence();
+  EXPECT_FALSE(post_runner_->HasPendingTask());
+  EXPECT_TRUE(reply_runner_->HasPendingTask());
+  EXPECT_FALSE(delete_task_flag_);
+  EXPECT_FALSE(delete_reply_flag_);
+
+  // Run the |reply_runner_|. Both callbacks should be deleted.
+  reply_runner_->RunUntilIdleWithRunsTasksInCurrentSequence();
+  EXPECT_TRUE(delete_task_flag_);
+  EXPECT_TRUE(delete_reply_flag_);
+}
+
+TEST_F(PostTaskAndReplyImplTest, ReplyDoesNotRun) {
   PostTaskAndReplyToMockObject();
 
   EXPECT_CALL(mock_object_, Task(_));
-  post_runner_->RunUntilIdle();
+  post_runner_->RunUntilIdleWithRunsTasksInCurrentSequence();
   testing::Mock::VerifyAndClear(&mock_object_);
   // The task should have been deleted right after being run.
   EXPECT_TRUE(delete_task_flag_);
@@ -141,7 +189,7 @@ TEST_F(PostTaskAndReplyImplTest, PostTaskAndReplyDoesNotRun) {
 
   // Clear the |reply_runner_| queue without running tasks. The reply callback
   // should be deleted.
-  reply_runner_->ClearPendingTasks();
+  reply_runner_->ClearPendingTasksWithRunsTasksInCurrentSequence();
   EXPECT_TRUE(delete_task_flag_);
   EXPECT_TRUE(delete_reply_flag_);
 }

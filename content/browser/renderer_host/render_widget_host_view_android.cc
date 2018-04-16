@@ -14,7 +14,6 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
@@ -913,15 +912,19 @@ void RenderWidgetHostViewAndroid::DidCreateNewRendererCompositorFrameSink(
 }
 
 void RenderWidgetHostViewAndroid::EvictFrameIfNecessary() {
-  if (!base::FeatureList::IsEnabled(
+  if (!host()->delegate()->IsFullscreenForCurrentTab() ||
+      current_surface_size_ == view_.GetPhysicalBackingSize() ||
+      !base::FeatureList::IsEnabled(
           features::kHideIncorrectlySizedFullscreenFrames)) {
     return;
   }
-  if (host()->delegate()->IsFullscreenForCurrentTab() &&
-      current_surface_size_ != view_.GetPhysicalBackingSize()) {
-    // When we're in a fullscreen and the frame size doesn't match the view
-    // size (e.g. during a fullscreen rotation), we show black instead of the
-    // incorrectly-sized frame.
+  // When we're in a fullscreen and and doing a resize we show black
+  // instead of the incorrectly-sized frame. However when we are just
+  // adjusting the height we keep the frames because it is a less jarring
+  // experience for the user instead frames shown as black.
+  bool is_width_same =
+      current_surface_size_.width() == view_.GetPhysicalBackingSize().width();
+  if (!is_width_same) {
     EvictDelegatedFrame();
     UpdateBackgroundColor(SK_ColorBLACK);
   }
@@ -974,18 +977,17 @@ void RenderWidgetHostViewAndroid::SubmitCompositorFrame(
 }
 
 void RenderWidgetHostViewAndroid::DestroyDelegatedContent() {
-  DCHECK(!delegated_frame_host_ ||
-         delegated_frame_host_->HasDelegatedContent() ==
-             frame_evictor_->HasFrame());
-
   if (!delegated_frame_host_)
     return;
 
-  if (!delegated_frame_host_->HasDelegatedContent())
-    return;
+  DCHECK(delegated_frame_host_->HasDelegatedContent() ==
+         frame_evictor_->HasFrame());
 
-  frame_evictor_->DiscardedFrame();
   delegated_frame_host_->DestroyDelegatedContent();
+
+  if (frame_evictor_->HasFrame())
+    frame_evictor_->DiscardedFrame();
+
   current_surface_size_.SetSize(0, 0);
 }
 
@@ -1493,6 +1495,7 @@ void RenderWidgetHostViewAndroid::GestureEventAck(
     InputEventAckState ack_result) {
   if (overscroll_controller_)
     overscroll_controller_->OnGestureEventAck(event, ack_result);
+  mouse_wheel_phase_handler_.GestureEventAck(event, ack_result);
 
   if (!gesture_listener_manager_)
     return;
@@ -2226,6 +2229,22 @@ void RenderWidgetHostViewAndroid::SetOverscrollControllerForTesting(
   overscroll_controller_ = std::make_unique<OverscrollControllerAndroid>(
       overscroll_refresh_handler, view_.GetWindowAndroid()->GetCompositor(),
       view_.GetDipScale());
+}
+
+void RenderWidgetHostViewAndroid::TakeFallbackContentFrom(
+    RenderWidgetHostView* view) {
+  DCHECK(!static_cast<RenderWidgetHostViewBase*>(view)
+              ->IsRenderWidgetHostViewChildFrame());
+  DCHECK(!static_cast<RenderWidgetHostViewBase*>(view)
+              ->IsRenderWidgetHostViewGuest());
+  SetBackgroundColor(view->background_color());
+  RenderWidgetHostViewAndroid* view_android =
+      static_cast<RenderWidgetHostViewAndroid*>(view);
+  if (!delegated_frame_host_ || !view_android->delegated_frame_host_)
+    return;
+  delegated_frame_host_->TakeFallbackContentFrom(
+      view_android->delegated_frame_host_.get());
+  host()->GetContentRenderingTimeoutFrom(view_android->host());
 }
 
 }  // namespace content

@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "services/ui/public/interfaces/constants.mojom.h"
 #include "services/ui/public/interfaces/ime/ime.mojom.h"
 #include "services/ui/public/interfaces/window_tree_constants.mojom.h"
@@ -74,13 +73,6 @@ void InputMethodMus::OnFocus() {
 void InputMethodMus::OnBlur() {
   InputMethodBase::OnBlur();
   UpdateTextInputType();
-}
-
-bool InputMethodMus::OnUntranslatedIMEMessage(const ui::PlatformEvent& event,
-                                              NativeEventResult* result) {
-  // This method is not called on non-Windows platforms. See the comments for
-  // ui::InputMethod::OnUntranslatedIMEMessage().
-  return false;
 }
 
 ui::EventDispatchDetails InputMethodMus::DispatchKeyEvent(ui::KeyEvent* event) {

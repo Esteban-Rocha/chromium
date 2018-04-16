@@ -9,7 +9,6 @@
 #include <memory>
 #include <utility>
 
-#include "base/ios/ios_util.h"
 #include "base/mac/foundation_util.h"
 #include "base/path_service.h"
 #include "base/scoped_observer.h"
@@ -668,6 +667,22 @@ TEST_F(CRWWebControllerDownloadTest, IFrameCreationWithNSHTTPURLResponse) {
   EXPECT_TRUE(ui::PageTransitionTypeIncludingQualifiersIs(
       task->GetTransitionType(),
       ui::PageTransition::PAGE_TRANSITION_AUTO_SUBFRAME));
+}
+
+// Tests that webView:decidePolicyForNavigationResponse:decisionHandler: does
+// not create the DownloadTask for unsupported data:// URLs.
+TEST_F(CRWWebControllerDownloadTest, DataUrlResponse) {
+  // Simulate download response.
+  NSURLResponse* response =
+      [[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"data:data"]
+                                  statusCode:200
+                                 HTTPVersion:nil
+                                headerFields:nil];
+  ASSERT_TRUE(CallDecidePolicyForNavigationResponseWithResponse(
+      response, /*for_main_frame=*/YES));
+
+  // Verify that download task was not created.
+  EXPECT_TRUE(delegate_.alive_download_tasks().empty());
 }
 
 // Tests |currentURLWithTrustLevel:| method.

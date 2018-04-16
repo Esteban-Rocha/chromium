@@ -170,11 +170,6 @@ bool PasswordProtectionService::ShouldShowModalWarning(
          IsWarningEnabled();
 }
 
-bool PasswordProtectionService::ShouldShowSofterWarning() {
-  return base::GetFieldTrialParamByFeatureAsBool(kGoogleBrandedPhishingWarning,
-                                                 "softer_warning", false);
-}
-
 // We cache both types of pings under the same content settings type (
 // CONTENT_SETTINGS_TYPE_PASSWORD_PROTECTION). Since UNFAMILIAR_LOGIN_PAGE
 // verdicts are only enabled on extended reporting users, we cache them one
@@ -349,6 +344,7 @@ void PasswordProtectionService::CleanUpExpiredVerdicts() {
     if (cache_dictionary->size() == 0u) {
       content_settings_->ClearSettingsForOneTypeWithPredicate(
           CONTENT_SETTINGS_TYPE_PASSWORD_PROTECTION, base::Time(),
+          base::Time::Max(),
           base::Bind(&OriginMatchPrimaryPattern, primary_pattern_url));
     } else if (has_expired_password_on_focus_entry ||
                has_expired_password_reuse_entry) {
@@ -605,7 +601,7 @@ void PasswordProtectionService::RemoveContentSettingsOnURLsDeleted(
             url_key, LoginReputationClientRequest::PASSWORD_REUSE_EVENT);
     content_settings_->ClearSettingsForOneTypeWithPredicate(
         CONTENT_SETTINGS_TYPE_PASSWORD_PROTECTION, base::Time(),
-        base::Bind(&OriginMatchPrimaryPattern, url_key));
+        base::Time::Max(), base::Bind(&OriginMatchPrimaryPattern, url_key));
   }
 }
 

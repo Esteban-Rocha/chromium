@@ -15,7 +15,6 @@
 #include "base/bind.h"
 #include "base/i18n/char_iterator.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/third_party/icu/icu_utf.h"
@@ -140,11 +139,6 @@ ui::EventDispatchDetails InputMethodChromeOS::DispatchKeyEvent(
     return ui::EventDispatchDetails();
   }
   return ProcessKeyEventDone(event, std::move(ack_callback), false);
-}
-
-bool InputMethodChromeOS::OnUntranslatedIMEMessage(const PlatformEvent& event,
-                                                   NativeEventResult* result) {
-  return false;
 }
 
 void InputMethodChromeOS::KeyEventDoneCallback(ui::KeyEvent* event,

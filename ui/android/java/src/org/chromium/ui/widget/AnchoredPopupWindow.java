@@ -16,12 +16,12 @@ import android.view.View;
 import android.view.View.MeasureSpec;
 import android.view.View.OnTouchListener;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.PopupWindow;
 import android.widget.PopupWindow.OnDismissListener;
 
 import org.chromium.base.ObserverList;
 import org.chromium.base.VisibleForTesting;
-import org.chromium.ui.widget.popups.UiWidgetFactory;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -152,6 +152,7 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
     private boolean mPositionToLeft;
     private boolean mVerticalOverlapAnchor;
     private boolean mHorizontalOverlapAnchor;
+    private boolean mUpdateOrientationOnChange;
 
     /**
      * Constructs an {@link AnchoredPopupWindow} instance.
@@ -186,7 +187,7 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
         mRectProvider.startObserving(this);
 
         updatePopupLayout();
-        mPopupWindow.showAtLocation(mRootView, Gravity.TOP | Gravity.START, mX, mY);
+        showPopupWindow();
     }
 
     /**
@@ -273,6 +274,14 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
     }
 
     /**
+     * If set to true, orientation will be updated everytime that the {@link OnRectChanged} is
+     * called.
+     */
+    public void setUpdateOrientationOnChange(boolean updateOrientationOnChange) {
+        mUpdateOrientationOnChange = updateOrientationOnChange;
+    }
+
+    /**
      * Changes the focusability of the popup. See {@link PopupWindow#setFocusable(boolean)}.
      * @param focusable True if the popup is focusable, false otherwise.
      */
@@ -343,7 +352,7 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
         // Determine the size of the text popup.
         boolean currentPositionBelow = mPositionBelow;
         boolean currentPositionToLeft = mPositionToLeft;
-        boolean preferCurrentOrientation = mPopupWindow.isShowing();
+        boolean preferCurrentOrientation = mPopupWindow.isShowing() && !mUpdateOrientationOnChange;
 
         mPopupWindow.getBackground().getPadding(mCachedPaddingRect);
         int paddingX = mCachedPaddingRect.left + mCachedPaddingRect.right;
@@ -436,7 +445,7 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
             try {
                 mIgnoreDismissal = true;
                 mPopupWindow.dismiss();
-                mPopupWindow.showAtLocation(mRootView, Gravity.TOP | Gravity.START, mX, mY);
+                showPopupWindow();
             } finally {
                 mIgnoreDismissal = false;
             }
@@ -534,5 +543,14 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
             value = max;
         }
         return value;
+    }
+
+    private void showPopupWindow() {
+        try {
+            mPopupWindow.showAtLocation(mRootView, Gravity.TOP | Gravity.START, mX, mY);
+        } catch (WindowManager.BadTokenException e) {
+            // Intentionally ignore BadTokenException. This can happen in a real edge case where
+            // parent.getWindowToken is not valid. See http://crbug.com/826052.
+        }
     }
 }

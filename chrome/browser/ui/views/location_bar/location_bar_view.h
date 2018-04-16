@@ -13,7 +13,6 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
-#include "base/scoped_observer.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/chrome_omnibox_edit_controller.h"
@@ -23,7 +22,6 @@
 #include "chrome/browser/ui/views/location_bar/bubble_icon_view.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
-#include "components/omnibox/browser/omnibox_popup_model_observer.h"
 #include "components/prefs/pref_member.h"
 #include "components/security_state/core/security_state.h"
 #include "components/zoom/zoom_event_manager_observer.h"
@@ -43,7 +41,6 @@ class KeywordHintView;
 class LocationIconView;
 class ManagePasswordsIconViews;
 enum class OmniboxPart;
-class OmniboxPopupModel;
 class OmniboxPopupView;
 enum class OmniboxTint;
 class Profile;
@@ -79,8 +76,7 @@ class LocationBarView : public LocationBar,
                         public zoom::ZoomEventManagerObserver,
                         public views::ButtonListener,
                         public ContentSettingImageView::Delegate,
-                        public BubbleIconView::Delegate,
-                        public OmniboxPopupModelObserver {
+                        public BubbleIconView::Delegate {
  public:
   class Delegate {
    public:
@@ -170,10 +166,6 @@ class LocationBarView : public LocationBar,
   // not where the icons are shown).
   gfx::Point GetOmniboxViewOrigin() const;
 
-  // Returns the inset from the edge of the location bar where text begins when
-  // only a location icon is showing (no security chip or keyword bubble).
-  int GetTextInsetForNormalInputStart() const;
-
   // Shows |text| as an inline autocompletion.  This is useful for IMEs, where
   // we can't show the autocompletion inside the actual OmniboxView.  See
   // comments on |ime_inline_autocomplete_view_|.
@@ -193,10 +185,6 @@ class LocationBarView : public LocationBar,
   SelectedKeywordView* selected_keyword_view() {
     return selected_keyword_view_;
   }
-
-  // Where InfoBar arrows should point. The point will be returned in the
-  // coordinates of the LocationBarView.
-  gfx::Point GetInfoBarAnchorPoint() const;
 
   // The anchor view for security-related bubbles. That is, those anchored to
   // the leading edge of the Omnibox, under the padlock.
@@ -263,6 +251,10 @@ class LocationBarView : public LocationBar,
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SecurityIndicatorTest, CheckIndicatorText);
+  FRIEND_TEST_ALL_PREFIXES(TouchLocationBarViewBrowserTest,
+                           OmniboxViewViewsSize);
+  FRIEND_TEST_ALL_PREFIXES(TouchLocationBarViewBrowserTest,
+                           IMEInlineAutocompletePosition);
   using ContentSettingViews = std::vector<ContentSettingImageView*>;
 
   // Helper for GetMinimumWidth().  Calculates the incremental minimum width
@@ -271,6 +263,11 @@ class LocationBarView : public LocationBar,
 
   // The border color, drawn on top of the toolbar.
   SkColor GetBorderColor() const;
+
+  // The LocationBarView bounds, without the ends which have a border radius.
+  // E.g., if the LocationBarView was 50dip long, and the border radius was 2,
+  // this method would return a gfx::Rect with 46dip width.
+  gfx::Rect GetLocalBoundsWithoutEndcaps() const;
 
   // Returns the thickness of any visible edge, in pixels.
   int GetHorizontalEdgeThickness() const;
@@ -366,13 +363,11 @@ class LocationBarView : public LocationBar,
 
   // ChromeOmniboxEditController:
   void OnChanged() override;
+  void OnPopupVisibilityChanged() override;
   const ToolbarModel* GetToolbarModel() const override;
 
   // DropdownBarHostDelegate:
   void SetFocusAndSelection(bool select_all) override;
-
-  // OmniboxPopupModelObserver:
-  void OnOmniboxPopupShownOrHidden() override;
 
   // Returns the total amount of space reserved above or below the content,
   // which is the vertical edge thickness plus the padding next to it.
@@ -465,8 +460,6 @@ class LocationBarView : public LocationBar,
   // whether to animate security level transitions.
   security_state::SecurityLevel last_update_security_level_ =
       security_state::NONE;
-
-  ScopedObserver<OmniboxPopupModel, LocationBarView> popup_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(LocationBarView);
 };

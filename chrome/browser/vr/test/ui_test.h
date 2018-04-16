@@ -93,7 +93,8 @@ class UiTest : public testing::Test {
   // then jumping time ahead to the final time. Generally, the UI should not
   // require all intermediate frames to be called. Tests that require this
   // should simulate the required intermediate frames.
-  bool RunFor(base::TimeDelta delta);
+  bool RunForMs(float milliseconds);
+  bool RunForSeconds(float seconds);
 
   // A wrapper to call scene_->OnBeginFrame.
   bool OnBeginFrame() const;
@@ -110,6 +111,9 @@ class UiTest : public testing::Test {
   MockContentInputDelegate* content_input_delegate_ = nullptr;
   Model* model_ = nullptr;
   UiScene* scene_ = nullptr;
+
+ private:
+  bool RunFor(base::TimeDelta delta);
 
   base::TimeTicks current_time_;
 };

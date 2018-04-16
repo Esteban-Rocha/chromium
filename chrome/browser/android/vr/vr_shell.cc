@@ -65,7 +65,7 @@
 #include "jni/VrShellImpl_jni.h"
 #include "services/device/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/android/window_android.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/display/display.h"
@@ -225,12 +225,14 @@ void VrShell::SwapContents(JNIEnv* env,
 
   if (web_contents_) {
     vr_input_connection_.reset(new VrInputConnection(web_contents_));
-    PostToGlThread(FROM_HERE,
-                   base::BindOnce(&VrGLThread::SetInputConnection,
-                                  base::Unretained(gl_thread_.get()),
-                                  vr_input_connection_->GetWeakPtr()));
+    PostToGlThread(FROM_HERE, base::BindOnce(&VrGLThread::SetInputConnection,
+                                             base::Unretained(gl_thread_.get()),
+                                             vr_input_connection_.get()));
   } else {
     vr_input_connection_ = nullptr;
+    PostToGlThread(FROM_HERE,
+                   base::BindOnce(&VrGLThread::SetInputConnection,
+                                  base::Unretained(gl_thread_.get()), nullptr));
   }
 
   vr_web_contents_observer_ = std::make_unique<VrWebContentsObserver>(
@@ -696,18 +698,15 @@ void VrShell::DialogSurfaceCreated(jobject surface,
   Java_VrShellImpl_dialogSurfaceCreated(env, j_vr_shell_, ref);
 }
 
-void VrShell::GvrDelegateReady(
-    gvr::ViewerType viewer_type,
-    device::mojom::VRDisplayFrameTransportOptionsPtr transport_options) {
-  frame_transport_options_ = std::move(transport_options);
+void VrShell::GvrDelegateReady(gvr::ViewerType viewer_type) {
   delegate_provider_->SetDelegate(this, viewer_type);
 }
 
-device::mojom::VRDisplayFrameTransportOptionsPtr
-VrShell::GetVRDisplayFrameTransportOptions() {
-  // Caller takes ownership. Must return a copy to support having this called
-  // multiple times during the lifetime of this instance.
-  return frame_transport_options_.Clone();
+void VrShell::SendRequestPresentReply(
+    bool success,
+    device::mojom::VRDisplayFrameTransportOptionsPtr transport_options) {
+  delegate_provider_->SendRequestPresentReply(success,
+                                              std::move(transport_options));
 }
 
 void VrShell::BufferBoundsChanged(JNIEnv* env,
@@ -738,6 +737,12 @@ void VrShell::ResumeContentRendering(JNIEnv* env,
                                            gl_thread_->GetVrShellGl()));
 }
 
+void VrShell::OnOverlayTextureEmptyChanged(JNIEnv* env,
+                                           const JavaParamRef<jobject>& object,
+                                           jboolean empty) {
+  ui_->SetOverlayTextureEmpty(empty);
+}
+
 void VrShell::ContentWebContentsDestroyed() {
   web_contents_ = nullptr;
 }
@@ -764,12 +769,19 @@ void VrShell::LogUnsupportedModeUserMetric(JNIEnv* env,
   LogUnsupportedModeUserMetric((UiUnsupportedMode)mode);
 }
 
-void VrShell::RecordVrStartAction(PageSessionStartAction action) {
+void VrShell::RecordVrStartAction(VrStartAction action) {
   SessionMetricsHelper* metrics_helper =
       SessionMetricsHelper::FromWebContents(web_contents_);
   if (metrics_helper) {
     metrics_helper->RecordVrStartAction(action);
   }
+}
+
+void VrShell::RecordPresentationStartAction(PresentationStartAction action) {
+  SessionMetricsHelper* metrics_helper =
+      SessionMetricsHelper::FromWebContents(web_contents_);
+  if (metrics_helper)
+    metrics_helper->RecordPresentationStartAction(action);
 }
 
 void VrShell::ShowSoftInput(JNIEnv* env,
@@ -817,11 +829,6 @@ void VrShell::OnUnsupportedMode(UiUnsupportedMode mode) {
     case UiUnsupportedMode::kGenericUnsupportedFeature:
       ExitVrDueToUnsupportedMode(mode);
       return;
-    case UiUnsupportedMode::kUnhandledPageInfo:
-      // Is not send by the UI anymore. Enum value still exists to show correct
-      // exit prompt if vr-browsing-native-android-ui flag is false.
-      NOTREACHED();
-      return;
     case UiUnsupportedMode::kVoiceSearchNeedsRecordAudioOsPermission: {
       JNIEnv* env = base::android::AttachCurrentThread();
       Java_VrShellImpl_onUnhandledPermissionPrompt(env, j_vr_shell_);
@@ -832,8 +839,17 @@ void VrShell::OnUnsupportedMode(UiUnsupportedMode mode) {
       Java_VrShellImpl_onNeedsKeyboardUpdate(env, j_vr_shell_);
       return;
     }
+    // Is not sent by the UI anymore. Enum value still exists to show correct
+    // exit prompt if vr-browsing-native-android-ui flag is false.
+    case UiUnsupportedMode::kUnhandledPageInfo:
+    // kSearchEnginePromo should directly DOFF without showing a promo. So it
+    // should never be used from VR ui thread.
+    case UiUnsupportedMode::kSearchEnginePromo:
+    // Not sent by the UI but from PageInfoPopup.
+    case UiUnsupportedMode::kUnhandledConnectionInfo:
+    // Should never be used as a mode.
     case UiUnsupportedMode::kCount:
-      NOTREACHED();  // Should never be used as a mode.
+      NOTREACHED();
       return;
   }
 

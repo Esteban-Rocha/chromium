@@ -11,6 +11,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/task_scheduler/post_task.h"
+#include "build/util/webkit_version.h"
 #include "chromeos/assistant/internal/internal_constants.h"
 #include "chromeos/assistant/internal/internal_util.h"
 #include "chromeos/services/assistant/service.h"
@@ -48,6 +49,11 @@ void AssistantManagerServiceImpl::Start(const std::string& access_token) {
 
   // Set the flag to avoid starting the service multiple times.
   running_ = true;
+
+  if (!assistant_settings_manager_) {
+    assistant_settings_manager_ =
+        std::make_unique<AssistantSettingsManagerImpl>(this);
+  }
 }
 
 bool AssistantManagerServiceImpl::IsRunning() const {
@@ -69,6 +75,32 @@ void AssistantManagerServiceImpl::EnableListening(bool enable) {
   assistant_manager_->EnableListening(enable);
 }
 
+AssistantSettingsManager*
+AssistantManagerServiceImpl::GetAssistantSettingsManager() {
+  return assistant_settings_manager_.get();
+}
+
+void AssistantManagerServiceImpl::SendGetSettingsUiRequest(
+    const std::string& selector,
+    GetSettingsUiResponseCallback callback) {
+  std::string serialized_proto = SerializeGetSettingsUiRequest(selector);
+  assistant_manager_internal_->SendGetSettingsUiRequest(serialized_proto, [
+    callback, weak_ptr = weak_factory_.GetWeakPtr(),
+    task_runner = main_thread_task_runner_
+  ](const assistant_client::VoicelessResponse& response) {
+    // This callback may be called from server multiple times. We should only
+    // process non-empty response.
+    std::string settings = UnwrapGetSettingsUiResponse(response);
+    if (!settings.empty()) {
+      task_runner->PostTask(
+          FROM_HERE,
+          base::BindOnce(
+              &AssistantManagerServiceImpl::HandleGetSettingsResponse,
+              std::move(weak_ptr), callback, settings));
+    }
+  });
+}
+
 void AssistantManagerServiceImpl::SendTextQuery(const std::string& query) {
   assistant_manager_internal_->SendTextQuery(query);
 }
@@ -76,6 +108,23 @@ void AssistantManagerServiceImpl::SendTextQuery(const std::string& query) {
 void AssistantManagerServiceImpl::AddAssistantEventSubscriber(
     mojom::AssistantEventSubscriberPtr subscriber) {
   subscribers_.AddPtr(std::move(subscriber));
+}
+
+void AssistantManagerServiceImpl::OnConversationTurnStarted() {
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &AssistantManagerServiceImpl::OnConversationTurnStartedOnMainThread,
+          weak_factory_.GetWeakPtr()));
+}
+
+void AssistantManagerServiceImpl::OnConversationTurnFinished(
+    assistant_client::ConversationStateListener::Resolution resolution) {
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &AssistantManagerServiceImpl::OnConversationTurnFinishedOnMainThread,
+          weak_factory_.GetWeakPtr(), resolution));
 }
 
 void AssistantManagerServiceImpl::OnShowHtml(const std::string& html) {
@@ -154,14 +203,70 @@ std::string AssistantManagerServiceImpl::BuildUserAgent(
       &os_major_version, &os_minor_version, &os_bugfix_version);
 
   std::string user_agent;
-  base::StringAppendF(&user_agent, "Mozilla/5.0 (X11; CrOS %s %d.%d.%d)",
+  base::StringAppendF(&user_agent,
+                      "Mozilla/5.0 (X11; CrOS %s %d.%d.%d; %s) "
+                      "AppleWebKit/%d.%d (KHTML, like Gecko)",
                       base::SysInfo::OperatingSystemArchitecture().c_str(),
-                      os_major_version, os_minor_version, os_bugfix_version);
+                      os_major_version, os_minor_version, os_bugfix_version,
+                      base::SysInfo::GetLsbReleaseBoard().c_str(),
+                      WEBKIT_VERSION_MAJOR, WEBKIT_VERSION_MINOR);
 
   if (!arc_version.empty()) {
     base::StringAppendF(&user_agent, " ARC/%s", arc_version.c_str());
   }
   return user_agent;
+}
+
+void AssistantManagerServiceImpl::HandleGetSettingsResponse(
+    GetSettingsUiResponseCallback callback,
+    const std::string& settings) {
+  callback.Run(settings);
+}
+
+void AssistantManagerServiceImpl::OnConversationTurnStartedOnMainThread() {
+  subscribers_.ForAllPtrs([](auto* ptr) { ptr->OnInteractionStarted(); });
+}
+
+void AssistantManagerServiceImpl::OnConversationTurnFinishedOnMainThread(
+    assistant_client::ConversationStateListener::Resolution resolution) {
+  switch (resolution) {
+    // Interaction ended normally.
+    // Note that TIMEOUT here does not refer to server timeout, but rather mic
+    // timeout due to speech inactivity. As this case does not require special
+    // UI logic, it is treated here as a normal interaction completion.
+    case assistant_client::ConversationStateListener::Resolution::NORMAL:
+    case assistant_client::ConversationStateListener::Resolution::
+        NORMAL_WITH_FOLLOW_ON:
+    case assistant_client::ConversationStateListener::Resolution::TIMEOUT:
+      subscribers_.ForAllPtrs([](auto* ptr) {
+        ptr->OnInteractionFinished(
+            mojom::AssistantInteractionResolution::kNormal);
+      });
+      break;
+    // Interaction ended due to interruption.
+    case assistant_client::ConversationStateListener::Resolution::BARGE_IN:
+    case assistant_client::ConversationStateListener::Resolution::CANCELLED:
+      subscribers_.ForAllPtrs([](auto* ptr) {
+        ptr->OnInteractionFinished(
+            mojom::AssistantInteractionResolution::kInterruption);
+      });
+      break;
+    // Interaction ended due to multi-device hotword loss.
+    case assistant_client::ConversationStateListener::Resolution::NO_RESPONSE:
+      subscribers_.ForAllPtrs([](auto* ptr) {
+        ptr->OnInteractionFinished(
+            mojom::AssistantInteractionResolution::kMultiDeviceHotwordLoss);
+      });
+      break;
+    // Interaction ended due to error.
+    case assistant_client::ConversationStateListener::Resolution::
+        COMMUNICATION_ERROR:
+      subscribers_.ForAllPtrs([](auto* ptr) {
+        ptr->OnInteractionFinished(
+            mojom::AssistantInteractionResolution::kError);
+      });
+      break;
+  }
 }
 
 void AssistantManagerServiceImpl::OnShowHtmlOnMainThread(

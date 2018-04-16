@@ -4,12 +4,21 @@
 
 package org.chromium.chrome.browser.widget.bottomsheet;
 
+import android.app.Activity;
 import android.view.ViewGroup;
 
+import org.chromium.base.ActivityState;
+import org.chromium.base.ApplicationStatus;
+import org.chromium.chrome.R;
 import org.chromium.chrome.browser.compositor.layouts.Layout;
 import org.chromium.chrome.browser.compositor.layouts.LayoutManager;
 import org.chromium.chrome.browser.compositor.layouts.SceneChangeObserver;
 import org.chromium.chrome.browser.compositor.layouts.StaticLayout;
+import org.chromium.chrome.browser.compositor.layouts.phone.SimpleAnimationLayout;
+import org.chromium.chrome.browser.contextualsearch.ContextualSearchManager;
+import org.chromium.chrome.browser.contextualsearch.ContextualSearchObserver;
+import org.chromium.chrome.browser.gsa.GSAContextDisplaySelection;
+import org.chromium.chrome.browser.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabObserver;
@@ -21,13 +30,15 @@ import org.chromium.ui.UiUtils;
 
 import java.util.PriorityQueue;
 
+import javax.annotation.Nullable;
+
 /**
  * This class is responsible for managing the content shown by the {@link BottomSheet}. Features
  * wishing to show content in the {@link BottomSheet} UI must implement {@link BottomSheetContent}
  * and call {@link #requestShowContent(BottomSheetContent, boolean)} which will return true if the
  * content was actually shown (see full doc on method).
  */
-public class BottomSheetController {
+public class BottomSheetController implements ApplicationStatus.ActivityStateListener {
     /** The initial capacity for the priority queue handling pending content show requests. */
     private static final int INITIAL_QUEUE_CAPACITY = 1;
 
@@ -36,6 +47,9 @@ public class BottomSheetController {
 
     /** A handle to the {@link BottomSheet} that this class controls. */
     private final BottomSheet mBottomSheet;
+
+    /** A handle to the {@link SnackbarManager} that manages snackbars inside the bottom sheet. */
+    private final SnackbarManager mSnackbarManager;
 
     /** A queue for content that is waiting to be shown in the {@link BottomSheet}. */
     private PriorityQueue<BottomSheetContent> mContentQueue;
@@ -46,18 +60,26 @@ public class BottomSheetController {
     /** Track whether the sheet was shown for the current tab. */
     private boolean mWasShownForCurrentTab;
 
+    /** Whether composited UI is currently showing (such as Contextual Search). */
+    private boolean mIsCompositedUIShowing;
+
     /**
      * Build a new controller of the bottom sheet.
      * @param tabModelSelector A tab model selector to track events on tabs open in the browser.
      * @param layoutManager A layout manager for detecting changes in the active layout.
      * @param fadingBackgroundView The scrim that shows when the bottom sheet is opened.
+     * @param contextualSearchManager The manager for Contextual Search to attach listeners to.
      * @param bottomSheet The bottom sheet that this class will be controlling.
      */
-    public BottomSheetController(final TabModelSelector tabModelSelector,
+    public BottomSheetController(final Activity activity, final TabModelSelector tabModelSelector,
             final LayoutManager layoutManager, final FadingBackgroundView fadingBackgroundView,
-            BottomSheet bottomSheet) {
+            ContextualSearchManager contextualSearchManager, BottomSheet bottomSheet) {
         mBottomSheet = bottomSheet;
         mLayoutManager = layoutManager;
+        mSnackbarManager = new SnackbarManager(
+                activity, mBottomSheet.findViewById(R.id.bottom_sheet_snackbar_container));
+        mSnackbarManager.onStart();
+        ApplicationStatus.registerStateListenerForActivity(this, activity);
 
         // Handle interactions with the scrim.
         fadingBackgroundView.addObserver(new FadingViewObserver() {
@@ -96,10 +118,10 @@ public class BottomSheetController {
             public void onSceneChange(Layout layout) {
                 // If the tab did not change, reshow the existing content. Once the tab actually
                 // changes, existing content and requests will be cleared.
-                if (layout instanceof StaticLayout && mWasShownForCurrentTab
+                if (canShowInLayout(layout) && mWasShownForCurrentTab && !mBottomSheet.isSheetOpen()
                         && mBottomSheet.getCurrentSheetContent() != null) {
                     mBottomSheet.setSheetState(BottomSheet.SHEET_STATE_PEEK, true);
-                } else {
+                } else if (!canShowInLayout(layout)) {
                     mBottomSheet.setSheetState(BottomSheet.SHEET_STATE_HIDDEN, false);
                 }
             }
@@ -132,7 +154,42 @@ public class BottomSheetController {
                 UiUtils.removeViewFromParent(fadingBackgroundView);
                 parent.addView(fadingBackgroundView, mOriginalScrimIndexInParent);
             }
+
+            @Override
+            public void onSheetOffsetChanged(float heightFraction) {
+                mSnackbarManager.dismissAllSnackbars();
+            }
         });
+
+        // TODO(mdjones): This should be changed to a generic OverlayPanel observer.
+        if (contextualSearchManager != null) {
+            contextualSearchManager.addObserver(new ContextualSearchObserver() {
+                /** Whether the bottom sheet was showing prior to contextual search appearing. */
+                private boolean mWasSheetShowing;
+
+                @Override
+                public void onShowContextualSearch(
+                        @Nullable GSAContextDisplaySelection selectionContext) {
+                    // Contextual Search can call this method more than once per show event.
+                    if (mIsCompositedUIShowing) return;
+                    mWasSheetShowing = mBottomSheet.getSheetState() == BottomSheet.SHEET_STATE_PEEK;
+                    mIsCompositedUIShowing = true;
+                    mBottomSheet.setSheetState(BottomSheet.SHEET_STATE_HIDDEN, false,
+                            BottomSheet.StateChangeReason.COMPOSITED_UI);
+                }
+
+                @Override
+                public void onHideContextualSearch() {
+                    mIsCompositedUIShowing = false;
+                    if (mBottomSheet.getCurrentSheetContent() != null && mWasSheetShowing) {
+                        mBottomSheet.setSheetState(BottomSheet.SHEET_STATE_PEEK, true);
+                    } else {
+                        showNextContent();
+                    }
+                    mWasSheetShowing = false;
+                }
+            });
+        }
 
         // Initialize the queue with a comparator that checks content priority.
         mContentQueue = new PriorityQueue<>(INITIAL_QUEUE_CAPACITY,
@@ -147,6 +204,13 @@ public class BottomSheetController {
     }
 
     /**
+     * @return The {@link SnackbarManager} that manages snackbars inside the bottom sheet.
+     */
+    public SnackbarManager getSnackbarManager() {
+        return mSnackbarManager;
+    }
+
+    /**
      * Request that some content be shown in the bottom sheet.
      * @param content The content to be shown in the bottom sheet.
      * @param animate Whether the appearance of the bottom sheet should be animated.
@@ -157,7 +221,7 @@ public class BottomSheetController {
     public boolean requestShowContent(BottomSheetContent content, boolean animate) {
         // If pre-load failed, do nothing. The content will automatically be queued.
         if (!requestContentPreload(content)) return false;
-        if (!mBottomSheet.isSheetOpen()) {
+        if (!mBottomSheet.isSheetOpen() && !isOtherUIObscuring()) {
             mBottomSheet.setSheetState(BottomSheet.SHEET_STATE_PEEK, animate);
         }
         mWasShownForCurrentTab = true;
@@ -173,7 +237,7 @@ public class BottomSheetController {
      */
     public boolean requestContentPreload(BottomSheetContent content) {
         if (content == mBottomSheet.getCurrentSheetContent()) return true;
-        if (!isValidLayoutShowing()) return false;
+        if (!canShowInLayout(mLayoutManager.getActiveLayout())) return false;
 
         boolean shouldSuppressExistingContent = mBottomSheet.getCurrentSheetContent() != null
                 && mBottomSheet.getSheetState() <= BottomSheet.SHEET_STATE_PEEK
@@ -236,6 +300,25 @@ public class BottomSheetController {
     }
 
     /**
+     * Expand the {@link BottomSheet}. If there is no content in the sheet, this is a noop.
+     */
+    public void expandSheet() {
+        if (mBottomSheet.getCurrentSheetContent() == null) return;
+        mBottomSheet.setSheetState(BottomSheet.SHEET_STATE_HALF, true);
+    }
+
+    @Override
+    public void onActivityStateChange(Activity activity, int newState) {
+        if (newState == ActivityState.STARTED) {
+            mSnackbarManager.onStart();
+        } else if (newState == ActivityState.STOPPED) {
+            mSnackbarManager.onStop();
+        } else if (newState == ActivityState.DESTROYED) {
+            ApplicationStatus.unregisterActivityStateListener(this);
+        }
+    }
+
+    /**
      * Show the next {@link BottomSheetContent} if it is available and peek the sheet. If no content
      * is available the sheet's content is set to null.
      */
@@ -262,10 +345,18 @@ public class BottomSheetController {
     }
 
     /**
-     * @return Whether the browser is in a layout that supports showing the bottom sheet.
+     * @param layout A {@link Layout} to check if the sheet can be shown in.
+     * @return Whether the bottom sheet can show in the specified layout.
      */
-    protected boolean isValidLayoutShowing() {
-        return mLayoutManager.getActiveLayout() instanceof StaticLayout;
+    protected boolean canShowInLayout(Layout layout) {
+        return layout instanceof StaticLayout || layout instanceof SimpleAnimationLayout;
+    }
+
+    /**
+     * @return Whether some other UI is preventing the sheet from showing.
+     */
+    protected boolean isOtherUIObscuring() {
+        return mIsCompositedUIShowing;
     }
 
     /**

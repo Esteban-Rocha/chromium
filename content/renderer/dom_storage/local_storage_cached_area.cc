@@ -19,8 +19,8 @@
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/web/WebStorageEventDispatcher.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/web/web_storage_event_dispatcher.h"
 
 namespace content {
 
@@ -74,22 +74,22 @@ LocalStorageCachedArea::LocalStorageCachedArea(
     const url::Origin& origin,
     mojom::SessionStorageNamespace* session_namespace,
     LocalStorageCachedAreas* cached_areas,
-    blink::scheduler::RendererScheduler* renderer_scheduler)
+    blink::scheduler::WebMainThreadScheduler* main_thread_scheduler)
     : namespace_id_(namespace_id),
       origin_(origin),
       binding_(this),
       cached_areas_(cached_areas),
-      renderer_scheduler_(renderer_scheduler),
+      main_thread_scheduler_(main_thread_scheduler),
       weak_factory_(this) {
   DCHECK(!namespace_id_.empty());
 
   mojom::LevelDBWrapperAssociatedPtrInfo wrapper_ptr_info;
   session_namespace->OpenArea(origin_, mojo::MakeRequest(&wrapper_ptr_info));
   leveldb_.Bind(std::move(wrapper_ptr_info),
-                renderer_scheduler->IPCTaskRunner());
+                main_thread_scheduler->IPCTaskRunner());
   mojom::LevelDBObserverAssociatedPtrInfo ptr_info;
   binding_.Bind(mojo::MakeRequest(&ptr_info),
-                renderer_scheduler->IPCTaskRunner());
+                main_thread_scheduler->IPCTaskRunner());
   leveldb_->AddObserver(std::move(ptr_info));
 }
 
@@ -97,21 +97,21 @@ LocalStorageCachedArea::LocalStorageCachedArea(
     const url::Origin& origin,
     mojom::StoragePartitionService* storage_partition_service,
     LocalStorageCachedAreas* cached_areas,
-    blink::scheduler::RendererScheduler* renderer_scheduler)
+    blink::scheduler::WebMainThreadScheduler* main_thread_scheduler)
     : origin_(origin),
       binding_(this),
       cached_areas_(cached_areas),
-      renderer_scheduler_(renderer_scheduler),
+      main_thread_scheduler_(main_thread_scheduler),
       weak_factory_(this) {
   DCHECK(namespace_id_.empty());
   mojom::LevelDBWrapperPtrInfo wrapper_ptr_info;
   storage_partition_service->OpenLocalStorage(
       origin_, mojo::MakeRequest(&wrapper_ptr_info));
   leveldb_.Bind(std::move(wrapper_ptr_info),
-                renderer_scheduler->IPCTaskRunner());
+                main_thread_scheduler->IPCTaskRunner());
   mojom::LevelDBObserverAssociatedPtrInfo ptr_info;
   binding_.Bind(mojo::MakeRequest(&ptr_info),
-                renderer_scheduler->IPCTaskRunner());
+                main_thread_scheduler->IPCTaskRunner());
   leveldb_->AddObserver(std::move(ptr_info));
 }
 
@@ -162,8 +162,9 @@ bool LocalStorageCachedArea::SetItem(const base::string16& key,
         String16ToUint8Vector(old_nullable_value.string(), is_session_storage);
 
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "LocalStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   leveldb_->Put(String16ToUint8Vector(key, is_session_storage),
                 String16ToUint8Vector(value, is_session_storage),
                 optional_old_value, PackSource(page_url, storage_area_id),
@@ -194,8 +195,9 @@ void LocalStorageCachedArea::RemoveItem(const base::string16& key,
     optional_old_value = String16ToUint8Vector(old_value, is_session_storage);
 
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "LocalStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   leveldb_->Delete(String16ToUint8Vector(key, is_session_storage),
                    optional_old_value, PackSource(page_url, storage_area_id),
                    base::BindOnce(&LocalStorageCachedArea::OnRemoveItemComplete,
@@ -211,8 +213,9 @@ void LocalStorageCachedArea::Clear(const GURL& page_url,
   ignore_all_mutations_ = true;
 
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "LocalStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   leveldb_->DeleteAll(PackSource(page_url, storage_area_id),
                       base::BindOnce(&LocalStorageCachedArea::OnClearComplete,
                                      weak_factory_.GetWeakPtr(),

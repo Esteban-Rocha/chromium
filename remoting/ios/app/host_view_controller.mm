@@ -326,6 +326,10 @@ static NSString* const kFeedbackContext = @"InSessionFeedbackContext";
                                                0);
 }
 
+- (void)clientKeyboardShouldSendKey:(const remoting::KeypressInfo&)key {
+  _client.keyboardInterpreter->HandleKeypressEvent(key);
+}
+
 - (void)clientKeyboardShouldDelete {
   _client.keyboardInterpreter->HandleDeleteEvent(0);
 }
@@ -466,6 +470,8 @@ static NSString* const kFeedbackContext = @"InSessionFeedbackContext";
   }
 }
 
+// TODO(yuweih): This method is badly named. Should be changed to
+// "didTapShowMenu".
 - (void)didTap:(id)sender {
   // TODO(nicholss): The FAB is being used to launch an alert window with
   // more options. This is not ideal but it gets us an easy way to make a

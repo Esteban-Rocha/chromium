@@ -74,7 +74,6 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/experiments/memory_ablation_experiment.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/gpu/three_d_api_observer.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/browser/metrics/expired_histograms_array.h"
@@ -715,7 +714,7 @@ const char kMissingLocaleDataMessage[] =
 #if !defined(OS_ANDROID)
 // A TaskRunner that defers tasks until the real task runner is up and running.
 // This is used during early initialization, before the real task runner has
-// been created. DeferredTaskRunner has the following states.
+// been created. DeferringTaskRunner has the following states.
 //
 // . kInstalled: the initial state. Tasks are added to |deferred_runner_|. In
 //   this state this is installed as the active ThreadTaskRunnerHandle.
@@ -848,8 +847,7 @@ ChromeBrowserMainParts::ChromeBrowserMainParts(
       result_code_(content::RESULT_CODE_NORMAL_EXIT),
       startup_watcher_(new StartupTimeBomb()),
       shutdown_watcher_(new ShutdownWatcherHelper()),
-      ui_thread_profiler_(ThreadProfiler::CreateAndStartOnMainThread(
-          metrics::CallStackProfileParams::UI_THREAD)),
+      ui_thread_profiler_(ThreadProfiler::CreateAndStartOnMainThread()),
       should_call_pre_main_loop_start_startup_on_variations_service_(
           !parameters.ui_task),
       profile_(NULL),
@@ -1383,14 +1381,30 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
         !command_line->HasSwitch(switches::kSitePerProcess)) {
       command_line->AppendSwitch(switches::kSitePerProcess);
     }
-    // We don't check for `HasSwitch` here, because we don't want the command-
-    // line switch to take precedence over enterprise policy. (This behavior is
-    // in harmony with other enterprise policy settings.)
-    if (local_state->HasPrefPath(prefs::kIsolateOrigins)) {
+    // We apply the flag always when it differs from the command line state,
+    // because we don't want the command-line switch to take precedence over
+    // enterprise policy. (This behavior is in harmony with other enterprise
+    // policy settings.)
+    if (local_state->HasPrefPath(prefs::kIsolateOrigins) &&
+        (!command_line->HasSwitch(switches::kIsolateOrigins) ||
+         command_line->GetSwitchValueASCII(switches::kIsolateOrigins) !=
+             local_state->GetString(prefs::kIsolateOrigins))) {
       command_line->AppendSwitchASCII(
           switches::kIsolateOrigins,
           local_state->GetString(prefs::kIsolateOrigins));
     }
+  }
+
+  // The admin should also be able to use these policies to override trials that
+  // will try to turn site isolation on per default.
+  // Note that disabling either SitePerProcess or IsolateOrigins via policy will
+  // disable both types of field trials.
+  if ((local_state->IsManagedPreference(prefs::kSitePerProcess) &&
+       !local_state->GetBoolean(prefs::kSitePerProcess)) ||
+      (local_state->IsManagedPreference(prefs::kIsolateOrigins) &&
+       local_state->GetString(prefs::kIsolateOrigins).empty())) {
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kDisableSiteIsolationTrials);
   }
 
   // ChromeOS needs ui::ResourceBundle::InitSharedInstance to be called before
@@ -1497,8 +1511,6 @@ void ChromeBrowserMainParts::PreBrowserStart() {
   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreBrowserStart");
   for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
     chrome_extra_parts_[i]->PreBrowserStart();
-
-  three_d_observer_.reset(new ThreeDAPIObserver());
 
 // Start the tab manager here so that we give the most amount of time for the
 // other services to start up before we start adjusting the oom priority.

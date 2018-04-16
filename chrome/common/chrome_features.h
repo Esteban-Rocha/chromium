@@ -153,6 +153,8 @@ extern const base::Feature kOpenVR;
 
 #endif  // ENABLE_VR
 
+extern const base::Feature kFullscreenExitUI;
+
 #if defined(OS_MACOSX)
 extern const base::Feature kFullscreenToolbarReveal;
 #endif
@@ -298,6 +300,9 @@ extern const base::Feature kSiteNotificationChannels;
 
 extern const base::Feature kSitePerProcess;
 
+extern const base::Feature kSitePerProcessOnlyForHighMemoryClients;
+extern const char kSitePerProcessOnlyForHighMemoryClientsParamName[];
+
 #if defined(OS_CHROMEOS)
 extern const base::Feature kNativeSmb;
 #endif
@@ -321,6 +326,8 @@ extern const base::Feature kTopSitesFromSiteEngagement;
 extern const base::Feature kUseGoogleLocalNtp;
 
 #if defined(OS_CHROMEOS)
+extern const base::Feature kAdaptiveScreenBrightnessLogging;
+
 extern const base::Feature kUserActivityEventLogging;
 #endif
 

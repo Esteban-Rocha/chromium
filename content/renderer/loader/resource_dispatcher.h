@@ -29,8 +29,8 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
-#include "third_party/WebKit/public/mojom/blob/blob_registry.mojom.h"
-#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/blink/public/mojom/blob/blob_registry.mojom.h"
+#include "third_party/blink/public/platform/web_url_request.h"
 #include "url/gurl.h"
 
 namespace base {
@@ -52,6 +52,7 @@ class URLLoaderFactory;
 }
 
 namespace content {
+struct NavigationResponseOverrideParameters;
 class RequestPeer;
 class ResourceDispatcherDelegate;
 struct SyncLoadResponse;
@@ -122,7 +123,8 @@ class CONTENT_EXPORT ResourceDispatcher {
       std::unique_ptr<RequestPeer> peer,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
+      std::unique_ptr<NavigationResponseOverrideParameters>
+          response_override_params,
       base::OnceClosure* continue_navigation_function);
 
   network::mojom::DownloadedTempFilePtr TakeDownloadedTempFile(int request_id);
@@ -179,7 +181,9 @@ class CONTENT_EXPORT ResourceDispatcher {
                        const GURL& request_url,
                        const std::string& method,
                        const GURL& referrer,
-                       bool download_to_file);
+                       bool download_to_file,
+                       std::unique_ptr<NavigationResponseOverrideParameters>
+                           response_override_params);
 
     ~PendingRequestInfo();
 
@@ -204,7 +208,10 @@ class CONTENT_EXPORT ResourceDispatcher {
     net::IPAddress parsed_ip;
     bool network_accessed = false;
     std::string mime_type;
-    net::RequestPriority priority = net::RequestPriority::DEFAULT_PRIORITY;
+    std::unique_ptr<NavigationResponseOverrideParameters>
+        navigation_response_override;
+    bool should_follow_redirect = true;
+    bool always_access_network = false;
 
     // For mojo loading.
     std::unique_ptr<ThrottlingURLLoader> url_loader;
@@ -244,9 +251,7 @@ class CONTENT_EXPORT ResourceDispatcher {
       const PendingRequestInfo& request_info,
       const base::TimeTicks& browser_completion_time) const;
 
-  void ContinueForNavigation(
-      int request_id,
-      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints);
+  void ContinueForNavigation(int request_id);
 
   // All pending requests issued to the host
   PendingRequestMap pending_requests_;

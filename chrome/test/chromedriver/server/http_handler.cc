@@ -15,7 +15,6 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"  // For CHECK macros.
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_split.h"
@@ -808,6 +807,9 @@ HttpHandler::PrepareStandardResponse(
     case kUnsupportedOperation:
       response.reset(
           new net::HttpServerResponseInfo(net::HTTP_INTERNAL_SERVER_ERROR));
+      break;
+    case kTargetDetached:
+      response.reset(new net::HttpServerResponseInfo(net::HTTP_NOT_FOUND));
       break;
 
     // TODO(kereliuk): evaluate the usage of these as they relate to the spec

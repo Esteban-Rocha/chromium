@@ -73,7 +73,9 @@ test("device_unittests") {
     "fido/fido_discovery_unittest.cc",
     "fido/fido_hid_message_unittest.cc",
     "fido/fido_request_handler_unittest.cc",
+    "fido/get_assertion_handler_unittest.cc",
     "fido/get_assertion_task_unittest.cc",
+    "fido/make_credential_handler_unittest.cc",
     "fido/make_credential_task_unittest.cc",
     "fido/test_callback_receiver_unittest.cc",
     "fido/u2f_parsing_utils_unittest.cc",
@@ -112,7 +114,7 @@ test("device_unittests") {
     "//net",
     "//testing/gmock",
     "//testing/gtest",
-    "//third_party/WebKit/public:blink_headers",
+    "//third_party/blink/public:blink_headers",
     "//tools/usb_gadget",
     "//url",
   ]
@@ -221,14 +223,29 @@ test("device_unittests") {
   }
 
   if (is_linux) {
-    # BLE discovery: works on Linux.
-    sources += [ "fido/fido_ble_discovery_unittest.cc" ]
-
     if (is_chromecast) {
+      # Cast does not support GATT server mode.
+      sources -= [
+        "bluetooth/bluetooth_local_gatt_characteristic_unittest.cc",
+        "bluetooth/bluetooth_local_gatt_descriptor_unittest.cc",
+        "bluetooth/bluetooth_local_gatt_service_unittest.cc",
+      ]
+
       sources += [
         "bluetooth/cast/bluetooth_adapter_cast_unittest.cc",
         "bluetooth/cast/bluetooth_utils_unittest.cc",
+        "bluetooth/test/bluetooth_test_cast.cc",
+        "bluetooth/test/bluetooth_test_cast.h",
       ]
+
+      deps += [
+        "//chromecast/device/bluetooth:util",
+        "//chromecast/device/bluetooth/le",
+        "//chromecast/device/bluetooth/shlib:mock_shlib",
+      ]
+    } else {
+      # BLE discovery: works on Linux.
+      sources += [ "fido/fido_ble_discovery_unittest.cc" ]
     }
   }
 
@@ -276,6 +293,7 @@ test("device_unittests") {
       "//device/vr/public/mojom",
       "//services/device/public/cpp/generic_sensor",
       "//ui/display",
+      "//ui/display:test_support",
     ]
   }
 }

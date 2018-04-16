@@ -149,8 +149,6 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
 
   const HitTestManager* hit_test_manager() { return &hit_test_manager_; }
 
-  void OnClientConnectionLost(const FrameSinkId& frame_sink_id);
-
   void SubmitHitTestRegionList(
       const SurfaceId& surface_id,
       uint64_t frame_index,
@@ -159,7 +157,7 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   // Instantiates |video_detector_| for tests where we simulate the passage of
   // time.
   VideoDetector* CreateVideoDetectorForTesting(
-      std::unique_ptr<base::TickClock> tick_clock,
+      const base::TickClock* tick_clock,
       scoped_refptr<base::SequencedTaskRunner> task_runner);
 
   // Called when |frame_token| is changed on a submitted CompositorFrame.
@@ -168,6 +166,18 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
 
   void AddObserver(FrameSinkObserver* obs);
   void RemoveObserver(FrameSinkObserver* obs);
+
+  // Returns ids of all FrameSinks that were created.
+  std::vector<FrameSinkId> GetCreatedFrameSinkIds() const;
+  // Returns ids of all FrameSinks that were registered.
+  std::vector<FrameSinkId> GetRegisteredFrameSinkIds() const;
+
+  // Returns children of a FrameSink that has |parent_frame_sink_id|.
+  // Returns an empty set if a parent doesn't have any children.
+  base::flat_set<FrameSinkId> GetChildrenByParent(
+      const FrameSinkId& parent_frame_sink_id) const;
+  const CompositorFrameSinkSupport* GetFrameSinkForId(
+      const FrameSinkId& frame_sink_id) const;
 
  private:
   friend class FrameSinkManagerTest;

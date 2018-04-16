@@ -75,7 +75,7 @@ constexpr SkColor kDomainTextColor =
     SkColorSetARGBMacro(0xAB, 0xFF, 0xFF, 0xFF);
 constexpr int kEnterpriseIconSizeDp = 12;
 constexpr int kBetweenEnterpriseIconAndDomainDp = 8;
-constexpr int kVerticalSpacingBetweenUserNameAndDomainDp = 17;
+constexpr int kVerticalSpacingBetweenUserNameAndDomainDp = 14;
 
 int GetImageSize(LoginDisplayStyle style) {
   switch (style) {
@@ -115,13 +115,13 @@ class LoginUserView::UserImage : public NonAccessibleView {
     // Set the initial image from |avatar| since we already have it available.
     // Then, decode the bytes via blink's PNG decoder and play any animated
     // frames if they are available.
-    if (!user->basic_user_info->avatar.isNull())
-      image_->SetImage(user->basic_user_info->avatar);
+    if (!user->basic_user_info->avatar->image.isNull())
+      image_->SetImage(user->basic_user_info->avatar->image);
 
     // Decode the avatar using blink, as blink's PNG decoder supports APNG,
     // which is the format used for the animated avators.
-    if (!user->basic_user_info->avatar_bytes.empty()) {
-      DecodeAnimation(user->basic_user_info->avatar_bytes,
+    if (!user->basic_user_info->avatar->bytes.empty()) {
+      DecodeAnimation(user->basic_user_info->avatar->bytes,
                       base::Bind(&LoginUserView::UserImage::OnImageDecoded,
                                  weak_factory_.GetWeakPtr()));
     }

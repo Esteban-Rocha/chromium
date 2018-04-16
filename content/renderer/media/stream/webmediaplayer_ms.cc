@@ -17,7 +17,6 @@
 #include "cc/layers/video_frame_provider_client_impl.h"
 #include "cc/layers/video_layer.h"
 #include "content/child/child_process.h"
-#include "content/public/common/content_features.h"
 #include "content/public/renderer/media_stream_audio_renderer.h"
 #include "content/public/renderer/media_stream_renderer_factory.h"
 #include "content/public/renderer/media_stream_video_renderer.h"
@@ -37,11 +36,11 @@
 #include "media/blink/webmediaplayer_util.h"
 #include "media/video/gpu_memory_buffer_video_frame_pool.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerSource.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/platform/web_media_player_client.h"
+#include "third_party/blink/public/platform/web_media_player_source.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_size.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 
 namespace {
 enum class RendererReloadAction {
@@ -76,10 +75,8 @@ class WebMediaPlayerMS::FrameDeliverer {
         weak_factory_(this) {
     io_thread_checker_.DetachFromThread();
 
-    if (gpu_factories &&
-        gpu_factories->ShouldUseGpuMemoryBuffersForVideoFrames() &&
-        base::FeatureList::IsEnabled(
-            features::kWebRtcUseGpuMemoryBufferVideoFrames)) {
+    if (gpu_factories && gpu_factories->ShouldUseGpuMemoryBuffersForVideoFrames(
+                             true /* for_media_stream */)) {
       gpu_memory_buffer_pool_.reset(new media::GpuMemoryBufferVideoFramePool(
           media_task_runner, worker_task_runner, gpu_factories));
     }
@@ -778,8 +775,9 @@ void WebMediaPlayerMS::OnFrameHidden() {
   // back, so we can't rely on |render_frame_suspended_| being false here.
   if (frame_deliverer_) {
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&FrameDeliverer::SetRenderFrameSuspended,
-                              base::Unretained(frame_deliverer_.get()), true));
+        FROM_HERE,
+        base::BindOnce(&FrameDeliverer::SetRenderFrameSuspended,
+                       base::Unretained(frame_deliverer_.get()), true));
   }
 
 // On Android, substitute the displayed VideoFrame with a copy to avoid holding
@@ -805,8 +803,9 @@ void WebMediaPlayerMS::OnFrameClosed() {
 
   if (frame_deliverer_) {
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&FrameDeliverer::SetRenderFrameSuspended,
-                              base::Unretained(frame_deliverer_.get()), true));
+        FROM_HERE,
+        base::BindOnce(&FrameDeliverer::SetRenderFrameSuspended,
+                       base::Unretained(frame_deliverer_.get()), true));
   }
 }
 
@@ -815,8 +814,9 @@ void WebMediaPlayerMS::OnFrameShown() {
 
   if (frame_deliverer_) {
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&FrameDeliverer::SetRenderFrameSuspended,
-                              base::Unretained(frame_deliverer_.get()), false));
+        FROM_HERE,
+        base::BindOnce(&FrameDeliverer::SetRenderFrameSuspended,
+                       base::Unretained(frame_deliverer_.get()), false));
   }
 
 // On Android, resume playback on visibility. play() clears

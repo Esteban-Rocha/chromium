@@ -5,15 +5,17 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_OVERLAY_OVERLAY_WINDOW_VIEWS_H_
 #define CHROME_BROWSER_UI_VIEWS_OVERLAY_OVERLAY_WINDOW_VIEWS_H_
 
-#include "chrome/browser/overlay/overlay_window.h"
+#include "content/public/browser/overlay_window.h"
 
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/widget/widget.h"
 
-// The Views implementation of OverlayWindow.
-class OverlayWindowViews : public OverlayWindow, public views::Widget {
+// The Chrome desktop implementation of OverlayWindow. This will only be
+// implemented in views, which will support all desktop platforms.
+class OverlayWindowViews : public content::OverlayWindow, public views::Widget {
  public:
-  OverlayWindowViews();
+  explicit OverlayWindowViews(
+      content::PictureInPictureWindowController* controller);
   ~OverlayWindowViews() override;
 
   // OverlayWindow:
@@ -24,11 +26,16 @@ class OverlayWindowViews : public OverlayWindow, public views::Widget {
   bool IsAlwaysOnTop() const override;
   ui::Layer* GetLayer() override;
   gfx::Rect GetBounds() const override;
+  void UpdateVideoSize(const gfx::Size& natural_size) override;
 
   // views::Widget:
   gfx::Size GetMinimumSize() const override;
   gfx::Size GetMaximumSize() const override;
   void OnNativeWidgetWorkspaceChanged() override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+
+  // views::internal::NativeWidgetDelegate:
+  void OnNativeWidgetSizeChanged(const gfx::Size& new_size) override;
 
  private:
   // Determine the intended bounds of |this|. This should be called when there
@@ -36,6 +43,9 @@ class OverlayWindowViews : public OverlayWindow, public views::Widget {
   // playing a new video (i.e. different aspect ratio). This also updates
   // |min_size_| and |max_size_|.
   gfx::Rect CalculateAndUpdateBounds();
+
+  // Not owned; |controller_| owns |this|.
+  content::PictureInPictureWindowController* controller_;
 
   // The upper and lower bounds of |current_size_|. These are determined by the
   // size of the primary display work area when Picture-in-Picture is initiated.
@@ -46,6 +56,10 @@ class OverlayWindowViews : public OverlayWindow, public views::Widget {
 
   // Current size of the Picture-in-Picture window.
   gfx::Size current_size_;
+
+  // The natural size of the video to show. This is used to compute sizing and
+  // ensuring factors such as aspect ratio is maintained.
+  gfx::Size natural_size_;
 
   DISALLOW_COPY_AND_ASSIGN(OverlayWindowViews);
 };

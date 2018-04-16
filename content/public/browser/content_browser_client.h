@@ -20,6 +20,7 @@
 #include "build/build_config.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/navigation_throttle.h"
+#include "content/public/browser/overlay_window.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/media_stream_request.h"
@@ -39,9 +40,9 @@
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_registry.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
-#include "third_party/WebKit/public/web/window_features.mojom.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/web/window_features.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
@@ -240,6 +241,19 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldUseProcessPerSite(BrowserContext* browser_context,
                                        const GURL& effective_url);
 
+  // Returns whether a spare RenderProcessHost should be used for navigating to
+  // the specified site URL.
+  //
+  // Using the spare RenderProcessHost is advisable, because it can improve
+  // performance of a navigation that requires a new process.  On the other
+  // hand, sometimes the spare RenderProcessHost cannot be used - for example
+  // some embedders might override
+  // ContentBrowserClient::AppendExtraCommandLineSwitches and add some cmdline
+  // switches at navigation time (and this won't work for the spare, because the
+  // spare RenderProcessHost is launched ahead of time).
+  virtual bool ShouldUseSpareRenderProcessHost(BrowserContext* browser_context,
+                                               const GURL& site_url);
+
   // Returns true if site isolation should be enabled for |effective_site_url|.
   // This call allows the embedder to supplement the site isolation policy
   // enforced by the content layer. Will only be called if the content layer
@@ -366,14 +380,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Note that for correctness, the same value should be consistently returned.
   // See also https://crbug.com/825369
   virtual bool ShouldEnableStrictSiteIsolation();
-
-  // Allows //content embedders to check if --site-per-process has been enabled
-  // (via cmdline flag or via a field trial).
-  //
-  // TODO(lukasza, weili): https://crbug.com/824867: Remove this method after
-  // shipping OOPIF printing (the only caller is in
-  // components/printing/browser/print_manager_utils.cc).
-  static bool IsStrictSiteIsolationEnabled();
 
   // Indicates whether a file path should be accessible via file URL given a
   // request from a browser context which lives within |profile_path|.
@@ -1114,6 +1120,11 @@ class CONTENT_EXPORT ContentBrowserClient {
       const url::Origin& origin,
       base::OnceCallback<void(bool)> callback);
 
+  // Returns true if the Webauthn implementation should require that the
+  // |RenderFrameHost|'s View has focus before processing requests, and before
+  // sending replies.
+  virtual bool ShouldEnforceFocusChecksForWebauthn();
+
   // Get platform ClientCertStore. May return nullptr.
   virtual std::unique_ptr<net::ClientCertStore> CreateClientCertStore(
       ResourceContext* resource_context);
@@ -1150,6 +1161,14 @@ class CONTENT_EXPORT ContentBrowserClient {
       bool is_main_frame,
       ui::PageTransition page_transition,
       bool has_user_gesture);
+
+  // Creates an OverlayWindow to be used for Picture-in-Picture. This window
+  // will house the content shown when in Picture-in-Picture mode. This will
+  // return a new OverlayWindow.
+  // May return nullptr if embedder does not support this functionality. The
+  // default implementation provides nullptr OverlayWindow.
+  virtual std::unique_ptr<OverlayWindow> CreateWindowForPictureInPicture(
+      PictureInPictureWindowController* controller);
 };
 
 }  // namespace content

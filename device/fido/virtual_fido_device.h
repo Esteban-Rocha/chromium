@@ -64,6 +64,15 @@ class COMPONENT_EXPORT(DEVICE_FIDO) VirtualFidoDevice : public FidoDevice {
     // Registered keys. Keyed on key handle (a.k.a. "credential ID").
     std::map<std::vector<uint8_t>, RegistrationData> registrations;
 
+    // Adds a registration for the specified credential ID with the application
+    // parameter set to be valid for the given relying party ID (which would
+    // typically be a domain, e.g. "example.com").
+    //
+    // Returns true on success. Will fail if there already exists a credential
+    // with the given ID or if private-key generation fails.
+    bool InjectRegistration(const std::vector<uint8_t>& credential_id,
+                            const std::string& relying_party_id);
+
    private:
     friend class base::RefCounted<State>;
     ~State();
@@ -84,8 +93,9 @@ class COMPONENT_EXPORT(DEVICE_FIDO) VirtualFidoDevice : public FidoDevice {
   State* mutable_state() { return state_.get(); }
 
  protected:
-  // U2fDevice:
+  // FidoDevice:
   void TryWink(WinkCallback cb) override;
+  void Cancel() override;
   std::string GetId() const override;
   void DeviceTransact(std::vector<uint8_t> command, DeviceCallback cb) override;
   base::WeakPtr<FidoDevice> GetWeakPtr() override;

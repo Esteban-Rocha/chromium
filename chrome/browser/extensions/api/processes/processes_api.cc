@@ -30,7 +30,7 @@
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/result_codes.h"
 #include "extensions/common/error_utils.h"
-#include "third_party/WebKit/public/platform/WebCache.h"
+#include "third_party/blink/public/platform/web_cache.h"
 
 namespace extensions {
 
@@ -131,9 +131,9 @@ void FillProcessData(
   for (const auto& task_id : tasks_on_process) {
     api::processes::TaskInfo task_info;
     task_info.title = base::UTF16ToUTF8(task_manager->GetTitle(task_id));
-    const int tab_id = task_manager->GetTabId(task_id);
-    if (tab_id != -1)
-      task_info.tab_id.reset(new int(tab_id));
+    const SessionID tab_id = task_manager->GetTabId(task_id);
+    if (tab_id.is_valid())
+      task_info.tab_id.reset(new int(tab_id.id()));
 
     out_process->tasks.push_back(std::move(task_info));
   }

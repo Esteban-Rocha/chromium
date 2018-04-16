@@ -65,14 +65,14 @@
 
 #if defined(OS_WIN)
 #include "chrome/browser/safe_browsing/chrome_cleaner/srt_field_trial_win.h"
+
+#if defined(GOOGLE_CHROME_BUILD)
+#include "base/metrics/field_trial_params.h"
 #endif
+#endif  // defined(OS_WIN)
 
 #if defined(USE_NSS_CERTS)
 #include "chrome/browser/ui/webui/certificate_manager_localized_strings_provider.h"
-#endif
-
-#if defined(SAFE_BROWSING_DB_LOCAL)
-#include "components/safe_browsing/password_protection/password_protection_service.h"
 #endif
 
 namespace settings {
@@ -241,8 +241,19 @@ void AddA11yStrings(content::WebUIDataSource* html_source) {
     {"textToSpeechProperties", IDS_SETTINGS_TEXT_TO_SPEECH_PROPERTIES},
     {"textToSpeechRate", IDS_SETTINGS_TEXT_TO_SPEECH_RATE},
     {"textToSpeechPitch", IDS_SETTINGS_TEXT_TO_SPEECH_PITCH},
+    {"textToSpeechPreviewHeading", IDS_SETTINGS_TEXT_TO_SPEECH_PREVIEW_HEADING},
+    {"textToSpeechPreviewInputLabel",
+     IDS_SETTINGS_TEXT_TO_SPEECH_PREVIEW_INPUT_LABEL},
+    {"textToSpeechPreviewInput", IDS_SETTINGS_TEXT_TO_SPEECH_PREVIEW_INPUT},
+    {"textToSpeechPreviewPlay", IDS_SETTINGS_TEXT_TO_SPEECH_PREVIEW_PLAY},
     {"textToSpeechEngines", IDS_SETTINGS_TEXT_TO_SPEECH_ENGINES},
     {"textToSpeechInstallEngines", IDS_SETTINGS_TEXT_TO_SPEECH_INSTALL_ENGINES},
+    {"manageGoogleTtsEngineSettings",
+     IDS_SETTINGS_MANAGE_GOOGLE_TTS_ENGINE_SETTINGS},
+    {"googleTtsEngineSettingsLinkDescription",
+     IDS_SETTINGS_GOOGLE_TTS_ENGINE_LINK_DESCRIPTION},
+    {"googleTextToSpeechSettings", IDS_SETTINGS_GOOGLE_TTS_ENGINE_TITLE},
+    {"enableTtsVoiceLabel", IDS_SETTINGS_ENABLE_TTS_VOICE_LABEL},
 #endif
   };
   AddLocalizedStringsBulk(html_source, localized_strings,
@@ -447,26 +458,13 @@ void AddBluetoothStrings(content::WebUIDataSource* html_source) {
 #endif
 
 void AddChangePasswordStrings(content::WebUIDataSource* html_source) {
-#if defined(SAFE_BROWSING_DB_LOCAL)
-  bool show_softer_warning =
-      safe_browsing::PasswordProtectionService::ShouldShowSofterWarning();
-
-  auto title_string_id = show_softer_warning
-                             ? IDS_SETTINGS_CHANGE_PASSWORD_TITLE_SOFTER
-                             : IDS_SETTINGS_CHANGE_PASSWORD_TITLE;
   LocalizedString localized_strings[] = {
-      {"changePasswordPageTitle", title_string_id},
+      {"changePasswordPageTitle", IDS_SETTINGS_CHANGE_PASSWORD_TITLE},
       {"changePasswordPageDetails", IDS_SETTINGS_CHANGE_PASSWORD_DETAIL},
       {"changePasswordPageButton", IDS_SETTINGS_CHANGE_PASSWORD_BUTTON},
   };
-
   AddLocalizedStringsBulk(html_source, localized_strings,
                           arraysize(localized_strings));
-
-  const std::string icon_id =
-      show_softer_warning ? "settings:security" : "cr:warning";
-  html_source->AddString("changePasswordPageIcon", icon_id);
-#endif
 }
 
 void AddClearBrowsingDataStrings(content::WebUIDataSource* html_source,
@@ -906,10 +904,17 @@ void AddIncompatibleApplicationsStrings(content::WebUIDataSource* html_source) {
   };
   AddLocalizedStringsBulk(html_source, localized_strings,
                           arraysize(localized_strings));
-  // TODO(pmonette): Add the help URL when available.
-  base::string16 learn_how_text = l10n_util::GetStringFUTF16(
-      IDS_SETTINGS_INCOMPATIBLE_APPLICATIONS_SUBPAGE_LEARN_HOW,
-      base::ASCIIToUTF16("chrome://placeholder"));
+
+  // The help URL is provided via Field Trial param. If none is provided, the
+  // "Learn How" text is left empty so that no link is displayed.
+  base::string16 learn_how_text;
+  std::string help_url = GetFieldTrialParamValueByFeature(
+      features::kIncompatibleApplicationsWarning, "HelpURL");
+  if (!help_url.empty()) {
+    learn_how_text = l10n_util::GetStringFUTF16(
+        IDS_SETTINGS_INCOMPATIBLE_APPLICATIONS_SUBPAGE_LEARN_HOW,
+        base::UTF8ToUTF16(help_url));
+  }
   html_source->AddString("incompatibleApplicationsSubpageLearnHow",
                          learn_how_text);
 }
@@ -1381,6 +1386,9 @@ void AddPasswordsAndFormsStrings(content::WebUIDataSource* html_source) {
       {"exportMenuItem", IDS_SETTINGS_PASSWORDS_EXPORT_MENU_ITEM},
       {"undoRemovePassword", IDS_SETTINGS_PASSWORD_UNDO},
       {"passwordDeleted", IDS_SETTINGS_PASSWORD_DELETED_PASSWORD},
+      {"passwordRowMoreActionsButton", IDS_SETTINGS_PASSWORD_ROW_MORE_ACTIONS},
+      {"passwordRowFederatedMoreActionsButton",
+       IDS_SETTINGS_PASSWORD_ROW_FEDERATED_MORE_ACTIONS},
       {"exportPasswordsTitle", IDS_SETTINGS_PASSWORDS_EXPORT_TITLE},
       {"exportPasswordsDescription", IDS_SETTINGS_PASSWORDS_EXPORT_DESCRIPTION},
       {"exportPasswords", IDS_SETTINGS_PASSWORDS_EXPORT},
@@ -1525,9 +1533,10 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
      IDS_SETTINGS_PEOPLE_SIGN_IN_PROMPT_SECONDARY},
     {"useAnotherAccount", IDS_SETTINGS_PEOPLE_SYNC_ANOTHER_ACCOUNT},
     {"syncAsName", IDS_SETTINGS_PEOPLE_SYNC_AS_NAME},
-    {"syncedToName", IDS_SETTINGS_PEOPLE_SYNCED_AS_NAME},
+    {"syncingTo", IDS_SETTINGS_PEOPLE_SYNCING_TO_ACCOUNT},
     {"turnOffSync", IDS_SETTINGS_PEOPLE_SYNC_TURN_OFF},
     {"syncNotWorking", IDS_SETTINGS_PEOPLE_SYNC_NOT_WORKING},
+    {"syncPaused", IDS_SETTINGS_PEOPLE_SYNC_PAUSED},
     {"syncSignInPrompt", IDS_SETTINGS_SYNC_SIGN_IN_PROMPT},
     {"syncSignInPromptSecondary", IDS_SETTINGS_SYNC_SIGN_IN_PROMPT_SECONDARY},
 #endif
@@ -1550,6 +1559,8 @@ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
     {"syncDisconnectExplanation", IDS_SETTINGS_SYNC_DISCONNECT_EXPLANATION},
     {"syncDisconnectConfirm", IDS_SETTINGS_SYNC_DISCONNECT_CONFIRM},
     {"sync", IDS_SETTINGS_SYNC},
+    {"syncDescription", IDS_SETTINGS_SYNC_DESCRIPTION},
+    {"syncExpandA11yLabel", IDS_SETTINGS_SYNC_SECTION_ACCESSIBILITY_LABEL},
     {"syncAndPersonalization", IDS_SETTINGS_SYNC_SYNC_AND_PERSONALIZATION},
     {"syncPageTitle", IDS_SETTINGS_SYNC_PAGE_TITLE},
     {"syncLoading", IDS_SETTINGS_SYNC_LOADING},
@@ -2068,6 +2079,11 @@ void AddSiteSettingsStrings(content::WebUIDataSource* html_source,
     {"siteSettingsMidiDevicesBlock",
      IDS_SETTINGS_SITE_SETTINGS_MIDI_DEVICES_BLOCK},
     {"siteSettingsUsbDevices", IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES},
+    {"siteSettingsUsbDevicesAsk", IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES_ASK},
+    {"siteSettingsUsbDevicesAskRecommended",
+     IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES_ASK_RECOMMENDED},
+    {"siteSettingsUsbDevicesBlock",
+     IDS_SETTINGS_SITE_SETTINGS_USB_DEVICES_BLOCK},
     {"siteSettingsRemoveZoomLevel",
      IDS_SETTINGS_SITE_SETTINGS_REMOVE_ZOOM_LEVEL},
     {"siteSettingsZoomLevels", IDS_SETTINGS_SITE_SETTINGS_ZOOM_LEVELS},

@@ -99,7 +99,8 @@ NSSet* GaiaIdSetWithIdentities(NSArray* identities) {
     base::RecordAction(
         base::UserMetricsAction("Signin_Signin_FromSigninPromo"));
     signin_metrics::LogSigninAccessPointStarted(
-        signin_metrics::AccessPoint::ACCESS_POINT_SIGNIN_PROMO);
+        signin_metrics::AccessPoint::ACCESS_POINT_SIGNIN_PROMO,
+        signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO);
   }
 
   [self recordPromoDisplayed];
@@ -160,7 +161,7 @@ NSSet* GaiaIdSetWithIdentities(NSArray* identities) {
 }
 
 + (base::Version)currentVersion {
-  base::Version currentVersion(version_info::GetVersionNumber());
+  base::Version currentVersion = version_info::GetVersion();
   DCHECK(currentVersion.IsValid());
   return currentVersion;
 }

@@ -234,7 +234,7 @@ const base::Feature kExpectCTReporting{"ExpectCTReporting",
 // developers more control over when to show them.
 const base::Feature kExperimentalAppBanners {
   "ExperimentalAppBanners",
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
       base::FEATURE_ENABLED_BY_DEFAULT
 #else
       base::FEATURE_DISABLED_BY_DEFAULT
@@ -275,6 +275,11 @@ const base::Feature kOpenVR{"OpenVR", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif  // ENABLE_OPENVR
 
 #endif  // BUILDFLAG(ENABLE_VR)
+
+// Enables a floating action button-like full screen exit UI to allow exiting
+// fullscreen using mouse or touch.
+const base::Feature kFullscreenExitUI{"FullscreenExitUI",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if defined(OS_WIN)
 // Enables using GDI to print text as simply text.
@@ -326,7 +331,7 @@ const base::Feature kIncompatibleApplicationsWarning{
 #if !defined(OS_ANDROID)
 // Enables Casting a Presentation API-enabled website to a secondary display.
 const base::Feature kLocalScreenCasting{"LocalScreenCasting",
-                                        base::FEATURE_DISABLED_BY_DEFAULT};
+                                        base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
 
 // Enables or disables the Location Settings Dialog (LSD). The LSD is an Android
@@ -407,10 +412,9 @@ const base::Feature kMultiDeviceApi{"MultiDeviceApi",
 #endif
 
 // Enables the use of native notification centers instead of using the Message
-// Center for displaying the toasts.
+// Center for displaying the toasts. Note that OS_LINUX includes Chrome OS.
 #if BUILDFLAG(ENABLE_NATIVE_NOTIFICATIONS)
-#if defined(OS_MACOSX) || defined(OS_ANDROID) || \
-    (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+#if defined(OS_MACOSX) || defined(OS_ANDROID) || defined(OS_LINUX)
 const base::Feature kNativeNotifications{"NativeNotifications",
                                          base::FEATURE_ENABLED_BY_DEFAULT};
 #else
@@ -537,6 +541,20 @@ const base::Feature kShowTrustedPublisherURL{"ShowTrustedPublisherURL",
 const base::Feature kSitePerProcess{"site-per-process",
                                     base::FEATURE_DISABLED_BY_DEFAULT};
 
+// kSitePerProcessOnlyForHighMemoryClients is checked before kSitePerProcess,
+// and (if enabled) can restrict if kSitePerProcess feature is checked at all -
+// no check will be made on devices with low memory (these devices will have no
+// Site Isolation via kSitePerProcess trials and won't activate either the
+// control or the experiment group).  The threshold for what is considered a
+// "low memory" device is set (in MB) via a field trial param with the name
+// defined below ("site-per-process-low-memory-cutoff-mb") and compared against
+// base::SysInfo::AmountOfPhysicalMemoryMB().
+const base::Feature kSitePerProcessOnlyForHighMemoryClients{
+    "site-per-process-only-for-high-memory-clients",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+const char kSitePerProcessOnlyForHighMemoryClientsParamName[] =
+    "site-per-process-low-memory-cutoff-mb";
+
 // A new user experience for transitioning into fullscreen and mouse pointer
 // lock states.
 const base::Feature kSimplifiedFullscreenUI{"ViewsSimplifiedFullscreenUI",
@@ -584,6 +602,10 @@ const base::Feature kUseGoogleLocalNtp{"UseGoogleLocalNtp",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if defined(OS_CHROMEOS)
+// Enables or disables logging for adaptive screen brightness on Chrome OS.
+const base::Feature kAdaptiveScreenBrightnessLogging{
+    "AdaptiveScreenBrightnessLogging", base::FEATURE_ENABLED_BY_DEFAULT};
+
 // Enables or disables user activity event logging for power management on
 // Chrome OS.
 const base::Feature kUserActivityEventLogging{"UserActivityEventLogging",

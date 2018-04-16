@@ -8,15 +8,36 @@
 #include "ash/system/unified/feature_pod_button.h"
 #include "ash/system/unified/feature_pods_container_view.h"
 #include "ash/system/unified/top_shortcuts_view.h"
+#include "ash/system/unified/unified_message_center_view.h"
 #include "ash/system/unified/unified_system_info_view.h"
 #include "ash/system/unified/unified_system_tray_controller.h"
+#include "ash/system/unified/unified_system_tray_model.h"
 #include "ui/app_list/app_list_features.h"
+#include "ui/message_center/message_center.h"
 #include "ui/views/background.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/painter.h"
 
 namespace ash {
 
-UnifiedSlidersContainerView::UnifiedSlidersContainerView() = default;
+namespace {
+
+std::unique_ptr<views::Background> CreateUnifiedBackground() {
+  return views::CreateBackgroundFromPainter(
+      views::Painter::CreateSolidRoundRectPainter(
+          app_list::features::IsBackgroundBlurEnabled()
+              ? kUnifiedMenuBackgroundColorWithBlur
+              : kUnifiedMenuBackgroundColor,
+          kUnifiedTrayCornerRadius));
+}
+
+}  // namespace
+
+UnifiedSlidersContainerView::UnifiedSlidersContainerView(
+    bool initially_expanded)
+    : expanded_amount_(initially_expanded ? 1.0 : 0.0) {
+  SetVisible(initially_expanded);
+}
 
 UnifiedSlidersContainerView::~UnifiedSlidersContainerView() = default;
 
@@ -60,31 +81,45 @@ void UnifiedSlidersContainerView::UpdateOpacity() {
 }
 
 UnifiedSystemTrayView::UnifiedSystemTrayView(
-    UnifiedSystemTrayController* controller)
+    UnifiedSystemTrayController* controller,
+    bool initially_expanded)
     : controller_(controller),
+      message_center_view_(
+          new UnifiedMessageCenterView(message_center::MessageCenter::Get())),
       top_shortcuts_view_(new TopShortcutsView(controller_)),
-      feature_pods_container_(new FeaturePodsContainerView()),
-      sliders_container_(new UnifiedSlidersContainerView()),
+      feature_pods_container_(new FeaturePodsContainerView(initially_expanded)),
+      sliders_container_(new UnifiedSlidersContainerView(initially_expanded)),
       system_info_view_(new UnifiedSystemInfoView()) {
   DCHECK(controller_);
 
-  SetLayoutManager(
-      std::make_unique<views::BoxLayout>(views::BoxLayout::kVertical));
+  auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
+      views::BoxLayout::kVertical, gfx::Insets(),
+      kUnifiedNotificationCenterSpacing));
 
-  SetBackground(
-      views::CreateSolidBackground(app_list::features::IsBackgroundBlurEnabled()
-                                       ? kUnifiedMenuBackgroundColorWithBlur
-                                       : kUnifiedMenuBackgroundColor));
+  SetBackground(CreateUnifiedBackground());
   SetPaintToLayer();
   layer()->SetFillsBoundsOpaquely(false);
 
-  AddChildView(top_shortcuts_view_);
-  AddChildView(feature_pods_container_);
-  AddChildView(sliders_container_);
-  AddChildView(system_info_view_);
+  AddChildView(message_center_view_);
+  layout->SetFlexForView(message_center_view_, 1);
+
+  auto* system_tray_container = new views::View;
+  system_tray_container->SetLayoutManager(
+      std::make_unique<views::BoxLayout>(views::BoxLayout::kVertical));
+  system_tray_container->SetBackground(CreateUnifiedBackground());
+  AddChildView(system_tray_container);
+
+  system_tray_container->AddChildView(top_shortcuts_view_);
+  system_tray_container->AddChildView(feature_pods_container_);
+  system_tray_container->AddChildView(sliders_container_);
+  system_tray_container->AddChildView(system_info_view_);
 }
 
 UnifiedSystemTrayView::~UnifiedSystemTrayView() = default;
+
+void UnifiedSystemTrayView::SetMaxHeight(int max_height) {
+  message_center_view_->SetMaxHeight(max_height);
+}
 
 void UnifiedSystemTrayView::AddFeaturePodButton(FeaturePodButton* button) {
   feature_pods_container_->AddChildView(button);
@@ -103,6 +138,9 @@ void UnifiedSystemTrayView::SetExpandedAmount(double expanded_amount) {
   feature_pods_container_->SetExpandedAmount(expanded_amount);
   sliders_container_->SetExpandedAmount(expanded_amount);
   PreferredSizeChanged();
+  // It is possible that the ratio between |message_center_view_| and others
+  // can change while the bubble size remain unchanged.
+  Layout();
 }
 
 void UnifiedSystemTrayView::OnGestureEvent(ui::GestureEvent* event) {
@@ -125,6 +163,14 @@ void UnifiedSystemTrayView::OnGestureEvent(ui::GestureEvent* event) {
     default:
       break;
   }
+}
+
+void UnifiedSystemTrayView::ChildPreferredSizeChanged(views::View* child) {
+  // Size change is always caused by SetExpandedAmount except for
+  // |message_center_view_|. So we only have to call PreferredSizeChanged()
+  // here when the child is |message_center_view_|.
+  if (child == message_center_view_)
+    PreferredSizeChanged();
 }
 
 }  // namespace ash

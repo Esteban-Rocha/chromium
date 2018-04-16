@@ -5,7 +5,6 @@
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_notification_controller.h"
 
 #include "base/guid.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/notifications/notification_display_service.h"
 #include "chrome/browser/ui/chrome_pages.h"
@@ -172,32 +171,25 @@ EasyUnlockNotificationController::NotificationDelegate::NotificationDelegate(
 EasyUnlockNotificationController::NotificationDelegate::
     ~NotificationDelegate() {}
 
-void EasyUnlockNotificationController::NotificationDelegate::Click() {
+void EasyUnlockNotificationController::NotificationDelegate::Click(
+    const base::Optional<int>& button_index,
+    const base::Optional<base::string16>& reply) {
   if (!notification_controller_)
     return;
 
-  if (notification_id_ == kEasyUnlockChromebookAddedNotifierId ||
-      notification_id_ == kEasyUnlockPairingChangeAppliedNotifierId ||
-      notification_id_ == kEasyUnlockPromotionNotifierId)
-    notification_controller_->LaunchEasyUnlockSettings();
-}
+  if (notification_id_ == kEasyUnlockPairingChangeNotifierId) {
+    if (!button_index)
+      return;
 
-void EasyUnlockNotificationController::NotificationDelegate::ButtonClick(
-    int button_index) {
-  if (!notification_controller_)
-    return;
-
-  if (notification_id_ == kEasyUnlockChromebookAddedNotifierId ||
-      notification_id_ == kEasyUnlockPairingChangeAppliedNotifierId ||
-      notification_id_ == kEasyUnlockPromotionNotifierId) {
-    notification_controller_->LaunchEasyUnlockSettings();
-  } else if (notification_id_ == kEasyUnlockPairingChangeNotifierId) {
-    if (button_index == 0) {
+    if (*button_index == 0) {
       notification_controller_->LockScreen();
-    } else if (button_index == 1) {
-      notification_controller_->LaunchEasyUnlockSettings();
+      return;
     }
+
+    DCHECK_EQ(1, *button_index);
   }
+
+  notification_controller_->LaunchEasyUnlockSettings();
 }
 
 }  // namespace chromeos

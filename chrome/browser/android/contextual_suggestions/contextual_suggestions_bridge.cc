@@ -7,12 +7,16 @@
 #include "base/android/callback_android.h"
 #include "base/android/jni_string.h"
 #include "base/callback.h"
-#include "chrome/browser/ntp_snippets/content_suggestions_service_factory.h"
 #include "chrome/browser/ntp_snippets/contextual_content_suggestions_service_factory.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_android.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "components/ntp_snippets/category.h"
 #include "components/ntp_snippets/content_suggestions_service.h"
+#include "components/ntp_snippets/contextual/contextual_content_suggestions_service.h"
+#include "components/ntp_snippets/contextual/contextual_suggestions_metrics_reporter.h"
 #include "components/ukm/content/source_url_recorder.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/ContextualSuggestionsBridge_jni.h"
@@ -25,52 +29,54 @@ using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaParamRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
-using Cluster = ntp_snippets::ContextualContentSuggestionsService::Cluster;
+using Cluster = ntp_snippets::Cluster;
 
 namespace contextual_suggestions {
-
-namespace {
-
-// Min size for site attribution.
-static const int kPublisherFaviconMinimumSizePx = 16;
-// Desired size for site attribution.
-static const int kPublisherFaviconDesiredSizePx = 32;
-
-ntp_snippets::ContentSuggestion::ID ToContentSuggestionID(
-    JNIEnv* env,
-    const JavaParamRef<jstring>& j_suggestion_id) {
-  ntp_snippets::Category category(ntp_snippets::Category::FromKnownCategory(
-      ntp_snippets::KnownCategories::CONTEXTUAL));
-  std::string suggestion_id(ConvertJavaStringToUTF8(env, j_suggestion_id));
-  return ntp_snippets::ContentSuggestion::ID(category, suggestion_id);
-}
-
-}  // namespace
 
 static jlong JNI_ContextualSuggestionsBridge_Init(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj,
     const JavaParamRef<jobject>& j_profile) {
+  Profile* profile = ProfileAndroid::FromProfileAndroid(j_profile);
+  ntp_snippets::ContextualContentSuggestionsService*
+      contextual_suggestions_service =
+          ContextualContentSuggestionsServiceFactory::GetForProfile(profile);
+
+  std::unique_ptr<ContextualContentSuggestionsServiceProxy> service_proxy =
+      contextual_suggestions_service->CreateProxy();
+
   ContextualSuggestionsBridge* contextual_suggestions_bridge =
-      new ContextualSuggestionsBridge(env, j_profile);
+      new ContextualSuggestionsBridge(env, std::move(service_proxy));
   return reinterpret_cast<intptr_t>(contextual_suggestions_bridge);
+}
+
+static jboolean JNI_ContextualSuggestionsBridge_IsEnterprisePolicyManaged(
+    JNIEnv* env,
+    const JavaParamRef<jclass>& clazz) {
+  // TODO(fgorski): This is simply checking whether the profile is managed by
+  // an enterprise policy.
+  // http://crbug.com/829460 covers implementation of policy controller for
+  // contextual content suggestions.
+  Profile* profile = ProfileManager::GetLastUsedProfile()->GetOriginalProfile();
+  if (!profile)
+    return false;
+
+  policy::ProfilePolicyConnector* policy_connector =
+      policy::ProfilePolicyConnectorFactory::GetForBrowserContext(profile);
+
+  return (policy_connector != nullptr) && policy_connector->IsManaged();
 }
 
 ContextualSuggestionsBridge::ContextualSuggestionsBridge(
     JNIEnv* env,
-    const JavaParamRef<jobject>& j_profile)
-    : weak_ptr_factory_(this) {
-  Profile* profile = ProfileAndroid::FromProfileAndroid(j_profile);
-  content_suggestions_service_ =
-      ContentSuggestionsServiceFactory::GetForProfile(profile);
-  contextual_content_suggestions_service_ =
-      ContextualContentSuggestionsServiceFactory::GetForProfile(profile);
-}
+    std::unique_ptr<ContextualContentSuggestionsServiceProxy> service_proxy)
+    : service_proxy_(std::move(service_proxy)), weak_ptr_factory_(this) {}
 
 ContextualSuggestionsBridge::~ContextualSuggestionsBridge() {}
 
 void ContextualSuggestionsBridge::Destroy(JNIEnv* env,
                                           const JavaParamRef<jobject>& obj) {
+  service_proxy_->FlushMetrics();
   delete this;
 }
 
@@ -79,11 +85,8 @@ void ContextualSuggestionsBridge::FetchSuggestions(
     const JavaParamRef<jobject>& obj,
     const JavaParamRef<jstring>& j_url,
     const JavaParamRef<jobject>& j_callback) {
-  if (contextual_content_suggestions_service_ == nullptr)
-    return;
-
   GURL url(ConvertJavaStringToUTF8(env, j_url));
-  contextual_content_suggestions_service_->FetchContextualSuggestionClusters(
+  service_proxy_->FetchContextualSuggestions(
       url, base::BindOnce(&ContextualSuggestionsBridge::OnSuggestionsAvailable,
                           weak_ptr_factory_.GetWeakPtr(),
                           ScopedJavaGlobalRef<jobject>(j_callback)));
@@ -94,11 +97,9 @@ void ContextualSuggestionsBridge::FetchSuggestionImage(
     const JavaParamRef<jobject>& obj,
     const JavaParamRef<jstring>& j_suggestion_id,
     const JavaParamRef<jobject>& j_callback) {
-  if (contextual_content_suggestions_service_ == nullptr)
-    return;
-
-  contextual_content_suggestions_service_->FetchContextualSuggestionImage(
-      ToContentSuggestionID(env, j_suggestion_id),
+  std::string suggestion_id(ConvertJavaStringToUTF8(env, j_suggestion_id));
+  service_proxy_->FetchContextualSuggestionImage(
+      suggestion_id,
       base::BindOnce(&ContextualSuggestionsBridge::OnImageFetched,
                      weak_ptr_factory_.GetWeakPtr(),
                      ScopedJavaGlobalRef<jobject>(j_callback)));
@@ -109,12 +110,9 @@ void ContextualSuggestionsBridge::FetchSuggestionFavicon(
     const JavaParamRef<jobject>& obj,
     const JavaParamRef<jstring>& j_suggestion_id,
     const JavaParamRef<jobject>& j_callback) {
-  if (contextual_content_suggestions_service_ == nullptr)
-    return;
-
-  content_suggestions_service_->FetchSuggestionFavicon(
-      ToContentSuggestionID(env, j_suggestion_id),
-      kPublisherFaviconMinimumSizePx, kPublisherFaviconDesiredSizePx,
+  std::string suggestion_id(ConvertJavaStringToUTF8(env, j_suggestion_id));
+  service_proxy_->FetchContextualSuggestionFavicon(
+      suggestion_id,
       base::BindOnce(&ContextualSuggestionsBridge::OnImageFetched,
                      weak_ptr_factory_.GetWeakPtr(),
                      ScopedJavaGlobalRef<jobject>(j_callback)));
@@ -122,6 +120,7 @@ void ContextualSuggestionsBridge::FetchSuggestionFavicon(
 
 void ContextualSuggestionsBridge::ClearState(JNIEnv* env,
                                              const JavaParamRef<jobject>& obj) {
+  service_proxy_->ClearState();
 }
 
 void ContextualSuggestionsBridge::ReportEvent(
@@ -129,43 +128,39 @@ void ContextualSuggestionsBridge::ReportEvent(
     const JavaParamRef<jobject>& obj,
     const JavaParamRef<jobject>& j_web_contents,
     jint j_event_id) {
-  if (!contextual_content_suggestions_service_)
-    return;
-
   content::WebContents* web_contents =
       content::WebContents::FromJavaWebContents(j_web_contents);
 
   ukm::SourceId ukm_source_id =
       ukm::GetSourceIdForWebContentsDocument(web_contents);
 
-  contextual_content_suggestions_service_->ReportEvent(ukm_source_id,
-                                                       j_event_id);
+  contextual_suggestions::ContextualSuggestionsEvent event =
+      static_cast<contextual_suggestions::ContextualSuggestionsEvent>(
+          j_event_id);
+
+  service_proxy_->ReportEvent(ukm_source_id, event);
 }
 
 void ContextualSuggestionsBridge::OnSuggestionsAvailable(
     ScopedJavaGlobalRef<jobject> j_callback,
+    std::string peek_text,
     std::vector<Cluster> clusters) {
   JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> j_clusters =
-      Java_ContextualSuggestionsBridge_createContextualSuggestionsClusterList(
-          env);
+  ScopedJavaLocalRef<jobject> j_result =
+      Java_ContextualSuggestionsBridge_createContextualSuggestionsResult(
+          env, ConvertUTF8ToJavaString(env, peek_text));
   for (auto& cluster : clusters) {
-    Java_ContextualSuggestionsBridge_addNewClusterToList(
-        env, j_clusters, ConvertUTF8ToJavaString(env, cluster.title));
+    Java_ContextualSuggestionsBridge_addNewClusterToResult(
+        env, j_result, ConvertUTF8ToJavaString(env, cluster.title));
     for (auto& suggestion : cluster.suggestions) {
       Java_ContextualSuggestionsBridge_addSuggestionToLastCluster(
-          env, j_clusters,
-          ConvertUTF8ToJavaString(env, suggestion.id().id_within_category()),
-          ConvertUTF16ToJavaString(env, suggestion.title()),
-          ConvertUTF16ToJavaString(env, suggestion.publisher_name()),
-          ConvertUTF8ToJavaString(env, suggestion.url().spec()),
-          suggestion.publish_date().ToJavaTime(), suggestion.score(),
-          suggestion.fetch_date().ToJavaTime(),
-          suggestion.is_video_suggestion(),
-          suggestion.optional_image_dominant_color().value_or(0));
+          env, j_result, ConvertUTF8ToJavaString(env, suggestion.id),
+          ConvertUTF8ToJavaString(env, suggestion.title),
+          ConvertUTF8ToJavaString(env, suggestion.publisher_name),
+          ConvertUTF8ToJavaString(env, suggestion.url.spec()));
     }
   }
-  RunCallbackAndroid(j_callback, j_clusters);
+  RunCallbackAndroid(j_callback, j_result);
 }
 
 void ContextualSuggestionsBridge::OnImageFetched(

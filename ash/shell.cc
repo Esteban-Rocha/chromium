@@ -22,13 +22,16 @@
 #include "ash/assistant/ash_assistant_controller.h"
 #include "ash/autoclick/autoclick_controller.h"
 #include "ash/cast_config_controller.h"
+#include "ash/dbus/ash_dbus_services.h"
 #include "ash/detachable_base/detachable_base_handler.h"
 #include "ash/detachable_base/detachable_base_notification_controller.h"
 #include "ash/display/ash_display_controller.h"
 #include "ash/display/cursor_window_controller.h"
 #include "ash/display/display_color_manager.h"
 #include "ash/display/display_configuration_controller.h"
+#include "ash/display/display_configuration_observer.h"
 #include "ash/display/display_error_observer.h"
+#include "ash/display/display_prefs.h"
 #include "ash/display/display_shutdown_observer.h"
 #include "ash/display/event_transformation_handler.h"
 #include "ash/display/mouse_cursor_event_filter.h"
@@ -95,6 +98,7 @@
 #include "ash/system/power/peripheral_battery_notifier.h"
 #include "ash/system/power/power_button_controller.h"
 #include "ash/system/power/power_event_observer.h"
+#include "ash/system/power/power_prefs.h"
 #include "ash/system/power/power_status.h"
 #include "ash/system/power/video_activity_notifier.h"
 #include "ash/system/screen_layout_observer.h"
@@ -113,6 +117,7 @@
 #include "ash/virtual_keyboard_controller.h"
 #include "ash/voice_interaction/voice_interaction_controller.h"
 #include "ash/wallpaper/wallpaper_controller.h"
+#include "ash/wayland/wayland_server_controller.h"
 #include "ash/wm/ash_focus_rules.h"
 #include "ash/wm/container_finder.h"
 #include "ash/wm/event_client_impl.h"
@@ -148,8 +153,9 @@
 #include "base/sys_info.h"
 #include "base/trace_event/trace_event.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/dbus/power_policy_controller.h"
 #include "chromeos/system/devicemode.h"
+#include "components/exo/file_helper.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/viz/host/host_frame_sink_manager.h"
@@ -224,6 +230,21 @@ class AshVisibilityController : public ::wm::VisibilityController {
 
   DISALLOW_COPY_AND_ASSIGN(AshVisibilityController);
 };
+
+// Registers prefs whose default values are same in user and signin prefs.
+void RegisterProfilePrefs(PrefRegistrySimple* registry, bool for_test) {
+  AccessibilityController::RegisterProfilePrefs(registry, for_test);
+  BluetoothPowerController::RegisterProfilePrefs(registry);
+  DockedMagnifierController::RegisterProfilePrefs(registry);
+  LoginScreenController::RegisterProfilePrefs(registry, for_test);
+  LogoutButtonTray::RegisterProfilePrefs(registry);
+  NightLightController::RegisterProfilePrefs(registry);
+  PaletteTray::RegisterProfilePrefs(registry);
+  PaletteWelcomeBubble::RegisterProfilePrefs(registry);
+  ShelfController::RegisterProfilePrefs(registry);
+  TouchDevicesController::RegisterProfilePrefs(registry);
+  CapsLockNotificationController::RegisterProfilePrefs(registry, for_test);
+}
 
 }  // namespace
 
@@ -378,6 +399,7 @@ bool Shell::ShouldUseIMEService() {
 
 // static
 void Shell::RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
+  DisplayPrefs::RegisterLocalStatePrefs(registry);
   PaletteTray::RegisterLocalStatePrefs(registry);
   WallpaperController::RegisterLocalStatePrefs(registry);
   BluetoothPowerController::RegisterLocalStatePrefs(registry);
@@ -385,18 +407,28 @@ void Shell::RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
 }
 
 // static
-void Shell::RegisterProfilePrefs(PrefRegistrySimple* registry, bool for_test) {
-  AccessibilityController::RegisterProfilePrefs(registry, for_test);
-  BluetoothPowerController::RegisterProfilePrefs(registry);
-  DockedMagnifierController::RegisterProfilePrefs(registry);
-  LoginScreenController::RegisterProfilePrefs(registry, for_test);
-  LogoutButtonTray::RegisterProfilePrefs(registry);
-  NightLightController::RegisterProfilePrefs(registry);
-  PaletteTray::RegisterProfilePrefs(registry);
-  PaletteWelcomeBubble::RegisterProfilePrefs(registry);
-  ShelfController::RegisterProfilePrefs(registry);
-  TouchDevicesController::RegisterProfilePrefs(registry, for_test);
-  CapsLockNotificationController::RegisterProfilePrefs(registry, for_test);
+void Shell::RegisterSigninProfilePrefs(PrefRegistrySimple* registry,
+                                       bool for_test) {
+  RegisterProfilePrefs(registry, for_test);
+  PowerPrefs::RegisterSigninProfilePrefs(registry, for_test);
+}
+
+// static
+void Shell::RegisterUserProfilePrefs(PrefRegistrySimple* registry,
+                                     bool for_test) {
+  RegisterProfilePrefs(registry, for_test);
+  PowerPrefs::RegisterUserProfilePrefs(registry, for_test);
+}
+
+void Shell::InitWaylandServer(
+    exo::NotificationSurfaceManager* notification_surface_manager,
+    std::unique_ptr<exo::FileHelper> file_helper) {
+  wayland_server_controller_ = WaylandServerController::CreateIfNecessary(
+      notification_surface_manager, std::move(file_helper));
+}
+
+void Shell::DestroyWaylandServer() {
+  wayland_server_controller_.reset();
 }
 
 views::NonClientFrameView* Shell::CreateDefaultNonClientFrameView(
@@ -456,8 +488,6 @@ void Shell::DestroyKeyboard() {
 }
 
 bool Shell::ShouldSaveDisplaySettings() {
-  // This function is only called from Chrome, hence the DCHECK for not-MASH.
-  DCHECK(GetAshConfig() != Config::MASH);
   return !(
       screen_orientation_controller_->ignore_display_configuration_updates() ||
       resolution_notification_controller_->DoesNotificationTimeout());
@@ -672,9 +702,15 @@ Shell::~Shell() {
 
   const Config config = shell_port_->GetAshConfig();
 
+  // Wayland depends upon some ash specific objects. Destroy it early on.
+  wayland_server_controller_.reset();
+
   user_metrics_recorder_->OnShellShuttingDown();
 
   shell_delegate_->PreShutdown();
+
+  display_configuration_observer_.reset();
+  display_prefs_.reset();
 
   // Remove the focus from any window. This will prevent overhead and side
   // effects (e.g. crashes) from changing focus during shutdown.
@@ -715,6 +751,10 @@ Shell::~Shell() {
 
   // Depends on |tablet_mode_controller_|.
   shelf_controller_->Shutdown();
+
+  // Destroy |app_list_controller_| early than |tablet_mode_controller_| since
+  // the former may use the latter before destruction.
+  app_list_controller_.reset();
 
   // Destroy tablet mode controller early on since it has some observers which
   // need to be removed.
@@ -775,6 +815,7 @@ Shell::~Shell() {
   event_client_.reset();
   toplevel_window_event_handler_.reset();
   visibility_controller_.reset();
+  power_prefs_.reset();
 
   tray_action_.reset();
 
@@ -802,8 +843,6 @@ Shell::~Shell() {
   // destruction of its owned RootWindowControllers relies on the value.
   ScreenAsh::CreateScreenForShutdown();
   display_configuration_controller_.reset();
-
-  app_list_controller_.reset();
 
   // These members access Shell in their destructors.
   wallpaper_controller_.reset();
@@ -949,12 +988,6 @@ void Shell::Init(ui::ContextFactory* context_factory,
         base::WrapUnique(native_cursor_manager_));
   }
 
-  // TODO(stevenjb): ChromeShellDelegate::PreInit currently handles
-  // DisplayPreference initialization, required for InitializeDisplayManager.
-  // Before we can move that code into ash/display where it belongs, we need to
-  // wait for |lcoal_state_| to be set in OnLocalStatePrefServiceInitialized
-  // before initializing DisplayPreferences (and therefore DisplayManager).
-  // http://crbug.com/678949.
   shell_delegate_->PreInit();
 
   InitializeDisplayManager();
@@ -1006,8 +1039,11 @@ void Shell::Init(ui::ContextFactory* context_factory,
   system_tray_model_ = std::make_unique<SystemTrayModel>();
 
   accelerator_controller_ = shell_port_->CreateAcceleratorController();
-  app_list_controller_ = std::make_unique<AppListControllerImpl>();
   tablet_mode_controller_ = std::make_unique<TabletModeController>();
+
+  // |app_list_controller_| is put after |tablet_mode_controller_| as the former
+  // uses the latter in constructor.
+  app_list_controller_ = std::make_unique<AppListControllerImpl>();
   shelf_controller_ = std::make_unique<ShelfController>();
 
   ash_assistant_controller_ = chromeos::switches::IsAssistantEnabled()
@@ -1022,12 +1058,8 @@ void Shell::Init(ui::ContextFactory* context_factory,
   // The order in which event filters are added is significant.
 
   // ui::UserActivityDetector passes events to observers, so let them get
-  // rewritten first. The detector observses the platform event source directly
-  // in the Classic configuration, but in Mus and Mash configurations, the
-  // detector instead relies on reports of events from the Window Server.
-  const bool observe_event_source = config == Config::CLASSIC;
-  user_activity_detector_ =
-      std::make_unique<ui::UserActivityDetector>(observe_event_source);
+  // rewritten first.
+  user_activity_detector_.reset(new ui::UserActivityDetector);
 
   overlay_filter_.reset(new OverlayEventFilter);
   AddPreTargetHandler(overlay_filter_.get());
@@ -1050,6 +1082,10 @@ void Shell::Init(ui::ContextFactory* context_factory,
 
   sticky_keys_controller_.reset(new StickyKeysController);
   screen_pinning_controller_ = std::make_unique<ScreenPinningController>();
+
+  power_prefs_ = std::make_unique<PowerPrefs>(
+      chromeos::PowerPolicyController::Get(),
+      chromeos::DBusThreadManager::Get()->GetPowerManagerClient());
 
   backlights_forced_off_setter_ = std::make_unique<BacklightsForcedOffSetter>();
 
@@ -1198,6 +1234,8 @@ void Shell::Init(ui::ContextFactory* context_factory,
 
   user_metrics_recorder_->OnShellInitialized();
 
+  // Initialize the D-Bus thread and services for ash.
+  ash_dbus_services_ = std::make_unique<AshDBusServices>();
   // By this point ash shell should have initialized its D-Bus signal
   // listeners, so emit ash-initialized upstart signal to start Chrome OS tasks
   // that expect that ash is listening to D-Bus signals they emit. For example,
@@ -1205,12 +1243,16 @@ void Shell::Init(ui::ContextFactory* context_factory,
   // purely by emitting D-Bus signals, and thus has to be run whenever ash is
   // started so ash (DetachableBaseHandler in particular) gets the proper view
   // of the current detachable base state.
-  chromeos::DBusThreadManager::Get()
-      ->GetSessionManagerClient()
-      ->EmitAshInitialized();
+  // TODO(stevenjb): Move this and other D-Bus dependencies to AshDBusServices.
+  ash_dbus_services_->EmitAshInitialized();
 }
 
 void Shell::InitializeDisplayManager() {
+  // Construct DisplayPrefs here so that display_prefs()->StoreDisplayPrefs()
+  // can safely be called. DisplayPrefs will be loaded once |local_state_|
+  // is available and store requests will be queued in the meanwhile.
+  display_prefs_ = std::make_unique<DisplayPrefs>();
+
   const Config config = shell_port_->GetAshConfig();
   bool display_initialized = display_manager_->InitFromCommandLine();
 
@@ -1224,6 +1266,9 @@ void Shell::InitializeDisplayManager() {
           display_manager_.get(), window_tree_host_manager_.get());
   display_configurator_->Init(shell_port_->CreateNativeDisplayDelegate(),
                               false);
+  display_configuration_observer_ =
+      std::make_unique<DisplayConfigurationObserver>();
+
   persistent_window_controller_ =
       std::make_unique<PersistentWindowController>();
 

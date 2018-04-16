@@ -8,16 +8,18 @@
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_controller.h"
 
 #include "ios/chrome/browser/ui/history/history_consumer.h"
+#include "ios/chrome/browser/ui/history/history_table_updater_delegate.h"
 
 namespace ios {
 class ChromeBrowserState;
 }
 
+@protocol HistoryTableViewControllerDelegate;
 @protocol UrlLoader;
 
 // ChromeTableViewController for displaying history items.
 @interface HistoryTableViewController
-    : ChromeTableViewController<HistoryConsumer>
+    : ChromeTableViewController<HistoryConsumer, HistoryTableUpdaterDelegate>
 // The ViewController's BrowserState.
 @property(nonatomic, assign) ios::ChromeBrowserState* browserState;
 // Abstraction to communicate with HistoryService and WebHistoryService.
@@ -25,6 +27,9 @@ class ChromeBrowserState;
 @property(nonatomic, assign) history::BrowsingHistoryService* historyService;
 // The UrlLoader used by this ViewController.
 @property(nonatomic, weak) id<UrlLoader> loader;
+// Delegate for this HistoryTableView.
+@property(nonatomic, weak) id<HistoryTableViewControllerDelegate> delegate;
+
 @end
 
 #endif  // IOS_CHROME_BROWSER_UI_HISTORY_HISTORY_TABLE_VIEW_CONTROLLER_H_

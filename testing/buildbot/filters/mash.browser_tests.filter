@@ -71,6 +71,8 @@
 # aura::CrashInFlightChange::ChangeFailed() when searching PDF.
 -ChromeFindRequestManagerTest.*
 -PDFExtensionTest.*
+-PDFExtensionHitTestTest.*
+-PDFExtensionLoadTest.*
 
 # Need screenshot support. http://crbug.com/754899
 -ChromeScreenshotGrabberBrowserTest.*
@@ -102,6 +104,16 @@
 # ash::Shell access for LogoutConfirmationController
 -DeviceLocalAccountTest.*
 
+# ash::PowerStatus access. https://crbug.com/770866.
+-PowerHandlerTest.*
+
+# DBusThreadManager initialized for testing in chrome is not recognized as
+# initialized in window manager service. https://crbug.com/830816.
+-PowerPolicyInSessionBrowserTest.AllowScreenWakeLocks
+-PowerPolicyInSessionBrowserTest.SetLegacyUserPolicy
+-PowerPolicyInSessionBrowserTest.SetUserPolicy
+-PowerPolicyLoginScreenBrowserTest.SetDevicePolicy
+
 # TODO: Very slow (>25 seconds) and occasional timeouts.
 -ExecuteScriptApiTest/DestructiveScriptTest.*
 
@@ -119,12 +131,14 @@
 -FirstRunUIBrowserTest.*
 
 # ash::Shell::display_manager() to update displays.
+# http://crbug.com/831826
 -ForceMaximizeOnFirstRunTest.*
 -ForceMaximizePolicyFalseTest.*
 -PolicyDisplayRotationDefault/DisplayRotationBootTest.*
 -PolicyDisplayRotationDefault/DisplayRotationDefaultTest.*
 
 # ash::Shell::display_manager() to get display state.
+# http://crbug.com/831826
 -PolicyTest.UnifiedDesktopEnabledByDefault
 
 # Failures JS-side.
@@ -192,10 +206,8 @@
 # Crash in autofill::SaveCardBubbleViews::ShouldShowCloseButton().
 -SaveCardBubbleControllerImplTest.*
 
-# WindowSizerAsh does not compute correct show state.
--ShelfAppBrowserTest.AppWindowRestoreBehaviorTest
-
 # ash::Shell access in test for display configuration.
+# http://crbug.com/831826
 -ShelfAppBrowserTest.LaunchAppFromDisplayWithoutFocus*
 
 # ash::Shell access in test.
@@ -290,3 +302,49 @@
 # RenderFrameMetadata observation not supported: https://crbug.com/820974
 -WebViewGuestScrollLatchingTest.ScrollLatchingPreservedInGuests
 -WebViewScrollGuestContent/WebViewScrollGuestContentTest.OverscrollControllerSeesConsumedScrollsInGuest/0
+
+# Viz is not supported, https://crbug.com/827327
+-MSE_ClearKey/EncryptedMediaTest.*
+-MSE_ExternalClearKey/EncryptedMediaTest.*
+-EncryptedMediaTestExperimentalCdmInterface.*
+-AudioPlayerBrowserTestInGuestMode.OpenAudioOnDownloads
+-AutoplayExtensionBrowserTest.AutoplayAllowed
+-MediaEngagementBrowserTest.*
+-MediaEngagementAutoplayBrowserTest.*
+-UnifiedAutoplayBrowserTest.*
+-AutoplayPolicyTest.*
+-ECKEncryptedMediaTest.*
+-ExtensionResourceRequestPolicyTest.Audio
+-ExtensionResourceRequestPolicyTest.Video
+-DeferredMediaBrowserTest.BackgroundMediaIsDeferred
+-DeclarativeNetRequestResourceTypeBrowserTest.Test1/0
+-VideoPlayerBrowserTestInGuestMode.OpenSingleVideoOnDownloads
+-IsolatedAppTest.SubresourceCookieIsolation
+-PageLoadMetricsBrowserTest.*
+-SRC_ExternalClearKey/EncryptedMediaTest.*
+-MultiProfileFileManagerBrowserTest.BasicDownloads
+-ChromeRenderProcessHostBackgroundingTest.ProcessPriorityAfterAudioStopsOnNotVisibleTab
+-ChromeRenderProcessHostBackgroundingTest.ProcessPriorityAfterAudioStartsFromBackgroundTab
+-ChromeRenderProcessHostBackgroundingTest.ProcessPriorityAfterStoppedAudio
+-DirectoryTreeContextMenu/FileManagerBrowserTest.*
+-RestoreGeometry/FileManagerBrowserTest.*
+-OpenAudioFiles/FileManagerBrowserTest.*
+-Delete/FileManagerBrowserTest.*
+-SortColumns/FileManagerBrowserTest.*
+-KeyboardOperations/FileManagerBrowserTest.*
+-Transfer/FileManagerBrowserTest.*
+-GenericTask/FileManagerBrowserTest.*
+-ShowGridView/FileManagerBrowserTest.*
+-Providers/FileManagerBrowserTest.*
+-OpenFileDialog/FileManagerBrowserTest.*
+-FileDisplay/FileManagerBrowserTest.*
+-ExecuteDefaultTaskOnDownloads/FileManagerBrowserTest.*
+-OpenFileDialog/FileManagerBrowserTest.*
+-GearMenu/FileManagerBrowserTest.Test/3
+-GearMenu/FileManagerBrowserTest.Test/0
+-TabindexFocusDownloads/FileManagerBrowserTestWithLegacyEventDispatch.Test/0
+-TabindexFocusDownloads/FileManagerBrowserTestWithLegacyEventDispatch.Test/1
+-DeclarativeNetRequestResourceTypeBrowserTest.Test1/1
+-DeclarativeNetRequestResourceTypeBrowserTest.Test2/0
+-DeclarativeNetRequestResourceTypeBrowserTest.Test2/1
+-MediaEngagementSessionRestoreBrowserTest.RestoredSession_Playback_MEI

@@ -14,11 +14,13 @@
   <style include="print-preview-shared search-dialog button cr-hidden-style">
   </style>
   <template>
-    <dialog is="cr-dialog" id="dialog" on-close="onCloseOrCancel_">
+    <cr-dialog id="dialog" on-close="onCloseOrCancel_">
       <div slot="title">
         <div>[[i18n('advancedSettingsDialogTitle', destination.displayName)]]
         </div>
         <print-preview-search-box id="searchBox"
+            hidden$="[[!hasMultipleItems_(
+                destination.capabilities.printer.vendor_capability)]]"
             label="$i18n{advancedSettingsSearchBoxPlaceholder}"
             search-query="{{searchQuery_}}">
         </print-preview-search-box>
@@ -41,7 +43,7 @@
           $i18n{advancedSettingsDialogConfirm}
         </button>
       </div>
-    </dialog>
+    </cr-dialog>
   </template>
   <script src="advanced_settings_dialog.js"></script>
 </dom-module>

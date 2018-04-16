@@ -159,6 +159,7 @@ Na przykład niektóre strony mogą na nie zareagować, wyświetlając reklamy b
 <translation id="3789841737615482174">Zainstaluj</translation>
 <translation id="385051799172605136">Wstecz</translation>
 <translation id="3897092660631435901">Menu</translation>
+<translation id="3915450441834151894">Informacje o witrynie</translation>
 <translation id="3928666092801078803">Połącz moje dane</translation>
 <translation id="3950820424414687140">Zaloguj się</translation>
 <translation id="3963231839620026525">Nowa karta incognito</translation>
@@ -167,6 +168,7 @@ Na przykład niektóre strony mogą na nie zareagować, wyświetlając reklamy b
 <translation id="4002066346123236978">Tytuł</translation>
 <translation id="4038354071007134711">Nie masz aplikacji, która może otworzyć ten plik.</translation>
 <translation id="4049507953662678203">Upewnij się, że masz połączenie z siecią, i spróbuj ponownie.</translation>
+<translation id="4084682180776658562">Dodaj do zakładek</translation>
 <translation id="411254640334432676">Błąd pobierania.</translation>
 <translation id="4121993058175073134">Aby wysłać dane net-export, skonfiguruj konto e-mail w aplikacji Ustawienia.</translation>
 <translation id="4124987746317609294">Zakres czasowy</translation>
@@ -222,6 +224,7 @@ Dane zostały zaszyfrowane z użyciem Twojego hasła synchronizacji. Wpisz je, 
 <translation id="5197255632782567636">Internet</translation>
 <translation id="5228579091201413441">Włącz synchronizację</translation>
 <translation id="5244474230056479698">Synchronizowanie z <ph name="EMAIL" /></translation>
+<translation id="527973086555161537">Otwórz kartę, by przeglądać strony prywatnie.</translation>
 <translation id="5300589172476337783">Pokaż</translation>
 <translation id="5317780077021120954">Zapisz</translation>
 <translation id="5327248766486351172">Nazwa</translation>
@@ -301,6 +304,7 @@ Twoje dane zostały zaszyfrowane z użyciem hasła synchronizacji w dniu <ph n
 <translation id="6445981559479772097">Wiadomość została wysłana.</translation>
 <translation id="6464071786529933911">Otwórz w karcie incognito</translation>
 <translation id="6482629121755362506">Usunięte elementy: <ph name="NUMBER_OF_SELECTED_BOOKMARKS" /></translation>
+<translation id="6528048372317642110">Plik do pobrania jest dostępny</translation>
 <translation id="6541915733953096570">Ostatnia godzina</translation>
 <translation id="6570040839871198836">Autouzupełniaj formularze</translation>
 <translation id="6656103420185847513">Folder edytora</translation>
@@ -426,7 +430,6 @@ Twoje dane zostały zaszyfrowane z użyciem hasła synchronizacji w dniu <ph n
 <translation id="9083392325882095631">Jeden element</translation>
 <translation id="9100610230175265781">Wymagane jest hasło</translation>
 <translation id="9148126808321036104">Zaloguj się ponownie</translation>
-<translation id="915371508759614899">Anulować pobieranie?</translation>
 <translation id="9157836665414082580">Ukryj okna dialogowe</translation>
 <translation id="9188680907066685419">Wyloguj się z konta zarządzanego</translation>
 <translation id="9203116392574189331">Handoff</translation>

@@ -132,6 +132,14 @@ void CompositorFrameSinkSupport::OnSurfaceActivated(Surface* surface) {
     frame_sink_manager_->OnFrameTokenChanged(frame_sink_id_, frame_token);
 }
 
+void CompositorFrameSinkSupport::OnSurfaceDiscarded(Surface* surface) {
+  if (surface->surface_id() == last_activated_surface_id_)
+    last_activated_surface_id_ = SurfaceId();
+
+  if (surface->surface_id() == last_created_surface_id_)
+    last_created_surface_id_ = SurfaceId();
+}
+
 void CompositorFrameSinkSupport::RefResources(
     const std::vector<TransferableResource>& resources) {
   surface_resource_holder_.RefResources(resources);
@@ -546,11 +554,12 @@ const char* CompositorFrameSinkSupport::GetSubmitResultAsString(
 
 void CompositorFrameSinkSupport::OnAggregatedDamage(
     const LocalSurfaceId& local_surface_id,
-    const gfx::Size& frame_size_in_pixels,
+    const CompositorFrame& frame,
     const gfx::Rect& damage_rect,
     base::TimeTicks expected_display_time) const {
   DCHECK(!damage_rect.IsEmpty());
 
+  const gfx::Size& frame_size_in_pixels = frame.size_in_pixels();
   if (aggregated_damage_callback_) {
     aggregated_damage_callback_.Run(local_surface_id, frame_size_in_pixels,
                                     damage_rect, expected_display_time);
@@ -558,7 +567,7 @@ void CompositorFrameSinkSupport::OnAggregatedDamage(
 
   for (CapturableFrameSink::Client* client : capture_clients_) {
     client->OnFrameDamaged(frame_size_in_pixels, damage_rect,
-                           expected_display_time);
+                           expected_display_time, frame.metadata);
   }
 }
 

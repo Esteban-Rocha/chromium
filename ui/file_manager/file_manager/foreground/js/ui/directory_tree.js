@@ -35,6 +35,12 @@ DirectoryItemTreeBaseMethods.getItemByEntry = function(entry) {
 
       return item;
     }
+    // Team drives are descendants of the Drive root volume item "Google Drive".
+    // When we looking for an item in team drives, recursively search inside the
+    // "Google Drive" root item.
+    if (util.isTeamDriveEntry(entry) && item instanceof DriveVolumeItem)
+      return item.getItemByEntry(entry);
+
     if (util.isDescendantEntry(item.entry, entry))
       return item.getItemByEntry(entry);
   }
@@ -99,7 +105,7 @@ var MENU_TREE_ITEM_INNER_HTML =
  * @constructor
  */
 function DirectoryItem(label, tree) {
-  var item = new cr.ui.TreeItem();
+  var item = /** @type {DirectoryItem} */ (new cr.ui.TreeItem());
   item.__proto__ = DirectoryItem.prototype;
   item.parentTree_ = tree;
   item.directoryModel_ = tree.directoryModel;
@@ -473,7 +479,7 @@ function SubDirectoryItem(label, dirEntry, parentDirItem, tree) {
   }
 
   // Sets up context menu of the item.
-  if (tree.contextMenuForSubitems)
+  if (tree.contextMenuForSubitems && !util.isTeamDriveRoot(dirEntry))
     cr.ui.contextMenuHandler.setContextMenu(item, tree.contextMenuForSubitems);
 
   // Populates children now if needed.
@@ -526,7 +532,8 @@ SubDirectoryItem.prototype.updateSharedStatusIcon = function() {
  * @constructor
  */
 function VolumeItem(modelItem, tree) {
-  var item = new DirectoryItem(modelItem.volumeInfo.label, tree);
+  var item = /** @type {VolumeItem} */ (
+      new DirectoryItem(modelItem.volumeInfo.label, tree));
   item.__proto__ = VolumeItem.prototype;
 
   item.modelItem_ = modelItem;
@@ -701,7 +708,7 @@ VolumeItem.prototype.setupRenamePlaceholder_ = function(rowElement) {
 
 /**
  * A TreeItem which represents a Drive volume. Drive volume has fake entries
- * such as Recent, Shared with me, and Offline in it.
+ * such as Team Drives, Shared with me, and Offline in it.
  *
  * @param {!NavigationModelVolumeItem} modelItem NavigationModelItem of this
  *     volume.
@@ -850,7 +857,7 @@ DriveVolumeItem.prototype.selectByEntry = function(entry) {
  * @constructor
  */
 function ShortcutItem(modelItem, tree) {
-  var item = new cr.ui.TreeItem();
+  var item = /** @type {ShortcutItem} */ (new cr.ui.TreeItem());
   item.__proto__ = ShortcutItem.prototype;
 
   item.parentTree_ = tree;

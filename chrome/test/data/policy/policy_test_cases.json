@@ -2232,6 +2232,22 @@
     ]
   },
 
+  "CertificateTransparencyEnforcementDisabledForCas": {
+    "os": ["win", "linux", "mac", "chromeos", "android"],
+    "test_policy": { "CertificateTransparencyEnforcementDisabledForCas": ["sha256/AAAAAAAAAAAAAAAAAAAAAA=="] },
+    "pref_mappings": [
+      { "pref": "certificate_transparency.excluded_spkis" }
+    ]
+  },
+
+  "CertificateTransparencyEnforcementDisabledForLegacyCas": {
+    "os": ["win", "linux", "mac", "chromeos", "android"],
+    "test_policy": { "CertificateTransparencyEnforcementDisabledForLegacyCas": ["sha256/AAAAAAAAAAAAAAAAAAAAAA=="] },
+    "pref_mappings": [
+      { "pref": "certificate_transparency.excluded_legacy_spkis" }
+    ]
+  },
+
   "RC4Enabled": {
     "note": "This policy is retired, see https://crbug.com/375342."
   },
@@ -2303,6 +2319,16 @@
     "test_policy": { "ShowCastIconInToolbar": false },
     "pref_mappings": [
       { "pref": "media_router.show_cast_icon_in_toolbar" }
+    ]
+  },
+
+  "MediaRouterCastAllowAllIPs": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": { "MediaRouterCastAllowAllIPs": false },
+    "pref_mappings": [
+      { "pref": "media_router.cast_allow_all_ips",
+        "local_state": true
+      }
     ]
   },
 
@@ -3552,23 +3578,9 @@
   },
 
   "PasswordProtectionWarningTrigger": {
-    "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": {
-      "PasswordProtectionWarningTrigger": 2
-    },
-    "pref_mappings": [
-      { "pref": "safebrowsing.password_protection_warning_trigger"}
-    ]
   },
 
   "PasswordProtectionRiskTrigger": {
-    "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": {
-      "PasswordProtectionRiskTrigger": 2
-    },
-    "pref_mappings": [
-      { "pref": "safebrowsing.password_protection_risk_trigger"}
-    ]
   },
 
   "DeviceOffHours": {
@@ -3612,35 +3624,12 @@
   },
 
   "SafeBrowsingWhitelistDomains": {
-    "os": ["win", "linux", "mac", "chromeos", "android"],
-    "test_policy": {
-      "SafeBrowsingWhitelistDomains": ["mydomain.com", "mydomain.net"]
-    },
-    "pref_mappings": [
-      { "pref": "safebrowsing.safe_browsing_whitelist_domains"}
-    ]
   },
 
   "PasswordProtectionLoginURLs": {
-    "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": {
-      "PasswordProtectionLoginURLs": [
-        "https://mydomain.com/login.html", "https://login.mydomain.com"
-      ]
-    },
-    "pref_mappings": [
-      { "pref": "safebrowsing.password_protection_login_urls"}
-    ]
   },
 
   "PasswordProtectionChangePasswordURL": {
-    "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": {
-      "PasswordProtectionChangePasswordURL": "https://mydomain.com/changepw.mydomain.html"
-    },
-    "pref_mappings": [
-      { "pref": "safebrowsing.password_protection_change_password_url"}
-    ]
   },
 
   "AutoplayAllowed": {
@@ -3663,13 +3652,13 @@
     ]
   },
 
-  "TabUnderProtectionEnabled": {
+  "TabUnderAllowed": {
     "os": ["win", "linux", "mac", "chromeos"],
     "test_policy": {
-      "TabUnderProtectionEnabled": false
+      "TabUnderAllowed": false
     },
     "pref_mappings": [
-      { "pref": "tab_under_protection"}
+      { "pref": "tab_under_allowed"}
     ]
   },
 

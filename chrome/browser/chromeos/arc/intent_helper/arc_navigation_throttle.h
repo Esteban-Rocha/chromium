@@ -28,42 +28,6 @@ namespace arc {
 // traffic initiated on Chrome browser, either on Chrome or an ARC's app.
 class ArcNavigationThrottle {
  public:
-  // These enums are used to define the buckets for an enumerated UMA histogram
-  // and need to be synced with histograms.xml. This enum class should also be
-  // treated as append-only.
-  enum class CloseReason : int {
-    ERROR = 0,
-    // DIALOG_DEACTIVATED keeps track of the user dismissing the UI via clicking
-    // the close button or clicking outside of the IntentPickerBubbleView
-    // surface. As with CHROME_PRESSED, the user stays in Chrome, however we
-    // keep both options since CHROME_PRESSED is tied to an explicit intent of
-    // staying in Chrome, not only just getting rid of the
-    // IntentPickerBubbleView UI.
-    DIALOG_DEACTIVATED = 1,
-    OBSOLETE_ALWAYS_PRESSED = 2,
-    OBSOLETE_JUST_ONCE_PRESSED = 3,
-    PREFERRED_ACTIVITY_FOUND = 4,
-    // The prefix "CHROME"/"ARC_APP" determines whether the user pressed [Stay
-    // in Chrome] or [Use app] at IntentPickerBubbleView respectively.
-    // "PREFERRED" denotes when the user decides to save this selection, whether
-    // an app or Chrome was selected.
-    CHROME_PRESSED = 5,
-    CHROME_PREFERRED_PRESSED = 6,
-    ARC_APP_PRESSED = 7,
-    ARC_APP_PREFERRED_PRESSED = 8,
-    SIZE,
-    INVALID = SIZE,
-  };
-
-  // As for CloseReason, these define the buckets for an UMA histogram, so this
-  // must be treated in an append-only fashion. This helps especify where a
-  // navigation will continue.
-  enum class Platform : int {
-    ARC = 0,
-    CHROME = 1,
-    SIZE,
-  };
-
   ArcNavigationThrottle();
   ~ArcNavigationThrottle();
 
@@ -79,16 +43,7 @@ class ArcNavigationThrottle {
   static size_t GetAppIndex(
       const std::vector<mojom::IntentHandlerInfoPtr>& app_candidates,
       const std::string& selected_app_package);
-  // Determines the destination of the current navigation. We know that if the
-  // |close_reason| is either ERROR or DIALOG_DEACTIVATED the navigation MUST
-  // stay in Chrome, otherwise we can assume the navigation goes to ARC with the
-  // exception of the |selected_app_package| being Chrome.
-  static Platform GetDestinationPlatform(
-      const std::string& selected_app_package,
-      CloseReason close_reason);
-  // Records intent picker usage statistics as well as whether navigations are
-  // continued or redirected to Chrome or ARC respectively, via UMA histograms.
-  static void RecordUma(CloseReason close_reason, Platform platform);
+
   // TODO(djacobo): Remove this function and instead stop ARC from returning
   // Chrome as a valid app candidate.
   // Records true if |app_candidates| contain one or more apps. When this
@@ -105,10 +60,14 @@ class ArcNavigationThrottle {
   static void QueryArcApps(const Browser* browser,
                            const GURL& url,
                            chromeos::QueryAppsCallback callback);
-  static void OnIntentPickerClosed(
-      const GURL& url,
-      const std::string& package_name,
-      arc::ArcNavigationThrottle::CloseReason close_reason);
+
+  // Called to launch an ARC app if it was selected by the user, and persist the
+  // preference to launch or stay in Chrome if |should_persist| is true. Returns
+  // true if an app was launched, and false otherwise.
+  static bool MaybeLaunchOrPersistArcApp(const GURL& url,
+                                         const std::string& package_name,
+                                         bool should_launch,
+                                         bool should_persist);
 
  private:
   // Determines whether we should open a preferred app or show the intent

@@ -17,9 +17,6 @@ extern NSString* const kToolsMenuDidShowNotification;
 // Notification that the tools menu did dismiss.
 extern NSString* const kToolsMenuDidHideNotification;
 
-// Tools menu table view ID.
-extern NSString* const kToolsMenuTableViewId;
-
 // Tools Menu item IDs.
 // Reload item accessibility Identifier.
 extern NSString* const kToolsMenuReload;
@@ -57,6 +54,10 @@ extern NSString* const kToolsMenuHelpId;
 extern NSString* const kToolsMenuRequestMobileId;
 // ReadLater item accessibility Identifier.
 extern NSString* const kToolsMenuReadLater;
+// AddBookmark item accessibility Identifier.
+extern NSString* const kToolsMenuAddToBookmarks;
+// EditBookmark item accessibility Identifier.
+extern NSString* const kToolsMenuEditBookmark;
 // SiteInformation item accessibility Identifier.
 extern NSString* const kToolsMenuSiteInformation;
 

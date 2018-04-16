@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -24,7 +23,9 @@
 #include "printing/printed_document.h"
 
 #if defined(OS_WIN)
+#include "base/command_line.h"
 #include "chrome/browser/printing/pdf_to_emf_converter.h"
+#include "chrome/common/chrome_features.h"
 #include "printing/pdf_render_settings.h"
 #include "printing/printed_page_win.h"
 #endif
@@ -41,11 +42,7 @@ void HoldRefCallback(scoped_refptr<PrintJobWorkerOwner> owner,
 
 PrintJob::PrintJob()
     : is_job_pending_(false), is_canceling_(false), quit_factory_(this) {
-  // This is normally a UI message loop, but in unit tests, the message loop is
-  // of the 'default' type.
-  DCHECK(base::MessageLoopForUI::IsCurrent() ||
-         base::MessageLoop::current()->type() ==
-             base::MessageLoop::TYPE_DEFAULT);
+  DCHECK(base::MessageLoopForUI::IsCurrent());
 }
 
 PrintJob::~PrintJob() {
@@ -56,19 +53,18 @@ PrintJob::~PrintJob() {
   DCHECK(RunsTasksInCurrentSequence());
 }
 
-void PrintJob::Initialize(PrintJobWorkerOwner* job,
+void PrintJob::Initialize(PrinterQuery* query,
                           const base::string16& name,
                           int page_count) {
   DCHECK(!worker_);
   DCHECK(!is_job_pending_);
   DCHECK(!is_canceling_);
-  DCHECK(!document_.get());
-  worker_ = job->DetachWorker(this);
-  settings_ = job->settings();
+  DCHECK(!document_);
+  worker_ = query->DetachWorker(this);
+  settings_ = query->settings();
 
-  PrintedDocument* new_doc =
-      new PrintedDocument(settings_, name, job->cookie());
-
+  auto new_doc =
+      base::MakeRefCounted<PrintedDocument>(settings_, name, query->cookie());
   new_doc->set_page_count(page_count);
   UpdatePrintedDocument(new_doc);
 
@@ -98,11 +94,37 @@ std::vector<int> PrintJob::GetFullPageMapping(const std::vector<int>& pages,
   return mapping;
 }
 
+void PrintJob::StartConversionToNativeFormat(
+    const scoped_refptr<base::RefCountedMemory>& print_data,
+    const gfx::Size& page_size,
+    const gfx::Rect& content_area,
+    const gfx::Point& physical_offsets) {
+  if (PrintedDocument::HasDebugDumpPath())
+    document()->DebugDumpData(print_data.get(), FILE_PATH_LITERAL(".pdf"));
+
+  if (settings_.printer_is_textonly()) {
+    StartPdfToTextConversion(print_data, page_size);
+  } else if ((settings_.printer_is_ps2() || settings_.printer_is_ps3()) &&
+             !base::FeatureList::IsEnabled(
+                 features::kDisablePostScriptPrinting)) {
+    StartPdfToPostScriptConversion(print_data, content_area, physical_offsets,
+                                   settings_.printer_is_ps2());
+  } else {
+    StartPdfToEmfConversion(print_data, page_size, content_area);
+  }
+
+  // Indicate that the PDF is fully rendered and we no longer need the renderer
+  // and web contents, so the print job does not need to be cancelled if they
+  // die. This is needed on Windows because the PrintedDocument will not be
+  // considered complete until PDF conversion finishes.
+  document()->SetConvertingPdf();
+}
+
 void PrintJob::ResetPageMapping() {
   pdf_page_mapping_ =
       GetFullPageMapping(pdf_page_mapping_, document_->page_count());
 }
-#endif
+#endif  // defined(OS_WIN)
 
 void PrintJob::Observe(int type,
                        const content::NotificationSource& source,
@@ -128,13 +150,6 @@ const PrintSettings& PrintJob::settings() const {
   return settings_;
 }
 
-int PrintJob::cookie() const {
-  // Always use an invalid cookie in this case.
-  if (!document_.get())
-    return 0;
-  return document_->cookie();
-}
-
 void PrintJob::StartPrinting() {
   DCHECK(RunsTasksInCurrentSequence());
   if (!worker_->IsRunning() || is_job_pending_) {
@@ -152,8 +167,8 @@ void PrintJob::StartPrinting() {
   is_job_pending_ = true;
 
   // Tell everyone!
-  scoped_refptr<JobEventDetails> details(
-      new JobEventDetails(JobEventDetails::NEW_DOC, 0, document_.get()));
+  auto details = base::MakeRefCounted<JobEventDetails>(JobEventDetails::NEW_DOC,
+                                                       0, document_.get());
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PRINT_JOB_EVENT,
       content::Source<PrintJob>(this),
@@ -178,13 +193,14 @@ void PrintJob::Stop() {
   } else {
     // Flush the cached document.
     is_job_pending_ = false;
-    UpdatePrintedDocument(nullptr);
+    ClearPrintedDocument();
   }
 }
 
 void PrintJob::Cancel() {
   if (is_canceling_)
     return;
+
   is_canceling_ = true;
 
   DCHECK(RunsTasksInCurrentSequence());
@@ -194,8 +210,8 @@ void PrintJob::Cancel() {
     worker_->Cancel();
   }
   // Make sure a Cancel() is broadcast.
-  scoped_refptr<JobEventDetails> details(
-      new JobEventDetails(JobEventDetails::FAILED, 0, nullptr));
+  auto details = base::MakeRefCounted<JobEventDetails>(JobEventDetails::FAILED,
+                                                       0, nullptr);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PRINT_JOB_EVENT,
       content::Source<PrintJob>(this),
@@ -275,14 +291,22 @@ class PrintJob::PdfConversionState {
 void PrintJob::StartPdfToEmfConversion(
     const scoped_refptr<base::RefCountedMemory>& bytes,
     const gfx::Size& page_size,
-    const gfx::Rect& content_area,
-    bool print_text_with_gdi) {
+    const gfx::Rect& content_area) {
   DCHECK(!pdf_conversion_state_);
   pdf_conversion_state_ =
       std::make_unique<PdfConversionState>(page_size, content_area);
+
+  // TODO(thestig): Figure out why rendering text with GDI results in random
+  // missing characters for some users. https://crbug.com/658606
+  // Update : The missing letters seem to have been caused by the same
+  // problem as https://crbug.com/659604 which was resolved. GDI printing
+  // seems to work with the fix for this bug applied.
+  bool print_text_with_gdi =
+      settings_.print_text_with_gdi() && !settings_.printer_is_xps() &&
+      base::FeatureList::IsEnabled(features::kGdiTextPrinting);
   PdfRenderSettings render_settings(
       content_area, gfx::Point(0, 0), settings().dpi_size(),
-      /*autorotate=*/true,
+      /*autorotate=*/true, settings_.color() == COLOR,
       print_text_with_gdi ? PdfRenderSettings::Mode::GDI_TEXT
                           : PdfRenderSettings::Mode::NORMAL);
   pdf_conversion_state_->Start(
@@ -307,7 +331,7 @@ void PrintJob::OnPdfPageConverted(int page_number,
                                   float scale_factor,
                                   std::unique_ptr<MetafilePlayer> metafile) {
   DCHECK(pdf_conversion_state_);
-  if (!document_.get() || !metafile || page_number < 0 ||
+  if (!document_ || !metafile || page_number < 0 ||
       static_cast<size_t>(page_number) >= pdf_page_mapping_.size()) {
     // Be sure to live long enough.
     scoped_refptr<PrintJob> handle(this);
@@ -338,7 +362,8 @@ void PrintJob::StartPdfToTextConversion(
   gfx::Rect page_area = gfx::Rect(0, 0, page_size.width(), page_size.height());
   PdfRenderSettings render_settings(
       page_area, gfx::Point(0, 0), settings().dpi_size(),
-      /*autorotate=*/true, PdfRenderSettings::Mode::TEXTONLY);
+      /*autorotate=*/true,
+      /*use_color=*/true, PdfRenderSettings::Mode::TEXTONLY);
   pdf_conversion_state_->Start(
       bytes, render_settings,
       base::BindOnce(&PrintJob::OnPdfConversionStarted, this));
@@ -354,7 +379,7 @@ void PrintJob::StartPdfToPostScriptConversion(
       gfx::Size(), gfx::Rect());
   PdfRenderSettings render_settings(
       content_area, physical_offsets, settings().dpi_size(),
-      /*autorotate=*/true,
+      /*autorotate=*/true, settings_.color() == COLOR,
       ps_level2 ? PdfRenderSettings::Mode::POSTSCRIPT_LEVEL2
                 : PdfRenderSettings::Mode::POSTSCRIPT_LEVEL3);
   pdf_conversion_state_->Start(
@@ -363,25 +388,33 @@ void PrintJob::StartPdfToPostScriptConversion(
 }
 #endif  // defined(OS_WIN)
 
-void PrintJob::UpdatePrintedDocument(PrintedDocument* new_document) {
-  if (document_.get() == new_document)
-    return;
+void PrintJob::UpdatePrintedDocument(
+    scoped_refptr<PrintedDocument> new_document) {
+  DCHECK(new_document);
 
   document_ = new_document;
+  if (worker_)
+    SyncPrintedDocumentToWorker();
+}
 
-  if (document_.get())
-    settings_ = document_->settings();
+void PrintJob::ClearPrintedDocument() {
+  if (!document_)
+    return;
 
-  if (worker_) {
-    DCHECK(!is_job_pending_);
-    // Sync the document with the worker.
-    worker_->PostTask(
-        FROM_HERE,
-        base::BindOnce(&HoldRefCallback, base::WrapRefCounted(this),
-                       base::BindOnce(&PrintJobWorker::OnDocumentChanged,
-                                      base::Unretained(worker_.get()),
-                                      base::RetainedRef(document_))));
-  }
+  document_ = nullptr;
+  if (worker_)
+    SyncPrintedDocumentToWorker();
+}
+
+void PrintJob::SyncPrintedDocumentToWorker() {
+  DCHECK(worker_);
+  DCHECK(!is_job_pending_);
+  worker_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&HoldRefCallback, base::WrapRefCounted(this),
+                     base::BindOnce(&PrintJobWorker::OnDocumentChanged,
+                                    base::Unretained(worker_.get()),
+                                    base::RetainedRef(document_))));
 }
 
 void PrintJob::OnNotifyPrintJobEvent(const JobEventDetails& event_details) {
@@ -433,8 +466,8 @@ void PrintJob::OnDocumentDone() {
   // Stop the worker thread.
   Stop();
 
-  scoped_refptr<JobEventDetails> details(
-      new JobEventDetails(JobEventDetails::JOB_DONE, 0, document_.get()));
+  auto details = base::MakeRefCounted<JobEventDetails>(
+      JobEventDetails::JOB_DONE, 0, document_.get());
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PRINT_JOB_EVENT,
       content::Source<PrintJob>(this),
@@ -480,7 +513,7 @@ void PrintJob::ControlledWorkerShutdown() {
 
   is_job_pending_ = false;
   registrar_.RemoveAll();
-  UpdatePrintedDocument(nullptr);
+  ClearPrintedDocument();
 }
 
 void PrintJob::HoldUntilStopIsCalled() {
@@ -488,6 +521,14 @@ void PrintJob::HoldUntilStopIsCalled() {
 
 void PrintJob::Quit() {
   base::RunLoop::QuitCurrentWhenIdleDeprecated();
+}
+
+void PrintJob::set_settings(const PrintSettings& settings) {
+  settings_ = settings;
+}
+
+void PrintJob::set_job_pending(bool pending) {
+  is_job_pending_ = pending;
 }
 
 #if defined(OS_WIN)

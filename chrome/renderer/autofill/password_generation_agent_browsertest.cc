@@ -27,11 +27,11 @@
 #include "content/public/renderer/render_view.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_provider.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebWidget.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_widget.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 using blink::WebDocument;
@@ -945,6 +945,28 @@ TEST_F(PasswordGenerationAgentTestForHtmlAnnotation, AnnotateForm) {
       blink::WebString::FromUTF8("password_creation_field"));
   ASSERT_FALSE(generation_mark.IsNull());
   EXPECT_EQ("1", generation_mark.Utf8());
+}
+
+TEST_F(PasswordGenerationAgentTestForHtmlAnnotation, AnnotateUnownedFields) {
+  LoadHTMLWithUserGesture(kAccountCreationNoForm);
+  WebDocument document = GetMainFrame()->GetDocument();
+
+  // Check field signatures are set.
+  blink::WebElement username_element =
+      document.GetElementById(blink::WebString::FromUTF8("username"));
+  ASSERT_FALSE(username_element.IsNull());
+  blink::WebString username_signature = username_element.GetAttribute(
+      blink::WebString::FromUTF8("field_signature"));
+  ASSERT_FALSE(username_signature.IsNull());
+  EXPECT_EQ("239111655", username_signature.Ascii());
+
+  blink::WebElement password_element =
+      document.GetElementById(blink::WebString::FromUTF8("first_password"));
+  ASSERT_FALSE(password_element.IsNull());
+  blink::WebString password_signature = password_element.GetAttribute(
+      blink::WebString::FromUTF8("field_signature"));
+  ASSERT_FALSE(password_signature.IsNull());
+  EXPECT_EQ("3933215845", password_signature.Ascii());
 }
 
 }  // namespace autofill

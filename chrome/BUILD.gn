@@ -20,7 +20,7 @@ import("//components/nacl/features.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//ppapi/buildflags/buildflags.gni")
-import("//third_party/WebKit/public/public_features.gni")
+import("//third_party/blink/public/public_features.gni")
 import("//third_party/widevine/cdm/widevine.gni")
 import("//tools/resources/generate_resource_whitelist.gni")
 import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
@@ -444,7 +444,7 @@ if (is_win) {
       deps += [ "//content/public/app:browser" ]
       assert_no_deps = [
         # The browser DLL may not depend on blink or v8.
-        "//third_party/WebKit/public:blink",
+        "//third_party/blink/public:blink",
         "//gin",
         "//v8",
       ]
@@ -935,7 +935,7 @@ if (is_win) {
         # Depend on :chrome_app to ensure that the bundle is produced before
         # creating or destroying the symlink.
         ":chrome_app",
-        "//third_party/WebKit/public:blink_devtools_frontend_resources",
+        "//third_party/blink/public:blink_devtools_frontend_resources",
       ]
     }
   } else {
@@ -1473,7 +1473,7 @@ group("browser_dependencies") {
       # is OK because all of content is linked into one library. Note that the
       # blink_headers target is OK, so we can't do a wildcard for all blink
       # targets.
-      "//third_party/WebKit/public:blink",
+      "//third_party/blink/public:blink",
     ]
 
     if (is_win) {
@@ -1492,13 +1492,13 @@ group("child_dependencies") {
     "//chrome/child",
     "//chrome/common",
     "//chrome/gpu",
-    "//chrome/profiling",
     "//chrome/renderer",
     "//chrome/utility",
+    "//components/services/heap_profiling",
     "//components/sync",
     "//content/public/child",
     "//pdf",
-    "//third_party/WebKit/public:blink_devtools_frontend_resources",
+    "//third_party/blink/public:blink_devtools_frontend_resources",
   ]
 
   if (enable_nacl) {
@@ -1785,6 +1785,7 @@ if (is_android) {
 
   java_cpp_enum("download_enum_javagen") {
     sources = [
+      "browser/download/download_location_dialog_type.h",
       "browser/download/download_prompt_status.h",
     ]
   }
@@ -1820,10 +1821,10 @@ if (is_android) {
       "//chrome/child",
       "//chrome/common",
       "//chrome/gpu",
-      "//chrome/profiling",
       "//chrome/renderer",
       "//chrome/utility",
       "//components/safe_browsing/android:safe_browsing_mobile",
+      "//components/services/heap_profiling",
       "//content/public/app:both",
       "//content/public/common:service_names",
       "//services/service_manager/embedder",
@@ -1836,6 +1837,10 @@ if (is_android) {
         "//device/gamepad",
         "//ui/events/devices",
       ]
+    }
+
+    if (enable_vr) {
+      deps += [ "//third_party/gvr-android-sdk:gvr_shim" ]
     }
   }
 }

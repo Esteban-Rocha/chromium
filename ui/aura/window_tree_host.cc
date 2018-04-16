@@ -66,7 +66,7 @@ void WindowTreeHost::InitHost() {
   device_scale_factor_ = display.device_scale_factor();
 
   InitCompositor();
-  UpdateRootWindowSizeInPixels(GetBoundsInPixels().size());
+  UpdateRootWindowSizeInPixels();
   Env::GetInstance()->NotifyHostInitialized(this);
 }
 
@@ -91,7 +91,7 @@ gfx::Transform WindowTreeHost::GetRootTransform() const {
 
 void WindowTreeHost::SetRootTransform(const gfx::Transform& transform) {
   window()->SetTransform(transform);
-  UpdateRootWindowSizeInPixels(GetBoundsInPixels().size());
+  UpdateRootWindowSizeInPixels();
 }
 
 gfx::Transform WindowTreeHost::GetInverseRootTransform() const {
@@ -116,13 +116,10 @@ gfx::Transform WindowTreeHost::GetInverseRootTransformForLocalEventCoordinates()
   return invert;
 }
 
-void WindowTreeHost::UpdateRootWindowSizeInPixels(
-    const gfx::Size& host_size_in_pixels) {
-  gfx::Rect bounds(host_size_in_pixels.width(), host_size_in_pixels.height());
-  gfx::RectF new_bounds =
-      gfx::ScaleRect(gfx::RectF(bounds), 1.0f / device_scale_factor_);
-  window()->layer()->transform().TransformRect(&new_bounds);
-  window()->SetBounds(gfx::ToEnclosingRect(new_bounds));
+void WindowTreeHost::UpdateRootWindowSizeInPixels() {
+  gfx::Rect transformed_bounds_in_pixels =
+      GetTransformedRootWindowBoundsInPixels(GetBoundsInPixels().size());
+  window()->SetBounds(transformed_bounds_in_pixels);
   window()->SetDeviceScaleFactor(device_scale_factor_);
 }
 
@@ -341,10 +338,9 @@ void WindowTreeHost::OnHostResizedInPixels(
       display::Screen::GetScreen()->GetDisplayNearestWindow(window());
   device_scale_factor_ = display.device_scale_factor();
 
-  gfx::Size layer_size = GetBoundsInPixels().size();
   // The layer, and the observers should be notified of the
   // transformed size of the root window.
-  UpdateRootWindowSizeInPixels(layer_size);
+  UpdateRootWindowSizeInPixels();
 
   // The compositor should have the same size as the native root window host.
   // Get the latest scale from display because it might have been changed.
@@ -406,6 +402,15 @@ void WindowTreeHost::OnDisplayMetricsChanged(const display::Display& display,
       compositor_->SetDisplayColorSpace(display.color_space());
     }
   }
+}
+
+gfx::Rect WindowTreeHost::GetTransformedRootWindowBoundsInPixels(
+    const gfx::Size& size_in_pixels) const {
+  gfx::Rect bounds(size_in_pixels);
+  gfx::RectF new_bounds =
+      gfx::ScaleRect(gfx::RectF(bounds), 1.0f / device_scale_factor_);
+  window()->layer()->transform().TransformRect(&new_bounds);
+  return gfx::ToEnclosingRect(new_bounds);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

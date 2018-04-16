@@ -37,10 +37,10 @@
 #include "services/service_manager/public/cpp/connect.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
-#include "third_party/WebKit/public/platform/WebSurfaceLayerBridge.h"
-#include "third_party/WebKit/public/platform/WebVideoFrameSubmitter.h"
-#include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/platform/web_surface_layer_bridge.h"
+#include "third_party/blink/public/platform/web_video_frame_submitter.h"
+#include "third_party/blink/public/web/blink.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 #include "url/origin.h"
 
 #if defined(OS_ANDROID)
@@ -306,7 +306,9 @@ blink::WebMediaPlayer* MediaFactory::CreateMediaPlayer(
           use_surface_layer_for_video,
           base::BindRepeating(
               &RenderFrameImpl::OnPictureInPictureSurfaceIdUpdated,
-              base::Unretained(render_frame_))));
+              base::Unretained(render_frame_)),
+          base::BindRepeating(&RenderFrameImpl::OnExitPictureInPicture,
+                              base::Unretained(render_frame_))));
 
   std::unique_ptr<media::VideoFrameCompositor> vfc =
       std::make_unique<media::VideoFrameCompositor>(

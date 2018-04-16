@@ -843,6 +843,12 @@ void RootWindowController::CreateContainers() {
       kShellWindowId_LockScreenRelatedContainersContainer,
       "LockScreenRelatedContainersContainer", screen_rotation_container);
 
+  aura::Window* app_list_tablet_mode_container =
+      CreateContainer(kShellWindowId_AppListTabletModeContainer,
+                      "AppListTabletModeContainer", non_lock_screen_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(app_list_tablet_mode_container);
+  app_list_tablet_mode_container->SetProperty(kUsesScreenCoordinatesKey, true);
+
   CreateContainer(kShellWindowId_UnparentedControlContainer,
                   "UnparentedControlContainer", non_lock_screen_containers);
 
@@ -922,6 +928,12 @@ void RootWindowController::CreateContainers() {
   wm::SetSnapsChildrenToPhysicalPixelBoundary(status_container);
   status_container->SetProperty(kUsesScreenCoordinatesKey, true);
   status_container->SetProperty(kLockedToRootKey, true);
+
+  aura::Window* power_menu_container =
+      CreateContainer(kShellWindowId_PowerMenuContainer, "PowerMenuContainer",
+                      lock_screen_related_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(power_menu_container);
+  power_menu_container->SetProperty(kUsesScreenCoordinatesKey, true);
 
   aura::Window* settings_bubble_container =
       CreateContainer(kShellWindowId_SettingBubbleContainer,

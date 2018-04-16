@@ -173,7 +173,7 @@ QUIC_FLAG(
 
 // If true, QUIC streams are registered in the QuicStream constructor instead
 // of in the QuicSpdyStream constructor.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_register_streams_early2, false)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_register_streams_early2, true)
 
 // If this flag and
 // FLAGS_quic_reloadable_flag_quic_fix_write_out_of_order_queued_packet_crash
@@ -182,7 +182,7 @@ QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_register_streams_early2, false)
 QUIC_FLAG(
     bool,
     FLAGS_quic_reloadable_flag_quic_clear_queued_packets_before_sending_connectivity_probing,
-    true)
+    false)
 
 // When true, this flag has QuicConnection call
 // QuicConnectionVisitorInterface::OnSuccessfulVersionNegotiation earlier when
@@ -198,7 +198,7 @@ QUIC_FLAG(bool,
           false)
 
 // If true, stop sending a redundant PING every 20 acks.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_remove_redundant_ping, false)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_remove_redundant_ping, true)
 
 // If true, when a stream is reset by peer with error, it should not be added to
 // zombie streams.
@@ -236,3 +236,11 @@ QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fast_is_disjoint, false)
 
 // If true, enable fast path in QuicStreamSequencerBuffer::OnStreamData.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fast_path_on_stream_data, false)
+
+// When true, set the initial congestion control window from connection options
+// in QuicSentPacketManager rather than TcpCubicSenderBytes.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_unified_iw_options, false)
+
+// If true, check again that the writer isn\'t blocked before calling
+// QuicConnection::OnCanWrite from WriteAndBundleAcksIfNotBlocked
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_is_write_blocked, false)

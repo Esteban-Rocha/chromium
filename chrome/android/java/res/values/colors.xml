@@ -111,7 +111,6 @@
     <!-- NTP and Home sheet colors. Also used on the bookmarks and recent tabs pages. -->
     <color name="ntp_bg">@color/default_primary_color</color>
     <color name="ntp_bg_incognito">#222222</color>
-    <color name="ntp_list_header_subtext">#969696</color>
     <color name="snippets_publisher_name_color">#646464</color>
     <color name="snippets_text_color">#646464</color>
     <color name="snippets_list_header_text_color">#646464</color>
@@ -184,11 +183,6 @@
 
     <!-- Bookmark widget colors -->
     <color name="bookmark_widget_pressed_highlight">@color/black_alpha_11</color>
-
-    <!-- Physical Web diagnostics colors -->
-    <color name="physical_web_diags_success_color">#00933B</color>
-    <color name="physical_web_diags_failure_color">#F90101</color>
-    <color name="physical_web_diags_indeterminate_color">#F2B50F</color>
 
     <!-- Payments UI colors -->
     <color name="payments_section_edit_background">@color/google_grey_100</color>

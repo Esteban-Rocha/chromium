@@ -44,6 +44,13 @@ struct VIEWS_EXPORT MenuConfig {
   int item_no_icon_top_margin;
   int item_no_icon_bottom_margin;
 
+  // Fixed dimensions used for entire items. If these are nonzero, they override
+  // the vertical margin constants given above - the item's text and icon are
+  // vertically centered within these heights.
+  int fixed_text_item_height;
+  int fixed_container_item_height;
+  int fixed_menu_width;
+
   // Margins between the left of the item and the icon.
   int item_left_margin;
 
@@ -136,11 +143,17 @@ struct VIEWS_EXPORT MenuConfig {
   // Radius of the rounded corners of the touchable menu border
   int touchable_corner_radius;
 
+  // Anchor offset for touchable menus created by a touch event.
+  int touchable_anchor_offset;
+
   // Height of child MenuItemViews for touchable menus.
   int touchable_menu_height;
 
   // Width of touchable menus.
   int touchable_menu_width;
+
+  // Shadow elevation of touchable menus.
+  int touchable_menu_shadow_elevation;
 
   // Vertical padding for touchable menus.
   int vertical_touchable_menu_item_padding;

@@ -18,6 +18,9 @@ config("bluetooth_config") {
       "/DELAYLOAD:setupapi.dll",
     ]
   }
+  if (is_linux && is_chromecast) {
+    defines = [ "USE_CAST_BLUETOOTH_ADAPTER" ]
+  }
 }
 
 # Experimental implementation not ready for production use yet. See
@@ -390,6 +393,12 @@ component("bluetooth") {
           "dbus/dbus_bluez_manager_wrapper_linux.h",
           "dbus/dbus_thread_manager_linux.cc",
           "dbus/dbus_thread_manager_linux.h",
+        ]
+      }
+      if (is_chromeos) {
+        sources += [
+          "chromeos/bluetooth_utils.cc",
+          "chromeos/bluetooth_utils.h",
         ]
       }
       deps += [ "//dbus" ]

@@ -11,7 +11,6 @@
 
 #include "base/guid.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
@@ -233,7 +232,6 @@ class DownloadHistoryTest : public testing::Test {
                 this, &DownloadHistoryTest::CallOnDownloadCreatedInOrder),
             Return(&item(index))));
     }
-    EXPECT_CALL(manager(), CheckForHistoryFilesRemoval());
     history_ = new FakeHistoryAdapter();
     history_->ExpectWillQueryDownloads(std::move(infos));
     EXPECT_CALL(*manager_.get(), GetAllDownloads(_)).WillRepeatedly(Return());

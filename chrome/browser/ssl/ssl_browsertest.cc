@@ -23,6 +23,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/bind_test_util.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
@@ -152,7 +153,7 @@
 #include "net/url_request/url_request_test_util.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
-#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(USE_NSS_CERTS)
@@ -1300,23 +1301,6 @@ IN_PROC_BROWSER_TEST_P(SSLUITest, TestBrokenHTTPSWithActiveInsecureContent) {
 
 namespace {
 
-// A WebContentsObserver that allows the user to wait for a
-// DidChangeVisibleSecurityState event.
-class SecurityStateWebContentsObserver : public content::WebContentsObserver {
- public:
-  explicit SecurityStateWebContentsObserver(content::WebContents* web_contents)
-      : content::WebContentsObserver(web_contents) {}
-  ~SecurityStateWebContentsObserver() override {}
-
-  void WaitForDidChangeVisibleSecurityState() { run_loop_.Run(); }
-
-  // WebContentsObserver:
-  void DidChangeVisibleSecurityState() override { run_loop_.Quit(); }
-
- private:
-  base::RunLoop run_loop_;
-};
-
 // A WebContentsObserver that allows the user to wait for a same-document
 // navigation. Tests using this observer will fail if a non-same-document
 // navigation completes after calling WaitForSameDocumentNavigation.
@@ -2371,15 +2355,6 @@ IN_PROC_BROWSER_TEST_P(SSLUITest, TestBadHTTPSDownload) {
   GURL url_non_dangerous = embedded_test_server()->GetURL("/title1.html");
   GURL url_dangerous =
       https_server_expired_.GetURL("/downloads/dangerous/dangerous.exe");
-  base::ScopedAllowBlockingForTesting allow_blocking;
-  base::ScopedTempDir downloads_directory_;
-
-  // Need empty temp dir to avoid having Chrome ask us for a new filename
-  // when we've downloaded dangerous.exe one hundred times.
-  ASSERT_TRUE(downloads_directory_.CreateUniqueTempDir());
-
-  browser()->profile()->GetPrefs()->SetFilePath(
-      prefs::kDownloadDefaultDirectory, downloads_directory_.GetPath());
 
   // Visit a non-dangerous page.
   ui_test_utils::NavigateToURL(browser(), url_non_dangerous);
@@ -4186,6 +4161,25 @@ IN_PROC_BROWSER_TEST_P(SSLUITest, ProceedLinkOverridable) {
   ASSERT_NO_FATAL_FAILURE(CheckProceedLinkExists(tab));
 }
 
+IN_PROC_BROWSER_TEST_P(SSLUITest, TestLearnMoreLinkContainsErrorCode) {
+  ASSERT_TRUE(https_server_expired_.Start());
+
+  // Navigate to a site that causes an interstitial.
+  ui_test_utils::NavigateToURL(browser(),
+                               https_server_expired_.GetURL("/title1.html"));
+  WaitForInterstitial(browser()->tab_strip_model()->GetActiveWebContents());
+
+  // Simulate clicking the learn more link.
+  SendInterstitialCommand(browser()->tab_strip_model()->GetActiveWebContents(),
+                          security_interstitials::CMD_OPEN_HELP_CENTER);
+  EXPECT_EQ(browser()
+                ->tab_strip_model()
+                ->GetActiveWebContents()
+                ->GetVisibleURL()
+                .ref(),
+            std::to_string(net::ERR_CERT_DATE_INVALID));
+}
+
 // Verifies that an overridable committed interstitial has a proceed link.
 IN_PROC_BROWSER_TEST_P(SSLUITestCommitted, ProceedLinkOverridable) {
   ASSERT_TRUE(https_server_expired_.Start());
@@ -5910,12 +5904,19 @@ IN_PROC_BROWSER_TEST_P(SSLUICaptivePortalListTest, Enabled_FromProto) {
 }
 
 // Tests the scenario where the OS reports a captive portal. A captive portal
-// interstitial should be displayed.
+// interstitial should be displayed. The test then switches OS captive portal
+// status to false and reloads the page. This time, a normal SSL interstitial
+// will be displayed.
 IN_PROC_BROWSER_TEST_P(SSLUITest, OSReportsCaptivePortal) {
   ASSERT_TRUE(https_server_mismatched_.Start());
   base::HistogramTester histograms;
-
+  bool netwok_connectivity_reported = false;
   SSLErrorHandler::SetOSReportsCaptivePortalForTesting(true);
+  SSLErrorHandler::SetReportNetworkConnectivityCallbackForTesting(
+      base::BindLambdaForTesting([&]() {
+        SSLErrorHandler::SetOSReportsCaptivePortalForTesting(false);
+        netwok_connectivity_reported = true;
+      }));
 
   // Navigate to an unsafe page on the server.
   WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
@@ -5936,6 +5937,13 @@ IN_PROC_BROWSER_TEST_P(SSLUITest, OSReportsCaptivePortal) {
       SSLErrorHandler::SHOW_CAPTIVE_PORTAL_INTERSTITIAL_OVERRIDABLE, 1);
   histograms.ExpectBucketCount(SSLErrorHandler::GetHistogramNameForTesting(),
                                SSLErrorHandler::OS_REPORTS_CAPTIVE_PORTAL, 1);
+
+  // Reload the URL. This time the OS should not report a captive portal.
+  ui_test_utils::NavigateToURL(
+      browser(), https_server_mismatched_.GetURL("/ssl/blank_page.html"));
+  WaitForInterstitial(tab);
+  ASSERT_NO_FATAL_FAILURE(ExpectSSLInterstitial(tab));
+  EXPECT_TRUE(netwok_connectivity_reported);
 }
 
 // Tests the scenario where the OS reports a captive portal but captive portal
@@ -6911,7 +6919,10 @@ class NoRequireCTDelegate
   NoRequireCTDelegate() {}
   ~NoRequireCTDelegate() override = default;
 
-  CTRequirementLevel IsCTRequiredForHost(const std::string& hostname) override {
+  CTRequirementLevel IsCTRequiredForHost(
+      const std::string& hostname,
+      const net::X509Certificate* chain,
+      const net::HashValueVector& hashes) override {
     return CTRequirementLevel::NOT_REQUIRED;
   }
 };

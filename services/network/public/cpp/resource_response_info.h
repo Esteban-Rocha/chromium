@@ -15,7 +15,6 @@
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_timing_info.h"
-#include "net/base/request_priority.h"
 #include "net/cert/ct_policy_status.h"
 #include "net/cert/signed_certificate_timestamp_and_status.h"
 #include "net/http/http_response_headers.h"
@@ -81,9 +80,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceResponseInfo {
   // Note: this value is only populated for main resource requests.
   GURL appcache_manifest_url;
 
-  // The priority level for this request.
-  net::RequestPriority priority;
-
   // Detailed timing information used by the WebTiming, HAR and Developer
   // Tools.  Includes socket ID and socket reuse information.
   net::LoadTimingInfo load_timing;
@@ -116,6 +112,9 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceResponseInfo {
 
   // Remote address of the socket which fetched this resource.
   net::HostPortPair socket_address;
+
+  // True if the response was delivered through a proxy.
+  bool was_fetched_via_proxy;
 
   // True if the response was fetched by a ServiceWorker.
   bool was_fetched_via_service_worker;

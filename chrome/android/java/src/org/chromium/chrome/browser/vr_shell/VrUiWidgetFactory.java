@@ -5,29 +5,38 @@
 package org.chromium.chrome.browser.vr_shell;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.widget.PopupWindow;
 
-import org.chromium.ui.widget.popups.UiWidgetFactory;
+import org.chromium.chrome.browser.modaldialog.ModalDialogManager;
+import org.chromium.ui.widget.UiWidgetFactory;
 
 /**
  * The factory that creates VR compatible UI widgets.
  */
 public class VrUiWidgetFactory extends UiWidgetFactory {
     private VrShell mVrShell;
+    private ModalDialogManager mModalDialogManager;
 
-    public VrUiWidgetFactory(VrShell vrShell) {
+    public VrUiWidgetFactory(VrShell vrShell, ModalDialogManager modalDialogManager) {
         mVrShell = vrShell;
+        mModalDialogManager = modalDialogManager;
     }
 
     @Override
     public PopupWindow createPopupWindow(Context context) {
-        return null;
+        return new VrPopupWindow(context, mVrShell);
     }
 
     @Override
     public android.widget.Toast createToast(Context context) {
         return new VrToast(context, mVrShell);
+    }
+
+    @Override
+    public AlertDialog createAlertDialog(Context context) {
+        return new VrAlertDialog(context, mVrShell, mModalDialogManager);
     }
 
     @Override

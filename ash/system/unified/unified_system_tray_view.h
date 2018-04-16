@@ -12,6 +12,7 @@ namespace ash {
 class FeaturePodButton;
 class FeaturePodsContainerView;
 class TopShortcutsView;
+class UnifiedMessageCenterView;
 class UnifiedSystemInfoView;
 class UnifiedSystemTrayController;
 
@@ -20,7 +21,7 @@ class UnifiedSystemTrayController;
 // intermediate state during animation.
 class UnifiedSlidersContainerView : public views::View {
  public:
-  UnifiedSlidersContainerView();
+  explicit UnifiedSlidersContainerView(bool initially_expanded);
   ~UnifiedSlidersContainerView() override;
 
   // Change the expanded state. 0.0 if collapsed, and 1.0 if expanded.
@@ -35,7 +36,7 @@ class UnifiedSlidersContainerView : public views::View {
   // Update opacity of each child slider views based on |expanded_amount_|.
   void UpdateOpacity();
 
-  double expanded_amount_ = 1.0;
+  double expanded_amount_;
 
   DISALLOW_COPY_AND_ASSIGN(UnifiedSlidersContainerView);
 };
@@ -43,8 +44,12 @@ class UnifiedSlidersContainerView : public views::View {
 // View class of the main bubble in UnifiedSystemTray.
 class UnifiedSystemTrayView : public views::View {
  public:
-  explicit UnifiedSystemTrayView(UnifiedSystemTrayController* controller);
+  UnifiedSystemTrayView(UnifiedSystemTrayController* controller,
+                        bool initially_expanded);
   ~UnifiedSystemTrayView() override;
+
+  // Set the maximum height that the view can take.
+  void SetMaxHeight(int max_height);
 
   // Add feature pod button to |feature_pods_|.
   void AddFeaturePodButton(FeaturePodButton* button);
@@ -58,12 +63,14 @@ class UnifiedSystemTrayView : public views::View {
 
   // views::View:
   void OnGestureEvent(ui::GestureEvent* event) override;
+  void ChildPreferredSizeChanged(views::View* child) override;
 
  private:
   // Unowned.
   UnifiedSystemTrayController* controller_;
 
   // Owned by views hierarchy.
+  UnifiedMessageCenterView* message_center_view_;
   TopShortcutsView* top_shortcuts_view_;
   FeaturePodsContainerView* feature_pods_container_;
   UnifiedSlidersContainerView* sliders_container_;

@@ -14,6 +14,7 @@
 #include "base/macros.h"
 #include "base/observer_list_threadsafe.h"
 #include "chromecast/device/bluetooth/le/le_scan_manager.h"
+#include "chromecast/device/bluetooth/le/scan_filter.h"
 #include "chromecast/device/bluetooth/shlib/le_scanner.h"
 
 namespace chromecast {
@@ -34,14 +35,14 @@ class LeScanManagerImpl : public LeScanManager,
   void SetScanEnable(bool enable, SetScanEnableCallback cb) override;
   void GetScanResults(
       GetScanResultsCallback cb,
-      base::Optional<uint16_t> service_uuid = base::nullopt) override;
+      base::Optional<ScanFilter> service_uuid = base::nullopt) override;
   void ClearScanResults() override;
 
  private:
   // Returns a list of all BLE scan results. The results are sorted by RSSI.
   // Must be called on |io_task_runner|.
-  std::vector<ScanResult> GetScanResultsInternal(
-      base::Optional<uint16_t> service_uuid);
+  std::vector<LeScanResult> GetScanResultsInternal(
+      base::Optional<ScanFilter> service_uuid);
 
   // bluetooth_v2_shlib::LeScanner::Delegate implementation:
   void OnScanResult(const bluetooth_v2_shlib::LeScanner::ScanResult&
@@ -51,7 +52,7 @@ class LeScanManagerImpl : public LeScanManager,
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   scoped_refptr<base::ObserverListThreadSafe<Observer>> observers_;
-  std::map<bluetooth_v2_shlib::Addr, std::list<ScanResult>>
+  std::map<bluetooth_v2_shlib::Addr, std::list<LeScanResult>>
       addr_to_scan_results_;
 
   base::WeakPtrFactory<LeScanManagerImpl> weak_factory_;

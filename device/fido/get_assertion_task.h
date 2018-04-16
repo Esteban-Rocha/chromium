@@ -44,8 +44,8 @@ class COMPONENT_EXPORT(DEVICE_FIDO) GetAssertionTask : public FidoTask {
 
   // PublicKeyUserEntity field in GetAssertion response is optional with the
   // following constraints:
-  // - If assertion has been made without user verification, user entity must
-  //   not be included.
+  // - If assertion has been made without user verification, user identifiable
+  //   information must not be included.
   // - For resident key credentials, user id of the user entity is mandatory.
   // - When multiple accounts exist for specified RP ID, user entity is
   //   mandatory.
@@ -62,6 +62,17 @@ class COMPONENT_EXPORT(DEVICE_FIDO) GetAssertionTask : public FidoTask {
   // published.
   bool CheckRequirementsOnReturnedCredentialId(
       const AuthenticatorGetAssertionResponse& response);
+
+  // Checks UserVerificationRequirement enum passed from the relying party
+  // is compatible with the authenticator using the following logic:
+  //  - If UserVerificationRequirement is set to kRequired, user verification
+  //    option parameter should be set to true.
+  //  - If UserVerificationRequirement is set to kPreferred, user verification
+  //    option is set to true only if the authenticator supports UV.
+  //  - If UserVerificationRequirement is set to kDiscouraged, user verification
+  //    is set to false.
+  // https://w3c.github.io/webauthn/#enumdef-userverificationrequirement
+  bool CheckUserVerificationCompatible();
 
   void OnCtapGetAssertionResponseReceived(
       base::Optional<std::vector<uint8_t>> device_response);

@@ -116,7 +116,7 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   // Sets the application ID for the window. The application ID identifies the
   // general class of applications to which the window belongs.
   static void SetApplicationId(aura::Window* window, const std::string& id);
-  static const std::string* GetApplicationId(aura::Window* window);
+  static const std::string* GetApplicationId(const aura::Window* window);
 
   // Set the application ID for the surface.
   void SetApplicationId(const std::string& application_id);
@@ -174,6 +174,7 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   void OnSetFrameColors(SkColor active_color, SkColor inactive_color) override;
   void OnSetParent(Surface* parent, const gfx::Point& position) override;
   void OnSetStartupId(const char* startup_id) override;
+  void OnSetApplicationId(const char* application_id) override;
 
   // Overridden from SurfaceObserver:
   void OnSurfaceDestroying(Surface* surface) override;
@@ -300,6 +301,8 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   gfx::Vector2d pending_origin_offset_accumulator_;
   int resize_component_ = HTCAPTION;  // HT constant (see ui/base/hit_test.h)
   int pending_resize_component_ = HTCAPTION;
+  gfx::Rect geometry_;
+  gfx::Rect pending_geometry_;
   base::Optional<gfx::Rect> shadow_bounds_;
   bool shadow_bounds_changed_ = false;
   std::unique_ptr<ash::WindowResizer> resizer_;
@@ -309,6 +312,12 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   // TODO(oshima): Remove this once the transition to new drag/resize
   // complete. https://crbug.com/801666.
   bool client_controlled_move_resize_ = true;
+  SurfaceFrameType frame_type_ = SurfaceFrameType::NONE;
+
+  bool frame_enabled() const {
+    return frame_type_ != SurfaceFrameType::NONE &&
+           frame_type_ != SurfaceFrameType::SHADOW;
+  }
 
  private:
   struct Config;
@@ -341,15 +350,12 @@ class ShellSurfaceBase : public SurfaceTreeHost,
 
   bool activatable_ = true;
   bool can_minimize_ = true;
-  bool frame_enabled_ = false;
   bool has_frame_colors_ = false;
   SkColor active_frame_color_ = SK_ColorBLACK;
   SkColor inactive_frame_color_ = SK_ColorBLACK;
   bool pending_show_widget_ = false;
   std::string application_id_;
   std::string startup_id_;
-  gfx::Rect geometry_;
-  gfx::Rect pending_geometry_;
   base::RepeatingClosure close_callback_;
   base::OnceClosure surface_destroyed_callback_;
   ScopedConfigure* scoped_configure_ = nullptr;

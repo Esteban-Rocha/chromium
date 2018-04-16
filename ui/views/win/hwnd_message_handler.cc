@@ -339,8 +339,7 @@ base::LazyInstance<HWNDMessageHandler::FullscreenWindowMonitorMap>::
 long HWNDMessageHandler::last_touch_or_pen_message_time_ = 0;
 
 HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
-    : msg_handled_(FALSE),
-      delegate_(delegate),
+    : delegate_(delegate),
       fullscreen_handler_(new FullscreenHandler),
       waiting_for_close_now_(false),
       use_system_default_icon_(false),
@@ -368,8 +367,9 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       left_button_down_on_caption_(false),
       background_fullscreen_hack_(false),
       pointer_events_for_touch_(features::IsUsingWMPointerForTouch()),
-      autohide_factory_(this),
-      weak_factory_(this) {}
+      precision_touchpad_scroll_phase_enabled_(base::FeatureList::IsEnabled(
+          features::kPrecisionTouchpadScrollPhase)),
+      autohide_factory_(this) {}
 
 HWNDMessageHandler::~HWNDMessageHandler() {
   DCHECK(delegate_->GetHWNDMessageDelegateInputMethod());
@@ -449,7 +449,7 @@ void HWNDMessageHandler::Close() {
     waiting_for_close_now_ = true;
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::BindOnce(&HWNDMessageHandler::CloseNow,
-                                  weak_factory_.GetWeakPtr()));
+                                  msg_handler_weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -925,7 +925,7 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
   // NOTE: We inline ProcessWindowMessage() as 'this' may be destroyed during
   // dispatch and ProcessWindowMessage() doesn't deal with that well.
   const BOOL old_msg_handled = msg_handled_;
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   const BOOL processed =
       _ProcessWindowMessage(window, message, w_param, l_param, result, 0);
   if (!ref)
@@ -990,9 +990,9 @@ LRESULT HWNDMessageHandler::HandleMouseMessage(unsigned int message,
                                                bool* handled) {
   // Don't track forwarded mouse messages. We expect the caller to track the
   // mouse.
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = HandleMouseEventInternal(message, w_param, l_param, false);
-  *handled = IsMsgHandled();
+  *handled = !ref.get() || msg_handled_;
   return ret;
 }
 
@@ -1000,13 +1000,13 @@ LRESULT HWNDMessageHandler::HandleKeyboardMessage(unsigned int message,
                                                   WPARAM w_param,
                                                   LPARAM l_param,
                                                   bool* handled) {
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = 0;
   if ((message == WM_CHAR) || (message == WM_SYSCHAR))
     ret = OnImeMessages(message, w_param, l_param);
   else
     ret = OnKeyEvent(message, w_param, l_param);
-  *handled = IsMsgHandled();
+  *handled = !ref.get() || msg_handled_;
   return ret;
 }
 
@@ -1014,9 +1014,9 @@ LRESULT HWNDMessageHandler::HandleTouchMessage(unsigned int message,
                                                WPARAM w_param,
                                                LPARAM l_param,
                                                bool* handled) {
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = OnTouchEvent(message, w_param, l_param);
-  *handled = IsMsgHandled();
+  *handled = !ref.get() || msg_handled_;
   return ret;
 }
 
@@ -1024,9 +1024,9 @@ LRESULT HWNDMessageHandler::HandlePointerMessage(unsigned int message,
                                                  WPARAM w_param,
                                                  LPARAM l_param,
                                                  bool* handled) {
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = OnPointerEvent(message, w_param, l_param);
-  *handled = IsMsgHandled();
+  *handled = !ref.get() || msg_handled_;
   return ret;
 }
 
@@ -1034,9 +1034,9 @@ LRESULT HWNDMessageHandler::HandleScrollMessage(unsigned int message,
                                                 WPARAM w_param,
                                                 LPARAM l_param,
                                                 bool* handled) {
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = OnScrollMessage(message, w_param, l_param);
-  *handled = IsMsgHandled();
+  *handled = !ref.get() || msg_handled_;
   return ret;
 }
 
@@ -1044,10 +1044,10 @@ LRESULT HWNDMessageHandler::HandleNcHitTestMessage(unsigned int message,
                                                    WPARAM w_param,
                                                    LPARAM l_param,
                                                    bool* handled) {
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = OnNCHitTest(
       gfx::Point(CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param)));
-  *handled = IsMsgHandled();
+  *handled = !ref.get() || msg_handled_;
   return ret;
 }
 
@@ -1098,7 +1098,11 @@ void HWNDMessageHandler::ApplyPinchZoomEnd() {
   delegate_->HandleGestureEvent(&event);
 }
 
-void HWNDMessageHandler::ApplyPanGestureScroll(int scroll_x, int scroll_y) {
+void HWNDMessageHandler::ApplyPanGestureEvent(
+    int scroll_x,
+    int scroll_y,
+    ui::EventMomentumPhase momentum_phase,
+    ui::ScrollEventPhase phase) {
   gfx::Vector2d offset{scroll_x, scroll_y};
 
   POINT root_location = {0};
@@ -1110,11 +1114,61 @@ void HWNDMessageHandler::ApplyPanGestureScroll(int scroll_x, int scroll_y) {
   gfx::Point cursor_location(location);
   gfx::Point cursor_root_location(root_location);
 
-  ui::MouseWheelEvent wheel_event(
-      offset, cursor_location, cursor_root_location, base::TimeTicks::Now(),
-      ui::EF_PRECISION_SCROLLING_DELTA, ui::EF_NONE);
+  int modifiers = ui::GetModifiersFromKeyState();
 
-  delegate_->HandleMouseEvent(&wheel_event);
+  if (precision_touchpad_scroll_phase_enabled_) {
+    ui::ScrollEvent event(ui::ET_SCROLL, cursor_location, ui::EventTimeForNow(),
+                          modifiers, scroll_x, scroll_y, scroll_x, scroll_y, 2,
+                          momentum_phase, phase);
+    delegate_->HandleScrollEvent(&event);
+  } else {
+    ui::MouseWheelEvent wheel_event(
+        offset, cursor_location, cursor_root_location, base::TimeTicks::Now(),
+        modifiers | ui::EF_PRECISION_SCROLLING_DELTA, ui::EF_NONE);
+    delegate_->HandleMouseEvent(&wheel_event);
+  }
+}
+
+void HWNDMessageHandler::ApplyPanGestureScroll(int scroll_x, int scroll_y) {
+  ApplyPanGestureEvent(scroll_x, scroll_y, ui::EventMomentumPhase::NONE,
+                       ui::ScrollEventPhase::kUpdate);
+}
+
+void HWNDMessageHandler::ApplyPanGestureFling(int scroll_x, int scroll_y) {
+  ApplyPanGestureEvent(scroll_x, scroll_y,
+                       ui::EventMomentumPhase::INERTIAL_UPDATE,
+                       ui::ScrollEventPhase::kNone);
+}
+
+void HWNDMessageHandler::ApplyPanGestureScrollBegin(int scroll_x,
+                                                    int scroll_y) {
+  // Phase information will be ingored in ApplyPanGestureEvent().
+  ApplyPanGestureEvent(scroll_x, scroll_y, ui::EventMomentumPhase::NONE,
+                       ui::ScrollEventPhase::kBegan);
+}
+
+void HWNDMessageHandler::ApplyPanGestureScrollEnd() {
+  if (!precision_touchpad_scroll_phase_enabled_)
+    return;
+
+  ApplyPanGestureEvent(0, 0, ui::EventMomentumPhase::NONE,
+                       ui::ScrollEventPhase::kEnd);
+}
+
+void HWNDMessageHandler::ApplyPanGestureFlingBegin() {
+  if (!precision_touchpad_scroll_phase_enabled_)
+    return;
+
+  ApplyPanGestureEvent(0, 0, ui::EventMomentumPhase::BEGAN,
+                       ui::ScrollEventPhase::kNone);
+}
+
+void HWNDMessageHandler::ApplyPanGestureFlingEnd() {
+  if (!precision_touchpad_scroll_phase_enabled_)
+    return;
+
+  ApplyPanGestureEvent(0, 0, ui::EventMomentumPhase::END,
+                       ui::ScrollEventPhase::kNone);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1354,7 +1408,7 @@ LRESULT HWNDMessageHandler::DefWindowProcWithRedrawLock(UINT message,
   ScopedRedrawLock lock(this);
   // The Widget and HWND can be destroyed in the call to DefWindowProc, so use
   // the WeakPtrFactory to avoid unlocking (and crashing) after destruction.
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   LRESULT result = DefWindowProc(hwnd(), message, w_param, l_param);
   if (!ref)
     lock.CancelUnlockOperation();
@@ -1385,7 +1439,7 @@ void HWNDMessageHandler::ForceRedrawWindow(int attempts) {
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&HWNDMessageHandler::ForceRedrawWindow,
-                       weak_factory_.GetWeakPtr(), attempts),
+                       msg_handler_weak_factory_.GetWeakPtr(), attempts),
         base::TimeDelta::FromMilliseconds(500));
     return;
   }
@@ -1652,7 +1706,7 @@ LRESULT HWNDMessageHandler::OnImeMessages(UINT message,
                                           WPARAM w_param,
                                           LPARAM l_param) {
   LRESULT result = 0;
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   const bool msg_handled =
       delegate_->HandleIMEMessage(message, w_param, l_param, &result);
   if (ref.get())
@@ -1693,7 +1747,7 @@ LRESULT HWNDMessageHandler::OnKeyEvent(UINT message,
   MSG msg = {
       hwnd(), message, w_param, l_param, static_cast<DWORD>(GetMessageTime())};
   ui::KeyEvent key(msg);
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   delegate_->HandleKeyEvent(&key);
   if (!ref)
     return 0;
@@ -2280,21 +2334,28 @@ void HWNDMessageHandler::OnSysCommand(UINT notification_code,
                          ((notification_code & sc_mask) == SC_MOVE) ||
                          ((notification_code & sc_mask) == SC_MAXIMIZE)))
     return;
+
+  const bool window_control_action =
+      (notification_code & sc_mask) == SC_MINIMIZE ||
+      (notification_code & sc_mask) == SC_MAXIMIZE ||
+      (notification_code & sc_mask) == SC_RESTORE;
+  const bool custom_controls_frame_mode =
+      delegate_->GetFrameMode() == FrameMode::SYSTEM_DRAWN_NO_CONTROLS ||
+      delegate_->GetFrameMode() == FrameMode::CUSTOM_DRAWN;
+  if (custom_controls_frame_mode && window_control_action)
+    delegate_->ResetWindowControls();
+
   if (delegate_->GetFrameMode() == FrameMode::CUSTOM_DRAWN) {
-    if ((notification_code & sc_mask) == SC_MINIMIZE ||
-        (notification_code & sc_mask) == SC_MAXIMIZE ||
-        (notification_code & sc_mask) == SC_RESTORE) {
-      delegate_->ResetWindowControls();
+    const bool window_bounds_change =
+        (notification_code & sc_mask) == SC_MOVE ||
+        (notification_code & sc_mask) == SC_SIZE;
+    if (window_bounds_change || window_control_action)
       DestroyAXSystemCaret();
-    } else if ((notification_code & sc_mask) == SC_MOVE ||
-               (notification_code & sc_mask) == SC_SIZE) {
-      if (!IsVisible()) {
-        // Circumvent ScopedRedrawLocks and force visibility before entering a
-        // resize or move modal loop to get continuous sizing/moving feedback.
-        SetWindowLong(hwnd(), GWL_STYLE,
-                      GetWindowLong(hwnd(), GWL_STYLE) | WS_VISIBLE);
-      }
-      DestroyAXSystemCaret();
+    if (window_bounds_change && !IsVisible()) {
+      // Circumvent ScopedRedrawLocks and force visibility before entering a
+      // resize or move modal loop to get continuous sizing/moving feedback.
+      SetWindowLong(hwnd(), GWL_STYLE,
+                    GetWindowLong(hwnd(), GWL_STYLE) | WS_VISIBLE);
     }
   }
 
@@ -2320,7 +2381,8 @@ void HWNDMessageHandler::OnSysCommand(UINT notification_code,
     // with the mouse/touch/keyboard, we flag as being in a size loop.
     if ((notification_code & sc_mask) == SC_SIZE)
       in_size_loop_ = true;
-    base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+    base::WeakPtr<HWNDMessageHandler> ref(
+        msg_handler_weak_factory_.GetWeakPtr());
 
     DefWindowProc(hwnd(), WM_SYSCOMMAND, notification_code,
                   MAKELPARAM(point.x(), point.y()));
@@ -2399,7 +2461,7 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
         base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
             base::BindOnce(&HWNDMessageHandler::ResetTouchDownContext,
-                           weak_factory_.GetWeakPtr()),
+                           msg_handler_weak_factory_.GetWeakPtr()),
             base::TimeDelta::FromMilliseconds(kTouchDownContextResetTimeout));
       } else {
         if (input[i].dwFlags & TOUCHEVENTF_MOVE) {
@@ -2432,8 +2494,9 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
     // events on windows don't fire if we enter a modal loop in the context of
     // a touch event.
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::BindOnce(&HWNDMessageHandler::HandleTouchEvents,
-                                  weak_factory_.GetWeakPtr(), touch_events));
+        FROM_HERE,
+        base::BindOnce(&HWNDMessageHandler::HandleTouchEvents,
+                       msg_handler_weak_factory_.GetWeakPtr(), touch_events));
   }
   CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(l_param));
   SetMsgHandled(FALSE);
@@ -2540,7 +2603,7 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
         base::ThreadTaskRunnerHandle::Get()->PostTask(
             FROM_HERE,
             base::BindOnce(&HWNDMessageHandler::StopIgnoringPosChanges,
-                           weak_factory_.GetWeakPtr()));
+                           msg_handler_weak_factory_.GetWeakPtr()));
       }
       last_monitor_ = monitor;
       last_monitor_rect_ = monitor_rect;
@@ -2622,7 +2685,7 @@ void HWNDMessageHandler::OnSessionChange(WPARAM status_code) {
 }
 
 void HWNDMessageHandler::HandleTouchEvents(const TouchEvents& touch_events) {
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   for (size_t i = 0; i < touch_events.size() && ref; ++i) {
     ui::TouchEvent* touch_event = const_cast<ui::TouchEvent*>(&touch_events[i]);
     delegate_->HandleTouchEvent(touch_event);
@@ -2746,7 +2809,7 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
 
   // There are cases where the code handling the message destroys the window,
   // so use the weak ptr to check if destruction occured or not.
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   bool handled = delegate_->HandleMouseEvent(&event);
 
   if (!ref.get())
@@ -2805,7 +2868,7 @@ LRESULT HWNDMessageHandler::HandlePointerEventTypeTouch(UINT message,
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&HWNDMessageHandler::ResetTouchDownContext,
-                       weak_factory_.GetWeakPtr()),
+                       msg_handler_weak_factory_.GetWeakPtr()),
         base::TimeDelta::FromMilliseconds(kTouchDownContextResetTimeout));
   }
 
@@ -2845,7 +2908,7 @@ LRESULT HWNDMessageHandler::HandlePointerEventTypeTouch(UINT message,
 
   // There are cases where the code handling the message destroys the
   // window, so use the weak ptr to check if destruction occurred or not.
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   delegate_->HandleTouchEvent(&event);
 
   if (event_type == ui::ET_TOUCH_RELEASED)
@@ -2879,7 +2942,7 @@ LRESULT HWNDMessageHandler::HandlePointerEventTypePen(UINT message,
 
   // There are cases where the code handling the message destroys the
   // window, so use the weak ptr to check if destruction occured or not.
-  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   if (event) {
     if (event->IsTouchEvent()) {
       delegate_->HandleTouchEvent(event->AsTouchEvent());

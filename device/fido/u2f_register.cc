@@ -17,7 +17,7 @@ namespace device {
 // static
 std::unique_ptr<U2fRequest> U2fRegister::TryRegistration(
     service_manager::Connector* connector,
-    const base::flat_set<U2fTransportProtocol>& transports,
+    const base::flat_set<FidoTransportProtocol>& transports,
     std::vector<std::vector<uint8_t>> registered_keys,
     std::vector<uint8_t> challenge_digest,
     std::vector<uint8_t> application_parameter,
@@ -31,13 +31,14 @@ std::unique_ptr<U2fRequest> U2fRegister::TryRegistration(
   return request;
 }
 
-U2fRegister::U2fRegister(service_manager::Connector* connector,
-                         const base::flat_set<U2fTransportProtocol>& transports,
-                         std::vector<std::vector<uint8_t>> registered_keys,
-                         std::vector<uint8_t> challenge_digest,
-                         std::vector<uint8_t> application_parameter,
-                         bool individual_attestation_ok,
-                         RegisterResponseCallback completion_callback)
+U2fRegister::U2fRegister(
+    service_manager::Connector* connector,
+    const base::flat_set<FidoTransportProtocol>& transports,
+    std::vector<std::vector<uint8_t>> registered_keys,
+    std::vector<uint8_t> challenge_digest,
+    std::vector<uint8_t> application_parameter,
+    bool individual_attestation_ok,
+    RegisterResponseCallback completion_callback)
     : U2fRequest(connector,
                  transports,
                  std::move(application_parameter),
@@ -109,9 +110,7 @@ void U2fRegister::OnTryCheckRegistration(
       break;
     default:
       // Some sort of failure occurred. Abandon this device and move on.
-      state_ = State::IDLE;
-      current_device_ = nullptr;
-      Transition();
+      AbandonCurrentDeviceAndTransition();
       break;
   }
 }
@@ -142,7 +141,8 @@ void U2fRegister::OnTryDevice(bool is_duplicate_registration,
       state_ = State::COMPLETE;
       if (is_duplicate_registration) {
         std::move(completion_callback_)
-            .Run(FidoReturnCode::kInvalidState, base::nullopt);
+            .Run(FidoReturnCode::kUserConsentButCredentialExcluded,
+                 base::nullopt);
         break;
       }
       auto response =
@@ -151,7 +151,7 @@ void U2fRegister::OnTryDevice(bool is_duplicate_registration,
       if (!response) {
         // The response data was corrupted / didn't parse properly.
         std::move(completion_callback_)
-            .Run(FidoReturnCode::kFailure, base::nullopt);
+            .Run(FidoReturnCode::kAuthenticatorResponseInvalid, base::nullopt);
         break;
       }
       std::move(completion_callback_)
@@ -164,10 +164,8 @@ void U2fRegister::OnTryDevice(bool is_duplicate_registration,
       Transition();
       break;
     default:
-      state_ = State::IDLE;
       // An error has occurred, quit trying this device.
-      current_device_ = nullptr;
-      Transition();
+      AbandonCurrentDeviceAndTransition();
       break;
   }
 }

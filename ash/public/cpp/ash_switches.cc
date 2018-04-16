@@ -25,6 +25,9 @@ const char kAshDisableLoginDimAndBlur[] = "ash-disable-login-dim-and-blur";
 const char kAshDisableSmoothScreenRotation[] =
     "ash-disable-smooth-screen-rotation";
 
+// Disables the split view on tablet mode.
+const char kAshDisableTabletSplitView[] = "disable-tablet-splitview";
+
 // Disable the Touch Exploration Mode. Touch Exploration Mode will no longer be
 // turned on automatically when spoken feedback is enabled when this flag is
 // set.
@@ -58,11 +61,8 @@ const char kAshSidebarDisabled[] = "disable-ash-sidebar";
 // is used to enable tablet mode on convertible devices.
 const char kAshEnableTabletMode[] = "enable-touchview";
 
-// Enables the split view on tablet mode.
-const char kAshEnableTabletSplitView[] = "enable-tablet-splitview";
-
 // Enable the wayland server.
-const char kAshEnableWaylandServer[] = "ash-enable-wayland-server";
+const char kAshEnableWaylandServer[] = "enable-wayland-server";
 
 // Enables mirrored screen.
 const char kAshEnableMirroredScreen[] = "ash-enable-mirrored-screen";

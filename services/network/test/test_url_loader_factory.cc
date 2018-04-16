@@ -5,6 +5,7 @@
 #include "services/network/test/test_url_loader_factory.h"
 
 #include "base/logging.h"
+#include "net/http/http_util.h"
 #include "services/network/public/cpp/resource_request.h"
 
 namespace network {
@@ -48,8 +49,9 @@ void TestURLLoaderFactory::AddResponse(const GURL& url,
 void TestURLLoaderFactory::AddResponse(const std::string& url,
                                        const std::string& content) {
   ResourceResponseHead head;
+  std::string headers("HTTP/1.1 200 OK\nContent-type: text/html\n\n");
   head.headers = new net::HttpResponseHeaders(
-      "HTTP/1.1 200 OK\nContent-type: text/html\n\n");
+      net::HttpUtil::AssembleRawHeaders(headers.c_str(), headers.size()));
   head.mime_type = "text/html";
   URLLoaderCompletionStatus status;
   status.decoded_body_length = content.size();
@@ -95,14 +97,19 @@ bool TestURLLoaderFactory::CreateLoaderAndStartInternal(
   if (it == responses_.end())
     return false;
 
-  CHECK(it->second.redirects.empty()) << "TODO(jam): handle redirects";
-  client->OnReceiveResponse(it->second.head, nullptr);
-  mojo::DataPipe data_pipe(it->second.content.size());
-  uint32_t bytes_written = it->second.content.size();
-  CHECK_EQ(MOJO_RESULT_OK, data_pipe.producer_handle->WriteData(
-                               it->second.content.data(), &bytes_written,
-                               MOJO_WRITE_DATA_FLAG_ALL_OR_NONE));
-  client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
+  for (const auto& redirect : it->second.redirects) {
+    client->OnReceiveRedirect(redirect.first, redirect.second);
+  }
+
+  if (it->second.status.error_code == net::OK) {
+    client->OnReceiveResponse(it->second.head, nullptr);
+    mojo::DataPipe data_pipe(it->second.content.size());
+    uint32_t bytes_written = it->second.content.size();
+    CHECK_EQ(MOJO_RESULT_OK, data_pipe.producer_handle->WriteData(
+                                 it->second.content.data(), &bytes_written,
+                                 MOJO_WRITE_DATA_FLAG_ALL_OR_NONE));
+    client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
+  }
   client->OnComplete(it->second.status);
   return true;
 }

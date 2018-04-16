@@ -53,8 +53,8 @@
 #include "services/device/public/mojom/geolocation_context.mojom.h"
 #include "services/device/public/mojom/wake_lock.mojom.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
-#include "third_party/WebKit/public/mojom/color_chooser/color_chooser.mojom.h"
-#include "third_party/WebKit/public/platform/WebDragOperation.h"
+#include "third_party/blink/public/mojom/color_chooser/color_chooser.mojom.h"
+#include "third_party/blink/public/platform/web_drag_operation.h"
 #include "ui/accessibility/ax_modes.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -430,6 +430,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void SetPageScale(float page_scale_factor) override;
   gfx::Size GetPreferredSize() const override;
   bool GotResponseToLockMouseRequest(bool allowed) override;
+  bool GotResponseToKeyboardLockRequest(bool allowed) override;
   bool HasOpener() const override;
   RenderFrameHostImpl* GetOpener() const override;
   bool HasOriginalOpener() const override;
@@ -576,7 +577,9 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                                   net::CertStatus cert_status) override;
   void ResourceLoadComplete(
       mojom::ResourceLoadInfoPtr resource_load_information) override;
-  void UpdatePictureInPictureSurfaceId(viz::SurfaceId surface_id) override;
+  void UpdatePictureInPictureSurfaceId(const viz::SurfaceId& surface_id,
+                                       const gfx::Size& natural_size) override;
+  void ExitPictureInPicture() override;
 
   // RenderViewHostDelegate ----------------------------------------------------
   RenderViewHostDelegateView* GetDelegateView() override;
@@ -684,9 +687,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void RenderWidgetWasResized(RenderWidgetHostImpl* render_widget_host,
                               const ScreenInfo& screen_info,
                               bool width_changed) override;
-  void ResizeDueToAutoResize(RenderWidgetHostImpl* render_widget_host,
-                             const gfx::Size& new_size,
-                             uint64_t sequence_number) override;
+  void ResizeDueToAutoResize(
+      RenderWidgetHostImpl* render_widget_host,
+      const gfx::Size& new_size,
+      uint64_t sequence_number,
+      const viz::LocalSurfaceId& local_surface_id) override;
   gfx::Size GetAutoResizeSize() override;
   void ResetAutoResizeSize() override;
   KeyboardEventProcessingResult PreHandleKeyboardEvent(
@@ -723,7 +728,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                           bool user_gesture,
                           bool last_unlocked_by_target,
                           bool privileged) override;
-  bool RequestKeyboardLock(RenderWidgetHostImpl* render_widget_host) override;
+  bool RequestKeyboardLock(RenderWidgetHostImpl* render_widget_host,
+                           bool esc_key_locked) override;
   void CancelKeyboardLock(RenderWidgetHostImpl* render_widget_host) override;
   RenderWidgetHostImpl* GetKeyboardLockWidget() override;
   // The following function is already listed under WebContents overrides:
@@ -1668,6 +1674,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Stores the RenderWidgetHost that currently holds a keyboard lock or nullptr
   // if no RenderWidgetHost has the keyboard locked.
   RenderWidgetHostImpl* keyboard_lock_widget_ = nullptr;
+
+  // Indicates whether the escape key is one of the requested keys to be locked.
+  // This information is used to drive the browser UI so the correct exit
+  // instructions are displayed to the user in fullscreen mode.
+  bool esc_key_locked_ = false;
 
 #if defined(OS_ANDROID)
   std::unique_ptr<service_manager::InterfaceProvider> java_interfaces_;

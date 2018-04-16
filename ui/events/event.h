@@ -993,18 +993,16 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
  public:
   explicit ScrollEvent(const PlatformEvent& native_event);
   template <class T>
-  ScrollEvent(const ScrollEvent& model,
-              T* source,
-              T* target)
+  ScrollEvent(const ScrollEvent& model, T* source, T* target)
       : MouseEvent(model, source, target),
         x_offset_(model.x_offset_),
         y_offset_(model.y_offset_),
         x_offset_ordinal_(model.x_offset_ordinal_),
         y_offset_ordinal_(model.y_offset_ordinal_),
-        finger_count_(model.finger_count_){
-  }
+        finger_count_(model.finger_count_),
+        momentum_phase_(model.momentum_phase_),
+        scroll_event_phase_(model.scroll_event_phase_) {}
 
-  // Used for tests.
   ScrollEvent(EventType type,
               const gfx::Point& location,
               base::TimeTicks time_stamp,
@@ -1014,7 +1012,8 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
               float x_offset_ordinal,
               float y_offset_ordinal,
               int finger_count,
-              EventMomentumPhase momentum_phase = EventMomentumPhase::NONE);
+              EventMomentumPhase momentum_phase = EventMomentumPhase::NONE,
+              ScrollEventPhase phase = ScrollEventPhase::kNone);
 
   ScrollEvent(const ScrollEvent& copy);
   ~ScrollEvent() override;
@@ -1030,6 +1029,7 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
   float y_offset_ordinal() const { return y_offset_ordinal_; }
   int finger_count() const { return finger_count_; }
   EventMomentumPhase momentum_phase() const { return momentum_phase_; }
+  ScrollEventPhase scroll_event_phase() const { return scroll_event_phase_; }
 
  private:
   // Potential accelerated offsets.
@@ -1043,7 +1043,10 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
 
   // For non-fling events, provides momentum information (e.g. for the case
   // where the device provides continuous event updates during a fling).
-  EventMomentumPhase momentum_phase_;
+  EventMomentumPhase momentum_phase_ = EventMomentumPhase::NONE;
+
+  // Provides phase information if device can provide.
+  ScrollEventPhase scroll_event_phase_ = ScrollEventPhase::kNone;
 };
 
 class EVENTS_EXPORT GestureEvent : public LocatedEvent {

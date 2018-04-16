@@ -29,9 +29,15 @@ APP_LIST_EXPORT extern const base::Feature kEnableBackgroundBlur;
 // Enables the Play Store app search.
 APP_LIST_EXPORT extern const base::Feature kEnablePlayStoreAppSearch;
 
+// Enables the home launcher in tablet mode. In this mode, the launcher will be
+// always shown right on top of the wallpaper. Home button will minimize all
+// windows instead of toggling the launcher.
+APP_LIST_EXPORT extern const base::Feature kEnableHomeLauncher;
+
 bool APP_LIST_EXPORT IsAnswerCardEnabled();
 bool APP_LIST_EXPORT IsBackgroundBlurEnabled();
 bool APP_LIST_EXPORT IsPlayStoreAppSearchEnabled();
+bool APP_LIST_EXPORT IsHomeLauncherEnabled();
 std::string APP_LIST_EXPORT AnswerServerUrl();
 std::string APP_LIST_EXPORT AnswerServerQuerySuffix();
 

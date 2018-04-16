@@ -14,13 +14,13 @@
 
 #include "ash/app_list/model/search/search_box_model.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/icu_test_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/app_list/answer_card_contents_registry.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/test/app_list_test_model.h"
@@ -43,6 +43,7 @@
 #include "ui/app_list/views/search_result_view.h"
 #include "ui/app_list/views/suggestions_container_view.h"
 #include "ui/app_list/views/test/apps_grid_view_test_api.h"
+#include "ui/aura/env.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/chromeos/search_box/search_box_constants.h"
 #include "ui/compositor/layer_animator.h"
@@ -194,6 +195,19 @@ class AppListViewFocusTest : public views::ViewsTestBase,
         base::i18n::SetICUDefaultLocale("he");
     }
 
+    // Creates AnswerCardContentsRegistry and registers a fake answer card
+    // view for classic ash. Otherwise, the answer card view will not be
+    // created. Revisit this when the test runs in mash.
+    if (aura::Env::GetInstanceDontCreate() &&
+        aura::Env::GetInstanceDontCreate()->mode() == aura::Env::Mode::LOCAL) {
+      answer_card_contents_registry_ =
+          std::make_unique<AnswerCardContentsRegistry>();
+      fake_answer_card_view_ = std::make_unique<views::View>();
+      fake_answer_card_view_->set_owned_by_client();
+      fake_answer_card_token_ = answer_card_contents_registry_->Register(
+          fake_answer_card_view_.get());
+    }
+
     // Initialize app list view.
     delegate_.reset(new AppListTestViewDelegate);
     view_ = new AppListView(delegate_.get());
@@ -277,6 +291,8 @@ class AppListViewFocusTest : public views::ViewsTestBase,
             std::make_unique<TestSearchResult>();
         result->set_display_type(data.first);
         result->set_relevance(relevance);
+        if (data.first == ash::SearchResultDisplayType::kCard)
+          result->set_answer_card_contents_token(fake_answer_card_token_);
         results->Add(std::move(result));
       }
     }
@@ -461,6 +477,11 @@ class AppListViewFocusTest : public views::ViewsTestBase,
   std::unique_ptr<AppsGridViewTestApi> test_api_;
   // Restores the locale to default when destructor is called.
   base::test::ScopedRestoreICUDefaultLocale restore_locale_;
+
+  std::unique_ptr<AnswerCardContentsRegistry> answer_card_contents_registry_;
+  std::unique_ptr<views::View> fake_answer_card_view_;
+  base::UnguessableToken fake_answer_card_token_;
+
   DISALLOW_COPY_AND_ASSIGN(AppListViewFocusTest);
 };
 
@@ -1554,34 +1575,43 @@ TEST_F(AppListViewTest, FolderViewToPeeking) {
                    ->IsInFolderView());
 }
 
-// Tests that when a click or tap event propagates to the AppListView, if the
-// event location is within the bounds of AppsGridView, do not close the
-// AppListView.
+// Tests that a tap or click in an empty region of the AppsGridView closes the
+// AppList.
 TEST_F(AppListViewTest, TapAndClickWithinAppsGridView) {
   Initialize(0, false, false);
-  delegate_->GetTestModel()->PopulateApps(kInitialItems);
+  // Populate the AppList with a small number of apps so there is an empty
+  // region to click.
+  delegate_->GetTestModel()->PopulateApps(6);
   Show();
   view_->SetState(AppListViewState::FULLSCREEN_ALL_APPS);
   EXPECT_EQ(AppListViewState::FULLSCREEN_ALL_APPS, view_->app_list_state());
-  ContentsView* contents_view = view_->app_list_main_view()->contents_view();
-  AppsContainerView* container_view = contents_view->GetAppsContainerView();
-  const gfx::Rect grid_view_bounds =
-      container_view->apps_grid_view()->GetBoundsInScreen();
-  gfx::Point target_point = grid_view_bounds.origin();
-  target_point.Offset(100, 100);
-  ASSERT_TRUE(grid_view_bounds.Contains(target_point));
+  AppsGridView* apps_grid_view = view_->app_list_main_view()
+                                     ->contents_view()
+                                     ->GetAppsContainerView()
+                                     ->apps_grid_view();
+  AppsGridViewTestApi test_api(apps_grid_view);
 
-  // Tests gesture tap within apps grid view doesn't close app list view.
-  ui::GestureEvent tap(target_point.x(), target_point.y(), 0, base::TimeTicks(),
+  // Get the point of the first empty region (where app #7 would be) and tap on
+  // it, the AppList should close.
+  const gfx::Point empty_region =
+      test_api.GetItemTileRectOnCurrentPageAt(2, 2).CenterPoint();
+  ui::GestureEvent tap(empty_region.x(), empty_region.y(), 0, base::TimeTicks(),
                        ui::GestureEventDetails(ui::ET_GESTURE_TAP));
+  ui::Event::DispatcherApi tap_dispatcher_api(static_cast<ui::Event*>(&tap));
+  tap_dispatcher_api.set_target(view_);
   view_->OnGestureEvent(&tap);
-  EXPECT_EQ(AppListViewState::FULLSCREEN_ALL_APPS, view_->app_list_state());
+  EXPECT_EQ(AppListViewState::CLOSED, view_->app_list_state());
 
-  // Tests mouse click within apps grid view doesn't close app list view.
-  ui::MouseEvent mouse_click(ui::ET_MOUSE_PRESSED, target_point, target_point,
+  Show();
+
+  // Click on the same empty region, the AppList should close again.
+  ui::MouseEvent mouse_click(ui::ET_MOUSE_PRESSED, empty_region, empty_region,
                              base::TimeTicks(), 0, 0);
+  ui::Event::DispatcherApi mouse_click_dispatcher_api(
+      static_cast<ui::Event*>(&mouse_click));
+  mouse_click_dispatcher_api.set_target(view_);
   view_->OnMouseEvent(&mouse_click);
-  EXPECT_EQ(AppListViewState::FULLSCREEN_ALL_APPS, view_->app_list_state());
+  EXPECT_EQ(AppListViewState::CLOSED, view_->app_list_state());
 }
 
 // Tests that search box should not become a rectangle during drag.

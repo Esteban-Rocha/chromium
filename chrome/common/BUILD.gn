@@ -220,7 +220,6 @@ static_library("common") {
     "//chrome/app/theme:theme_resources",
     "//chrome/common:constants",
     "//chrome/common/net",
-    "//chrome/common/profiling",
     "//chrome/installer/util:with_no_strings",
     "//components/cast_certificate",
     "//components/cdm/common",
@@ -249,6 +248,7 @@ static_library("common") {
     "//components/policy/core/common",
     "//components/prefs",
     "//components/safe_browsing/web_ui:constants",
+    "//components/services/heap_profiling/public/cpp",
     "//components/strings",
     "//components/translate/content/common",
     "//components/translate/core/common",
@@ -692,7 +692,7 @@ mojom("mojo_bindings") {
     "//content/public/common:interfaces",
     "//mojo/common:common_custom_types",
     "//mojo/public/mojom/base",
-    "//third_party/WebKit/public:mojo_bindings",
+    "//third_party/blink/public:mojo_bindings",
     "//ui/gfx/geometry/mojo",
     "//url/mojom:url_mojom_gurl",
     "//url/mojom:url_mojom_origin",
@@ -703,7 +703,7 @@ mojom("mojo_bindings") {
   }
 
   overridden_deps = [
-    "//third_party/WebKit/public:mojo_bindings",
+    "//third_party/blink/public:mojo_bindings",
     "//content/public/common:interfaces",
   ]
 
@@ -732,7 +732,7 @@ mojom("page_load_metrics_mojom") {
 
   public_deps = [
     "//mojo/public/mojom/base",
-    "//third_party/WebKit/public:web_feature_mojo_bindings",
+    "//third_party/blink/public:web_feature_mojo_bindings",
   ]
 }
 
@@ -743,7 +743,7 @@ mojom("client_hints_mojom") {
 
   public_deps = [
     "//mojo/public/mojom/base",
-    "//third_party/WebKit/public:web_client_hints_types_mojo_bindings",
+    "//third_party/blink/public:web_client_hints_types_mojo_bindings",
     "//url/mojom:url_mojom_origin",
   ]
 }

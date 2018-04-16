@@ -11,10 +11,12 @@
 
 #include "base/macros.h"
 #include "base/strings/string16.h"
-#include "third_party/WebKit/public/web/WebPopupType.h"
+#include "content/common/mac/attributed_string_coder.h"
+#include "third_party/blink/public/web/web_popup_type.h"
 #include "third_party/skia/include/core/SkColor.h"
 
 namespace gfx {
+class Point;
 class Range;
 class Rect;
 }  // namespace gfx
@@ -64,16 +66,32 @@ class RenderWidgetHostNSViewBridge {
   // Call the -[NSView setToolTipAtMousePoint] method.
   virtual void SetTooltipText(const base::string16& display_text) = 0;
 
-  // Set or clear the marked and selected range.
-  virtual void SetMarkedRange(const gfx::Range& range) = 0;
-  virtual void ClearMarkedText() = 0;
-  virtual void SetSelectedRange(const gfx::Range& range) = 0;
+  // Forward the TextInputManager::TextSelection from the renderer.
+  virtual void SetTextSelection(const base::string16& text,
+                                size_t offset,
+                                const gfx::Range& range) = 0;
+
+  // Forward the TextInputManager::CompositionRangeInfo from the renderer.
+  virtual void SetCompositionRangeInfo(const gfx::Range& range) = 0;
+
+  // Clear the marked range.
+  virtual void CancelComposition() = 0;
 
   // Indicate if the WebContext is showing a context menu.
   virtual void SetShowingContextMenu(bool showing) = 0;
 
   // Set the cursor type to display.
   virtual void DisplayCursor(const WebCursor& cursor) = 0;
+
+  // Open the dictionary overlay for the currently selected string. This
+  // will roundtrip to the NSView to determine the selected range.
+  virtual void ShowDictionaryOverlayForSelection() = 0;
+
+  // Open the dictionary overlay for the specified string at the specified
+  // point.
+  virtual void ShowDictionaryOverlay(
+      const mac::AttributedStringCoder::EncodedString& encoded_string,
+      gfx::Point baseline_point) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostNSViewBridge);

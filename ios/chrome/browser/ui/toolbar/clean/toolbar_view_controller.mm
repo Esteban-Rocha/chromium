@@ -4,7 +4,6 @@
 
 #import "ios/chrome/browser/ui/toolbar/clean/toolbar_view_controller.h"
 
-#include "base/ios/ios_util.h"
 #import "base/mac/foundation_util.h"
 #include "base/metrics/user_metrics.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
@@ -556,10 +555,6 @@ const CGFloat kScrollFadeDistance = 30;
 
 - (void)setShareMenuEnabled:(BOOL)enabled {
   self.view.shareButton.enabled = enabled;
-}
-
-- (void)setSearchIcon:(UIImage*)searchIcon {
-  // No-op, no search icon in the non-adaptive toolbar.
 }
 
 #pragma mark - ToolbarViewFullscreenDelegate

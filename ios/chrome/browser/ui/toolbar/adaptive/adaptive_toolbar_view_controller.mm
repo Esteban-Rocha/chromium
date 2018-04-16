@@ -44,6 +44,7 @@
 
 - (void)updateForSideSwipeSnapshotOnNTP:(BOOL)onNTP {
   self.view.progressBar.hidden = YES;
+  self.view.progressBar.alpha = 0;
   self.view.blur.hidden = YES;
   self.view.backgroundColor =
       self.buttonFactory.toolbarConfiguration.backgroundColor;
@@ -52,6 +53,7 @@
 }
 
 - (void)resetAfterSideSwipeSnapshot {
+  self.view.progressBar.alpha = 1;
   self.view.blur.hidden = NO;
   self.view.backgroundColor = [UIColor clearColor];
 }
@@ -71,13 +73,11 @@
   self.view.toolsMenuButton.guideName = kToolsMenuGuide;
   self.view.tabGridButton.guideName = kTabSwitcherGuide;
   self.view.forwardButton.guideName = kForwardButtonGuide;
-  self.view.forwardButtonTrailingPosition.guideName = kForwardButtonGuide;
   self.view.backButton.guideName = kBackButtonGuide;
 
   // Add navigation popup menu triggers.
   [self addLongPressGestureToView:self.view.backButton];
   [self addLongPressGestureToView:self.view.forwardButton];
-  [self addLongPressGestureToView:self.view.forwardButtonTrailingPosition];
   [self addLongPressGestureToView:self.view.tabGridButton];
 }
 
@@ -96,7 +96,6 @@
 
 - (void)setCanGoForward:(BOOL)canGoForward {
   self.view.forwardButton.enabled = canGoForward;
-  self.view.forwardButtonTrailingPosition.enabled = canGoForward;
 }
 
 - (void)setCanGoBack:(BOOL)canGoBack {
@@ -130,7 +129,7 @@
 }
 
 - (void)setPageBookmarked:(BOOL)bookmarked {
-  self.view.bookmarkButton.selected = bookmarked;
+  self.view.bookmarkButton.spotlighted = bookmarked;
 }
 
 - (void)setVoiceSearchEnabled:(BOOL)enabled {
@@ -143,12 +142,6 @@
 
 - (void)setIsNTP:(BOOL)isNTP {
   // No-op, should be handled by the primary toolbar.
-}
-
-- (void)setSearchIcon:(UIImage*)searchIcon {
-  if (IconForSearchButton() == ToolbarSearchButtonIconMagnifying)
-    return;
-  [self.view.omniboxButton setImage:searchIcon forState:UIControlStateNormal];
 }
 
 #pragma mark - NewTabPageControllerDelegate
@@ -176,21 +169,45 @@
        }];
 }
 
-#pragma mark - TabHistoryUIUpdater
+#pragma mark - PopupMenuUIUpdating
 
-- (void)updateUIForTabHistoryPresentationFrom:(ToolbarButtonType)buttonType {
-  if (buttonType == ToolbarButtonTypeBack) {
-    self.view.backButton.selected = YES;
-  } else {
-    self.view.forwardButton.selected = YES;
-    self.view.forwardButtonTrailingPosition.selected = YES;
+- (void)updateUIForMenuDisplayed:(PopupMenuType)popupType {
+  ToolbarButton* selectedButton = nil;
+  switch (popupType) {
+    case PopupMenuTypeNavigationForward:
+      selectedButton = self.view.forwardButton;
+      break;
+    case PopupMenuTypeNavigationBackward:
+      selectedButton = self.view.backButton;
+      break;
+    case PopupMenuTypeSearch:
+      selectedButton = self.view.omniboxButton;
+      break;
+    case PopupMenuTypeTabGrid:
+      selectedButton = self.view.tabGridButton;
+      break;
+    case PopupMenuTypeToolsMenu:
+      selectedButton = self.view.toolsMenuButton;
+      break;
+  }
+
+  selectedButton.spotlighted = YES;
+
+  for (ToolbarButton* button in self.view.allButtons) {
+    button.dimmed = YES;
   }
 }
 
-- (void)updateUIForTabHistoryWasDismissed {
-  self.view.backButton.selected = NO;
-  self.view.forwardButton.selected = NO;
-  self.view.forwardButtonTrailingPosition.selected = NO;
+- (void)updateUIForMenuDismissed {
+  self.view.backButton.spotlighted = NO;
+  self.view.forwardButton.spotlighted = NO;
+  self.view.omniboxButton.spotlighted = NO;
+  self.view.tabGridButton.spotlighted = NO;
+  self.view.toolsMenuButton.spotlighted = NO;
+
+  for (ToolbarButton* button in self.view.allButtons) {
+    button.dimmed = NO;
+  }
 }
 
 #pragma mark - Private
@@ -225,8 +242,7 @@
 
   if (sender == self.view.backButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarBack"));
-  } else if (sender == self.view.forwardButton ||
-             sender == self.view.forwardButtonTrailingPosition) {
+  } else if (sender == self.view.forwardButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarForward"));
   } else if (sender == self.view.reloadButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarReload"));
@@ -262,18 +278,9 @@
     return;
 
   if (gesture.view == self.view.backButton) {
-    if (base::FeatureList::IsEnabled(kNewToolsMenu)) {
-      [self.dispatcher showNavigationHistoryBackPopupMenu];
-    } else {
-      [self.dispatcher showTabHistoryPopupForBackwardHistory];
-    }
-  } else if (gesture.view == self.view.forwardButton ||
-             gesture.view == self.view.forwardButtonTrailingPosition) {
-    if (base::FeatureList::IsEnabled(kNewToolsMenu)) {
-      [self.dispatcher showNavigationHistoryForwardPopupMenu];
-    } else {
-      [self.dispatcher showTabHistoryPopupForForwardHistory];
-    }
+    [self.dispatcher showNavigationHistoryBackPopupMenu];
+  } else if (gesture.view == self.view.forwardButton) {
+    [self.dispatcher showNavigationHistoryForwardPopupMenu];
   } else if (gesture.view == self.view.tabGridButton) {
     [self.dispatcher showTabGridButtonPopup];
   }

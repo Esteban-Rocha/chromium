@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/task_scheduler/task_traits.h"
+#include "components/certificate_transparency/ct_policy_manager.h"
 #include "components/cookie_config/cookie_store_util.h"
 #include "components/network_session_configurator/browser/network_session_configurator.h"
 #include "components/network_session_configurator/common/network_switches.h"
@@ -27,6 +28,9 @@
 #include "net/dns/mapped_host_resolver.h"
 #include "net/extras/sqlite/sqlite_channel_id_store.h"
 #include "net/extras/sqlite/sqlite_persistent_cookie_store.h"
+#include "net/http/http_auth_handler_factory.h"
+#include "net/http/http_auth_preferences.h"
+#include "net/http/http_auth_scheme.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_server_properties_manager.h"
@@ -64,6 +68,13 @@ namespace {
 
 net::CertVerifier* g_cert_verifier_for_testing = nullptr;
 
+const char* const kDefaultAuthSchemes[] = {net::kBasicAuthScheme,
+                                           net::kDigestAuthScheme,
+#if defined(USE_KERBEROS) && !defined(OS_ANDROID)
+                                           net::kNegotiateAuthScheme,
+#endif
+                                           net::kNtlmAuthScheme};
+
 // A CertVerifier that forwards all requests to |g_cert_verifier_for_testing|.
 // This is used to allow NetworkContexts to have their own
 // std::unique_ptr<net::CertVerifier> while forwarding calls to the shared
@@ -96,13 +107,15 @@ NetworkContext::NetworkContext(NetworkService* network_service,
                                mojom::NetworkContextParamsPtr params)
     : network_service_(network_service),
       params_(std::move(params)),
-      binding_(this, std::move(request)),
-      socket_factory_(network_service_->net_log()) {
+      binding_(this, std::move(request)) {
   url_request_context_owner_ = MakeURLRequestContext(params_.get());
   url_request_context_getter_ =
       url_request_context_owner_.url_request_context_getter;
   cookie_manager_ =
       std::make_unique<CookieManager>(GetURLRequestContext()->cookie_store());
+
+  socket_factory_ = std::make_unique<SocketFactory>(network_service_->net_log(),
+                                                    GetURLRequestContext());
   network_service_->RegisterNetworkContext(this);
   binding_.set_connection_error_handler(base::BindOnce(
       &NetworkContext::OnConnectionError, base::Unretained(this)));
@@ -120,8 +133,7 @@ NetworkContext::NetworkContext(
     std::unique_ptr<URLRequestContextBuilderMojo> builder)
     : network_service_(network_service),
       params_(std::move(params)),
-      binding_(this, std::move(request)),
-      socket_factory_(network_service_->net_log()) {
+      binding_(this, std::move(request)) {
   url_request_context_owner_ = ApplyContextParamsToBuilder(
       builder.get(), params_.get(), network_service->quic_disabled(),
       network_service->net_log(), network_service->network_quality_estimator(),
@@ -131,6 +143,8 @@ NetworkContext::NetworkContext(
   network_service_->RegisterNetworkContext(this);
   cookie_manager_ =
       std::make_unique<CookieManager>(GetURLRequestContext()->cookie_store());
+  socket_factory_ = std::make_unique<SocketFactory>(network_service_->net_log(),
+                                                    GetURLRequestContext());
   resource_scheduler_ =
       std::make_unique<ResourceScheduler>(enable_resource_scheduler_);
 }
@@ -144,8 +158,9 @@ NetworkContext::NetworkContext(
       binding_(this, std::move(request)),
       cookie_manager_(std::make_unique<CookieManager>(
           url_request_context_getter_->GetURLRequestContext()->cookie_store())),
-      socket_factory_(network_service_ ? network_service_->net_log()
-                                       : nullptr) {
+      socket_factory_(std::make_unique<SocketFactory>(
+          network_service_ ? network_service_->net_log() : nullptr,
+          url_request_context_getter_->GetURLRequestContext())) {
   // May be nullptr in tests.
   if (network_service_)
     network_service_->RegisterNetworkContext(this);
@@ -157,6 +172,12 @@ NetworkContext::~NetworkContext() {
   // May be nullptr in tests.
   if (network_service_)
     network_service_->DeregisterNetworkContext(this);
+
+  if (GetURLRequestContext() &&
+      GetURLRequestContext()->transport_security_state()) {
+    GetURLRequestContext()->transport_security_state()->SetRequireCTDelegate(
+        nullptr);
+  }
 }
 
 std::unique_ptr<NetworkContext> NetworkContext::CreateForTesting() {
@@ -173,10 +194,9 @@ void NetworkContext::CreateURLLoaderFactory(
     mojom::URLLoaderFactoryRequest request,
     uint32_t process_id,
     scoped_refptr<ResourceSchedulerClient> resource_scheduler_client) {
-  loader_factory_bindings_.AddBinding(
-      std::make_unique<URLLoaderFactory>(this, process_id,
-                                         std::move(resource_scheduler_client)),
-      std::move(request));
+  url_loader_factories_.emplace(std::make_unique<URLLoaderFactory>(
+      this, process_id, std::move(resource_scheduler_client),
+      std::move(request)));
 }
 
 void NetworkContext::CreateURLLoaderFactory(
@@ -230,10 +250,7 @@ void NetworkContext::Cleanup() {
 }
 
 NetworkContext::NetworkContext(mojom::NetworkContextParamsPtr params)
-    : network_service_(nullptr),
-      params_(std::move(params)),
-      binding_(this),
-      socket_factory_(network_service_->net_log()) {
+    : network_service_(nullptr), params_(std::move(params)), binding_(this) {
   url_request_context_owner_ = MakeURLRequestContext(params_.get());
   url_request_context_getter_ =
       url_request_context_owner_.url_request_context_getter;
@@ -254,16 +271,6 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
   URLRequestContextBuilderMojo builder;
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
-
-  if (command_line->HasSwitch(switches::kHostResolverRules)) {
-    std::unique_ptr<net::HostResolver> host_resolver(
-        net::HostResolver::CreateDefaultResolver(nullptr));
-    std::unique_ptr<net::MappedHostResolver> remapped_host_resolver(
-        new net::MappedHostResolver(std::move(host_resolver)));
-    remapped_host_resolver->SetRulesFromString(
-        command_line->GetSwitchValueASCII(switches::kHostResolverRules));
-    builder.set_host_resolver(std::move(remapped_host_resolver));
-  }
 
   // The cookie configuration is in this method, which is only used by the
   // network process, and not ApplyContextParamsToBuilder which is used by the
@@ -310,6 +317,27 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     DCHECK(!network_context_params->restore_old_session_cookies);
     DCHECK(!network_context_params->persist_session_cookies);
   }
+
+  std::vector<std::string> supported_schemes(std::begin(kDefaultAuthSchemes),
+                                             std::end(kDefaultAuthSchemes));
+  http_auth_preferences_ = std::make_unique<net::HttpAuthPreferences>(
+      supported_schemes
+#if defined(OS_CHROMEOS)
+      ,
+      network_context_params->allow_gssapi_library_load
+#elif defined(OS_POSIX) && !defined(OS_ANDROID)
+      ,
+      network_context_params->gssapi_library_name
+#endif
+      );
+
+  std::unique_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory =
+      net::HttpAuthHandlerRegistryFactory::Create(
+          http_auth_preferences_.get(), network_service_->host_resolver());
+
+  builder.set_shared_host_resolver(network_service_->host_resolver());
+
+  builder.SetHttpAuthHandlerFactory(std::move(http_auth_handler_factory));
 
   if (g_cert_verifier_for_testing) {
     builder.SetCertVerifier(std::make_unique<WrappedTestingCertVerifier>());
@@ -456,6 +484,13 @@ URLRequestContextOwner NetworkContext::ApplyContextParamsToBuilder(
   return URLRequestContextOwner(std::move(pref_service), builder->Build());
 }
 
+void NetworkContext::DestroyURLLoaderFactory(
+    URLLoaderFactory* url_loader_factory) {
+  auto it = url_loader_factories_.find(url_loader_factory);
+  DCHECK(it != url_loader_factories_.end());
+  url_loader_factories_.erase(it);
+}
+
 void NetworkContext::ClearNetworkingHistorySince(
     base::Time time,
     base::OnceClosure completion_callback) {
@@ -519,9 +554,23 @@ void NetworkContext::SetAcceptLanguage(const std::string& new_accept_language) {
   user_agent_settings_->set_accept_language(new_accept_language);
 }
 
+void NetworkContext::SetCTPolicy(
+    const std::vector<std::string>& required_hosts,
+    const std::vector<std::string>& excluded_hosts,
+    const std::vector<std::string>& excluded_spkis,
+    const std::vector<std::string>& excluded_legacy_spkis) {
+  if (!ct_policy_manager_) {
+    ct_policy_manager_.reset(new certificate_transparency::CTPolicyManager());
+    GetURLRequestContext()->transport_security_state()->SetRequireCTDelegate(
+        ct_policy_manager_->GetDelegate());
+  }
+  ct_policy_manager_->UpdateCTPolicies(required_hosts, excluded_hosts,
+                                       excluded_spkis, excluded_legacy_spkis);
+}
+
 void NetworkContext::CreateUDPSocket(mojom::UDPSocketRequest request,
                                      mojom::UDPSocketReceiverPtr receiver) {
-  socket_factory_.CreateUDPSocket(std::move(request), std::move(receiver));
+  socket_factory_->CreateUDPSocket(std::move(request), std::move(receiver));
 }
 
 void NetworkContext::CreateTCPServerSocket(
@@ -530,7 +579,7 @@ void NetworkContext::CreateTCPServerSocket(
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     mojom::TCPServerSocketRequest request,
     CreateTCPServerSocketCallback callback) {
-  socket_factory_.CreateTCPServerSocket(
+  socket_factory_->CreateTCPServerSocket(
       local_addr, backlog,
       static_cast<net::NetworkTrafficAnnotationTag>(traffic_annotation),
       std::move(request), std::move(callback));
@@ -543,7 +592,7 @@ void NetworkContext::CreateTCPConnectedSocket(
     mojom::TCPConnectedSocketRequest request,
     mojom::TCPConnectedSocketObserverPtr observer,
     CreateTCPConnectedSocketCallback callback) {
-  socket_factory_.CreateTCPConnectedSocket(
+  socket_factory_->CreateTCPConnectedSocket(
       local_addr, remote_addr_list,
       static_cast<net::NetworkTrafficAnnotationTag>(traffic_annotation),
       std::move(request), std::move(observer), std::move(callback));

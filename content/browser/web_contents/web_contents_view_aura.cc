@@ -11,7 +11,6 @@
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -51,7 +50,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
 #include "net/base/filename_util.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/drag_drop_delegate.h"
@@ -557,19 +556,20 @@ void WebContentsViewAura::EndDrag(RenderWidgetHost* source_rwh,
 
 void WebContentsViewAura::InstallOverscrollControllerDelegate(
     RenderWidgetHostViewAura* view) {
-  const OverscrollConfig::Mode mode = OverscrollConfig::GetMode();
+  const OverscrollConfig::HistoryNavigationMode mode =
+      OverscrollConfig::GetHistoryNavigationMode();
   switch (mode) {
-    case OverscrollConfig::Mode::kDisabled:
+    case OverscrollConfig::HistoryNavigationMode::kDisabled:
       navigation_overlay_.reset();
       break;
-    case OverscrollConfig::Mode::kParallaxUi:
+    case OverscrollConfig::HistoryNavigationMode::kParallaxUi:
       view->overscroll_controller()->set_delegate(this);
       if (!navigation_overlay_ && !is_mus_browser_plugin_guest_) {
         navigation_overlay_.reset(
             new OverscrollNavigationOverlay(web_contents_, window_.get()));
       }
       break;
-    case OverscrollConfig::Mode::kSimpleUi:
+    case OverscrollConfig::HistoryNavigationMode::kSimpleUi:
       navigation_overlay_.reset();
       if (!gesture_nav_simple_)
         gesture_nav_simple_.reset(new GestureNavSimple(web_contents_));

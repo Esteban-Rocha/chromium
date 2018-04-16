@@ -36,6 +36,8 @@
 #include <utility>
 #include <vector>
 
+#include "ash/display/screen_orientation_controller.h"
+#include "ash/frame/caption_buttons/caption_button_types.h"
 #include "ash/ime/ime_controller.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
@@ -332,6 +334,23 @@ int Component(uint32_t direction) {
       break;
   }
   return HTNOWHERE;
+}
+
+uint32_t CaptionButtonMask(uint32_t mask) {
+  uint32_t caption_button_icon_mask = 0;
+  if (mask & ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_BACK)
+    caption_button_icon_mask |= 1 << ash::CAPTION_BUTTON_ICON_BACK;
+  if (mask & ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_MENU)
+    caption_button_icon_mask |= 1 << ash::CAPTION_BUTTON_ICON_MENU;
+  if (mask & ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_MINIMIZE)
+    caption_button_icon_mask |= 1 << ash::CAPTION_BUTTON_ICON_MINIMIZE;
+  if (mask & ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_MAXIMIZE_RESTORE)
+    caption_button_icon_mask |= 1 << ash::CAPTION_BUTTON_ICON_MAXIMIZE_RESTORE;
+  if (mask & ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_CLOSE)
+    caption_button_icon_mask |= 1 << ash::CAPTION_BUTTON_ICON_CLOSE;
+  if (mask & ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_ZOOM)
+    caption_button_icon_mask |= 1 << ash::CAPTION_BUTTON_ICON_ZOOM;
+  return caption_button_icon_mask;
 }
 
 // A property key containing the surface resource that is associated with
@@ -1688,7 +1707,7 @@ void xdg_toplevel_v6_set_title(wl_client* client,
 void xdg_toplevel_v6_set_app_id(wl_client* client,
                                 wl_resource* resource,
                                 const char* app_id) {
-  GetUserDataAs<WaylandToplevel>(resource)->SetApplicationId(app_id);
+  NOTIMPLEMENTED();
 }
 
 void xdg_toplevel_v6_show_window_menu(wl_client* client,
@@ -1969,6 +1988,24 @@ void bind_xdg_shell_v6(wl_client* client,
 ////////////////////////////////////////////////////////////////////////////////
 // remote_surface_interface:
 
+SurfaceFrameType RemoteShellSurfaceFrameType(uint32_t frame_type) {
+  switch (frame_type) {
+    case ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_NONE:
+      return SurfaceFrameType::NONE;
+    case ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_NORMAL:
+      return SurfaceFrameType::NORMAL;
+    case ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_SHADOW:
+      return SurfaceFrameType::SHADOW;
+    case ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_AUTOHIDE:
+      return SurfaceFrameType::AUTOHIDE;
+    case ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_OVERLAY:
+      return SurfaceFrameType::OVERLAY;
+    default:
+      VLOG(2) << "Unknown remote-shell frame type: " << frame_type;
+      return SurfaceFrameType::NONE;
+  }
+}
+
 void remote_surface_destroy(wl_client* client, wl_resource* resource) {
   wl_resource_destroy(resource);
 }
@@ -2198,6 +2235,60 @@ void remote_surface_start_resize(wl_client* client,
       Component(direction), gfx::Point(x, y));
 }
 
+void remote_surface_set_frame(wl_client* client,
+                              wl_resource* resource,
+                              uint32_t type) {
+  ClientControlledShellSurface* shell_surface =
+      GetUserDataAs<ClientControlledShellSurface>(resource);
+  shell_surface->root_surface()->SetFrame(RemoteShellSurfaceFrameType(type));
+}
+
+void remote_surface_set_frame_buttons(wl_client* client,
+                                      wl_resource* resource,
+                                      uint32_t visible_button_mask,
+                                      uint32_t enabled_button_mask) {
+  GetUserDataAs<ClientControlledShellSurface>(resource)->SetFrameButtons(
+      CaptionButtonMask(visible_button_mask),
+      CaptionButtonMask(enabled_button_mask));
+}
+
+void remote_surface_set_extra_title(wl_client* client,
+                                    wl_resource* resource,
+                                    const char* extra_title) {
+  GetUserDataAs<ClientControlledShellSurface>(resource)->SetExtraTitle(
+      base::string16(base::UTF8ToUTF16(extra_title)));
+}
+
+ash::OrientationLockType OrientationLock(uint32_t orientation_lock) {
+  switch (orientation_lock) {
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_NONE:
+      return ash::OrientationLockType::kAny;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_CURRENT:
+      return ash::OrientationLockType::kCurrent;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_PORTRAIT:
+      return ash::OrientationLockType::kPortrait;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_LANDSCAPE:
+      return ash::OrientationLockType::kLandscape;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_PORTRAIT_PRIMARY:
+      return ash::OrientationLockType::kPortraitPrimary;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_PORTRAIT_SECONDARY:
+      return ash::OrientationLockType::kPortraitSecondary;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_LANDSCAPE_PRIMARY:
+      return ash::OrientationLockType::kLandscapePrimary;
+    case ZCR_REMOTE_SURFACE_V1_ORIENTATION_LOCK_LANDSCAPE_SECONDARY:
+      return ash::OrientationLockType::kLandscapeSecondary;
+  }
+  VLOG(2) << "Unexpected value of orientation_lock: " << orientation_lock;
+  return ash::OrientationLockType::kAny;
+}
+
+void remote_surface_set_orientation_lock(wl_client* client,
+                                         wl_resource* resource,
+                                         uint32_t orientation_lock) {
+  GetUserDataAs<ClientControlledShellSurface>(resource)->SetOrientationLock(
+      OrientationLock(orientation_lock));
+}
+
 const struct zcr_remote_surface_v1_interface remote_surface_implementation = {
     remote_surface_destroy,
     remote_surface_set_app_id,
@@ -2234,7 +2325,11 @@ const struct zcr_remote_surface_v1_interface remote_surface_implementation = {
     remote_surface_set_max_size,
     remote_surface_set_snapped_to_left,
     remote_surface_set_snapped_to_right,
-    remote_surface_start_resize};
+    remote_surface_start_resize,
+    remote_surface_set_frame,
+    remote_surface_set_frame_buttons,
+    remote_surface_set_extra_title,
+    remote_surface_set_orientation_lock};
 
 ////////////////////////////////////////////////////////////////////////////////
 // notification_surface_interface:
@@ -2661,7 +2756,7 @@ const struct zcr_remote_shell_v1_interface remote_shell_implementation = {
     remote_shell_destroy, remote_shell_get_remote_surface,
     remote_shell_get_notification_surface};
 
-const uint32_t remote_shell_version = 12;
+const uint32_t remote_shell_version = 14;
 
 void bind_remote_shell(wl_client* client,
                        void* data,
@@ -2713,6 +2808,11 @@ class AuraSurface : public SurfaceObserver {
       surface_->SetStartupId(startup_id);
   }
 
+  void SetApplicationId(const char* application_id) {
+    if (surface_)
+      surface_->SetApplicationId(application_id);
+  }
+
   // Overridden from SurfaceObserver:
   void OnSurfaceDestroying(Surface* surface) override {
     surface->RemoveSurfaceObserver(this);
@@ -2725,7 +2825,7 @@ class AuraSurface : public SurfaceObserver {
   DISALLOW_COPY_AND_ASSIGN(AuraSurface);
 };
 
-SurfaceFrameType ToSurfaceFrameType(uint32_t frame_type) {
+SurfaceFrameType AuraSurfaceFrameType(uint32_t frame_type) {
   switch (frame_type) {
     case ZAURA_SURFACE_FRAME_TYPE_NONE:
       return SurfaceFrameType::NONE;
@@ -2734,14 +2834,14 @@ SurfaceFrameType ToSurfaceFrameType(uint32_t frame_type) {
     case ZAURA_SURFACE_FRAME_TYPE_SHADOW:
       return SurfaceFrameType::SHADOW;
     default:
-      DLOG(WARNING) << "Unsupported frame type: " << frame_type;
+      VLOG(2) << "Unkonwn aura-shell frame type: " << frame_type;
       return SurfaceFrameType::NONE;
   }
 }
 
 void aura_surface_set_frame(wl_client* client, wl_resource* resource,
                             uint32_t type) {
-  GetUserDataAs<AuraSurface>(resource)->SetFrame(ToSurfaceFrameType(type));
+  GetUserDataAs<AuraSurface>(resource)->SetFrame(AuraSurfaceFrameType(type));
 }
 
 void aura_surface_set_parent(wl_client* client,
@@ -2768,9 +2868,16 @@ void aura_surface_set_startup_id(wl_client* client,
   GetUserDataAs<AuraSurface>(resource)->SetStartupId(startup_id);
 }
 
+void aura_surface_set_application_id(wl_client* client,
+                                     wl_resource* resource,
+                                     const char* application_id) {
+  GetUserDataAs<AuraSurface>(resource)->SetApplicationId(application_id);
+}
+
 const struct zaura_surface_interface aura_surface_implementation = {
     aura_surface_set_frame, aura_surface_set_parent,
-    aura_surface_set_frame_colors, aura_surface_set_startup_id};
+    aura_surface_set_frame_colors, aura_surface_set_startup_id,
+    aura_surface_set_application_id};
 
 ////////////////////////////////////////////////////////////////////////////////
 // aura_output_interface:
@@ -2782,28 +2889,47 @@ class AuraOutput : public WaylandDisplayObserver::ScaleObserver {
   // Overridden from WaylandDisplayObserver::ScaleObserver:
   void OnDisplayScalesChanged(const display::Display& display) override {
     display::DisplayManager* display_manager =
-        ash::Shell::Get()->display_manager();
-    if (display_manager->GetDisplayIdForUIScaling() == display.id()) {
-      display::ManagedDisplayMode active_mode;
-      bool rv = display_manager->GetActiveModeForDisplayId(display.id(),
-                                                           &active_mode);
-      DCHECK(rv);
-      const display::ManagedDisplayInfo& display_info =
+          ash::Shell::Get()->display_manager();
+    const display::ManagedDisplayInfo& display_info =
           display_manager->GetDisplayInfo(display.id());
-      for (auto& mode : display_info.display_modes()) {
-        uint32_t flags = 0;
-        if (mode.is_default())
-          flags |= ZAURA_OUTPUT_SCALE_PROPERTY_PREFERRED;
-        if (active_mode.IsEquivalent(mode))
-          flags |= ZAURA_OUTPUT_SCALE_PROPERTY_CURRENT;
 
-        zaura_output_send_scale(resource_, flags, mode.ui_scale() * 1000);
+    if (wl_resource_get_version(resource_) >=
+        ZAURA_OUTPUT_SCALE_SINCE_VERSION) {
+      if (display_manager->GetDisplayIdForUIScaling() == display.id()) {
+        display::ManagedDisplayMode active_mode;
+        bool rv = display_manager->GetActiveModeForDisplayId(display.id(),
+                                                             &active_mode);
+        DCHECK(rv);
+        for (auto& mode : display_info.display_modes()) {
+          uint32_t flags = 0;
+          if (mode.is_default())
+            flags |= ZAURA_OUTPUT_SCALE_PROPERTY_PREFERRED;
+          if (active_mode.IsEquivalent(mode))
+            flags |= ZAURA_OUTPUT_SCALE_PROPERTY_CURRENT;
+
+          zaura_output_send_scale(resource_, flags, mode.ui_scale() * 1000);
+        }
+      } else {
+        zaura_output_send_scale(resource_,
+                                ZAURA_OUTPUT_SCALE_PROPERTY_CURRENT |
+                                    ZAURA_OUTPUT_SCALE_PROPERTY_PREFERRED,
+                                ZAURA_OUTPUT_SCALE_FACTOR_1000);
       }
-    } else {
-      zaura_output_send_scale(resource_,
-                              ZAURA_OUTPUT_SCALE_PROPERTY_CURRENT |
-                                  ZAURA_OUTPUT_SCALE_PROPERTY_PREFERRED,
-                              ZAURA_OUTPUT_SCALE_FACTOR_1000);
+    }
+
+    if (wl_resource_get_version(resource_) >=
+        ZAURA_OUTPUT_CONNECTION_SINCE_VERSION) {
+      zaura_output_send_connection(resource_,
+                                   display.IsInternal()
+                                       ? ZAURA_OUTPUT_CONNECTION_TYPE_INTERNAL
+                                       : ZAURA_OUTPUT_CONNECTION_TYPE_UNKNOWN);
+    }
+
+    if (wl_resource_get_version(resource_) >=
+        ZAURA_OUTPUT_DEVICE_SCALE_FACTOR_SINCE_VERSION) {
+      zaura_output_send_device_scale_factor(resource_,
+                                            display_info.device_scale_factor() *
+                                            1000);
     }
   }
 
@@ -2861,7 +2987,7 @@ void aura_shell_get_aura_output(wl_client* client,
 const struct zaura_shell_interface aura_shell_implementation = {
     aura_shell_get_aura_surface, aura_shell_get_aura_output};
 
-const uint32_t aura_shell_version = 4;
+const uint32_t aura_shell_version = 5;
 
 void bind_aura_shell(wl_client* client,
                      void* data,

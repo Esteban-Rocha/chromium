@@ -159,6 +159,7 @@ Niektoré webové stránky môžu napríklad na túto žiadosť odpovedať zobra
 <translation id="3789841737615482174">Inštalovať</translation>
 <translation id="385051799172605136">Naspäť</translation>
 <translation id="3897092660631435901">Ponuka</translation>
+<translation id="3915450441834151894">Informácie o webe</translation>
 <translation id="3928666092801078803">Spojiť moje dáta</translation>
 <translation id="3950820424414687140">Prihlásiť sa</translation>
 <translation id="3963231839620026525">Nová karta inkognito</translation>
@@ -167,6 +168,7 @@ Niektoré webové stránky môžu napríklad na túto žiadosť odpovedať zobra
 <translation id="4002066346123236978">Názov</translation>
 <translation id="4038354071007134711">Tento súbor nedokáže otvoriť žiadna aplikácia na tomto zariadení.</translation>
 <translation id="4049507953662678203">Uistite sa, že máte pripojenie k sieti, a skúste to znova.</translation>
+<translation id="4084682180776658562">Záložka</translation>
 <translation id="411254640334432676">Sťahovanie zlyhalo.</translation>
 <translation id="4121993058175073134">Ak chcete odoslať údaje čistého exportu, v aplikácii Nastavenia nakonfigurujte svoj e-mailový účet.</translation>
 <translation id="4124987746317609294">Časové obdobie</translation>
@@ -222,6 +224,7 @@ Niektoré webové stránky môžu napríklad na túto žiadosť odpovedať zobra
 <translation id="5197255632782567636">Internet</translation>
 <translation id="5228579091201413441">Povoliť synchronizáciu</translation>
 <translation id="5244474230056479698">Synchronizácia do účtu <ph name="EMAIL" /></translation>
+<translation id="527973086555161537">Otvorte kartu a prehliadajte internet v súkromí.</translation>
 <translation id="5300589172476337783">Zobraziť</translation>
 <translation id="5317780077021120954">Uložiť</translation>
 <translation id="5327248766486351172">Názov</translation>
@@ -301,6 +304,7 @@ Vaše údaje boli <ph name="TIME" /> zašifrované pomocou vlastnej prístupovej
 <translation id="6445981559479772097">Správa sa odoslala.</translation>
 <translation id="6464071786529933911">Otvoriť na novej karte inkognito</translation>
 <translation id="6482629121755362506">Počet odstránených položiek: <ph name="NUMBER_OF_SELECTED_BOOKMARKS" /></translation>
+<translation id="6528048372317642110">Stiahnutie súboru je k dispozícii</translation>
 <translation id="6541915733953096570">Posledná hodina</translation>
 <translation id="6570040839871198836">Autom. dopĺň. formulárov</translation>
 <translation id="6656103420185847513">Upraviť priečinok</translation>
@@ -426,7 +430,6 @@ Vaše údaje boli <ph name="TIME" /> zašifrované pomocou vlastnej prístupovej
 <translation id="9083392325882095631">1 položka</translation>
 <translation id="9100610230175265781">Vyžaduje sa prístupová fráza</translation>
 <translation id="9148126808321036104">Znova sa prihlásiť</translation>
-<translation id="915371508759614899">Zrušiť sťahovanie?</translation>
 <translation id="9157836665414082580">Obmedziť dialógové okná</translation>
 <translation id="9188680907066685419">Odhlásenie zo spravovaného účtu</translation>
 <translation id="9203116392574189331">Handoff</translation>

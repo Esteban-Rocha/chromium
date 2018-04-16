@@ -15,8 +15,8 @@
 #include "content/public/test/test_browser_context.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/modules/payments/payment_app.mojom.h"
-#include "third_party/WebKit/public/platform/modules/permissions/permission_status.mojom.h"
+#include "third_party/blink/public/platform/modules/payments/payment_app.mojom.h"
+#include "third_party/blink/public/platform/modules/permissions/permission_status.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -211,17 +211,17 @@ TEST_F(PaymentAppProviderTest, GetAllPaymentAppsTest) {
 
   PaymentHandlerStatus status;
   PaymentInstrumentPtr instrument_1 = PaymentInstrument::New();
-  instrument_1->enabled_methods.push_back("hellopay");
+  instrument_1->method = "hellopay";
   SetPaymentInstrument(manager1, "test_key1", std::move(instrument_1),
                        base::BindOnce(&SetPaymentInstrumentCallback, &status));
 
   PaymentInstrumentPtr instrument_2 = PaymentInstrument::New();
-  instrument_2->enabled_methods.push_back("hellopay");
+  instrument_2->method = "hellopay";
   SetPaymentInstrument(manager2, "test_key2", std::move(instrument_2),
                        base::BindOnce(&SetPaymentInstrumentCallback, &status));
 
   PaymentInstrumentPtr instrument_3 = PaymentInstrument::New();
-  instrument_3->enabled_methods.push_back("bobpay");
+  instrument_3->method = "bobpay";
   SetPaymentInstrument(manager2, "test_key3", std::move(instrument_3),
                        base::BindOnce(&SetPaymentInstrumentCallback, &status));
 
@@ -244,17 +244,17 @@ TEST_F(PaymentAppProviderTest, GetAllPaymentAppsFromTheSameOriginTest) {
 
   PaymentHandlerStatus status;
   PaymentInstrumentPtr instrument_1 = PaymentInstrument::New();
-  instrument_1->enabled_methods.push_back("hellopay");
+  instrument_1->method = "hellopay";
   SetPaymentInstrument(manager1, "test_key1", std::move(instrument_1),
                        base::BindOnce(&SetPaymentInstrumentCallback, &status));
 
   PaymentInstrumentPtr instrument_2 = PaymentInstrument::New();
-  instrument_2->enabled_methods.push_back("hellopay");
+  instrument_2->method = "hellopay";
   SetPaymentInstrument(manager2, "test_key2", std::move(instrument_2),
                        base::BindOnce(&SetPaymentInstrumentCallback, &status));
 
   PaymentInstrumentPtr instrument_3 = PaymentInstrument::New();
-  instrument_3->enabled_methods.push_back("bobpay");
+  instrument_3->method = "bobpay";
   SetPaymentInstrument(manager2, "test_key3", std::move(instrument_3),
                        base::BindOnce(&SetPaymentInstrumentCallback, &status));
 

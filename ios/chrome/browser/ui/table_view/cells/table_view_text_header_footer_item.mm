@@ -5,19 +5,14 @@
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_header_footer_item.h"
 
 #include "base/mac/foundation_util.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_cells_constants.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
+#import "ios/chrome/browser/ui/uikit_ui_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
 
-namespace {
-// The inner insets of the View content.
-const CGFloat kMargin = 16;
-
-// The vertical spacing between text labels.
-const CGFloat kVerticalSpacing = 2.0;
-}
 
 @implementation TableViewTextHeaderFooterItem
 @synthesize subtitleText = _subtitleText;
@@ -76,7 +71,7 @@ const CGFloat kVerticalSpacing = 2.0;
     UIStackView* verticalStack = [[UIStackView alloc]
         initWithArrangedSubviews:@[ _textLabel, _subtitleLabel ]];
     verticalStack.axis = UILayoutConstraintAxisVertical;
-    verticalStack.spacing = kVerticalSpacing;
+    verticalStack.spacing = kTableViewVerticalLabelStackSpacing;
     verticalStack.translatesAutoresizingMaskIntoConstraints = NO;
 
     // Container View.
@@ -92,16 +87,16 @@ const CGFloat kVerticalSpacing = 2.0;
       // Container Constraints.
       [containerView.leadingAnchor
           constraintEqualToAnchor:self.contentView.leadingAnchor
-                         constant:kMargin],
+                         constant:kTableViewCellViewSpacing],
       [containerView.trailingAnchor
           constraintEqualToAnchor:self.contentView.trailingAnchor
-                         constant:-kMargin],
+                         constant:-kTableViewCellViewSpacing],
       [containerView.topAnchor
           constraintGreaterThanOrEqualToAnchor:self.contentView.topAnchor
-                                      constant:kMargin],
+                                      constant:kTableViewCellViewSpacing],
       [containerView.bottomAnchor
           constraintLessThanOrEqualToAnchor:self.contentView.bottomAnchor
-                                   constant:-kMargin],
+                                   constant:-kTableViewCellViewSpacing],
       [containerView.centerYAnchor
           constraintEqualToAnchor:self.contentView.centerYAnchor],
       // Vertical StackView Constraints.
@@ -120,11 +115,12 @@ const CGFloat kVerticalSpacing = 2.0;
 - (void)animateHighlight {
   UIColor* originalBackgroundColor = self.contentView.backgroundColor;
   self.cellAnimator = [[UIViewPropertyAnimator alloc]
-      initWithDuration:0.15
+      initWithDuration:kTableViewCellSelectionAnimationDuration
                  curve:UIViewAnimationCurveLinear
             animations:^{
               self.contentView.backgroundColor =
-                  [[UIColor lightGrayColor] colorWithAlphaComponent:0.5];
+                  UIColorFromRGB(kTableViewHighlightedCellColor,
+                                 kTableViewHighlightedCellColorAlpha);
             }];
   __weak TableViewTextHeaderFooterView* weakSelf = self;
   [self.cellAnimator addCompletion:^(UIViewAnimatingPosition finalPosition) {

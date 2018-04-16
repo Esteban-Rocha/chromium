@@ -37,8 +37,6 @@
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/profiling.h"
-#include "chrome/common/profiling/memlog_allocator_shim.h"
-#include "chrome/common/profiling/memlog_stream.h"
 #include "chrome/common/trace_event_args_whitelist.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/gpu/chrome_content_gpu_client.h"
@@ -50,6 +48,8 @@
 #include "components/crash/core/common/crash_key.h"
 #include "components/crash/core/common/crash_keys.h"
 #include "components/nacl/common/buildflags.h"
+#include "components/services/heap_profiling/public/cpp/allocator_shim.h"
+#include "components/services/heap_profiling/public/cpp/stream.h"
 #include "components/version_info/version_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_paths.h"
@@ -686,7 +686,7 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
   // order to allocate storage for a higher slot number. Since malloc is hooked,
   // this causes re-entrancy into the allocator shim, while the TLS object is
   // partially-initialized, which the TLS object is supposed to protect again.
-  profiling::InitTLSSlot();
+  heap_profiling::InitTLSSlot();
 
   return false;
 }
@@ -890,11 +890,6 @@ void ChromeMainDelegate::PreSandboxStartup() {
   }
 
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
-  if (process_type == switches::kUtilityProcess ||
-      process_type == switches::kZygoteProcess) {
-    ChromeContentUtilityClient::PreSandboxStartup();
-  }
-
   InitializePDF();
 #endif
 

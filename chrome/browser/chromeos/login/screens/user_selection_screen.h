@@ -72,7 +72,8 @@ class UserSelectionScreen
   void InitEasyUnlock();
 
   // proximity_auth::ScreenlockBridge::LockHandler implementation:
-  void ShowBannerMessage(const base::string16& message) override;
+  void ShowBannerMessage(const base::string16& message,
+                         bool is_warning) override;
   void ShowUserPodCustomIcon(
       const AccountId& account_id,
       const proximity_auth::ScreenlockBridge::UserPodCustomIconOptions& icon)
@@ -112,6 +113,11 @@ class UserSelectionScreen
 
   // Determines if user auth status requires online sign in.
   static bool ShouldForceOnlineSignIn(const user_manager::User* user);
+
+  // Builds a |UserAvatarPtr| instance which contains the current image for
+  // |user|.
+  static ash::mojom::UserAvatarPtr BuildMojoUserAvatarForUser(
+      const user_manager::User* user);
 
   // Fills |user_info| with information about |user|.
   // TODO: Public sesssions exist in login screen, but not lock screen.

@@ -57,6 +57,9 @@ void UpdateThrottleCheckResult(
   *to_update = result;
 }
 
+// TODO(csharrison,nasko): This macro is incorrect for subframe navigations,
+// which will only have subframe-specific transition types. This means that all
+// subframes currently are tagged as NewNavigations.
 #define LOG_NAVIGATION_TIMING_HISTOGRAM(histogram, transition, value,      \
                                         max_time)                          \
   do {                                                                     \
@@ -117,6 +120,7 @@ std::unique_ptr<NavigationHandleImpl> NavigationHandleImpl::Create(
     const base::Optional<std::string>& suggested_filename,
     std::unique_ptr<NavigationUIData> navigation_ui_data,
     const std::string& method,
+    net::HttpRequestHeaders request_headers,
     scoped_refptr<network::ResourceRequestBody> resource_request_body,
     const Referrer& sanitized_referrer,
     bool has_user_gesture,
@@ -129,9 +133,9 @@ std::unique_ptr<NavigationHandleImpl> NavigationHandleImpl::Create(
       is_same_document, navigation_start, pending_nav_entry_id,
       started_from_context_menu, should_check_main_world_csp,
       is_form_submission, suggested_filename, std::move(navigation_ui_data),
-      method, resource_request_body, sanitized_referrer, has_user_gesture,
-      transition, is_external_protocol, request_context_type,
-      mixed_content_context_type));
+      method, std::move(request_headers), resource_request_body,
+      sanitized_referrer, has_user_gesture, transition, is_external_protocol,
+      request_context_type, mixed_content_context_type));
 }
 
 NavigationHandleImpl::NavigationHandleImpl(
@@ -148,6 +152,7 @@ NavigationHandleImpl::NavigationHandleImpl(
     const base::Optional<std::string>& suggested_filename,
     std::unique_ptr<NavigationUIData> navigation_ui_data,
     const std::string& method,
+    net::HttpRequestHeaders request_headers,
     scoped_refptr<network::ResourceRequestBody> resource_request_body,
     const Referrer& sanitized_referrer,
     bool has_user_gesture,
@@ -170,6 +175,7 @@ NavigationHandleImpl::NavigationHandleImpl(
       connection_info_(net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN),
       original_url_(url),
       method_(method),
+      request_headers_(std::move(request_headers)),
       state_(INITIAL),
       frame_tree_node_(frame_tree_node),
       next_index_(0),
@@ -387,6 +393,10 @@ RenderFrameHostImpl* NavigationHandleImpl::GetRenderFrameHost() {
 
 bool NavigationHandleImpl::IsSameDocument() {
   return is_same_document_;
+}
+
+const net::HttpRequestHeaders& NavigationHandleImpl::GetRequestHeaders() {
+  return request_headers_;
 }
 
 const net::HttpResponseHeaders* NavigationHandleImpl::GetResponseHeaders() {
@@ -813,15 +823,25 @@ void NavigationHandleImpl::ReadyToCommitNavigation(
   // Record metrics for the time it takes to get to this state from the
   // beginning of the navigation.
   if (!IsSameDocument() && !is_error) {
-    // TODO(csharrison,nasko): Increase the max value to 3 minutes in M68 or
-    // M69.
-    LOG_NAVIGATION_TIMING_HISTOGRAM("TimeToReadyToCommit", transition_,
-                                    ready_to_commit_time_ - navigation_start_,
-                                    base::TimeDelta::FromSeconds(10));
     is_same_process_ =
         render_frame_host_->GetProcess()->GetID() ==
         frame_tree_node_->current_frame_host()->GetProcess()->GetID();
     LogIsSameProcess(transition_, is_same_process_);
+
+    // TODO(csharrison,nasko): Increase the max value to 3 minutes in M68 or
+    // M69.
+    base::TimeDelta delta = ready_to_commit_time_ - navigation_start_;
+    LOG_NAVIGATION_TIMING_HISTOGRAM("TimeToReadyToCommit", transition_, delta,
+                                    base::TimeDelta::FromSeconds(10));
+    if (is_same_process_) {
+      LOG_NAVIGATION_TIMING_HISTOGRAM("TimeToReadyToCommit.SameProcess",
+                                      transition_, delta,
+                                      base::TimeDelta::FromSeconds(10));
+    } else {
+      LOG_NAVIGATION_TIMING_HISTOGRAM("TimeToReadyToCommit.CrossProcess",
+                                      transition_, delta,
+                                      base::TimeDelta::FromSeconds(10));
+    }
   }
 
   SetExpectedProcess(render_frame_host->GetProcess());

@@ -49,6 +49,7 @@ import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.util.UrlUtilities;
 import org.chromium.chrome.browser.vr_shell.VrShellDelegate;
@@ -248,7 +249,8 @@ public class NewTabPage
 
             if (windowDisposition != WindowOpenDisposition.NEW_WINDOW) {
                 RecordHistogram.recordMediumTimesHistogram("NewTabPage.MostVisitedTime",
-                        System.nanoTime() - mLastShownTimeNs, TimeUnit.NANOSECONDS);
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - mLastShownTimeNs),
+                        TimeUnit.MILLISECONDS);
             }
         }
     }
@@ -283,8 +285,8 @@ public class NewTabPage
         mBackgroundColor = ApiCompatibilityUtils.getColor(activity.getResources(),
                 SuggestionsConfig.useModernLayout() ? R.color.modern_primary_color
                                                     : R.color.ntp_bg);
-        mThemeColor = ApiCompatibilityUtils.getColor(
-                activity.getResources(), R.color.default_primary_color);
+        mThemeColor = ColorUtils.getDefaultThemeColor(
+                activity.getResources(), FeatureUtilities.isChromeModernDesignEnabled(), false);
         mIsTablet = activity.isTablet();
         TemplateUrlService.getInstance().addObserver(this);
 
@@ -468,8 +470,9 @@ public class NewTabPage
 
     /** Records UMA for the NTP being hidden and the time spent on it. */
     private void recordNTPHidden() {
-        RecordHistogram.recordMediumTimesHistogram(
-                "NewTabPage.TimeSpent", System.nanoTime() - mLastShownTimeNs, TimeUnit.NANOSECONDS);
+        RecordHistogram.recordMediumTimesHistogram("NewTabPage.TimeSpent",
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - mLastShownTimeNs),
+                TimeUnit.MILLISECONDS);
         SuggestionsMetrics.recordSurfaceHidden();
     }
 

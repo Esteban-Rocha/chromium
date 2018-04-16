@@ -31,8 +31,7 @@ namespace {
 // Constructs a GridItem from a |webState|.
 GridItem* CreateItem(web::WebState* webState) {
   TabIdTabHelper* tabHelper = TabIdTabHelper::FromWebState(webState);
-  GridItem* item = [[GridItem alloc] init];
-  item.identifier = tabHelper->tab_id();
+  GridItem* item = [[GridItem alloc] initWithIdentifier:tabHelper->tab_id()];
   item.title = base::SysUTF16ToNSString(webState->GetTitle());
   return item;
 }
@@ -46,6 +45,25 @@ NSArray* CreateItems(WebStateList* webStateList) {
   }
   return [items copy];
 }
+
+NSString* GetActiveTabId(WebStateList* webStateList) {
+  web::WebState* webState = webStateList->GetActiveWebState();
+  if (!webState)
+    return nil;
+  TabIdTabHelper* tabHelper = TabIdTabHelper::FromWebState(webState);
+  return tabHelper->tab_id();
+}
+
+int GetIndexOfTabWithId(WebStateList* webStateList, NSString* identifier) {
+  for (int i = 0; i < webStateList->count(); i++) {
+    web::WebState* webState = webStateList->GetWebStateAt(i);
+    TabIdTabHelper* tabHelper = TabIdTabHelper::FromWebState(webState);
+    if ([tabHelper->tab_id() isEqualToString:identifier])
+      return i;
+  }
+  return -1;
+}
+
 }  // namespace
 
 @interface TabGridMediator ()<CRWWebStateObserver, WebStateListObserving>
@@ -114,7 +132,7 @@ NSArray* CreateItems(WebStateList* webStateList) {
            activating:(BOOL)activating {
   [self.consumer insertItem:CreateItem(webState)
                     atIndex:index
-              selectedIndex:webStateList->active_index()];
+             selectedItemID:GetActiveTabId(webStateList)];
   _scopedWebStateObserver->Add(webState);
 }
 
@@ -122,16 +140,17 @@ NSArray* CreateItems(WebStateList* webStateList) {
      didMoveWebState:(web::WebState*)webState
            fromIndex:(int)fromIndex
              toIndex:(int)toIndex {
-  [self.consumer moveItemFromIndex:fromIndex
-                           toIndex:toIndex
-                     selectedIndex:webStateList->active_index()];
+  TabIdTabHelper* tabHelper = TabIdTabHelper::FromWebState(webState);
+  [self.consumer moveItemWithID:tabHelper->tab_id() toIndex:toIndex];
 }
 
 - (void)webStateList:(WebStateList*)webStateList
     didReplaceWebState:(web::WebState*)oldWebState
           withWebState:(web::WebState*)newWebState
                atIndex:(int)index {
-  [self.consumer replaceItemAtIndex:index withItem:CreateItem(newWebState)];
+  TabIdTabHelper* tabHelper = TabIdTabHelper::FromWebState(oldWebState);
+  [self.consumer replaceItemID:tabHelper->tab_id()
+                      withItem:CreateItem(newWebState)];
   _scopedWebStateObserver->Remove(oldWebState);
   _scopedWebStateObserver->Add(newWebState);
 }
@@ -139,8 +158,10 @@ NSArray* CreateItems(WebStateList* webStateList) {
 - (void)webStateList:(WebStateList*)webStateList
     didDetachWebState:(web::WebState*)webState
               atIndex:(int)index {
-  [self.consumer removeItemAtIndex:index
-                     selectedIndex:webStateList->active_index()];
+  TabIdTabHelper* tabHelper = TabIdTabHelper::FromWebState(webState);
+  NSString* itemID = tabHelper->tab_id();
+  [self.consumer removeItemWithID:itemID
+                   selectedItemID:GetActiveTabId(webStateList)];
   _scopedWebStateObserver->Remove(webState);
 }
 
@@ -149,14 +170,24 @@ NSArray* CreateItems(WebStateList* webStateList) {
                 oldWebState:(web::WebState*)oldWebState
                     atIndex:(int)atIndex
                      reason:(int)reason {
-  [self.consumer selectItemAtIndex:atIndex];
+  // If the selected index changes as a result of the last webstate being
+  // detached, atIndex will be -1.
+  if (atIndex == -1) {
+    [self.consumer selectItemWithID:nil];
+    return;
+  }
+
+  TabIdTabHelper* tabHelper = TabIdTabHelper::FromWebState(newWebState);
+  [self.consumer selectItemWithID:tabHelper->tab_id()];
 }
 
 #pragma mark - CRWWebStateObserver
 
 - (void)webState:(web::WebState*)webState didLoadPageWithSuccess:(BOOL)success {
-  int index = self.webStateList->GetIndexOfWebState(webState);
-  [self.consumer replaceItemAtIndex:index withItem:CreateItem(webState)];
+  // Assumption: the ID of the webState didn't change as a result of this load.
+  TabIdTabHelper* tabHelper = TabIdTabHelper::FromWebState(webState);
+  NSString* itemID = tabHelper->tab_id();
+  [self.consumer replaceItemID:itemID withItem:CreateItem(webState)];
 }
 
 #pragma mark - GridCommands
@@ -178,12 +209,22 @@ NSArray* CreateItems(WebStateList* webStateList) {
   self.webStateList->GetWebStateAt(index)->OpenURL(openParams);
 }
 
-- (void)selectItemAtIndex:(NSUInteger)index {
-  self.webStateList->ActivateWebStateAt(index);
+- (void)moveItemWithID:(NSString*)itemID toIndex:(NSUInteger)destinationIndex {
+  int sourceIndex = GetIndexOfTabWithId(self.webStateList, itemID);
+  if (sourceIndex >= 0)
+    self.webStateList->MoveWebStateAt(sourceIndex, destinationIndex);
 }
 
-- (void)closeItemAtIndex:(NSUInteger)index {
-  self.webStateList->CloseWebStateAt(index, WebStateList::CLOSE_USER_ACTION);
+- (void)selectItemWithID:(NSString*)itemID {
+  int index = GetIndexOfTabWithId(self.webStateList, itemID);
+  if (index >= 0)
+    self.webStateList->ActivateWebStateAt(index);
+}
+
+- (void)closeItemWithID:(NSString*)itemID {
+  int index = GetIndexOfTabWithId(self.webStateList, itemID);
+  if (index >= 0)
+    self.webStateList->CloseWebStateAt(index, WebStateList::CLOSE_USER_ACTION);
 }
 
 - (void)closeAllItems {
@@ -234,7 +275,7 @@ NSArray* CreateItems(WebStateList* webStateList) {
 - (void)populateConsumerItems {
   if (self.webStateList->count() > 0) {
     [self.consumer populateItems:CreateItems(self.webStateList)
-                   selectedIndex:self.webStateList->active_index()];
+                  selectedItemID:GetActiveTabId(self.webStateList)];
   }
 }
 

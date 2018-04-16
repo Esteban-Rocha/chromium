@@ -10,7 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/numerics/ranges.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -59,7 +59,7 @@ void OnResponseSentOnServerIOThread(
     const TestDownloadHttpResponse::OnResponseSentCallback& callback,
     std::unique_ptr<TestDownloadHttpResponse::CompletedRequest> request) {
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::BindOnce(callback, base::Passed(&request)));
+                          base::BindOnce(callback, std::move(request)));
 }
 
 // The shim response object used by embedded_test_server. After this object is
@@ -253,6 +253,18 @@ void TestDownloadHttpResponse::SendResponse(
   if (ShouldAbortImmediately()) {
     bytes_sender_.Run(std::string(), GenerateResultClosure());
     return;
+  }
+
+  // Call inject error callback to UI thread.
+  if (!parameters_.injected_errors.empty() &&
+      parameters_.injected_errors.front() <= range_.last_byte_position() &&
+      parameters_.injected_errors.front() >= range_.first_byte_position() &&
+      !parameters_.inject_error_cb.is_null()) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::BindOnce(parameters_.inject_error_cb,
+                                           range_.first_byte_position(),
+                                           parameters_.injected_errors.front() -
+                                               range_.first_byte_position()));
   }
 
   // Pause before sending headers.
@@ -482,14 +494,6 @@ bool TestDownloadHttpResponse::HandleInjectedError(
   int64_t error_offset = parameters_.injected_errors.front();
   if (error_offset > buffer_range.last_byte_position())
     return false;
-
-  // Call inject error callback to UI thread.
-  if (parameters_.inject_error_cb) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::BindOnce(parameters_.inject_error_cb, response_sent_offset_,
-                       transferred_bytes_));
-  }
 
   // Send the bytes before the error offset, then close the connection.
   net::HttpByteRange range = buffer_range;

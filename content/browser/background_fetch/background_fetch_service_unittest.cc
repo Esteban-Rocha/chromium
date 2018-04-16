@@ -8,7 +8,6 @@
 
 #include "base/auto_reset.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
 #include "content/browser/background_fetch/background_fetch_context.h"
@@ -118,13 +117,15 @@ class BackgroundFetchServiceTest : public BackgroundFetchTestBase {
 
   // Synchronous wrapper for BackgroundFetchServiceImpl::UpdateUI().
   void UpdateUI(int64_t service_worker_registration_id,
+                const std::string& developer_id,
                 const std::string& unique_id,
                 const std::string& title,
                 blink::mojom::BackgroundFetchError* out_error) {
     DCHECK(out_error);
 
     base::RunLoop run_loop;
-    service_->UpdateUI(service_worker_registration_id, unique_id, title,
+    service_->UpdateUI(service_worker_registration_id, unique_id, developer_id,
+                       title,
                        base::BindOnce(&BackgroundFetchServiceTest::DidGetError,
                                       base::Unretained(this),
                                       run_loop.QuitClosure(), out_error));
@@ -588,7 +589,8 @@ TEST_F(BackgroundFetchServiceTest, UpdateUI) {
 
   // Immediately update the title. This should succeed.
   UpdateUI(registration_id.service_worker_registration_id(),
-           registration_id.unique_id(), second_title, &error);
+           registration_id.unique_id(), registration_id.developer_id(),
+           second_title, &error);
   EXPECT_EQ(blink::mojom::BackgroundFetchError::NONE, error);
 
   BackgroundFetchRegistration second_registration;
@@ -790,6 +792,7 @@ TEST_F(BackgroundFetchServiceTest, UniqueId) {
   std::string updated_second_registration_title = "Foo";
   UpdateUI(second_registration_id.service_worker_registration_id(),
            second_registration_id.unique_id(),
+           second_registration_id.developer_id(),
            updated_second_registration_title, &error);
   EXPECT_EQ(blink::mojom::BackgroundFetchError::NONE, error);
 
@@ -798,7 +801,8 @@ TEST_F(BackgroundFetchServiceTest, UniqueId) {
   // backgroundfetched or backgroundfetchfail event, both of which should
   // work even though that registration is no longer active).
   UpdateUI(aborted_registration_id.service_worker_registration_id(),
-           aborted_registration_id.unique_id(), "Bar", &error);
+           aborted_registration_id.unique_id(),
+           aborted_registration_id.developer_id(), "Bar", &error);
   EXPECT_EQ(blink::mojom::BackgroundFetchError::INVALID_ID, error);
 
   // Verify that the second registration's title was indeed updated, and that it

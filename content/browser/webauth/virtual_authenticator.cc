@@ -8,13 +8,12 @@
 #include <vector>
 
 #include "base/guid.h"
-#include "base/memory/ptr_util.h"
 #include "crypto/ec_private_key.h"
 
 namespace content {
 
 VirtualAuthenticator::VirtualAuthenticator(
-    ::device::U2fTransportProtocol transport)
+    ::device::FidoTransportProtocol transport)
     : transport_(transport),
       unique_id_(base::GenerateGUID()),
       state_(base::MakeRefCounted<::device::VirtualFidoDevice::State>()) {}

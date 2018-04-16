@@ -34,16 +34,16 @@
 #include "content/renderer/resource_timing_info_conversions.h"
 #include "ipc/ipc_message_macros.h"
 #include "printing/buildflags/buildflags.h"
-#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
-#include "third_party/WebKit/public/common/frame/frame_policy.h"
-#include "third_party/WebKit/public/platform/URLConversion.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebResourceTimingInfo.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebTriggeringEventInfo.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/common/frame/frame_policy.h"
+#include "third_party/blink/public/platform/url_conversion.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_resource_timing_info.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_triggering_event_info.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
+#include "third_party/blink/public/web/web_view.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/size_conversions.h"
 
@@ -369,8 +369,9 @@ void RenderFrameProxy::SetChildFrameSurface(
     return;
 
   if (!enable_surface_synchronization_) {
-    compositing_helper_->SetPrimarySurfaceId(surface_info.id(),
-                                             local_frame_size());
+    compositing_helper_->SetPrimarySurfaceId(
+        surface_info.id(), local_frame_size(),
+        cc::DeadlinePolicy::UseDefaultDeadline());
   }
   compositing_helper_->SetFallbackSurfaceId(surface_info.id(),
                                             local_frame_size());
@@ -612,8 +613,13 @@ void RenderFrameProxy::WasResized() {
     local_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
 
   viz::SurfaceId surface_id(frame_sink_id_, local_surface_id_);
-  if (enable_surface_synchronization_)
-    compositing_helper_->SetPrimarySurfaceId(surface_id, local_frame_size());
+  if (enable_surface_synchronization_) {
+    // TODO(vmpstr): When capture_sequence_number is available, the deadline
+    // should be infinite if the sequence number has changed.
+    compositing_helper_->SetPrimarySurfaceId(
+        surface_id, local_frame_size(),
+        cc::DeadlinePolicy::UseDefaultDeadline());
+  }
 
   bool rect_changed =
       !sent_resize_params_ || sent_resize_params_->screen_space_rect !=

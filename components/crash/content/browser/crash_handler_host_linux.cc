@@ -24,6 +24,7 @@
 #include "base/linux_util.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/rand_util.h"
@@ -145,11 +146,10 @@ void CrashHandlerHostLinux::StartUploaderThread() {
 }
 
 void CrashHandlerHostLinux::Init() {
-  base::MessageLoopForIO* ml = base::MessageLoopForIO::current();
-  CHECK(ml->WatchFileDescriptor(
-      browser_socket_, true /* persistent */,
-      base::MessageLoopForIO::WATCH_READ,
-      &file_descriptor_watcher_, this));
+  base::MessageLoopCurrentForIO ml = base::MessageLoopForIO::current();
+  CHECK(ml->WatchFileDescriptor(browser_socket_, true /* persistent */,
+                                base::MessagePumpForIO::WATCH_READ,
+                                &file_descriptor_watcher_, this));
   ml->AddDestructionObserver(this);
 }
 
@@ -522,9 +522,9 @@ CrashHandlerHost::CrashHandlerHost()
 CrashHandlerHost::~CrashHandlerHost() = default;
 
 void CrashHandlerHost::Init() {
-  base::MessageLoopForIO* ml = base::MessageLoopForIO::current();
+  base::MessageLoopCurrentForIO ml = base::MessageLoopForIO::current();
   CHECK(ml->WatchFileDescriptor(browser_socket_.get(), /* persistent= */ true,
-                                base::MessageLoopForIO::WATCH_READ,
+                                base::MessagePumpForIO::WATCH_READ,
                                 &file_descriptor_watcher_, this));
   ml->AddDestructionObserver(this);
 }

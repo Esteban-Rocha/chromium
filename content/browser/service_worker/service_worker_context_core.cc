@@ -39,8 +39,8 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_provider_type.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_provider_type.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -89,7 +89,10 @@ void SuccessReportingCallback(
 bool IsSameOriginClientProviderHost(const GURL& origin,
                                     ServiceWorkerProviderHost* host) {
   return host->IsProviderForClient() &&
-         host->document_url().GetOrigin() == origin;
+         host->document_url().GetOrigin() == origin &&
+         // Don't expose "reserved" clients (clients that are not yet execution
+         // ready) to the Clients API.
+         host->is_execution_ready();
 }
 
 bool IsSameOriginWindowProviderHost(const GURL& origin,
@@ -150,7 +153,7 @@ class ClearAllServiceWorkersHelper
     for (const auto& registration_info : registrations) {
       context->UnregisterServiceWorker(
           registration_info.pattern,
-          base::Bind(&ClearAllServiceWorkersHelper::OnResult, this));
+          base::BindOnce(&ClearAllServiceWorkersHelper::OnResult, this));
     }
   }
 
@@ -366,6 +369,7 @@ void ServiceWorkerContextCore::AddProviderHost(
 ServiceWorkerProviderHost* ServiceWorkerContextCore::GetProviderHost(
     int process_id,
     int provider_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   ProviderMap* map = GetProviderMapForProcess(process_id);
   if (!map)
     return nullptr;
@@ -385,13 +389,6 @@ void ServiceWorkerContextCore::RemoveAllProviderHostsForProcess(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (providers_->Lookup(process_id))
     providers_->Remove(process_id);
-}
-
-std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator>
-ServiceWorkerContextCore::GetProviderHostIterator() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  return base::WrapUnique(new ProviderHostIterator(
-      providers_.get(), ProviderHostIterator::ProviderHostPredicate()));
 }
 
 std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator>
@@ -735,8 +732,7 @@ void ServiceWorkerContextCore::CheckHasServiceWorker(
   storage()->FindRegistrationForDocument(
       url, base::BindOnce(&ServiceWorkerContextCore::
                               DidFindRegistrationForCheckHasServiceWorker,
-                          AsWeakPtr(), other_url,
-                          base::Passed(std::move(callback))));
+                          AsWeakPtr(), other_url, std::move(callback)));
 }
 
 void ServiceWorkerContextCore::UpdateVersionFailureCount(

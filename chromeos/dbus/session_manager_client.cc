@@ -482,36 +482,36 @@ class SessionManagerClientImpl : public SessionManagerClient {
         login_manager::kOwnerKeySetSignal,
         base::Bind(&SessionManagerClientImpl::OwnerKeySetReceived,
                    weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&SessionManagerClientImpl::SignalConnected,
-                   weak_ptr_factory_.GetWeakPtr()));
+        base::BindOnce(&SessionManagerClientImpl::SignalConnected,
+                       weak_ptr_factory_.GetWeakPtr()));
     session_manager_proxy_->ConnectToSignal(
         login_manager::kSessionManagerInterface,
         login_manager::kPropertyChangeCompleteSignal,
         base::Bind(&SessionManagerClientImpl::PropertyChangeCompleteReceived,
                    weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&SessionManagerClientImpl::SignalConnected,
-                   weak_ptr_factory_.GetWeakPtr()));
+        base::BindOnce(&SessionManagerClientImpl::SignalConnected,
+                       weak_ptr_factory_.GetWeakPtr()));
     session_manager_proxy_->ConnectToSignal(
         login_manager::kSessionManagerInterface,
         login_manager::kScreenIsLockedSignal,
         base::Bind(&SessionManagerClientImpl::ScreenIsLockedReceived,
                    weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&SessionManagerClientImpl::SignalConnected,
-                   weak_ptr_factory_.GetWeakPtr()));
+        base::BindOnce(&SessionManagerClientImpl::SignalConnected,
+                       weak_ptr_factory_.GetWeakPtr()));
     session_manager_proxy_->ConnectToSignal(
         login_manager::kSessionManagerInterface,
         login_manager::kScreenIsUnlockedSignal,
         base::Bind(&SessionManagerClientImpl::ScreenIsUnlockedReceived,
                    weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&SessionManagerClientImpl::SignalConnected,
-                   weak_ptr_factory_.GetWeakPtr()));
+        base::BindOnce(&SessionManagerClientImpl::SignalConnected,
+                       weak_ptr_factory_.GetWeakPtr()));
     session_manager_proxy_->ConnectToSignal(
         login_manager::kSessionManagerInterface,
         login_manager::kArcInstanceStopped,
         base::Bind(&SessionManagerClientImpl::ArcInstanceStoppedReceived,
                    weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&SessionManagerClientImpl::SignalConnected,
-                   weak_ptr_factory_.GetWeakPtr()));
+        base::BindOnce(&SessionManagerClientImpl::SignalConnected,
+                       weak_ptr_factory_.GetWeakPtr()));
   }
 
  private:
@@ -715,14 +715,35 @@ class SessionManagerClientImpl : public SessionManagerClient {
 
   void ArcInstanceStoppedReceived(dbus::Signal* signal) {
     dbus::MessageReader reader(signal);
+
+    auto reason = login_manager::ArcContainerStopReason::CRASH;
+    uint32_t value = 0;
     bool clean = false;
+    if (reader.PopUint32(&value)) {
+      reason = static_cast<login_manager::ArcContainerStopReason>(value);
+    } else if (reader.PopBool(&clean)) {
+      // This is for the transition period.
+      // We can think the change is virtually split into two;
+      // - bool becomes enum ArcContainerStopReason. true is mapped to
+      //   USER_REQUEST, false is to CRASH. Then,
+      // - USER_REQUEST cases are split into more precise categories.
+      // The only client of this signal, which is ArcSessionImpl, can handle
+      // this approach.
+      // TODO(b/76152951): Remove this.
+      reason = clean ? login_manager::ArcContainerStopReason::USER_REQUEST
+                     : login_manager::ArcContainerStopReason::CRASH;
+    } else {
+      LOG(ERROR) << "Invalid signal: " << signal->ToString();
+      return;
+    }
+
     std::string container_instance_id;
-    if (!reader.PopBool(&clean) || !reader.PopString(&container_instance_id)) {
+    if (!reader.PopString(&container_instance_id)) {
       LOG(ERROR) << "Invalid signal: " << signal->ToString();
       return;
     }
     for (auto& observer : observers_)
-      observer.ArcInstanceStopped(clean, container_instance_id);
+      observer.ArcInstanceStopped(reason, container_instance_id);
   }
 
   // Called when the object is connected to the signal.

@@ -17,7 +17,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_math.h"
@@ -1380,7 +1379,7 @@ void LayerTreeHost::PushLayerTreePropertiesTo(LayerTreeImpl* tree_impl) {
 
   tree_impl->set_content_source_id(content_source_id_);
 
-  tree_impl->SetLocalSurfaceId(local_surface_id_);
+  tree_impl->set_local_surface_id(local_surface_id_);
   has_pushed_local_surface_id_ = true;
 
   if (pending_page_scale_animation_) {

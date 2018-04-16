@@ -35,9 +35,7 @@ namespace printing {
 
 class JobEventDetails;
 class PrintJob;
-class PrintJobWorkerOwner;
 class PrintQueriesQueue;
-class PrintedDocument;
 class PrinterQuery;
 
 // Base class for managing the print commands for a WebContents.
@@ -90,6 +88,15 @@ class PrintViewManagerBase : public content::NotificationObserver,
   bool OnMessageReceived(const IPC::Message& message,
                          content::RenderFrameHost* render_frame_host) override;
 
+  // Creates a new empty print job. It has no settings loaded. If there is
+  // currently a print job, safely disconnect from it. Returns false if it is
+  // impossible to safely disconnect from the current print job or it is
+  // impossible to create a new print job.
+  virtual bool CreateNewPrintJob(PrinterQuery* query);
+
+  // Manages the low-level talk to the printer.
+  scoped_refptr<PrintJob> print_job_;
+
  private:
   // content::NotificationObserver implementation.
   void Observe(int type,
@@ -120,12 +127,12 @@ class PrintViewManagerBase : public content::NotificationObserver,
       const scoped_refptr<base::RefCountedMemory>& print_data,
       int page_count,
       PrinterHandler::PrintCallback callback,
-      scoped_refptr<printing::PrinterQuery> printer_query);
+      scoped_refptr<PrinterQuery> printer_query);
 
   void StartLocalPrintJob(
       const scoped_refptr<base::RefCountedMemory>& print_data,
       int page_count,
-      scoped_refptr<printing::PrinterQuery> printer_query,
+      scoped_refptr<PrinterQuery> printer_query,
       PrinterHandler::PrintCallback callback);
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)
 
@@ -137,14 +144,13 @@ class PrintViewManagerBase : public content::NotificationObserver,
   // been requested to the renderer.
   bool RenderAllMissingPagesNow();
 
-  // Checks that synchronization is correct and a print query exists for
-  // |cookie|. If so, returns the document associated with the cookie.
-  PrintedDocument* GetDocument(int cookie);
+  // Checks that synchronization is correct with |print_job_| based on |cookie|.
+  bool PrintJobHasDocument(int cookie);
 
-  // Starts printing |document| with the given |print_data|. This method assumes
-  // |print_data| contains valid data.
-  void PrintDocument(PrintedDocument* document,
-                     const scoped_refptr<base::RefCountedMemory>& print_data,
+  // Starts printing the |document| in |print_job_| with the given |print_data|.
+  // This method assumes PrintJobHasDocument() has been called, and |print_data|
+  // contains valid data.
+  void PrintDocument(const scoped_refptr<base::RefCountedMemory>& print_data,
                      const gfx::Size& page_size,
                      const gfx::Rect& content_area,
                      const gfx::Point& offsets);
@@ -155,12 +161,6 @@ class PrintViewManagerBase : public content::NotificationObserver,
   // notification. The inner message loop is created was created by
   // RenderAllMissingPagesNow().
   void ShouldQuitFromInnerMessageLoop();
-
-  // Creates a new empty print job. It has no settings loaded. If there is
-  // currently a print job, safely disconnect from it. Returns false if it is
-  // impossible to safely disconnect from the current print job or it is
-  // impossible to create a new print job.
-  bool CreateNewPrintJob(PrintJobWorkerOwner* job);
 
   // Makes sure the current print_job_ has all its data before continuing, and
   // disconnect from it.
@@ -197,9 +197,6 @@ class PrintViewManagerBase : public content::NotificationObserver,
   // The current RFH that is printing with a system printing dialog.
   content::RenderFrameHost* printing_rfh_;
 
-  // Manages the low-level talk to the printer.
-  scoped_refptr<PrintJob> print_job_;
-
   // Indication of success of the print job.
   bool printing_succeeded_;
 
@@ -211,7 +208,7 @@ class PrintViewManagerBase : public content::NotificationObserver,
   // Whether printing is enabled.
   BooleanPrefMember printing_enabled_;
 
-  scoped_refptr<printing::PrintQueriesQueue> queue_;
+  scoped_refptr<PrintQueriesQueue> queue_;
 
   base::WeakPtrFactory<PrintViewManagerBase> weak_ptr_factory_;
 

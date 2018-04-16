@@ -109,18 +109,34 @@ Polymer({
   },
 
   /**
-   * @param {string} label
-   * @param {string} name
+   * @param {string} syncErrorLabel
+   * @param {string} authErrorLabel
    * @return {string}
    * @private
    */
-  getNameDisplay_: function(label, name, errorLabel) {
-    if (this.syncStatus.hasError === true)
-      return errorLabel;
+  getErrorLabel_: function(syncErrorLabel, authErrorLabel) {
+    if (this.syncStatus.hasError) {
+      // Most of the time re-authenticate states are caused by intentional user
+      // action, so they will be displayed differently as other errors.
+      return this.syncStatus.statusAction ==
+              settings.StatusAction.REAUTHENTICATE ?
+          authErrorLabel :
+          syncErrorLabel;
+    }
 
-    return this.syncStatus.signedIn ?
-        loadTimeData.substituteString(label, name) :
-        name;
+    return '';
+  },
+
+  /**
+   * @param {string} label
+   * @param {string} account
+   * @return {string}
+   * @private
+   */
+  getAccountLabel_: function(label, account) {
+    return this.syncStatus.signedIn && !this.syncStatus.hasError ?
+        loadTimeData.substituteString(label, account) :
+        account;
   },
 
   /**
@@ -134,11 +150,19 @@ Polymer({
   },
 
   /**
+   * Returned value must match one of iron-icon's settings:(*) icon name.
    * @return {string}
    * @private
    */
   getSyncIcon_: function() {
-    return this.syncStatus.hasError ? 'settings:sync-problem' : 'settings:sync';
+    if (this.syncStatus.hasError) {
+      return this.syncStatus.statusAction ==
+              settings.StatusAction.REAUTHENTICATE ?
+          'sync-disabled' :
+          'sync-problem';
+    }
+
+    return 'sync';
   },
 
   /**
@@ -170,7 +194,12 @@ Polymer({
   /** @private */
   onSyncButtonTap_: function() {
     assert(this.shownAccount_);
-    this.syncBrowserProxy_.startSyncingWithEmail(this.shownAccount_.email);
+    assert(this.storedAccounts_.length > 0);
+    const isDefaultPromoAccount =
+        (this.shownAccount_.email == this.storedAccounts_[0].email);
+
+    this.syncBrowserProxy_.startSyncingWithEmail(
+        this.shownAccount_.email, isDefaultPromoAccount);
   },
 
   /** @private */

@@ -75,6 +75,12 @@ unpacker.Compressor = function(naclModule, items) {
   this.entries_ = {};
 
   /**
+   * The file being packed.
+   * @type {File}
+   */
+  this.file_ = null;
+
+  /**
    * Map from entry ids to its metadata.
    * @const {!Object<!unpacker.types.EntryId, !Metadata>}
    */
@@ -449,10 +455,22 @@ unpacker.Compressor.prototype.onReadFileChunk_ = function(data) {
 
   // When the entry is read for the first time.
   if (!this.file_) {
-    entry.file(function(file) {
-      this.file_ = file;
-      readFileChunk();
-    }.bind(this));
+    entry.file(
+        (file) => {
+          this.file_ = file;
+          chrome.fileManagerPrivate.ensureFileDownloaded(entry, () => {
+            if (chrome.runtime.lastError) {
+              console.error(chrome.runtime.lastError.message);
+              this.onErrorInternal_();
+              return;
+            }
+            readFileChunk();
+          });
+        },
+        (error) => {
+          console.error(error);
+          this.onErrorInternal_();
+        });
     return;
   }
 
@@ -722,8 +740,9 @@ unpacker.Compressor.prototype.onErrorInternal_ = function() {
 unpacker.Compressor.prototype.removeTemporaryFileIfExists_ = function() {
   if (!this.archiveFileEntry_)
     return;
+  const entry = this.archiveFileEntry_;
   this.archiveFileEntry_ = null;
-  this.archiveFileEntry_.remove(
+  entry.remove(
       function() {},
       function(error) {
         console.error('failed to remove temporary file.');

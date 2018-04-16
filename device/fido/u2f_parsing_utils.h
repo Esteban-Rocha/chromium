@@ -7,6 +7,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <algorithm>
+#include <array>
 #include <vector>
 
 #include "base/component_export.h"
@@ -58,6 +60,26 @@ std::vector<uint8_t> ExtractSuffix(base::span<const uint8_t> span, size_t pos);
 COMPONENT_EXPORT(DEVICE_FIDO)
 base::span<const uint8_t> ExtractSuffixSpan(base::span<const uint8_t> span,
                                             size_t pos);
+
+template <size_t N>
+bool ExtractArray(base::span<const uint8_t> span,
+                  size_t pos,
+                  std::array<uint8_t, N>* array) {
+  const auto extracted_span = ExtractSpan(span, pos, N);
+  if (extracted_span.size() != N)
+    return false;
+
+  std::copy(extracted_span.begin(), extracted_span.end(), array->begin());
+  return true;
+}
+
+// Partitions |span| into N = ⌈span.size() / max_chunk_size⌉ consecutive chunks.
+// The first N-1 chunks are of size |max_chunk_size|, and the Nth chunk is of
+// size span.size() % max_chunk_size. |max_chunk_size| must be greater than 0.
+// Returns an empty vector in case |span| is empty.
+COMPONENT_EXPORT(DEVICE_FIDO)
+std::vector<base::span<const uint8_t>> SplitSpan(base::span<const uint8_t> span,
+                                                 size_t max_chunk_size);
 
 }  // namespace u2f_parsing_utils
 }  // namespace device

@@ -110,6 +110,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   void GetScreenInfo(ScreenInfo* screen_info) const override;
   void SetWantsAnimateOnlyBeginFrames() override;
+  void TakeFallbackContentFrom(RenderWidgetHostView* view) override;
 
   // Implementation of RenderWidgetHostViewBase.
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
@@ -151,7 +152,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   gfx::Rect GetBoundsInRootWindow() override;
   viz::ScopedSurfaceIdAllocator ResizeDueToAutoResize(
       const gfx::Size& new_size,
-      uint64_t sequence_number) override;
+      uint64_t sequence_number,
+      const viz::LocalSurfaceId& child_local_surface_id) override;
   void DidNavigate() override;
 
   bool LockMouse() override;
@@ -216,7 +218,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // requested |range| is already cached, otherwise returns false.
   // Exposed for testing.
   CONTENT_EXPORT bool GetCachedFirstRectForCharacterRange(
-      NSRange range, NSRect* rect, NSRange* actual_range);
+      const gfx::Range& requested_range,
+      gfx::Rect* rect,
+      gfx::Range* actual_range);
 
   // Returns true if there is line break in |range| and stores line breaking
   // point to |line_breaking_point|. The |line_break_point| is valid only if
@@ -275,6 +279,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // RenderWidgetHostNSViewClient implementation.
   RenderWidgetHostViewMac* GetRenderWidgetHostViewMac() override;
+  BrowserAccessibilityManager* GetRootBrowserAccessibilityManager() override;
+  void OnNSViewSyncIsRenderViewHost(bool* is_render_view) override;
   void OnNSViewRequestShutdown() override;
   void OnNSViewIsFirstResponderChanged(bool is_first_responder) override;
   void OnNSViewWindowIsKeyChanged(bool is_key) override;
@@ -283,6 +289,15 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void OnNSViewWindowFrameInScreenChanged(
       const gfx::Rect& window_frame_in_screen_dip) override;
   void OnNSViewDisplayChanged(const display::Display& display) override;
+  void OnNSViewBeginKeyboardEvent() override;
+  void OnNSViewEndKeyboardEvent() override;
+  void OnNSViewForwardKeyboardEvent(
+      const NativeWebKeyboardEvent& key_event,
+      const ui::LatencyInfo& latency_info) override;
+  void OnNSViewForwardKeyboardEventWithCommands(
+      const NativeWebKeyboardEvent& key_event,
+      const ui::LatencyInfo& latency_info,
+      const std::vector<EditCommand>& commands) override;
   void OnNSViewRouteOrProcessMouseEvent(
       const blink::WebMouseEvent& web_event) override;
   void OnNSViewRouteOrProcessWheelEvent(
@@ -291,6 +306,44 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       const blink::WebMouseEvent& web_event) override;
   void OnNSViewForwardWheelEvent(
       const blink::WebMouseWheelEvent& web_event) override;
+  void OnNSViewGestureBegin(blink::WebGestureEvent begin_event) override;
+  void OnNSViewGestureUpdate(blink::WebGestureEvent update_event) override;
+  void OnNSViewGestureEnd(blink::WebGestureEvent end_event) override;
+  void OnNSViewSmartMagnify(
+      const blink::WebGestureEvent& smart_magnify_event) override;
+  void OnNSViewImeSetComposition(
+      const base::string16& text,
+      const std::vector<ui::ImeTextSpan>& ime_text_spans,
+      const gfx::Range& replacement_range,
+      int selection_start,
+      int selection_end) override;
+  void OnNSViewImeCommitText(const base::string16& text,
+                             const gfx::Range& replacement_range) override;
+  void OnNSViewImeFinishComposingText() override;
+  void OnNSViewImeCancelComposition() override;
+  void OnNSViewLookUpDictionaryOverlayAtPoint(
+      const gfx::PointF& root_point) override;
+  void OnNSViewLookUpDictionaryOverlayFromRange(
+      const gfx::Range& range) override;
+  void OnNSViewSyncGetTextInputType(
+      ui::TextInputType* text_input_type) override;
+  void OnNSViewSyncGetCharacterIndexAtPoint(const gfx::PointF& root_point,
+                                            uint32_t* index) override;
+  void OnNSViewSyncGetFirstRectForRange(const gfx::Range& requested_range,
+                                        gfx::Rect* rect,
+                                        gfx::Range* actual_range) override;
+  void OnNSViewExecuteEditCommand(const std::string& command) override;
+  void OnNSViewUndo() override;
+  void OnNSViewRedo() override;
+  void OnNSViewCut() override;
+  void OnNSViewCopy() override;
+  void OnNSViewCopyToFindPboard() override;
+  void OnNSViewPaste() override;
+  void OnNSViewPasteAndMatchStyle() override;
+  void OnNSViewSelectAll() override;
+  void OnNSViewSpeakSelection() override;
+  void OnNSViewStopSpeaking() override;
+  void OnNSViewSyncIsSpeaking(bool* is_speaking) override;
 
   // BrowserCompositorMacClient implementation.
   SkColor BrowserCompositorMacGetGutterColor() const override;
@@ -337,6 +390,19 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // in the destruction path of the WebContentsImpl.
   RenderWidgetHostDelegate* GetFocusedRenderWidgetHostDelegate();
 
+  // Returns the RenderWidgetHostImpl to which Ime messages from the NSView
+  // should be targeted. This exists to preserve historical behavior, and may
+  // not be the desired behavior.
+  // https://crbug.com/831843
+  RenderWidgetHostImpl* GetWidgetForIme();
+
+  // When inside a block of handling a keyboard event, returns the
+  // RenderWidgetHostImpl to which all keyboard and Ime messages from the NSView
+  // should be fowarded. This exists to preserve historical behavior, and may
+  // not be the desired behavior.
+  // https://crbug.com/831843
+  RenderWidgetHostImpl* GetWidgetForKeyboardEvent();
+
  private:
   friend class RenderWidgetHostViewMacTest;
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewMacTest, GetPageTextForSpeech);
@@ -364,6 +430,12 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   void OnResizeDueToAutoResizeComplete(const gfx::Size& new_size,
                                        uint64_t sequence_number);
+
+  void OnGotStringForDictionaryOverlay(
+      int32_t targetWidgetProcessId,
+      int32_t targetWidgetRoutingId,
+      const mac::AttributedStringCoder::EncodedString& encodedString,
+      gfx::Point baselinePoint);
 
   // Gets a textual view of the page's contents, and passes it to the callback
   // provided.
@@ -431,6 +503,32 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Used to track active password input sessions.
   std::unique_ptr<ui::ScopedPasswordInputEnabler> password_input_enabler_;
+
+  // Used to ensure that a consistent RenderWidgetHost is targeted throughout
+  // the duration of a keyboard event.
+  bool in_keyboard_event_ = false;
+  int32_t keyboard_event_widget_process_id_ = 0;
+  int32_t keyboard_event_widget_routing_id_ = 0;
+
+  // When a gesture starts, the system does not inform the view of which type
+  // of gesture is happening (magnify, rotate, etc), rather, it just informs
+  // the view that some as-yet-undefined gesture is starting. Capture the
+  // information about the gesture's beginning event here. It will be used to
+  // create a specific gesture begin event later.
+  std::unique_ptr<blink::WebGestureEvent> gesture_begin_event_;
+
+  // This is set if a GesturePinchBegin event has been sent in the lifetime of
+  // |gesture_begin_event__|. If set, a GesturePinchEnd will be sent when the
+  // gesture ends.
+  bool gesture_begin_pinch_sent_ = false;
+
+  // To avoid accidental pinches, require that a certain zoom threshold be
+  // reached before forwarding it to the browser. Use |pinch_unused_amount_| to
+  // hold this value. If the user reaches this value, don't re-require the
+  // threshold be reached until the page has been zoomed back to page scale of
+  // one.
+  bool pinch_has_reached_zoom_threshold_ = false;
+  float pinch_unused_amount_ = 1.f;
 
   // Factory used to safely scope delayed calls to ShutdownHost().
   base::WeakPtrFactory<RenderWidgetHostViewMac> weak_factory_;

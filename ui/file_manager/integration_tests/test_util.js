@@ -5,15 +5,31 @@
 'use strict';
 
 /**
- * Sends a test message.
- * @param {Object} message Message to be sent. It is converted into JSON string
- *     before sending.
- * @return {Promise} Promise to be fulfilled with a returned value.
+ * Sends a message to the controlling test harness, namely and usually, the
+ * chrome FileManagerBrowserTest harness: it expects the message to contain
+ * the 'name' of the command, and any required or optional arguments of the
+ * command, e.g.,
+ *
+ *   sendTestMessage({
+ *     name: 'addEntries', // command with volume and entries arguments
+ *     volume: volume,
+ *     entries: entries
+ *   }).then(...);
+ *
+ * @param {Object} message Message object to be sent. The object is converted
+ *     to a JSON string prior to sending.
+ * @return {Promise} Promise to be fulfilled with the value returned by the
+ *     chrome.test.sendMessage callback.
  */
 function sendTestMessage(message) {
-  return new Promise(function(fulfill) {
-    chrome.test.sendMessage(JSON.stringify(message), fulfill);
-  });
+  if (typeof message.name === 'string') {
+    return new Promise(function(fulfill) {
+      chrome.test.sendMessage(JSON.stringify(message), fulfill);
+    });
+  } else {
+    let error = 'sendTestMessage requires a message.name <string>';
+    throw new Error(error);
+  }
 }
 
 /**
@@ -54,7 +70,7 @@ function testPromiseAndApps(promise, apps) {
   }), function(error) {
     chrome.test.fail(error.stack || error);
   });
-};
+}
 
 /**
  * Interval milliseconds between checks of repeatUntil.
@@ -71,15 +87,42 @@ var REPEAT_UNTIL_INTERVAL = 200;
 var LOG_INTERVAL = 3000;
 
 /**
+ * Returns caller's file, function and line/column number from the call stack.
+ * @return {string} String with the caller's file name and line/column number,
+ *     as returned by exception stack trace. Example "at /a_file.js:1:1".
+ */
+function getCaller() {
+  var caller = '';
+  try {
+    throw new Error('Force an exception to produce e.stack');
+  } catch (error) {
+    var ignoreStackLines = 3;
+    var lines = error.stack.split('\n');
+    if (ignoreStackLines < lines.length) {
+      caller = lines[ignoreStackLines];
+      // Strip 'chrome-extension://oobinhbdbiehknkpbpejbbpdbkdjmoco' prefix.
+      caller = caller.replace(/(chrome-extension:\/\/\w*)/gi, '').trim();
+      return caller;
+    }
+  }
+  return caller;
+}
+
+
+/**
  * Returns a pending marker. See also the repeatUntil function.
+ * @param {string} name of test function that originated the operation,
+ *     it's the return of getCaller() function.
  * @param {string} message Pending reason including %s, %d, or %j markers. %j
  *     format an object as JSON.
  * @param {Array<*>} var_args Values to be assigined to %x markers.
  * @return {Object} Object which returns true for the expression: obj instanceof
  *     pending.
  */
-function pending(message, var_args) {
-  var index = 1;
+function pending(caller, message, var_args) {
+  // |index| is used to ignore caller and message arguments subsisting markers
+  // (%s, %d and %j) within message with the remaining |arguments|.
+  var index = 2;
   var args = arguments;
   var formattedMessage = message.replace(/%[sdj]/g, function(pattern) {
     var arg = args[index++];
@@ -91,9 +134,9 @@ function pending(message, var_args) {
     }
   });
   var pendingMarker = Object.create(pending.prototype);
-  pendingMarker.message = formattedMessage;
+  pendingMarker.message = caller + ': ' + formattedMessage;
   return pendingMarker;
-};
+}
 
 /**
  * Waits until the checkFunction returns a value but a pending marker.
@@ -119,7 +162,7 @@ function repeatUntil(checkFunction) {
     });
   };
   return step();
-};
+}
 
 /**
  * Adds the givin entries to the target volume(s).
@@ -147,7 +190,7 @@ function addEntries(volumeNames, entries, opt_callback) {
                        opt_callback.bind(null, false));
   }
   return resultPromise;
-};
+}
 
 /**
  * @enum {string}
@@ -209,7 +252,7 @@ function TestEntryInfo(type,
   this.sizeText = sizeText;
   this.typeText = typeText;
   Object.freeze(this);
-};
+}
 
 TestEntryInfo.getExpectedRows = function(entries) {
   return entries.map(function(entry) { return entry.getExpectedRow(); });

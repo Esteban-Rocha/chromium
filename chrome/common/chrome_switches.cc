@@ -295,11 +295,6 @@ const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
 // Enables Domain Reliability Monitoring.
 const char kEnableDomainReliability[] = "enable-domain-reliability";
 
-// Enables an experimental full screen exit UI to allow exiting fullscreen from
-// mouse or touch.
-const char kEnableExperimentalFullscreenExitUI[] =
-    "enable-experimental-fullscreen-exit-ui";
-
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
     "enable-extension-activity-logging";
@@ -453,24 +448,6 @@ const char kMakeDefaultBrowser[]            = "make-default-browser";
 
 // Forces the maximum disk space to be used by the media cache, in bytes.
 const char kMediaCacheSize[]                = "media-cache-size";
-
-// Enables the out-of-process memory logging.
-const char kMemlog[] = "memlog";
-const char kMemlogKeepSmallAllocations[] = "memlog-keep-small-allocations";
-const char kMemlogModeAll[] = "all";
-const char kMemlogModeAllRenderers[] = "all-renderers";
-const char kMemlogModeBrowser[] = "browser";
-const char kMemlogModeGpu[] = "gpu";
-const char kMemlogModeManual[] = "manual";
-const char kMemlogModeMinimal[] = "minimal";
-const char kMemlogModeRendererSampling[] = "renderer-sampling";
-const char kMemlogSampling[] = "memlog-sampling";
-const char kMemlogSamplingRate[] = "memlog-sampling-rate";
-const char kMemlogStackMode[] = "memlog-stack-mode";
-const char kMemlogStackModeMixed[] = "mixed";
-const char kMemlogStackModeNative[] = "native";
-const char kMemlogStackModeNativeWithThreadNames[] = "native-with-thread-names";
-const char kMemlogStackModePseudo[] = "pseudo";
 
 // Allows setting a different destination ID for connection-monitoring GCM
 // messages. Useful when running against a non-prod management server.
@@ -716,6 +693,27 @@ const char kValidateCrx[]                   = "validate-crx";
 
 // Prints version information and quits.
 const char kVersion[]                       = "version";
+
+// Allows privileged JS applications to trigger event logging for peer
+// connections, and to later upload those logs to a remote server.
+// * If "disable" or "disabled", remote-logging will be disabled.
+// * If "enable" or "enabled", remote-logging will be enabled.
+// * If unset (or set to any other value), the platform-specific behavior
+//   will be used. (This behavior may depend on additional factors.)
+const char kWebRtcRemoteEventLog[] = "webrtc-remote-event-log";
+
+// Sets the delay (in seconds) between proactive prunings of remote-bound
+// WebRTC event logs which are pending upload.
+// All positive values are legal.
+// All negative values are illegal, and ignored.
+// If set to 0, the meaning is "no proactive pruning".
+const char kWebRtcRemoteEventLogProactivePruningDelta[] =
+    "webrtc-event-log-proactive-pruning-delta";
+
+// Normally, remote-bound WebRTC event logs are uploaded only when no
+// peer connections are active. With this flag, the upload is never suppressed.
+const char kWebRtcRemoteEventLogUploadNoSuppression[] =
+    "webrtc-event-log-upload-no-suppression";
 
 // Specify the initial window position: --window-position=x,y
 const char kWindowPosition[]                = "window-position";
@@ -964,11 +962,6 @@ const char kAllowNaClFileHandleAPI[]        = "allow-nacl-file-handle-api";
 // Specifies comma-separated list of extension ids or hosts to grant
 // access to TCP/UDP socket APIs.
 const char kAllowNaClSocketAPI[]            = "allow-nacl-socket-api";
-#endif
-
-#if BUILDFLAG(ENABLE_WAYLAND_SERVER)
-// Enables Wayland display server support.
-const char kEnableWaylandServer[] = "enable-wayland-server";
 #endif
 
 #if defined(OS_WIN) || defined(OS_LINUX)

@@ -34,7 +34,6 @@
 #include "net/http/http_request_info.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_stream_factory.h"
-#include "net/http/http_stream_factory_impl_request.h"
 #include "net/http/proxy_fallback.h"
 #include "net/log/net_log.h"
 #include "net/log/net_log_capture_mode.h"
@@ -68,11 +67,11 @@ namespace {
 // not supported or initialized.
 const base::Feature kLimitEarlyPreconnectsExperiment{
     "LimitEarlyPreconnects", base::FEATURE_ENABLED_BY_DEFAULT};
-void RecordChannelIDKeyMatch(SSLClientSocket* ssl_socket,
+void RecordChannelIDKeyMatch(StreamSocket* socket,
                              ChannelIDService* channel_id_service,
                              std::string host) {
   SSLInfo ssl_info;
-  ssl_socket->GetSSLInfo(&ssl_info);
+  socket->GetSSLInfo(&ssl_info);
   if (!ssl_info.channel_id_sent)
     return;
   std::unique_ptr<crypto::ECPrivateKey> request_key;
@@ -88,7 +87,7 @@ void RecordChannelIDKeyMatch(SSLClientSocket* ssl_socket,
   // the async request.
   if (result == ERR_IO_PENDING)
     request.Cancel();
-  crypto::ECPrivateKey* socket_key = ssl_socket->GetChannelIDKey();
+  crypto::ECPrivateKey* socket_key = socket->GetChannelIDKey();
 
   // This enum is used for an UMA histogram - do not change or re-use values.
   enum {
@@ -389,9 +388,7 @@ void HttpStreamFactoryImpl::Job::GetSSLInfo(SSLInfo* ssl_info) {
   DCHECK(using_ssl_);
   DCHECK(!establishing_tunnel_);
   DCHECK(connection_.get() && connection_->socket());
-  SSLClientSocket* ssl_socket =
-      static_cast<SSLClientSocket*>(connection_->socket());
-  ssl_socket->GetSSLInfo(ssl_info);
+  connection_->socket()->GetSSLInfo(ssl_info);
 }
 
 // static
@@ -1047,20 +1044,18 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
       was_alpn_negotiated_ = true;
       negotiated_protocol_ = kProtoQUIC;
     } else {
-      SSLClientSocket* ssl_socket =
-          static_cast<SSLClientSocket*>(connection_->socket());
-      if (ssl_socket->WasAlpnNegotiated()) {
+      if (connection_->socket()->WasAlpnNegotiated()) {
         was_alpn_negotiated_ = true;
-        negotiated_protocol_ = ssl_socket->GetNegotiatedProtocol();
+        negotiated_protocol_ = connection_->socket()->GetNegotiatedProtocol();
         net_log_.AddEvent(
             NetLogEventType::HTTP_STREAM_REQUEST_PROTO,
             base::Bind(&NetLogHttpStreamProtoCallback, negotiated_protocol_));
         if (negotiated_protocol_ == kProtoHTTP2) {
-          // If request is WebSocket with no proxy, then HTTP/2 must not have
-          // been advertised in the TLS handshake.  The TLS layer must not have
-          // accepted the server choosing HTTP/2.
-          // TODO(bnc): Change to DCHECK once https://crbug.com/819101 is fixed.
-          CHECK(!(is_websocket_ && proxy_info_.is_direct()));
+          if (is_websocket_) {
+            // WebSocket is not supported over a fresh HTTP/2 connection.
+            return ERR_NOT_IMPLEMENTED;
+          }
+
           using_spdy_ = true;
         }
       }
@@ -1198,9 +1193,8 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
   next_state_ = STATE_CREATE_STREAM_COMPLETE;
 
   if (using_ssl_ && connection_->socket()) {
-    SSLClientSocket* ssl_socket =
-        static_cast<SSLClientSocket*>(connection_->socket());
-    RecordChannelIDKeyMatch(ssl_socket, session_->context().channel_id_service,
+    RecordChannelIDKeyMatch(connection_->socket(),
+                            session_->context().channel_id_service,
                             destination_.HostForURL());
   }
 
@@ -1216,7 +1210,8 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
       DCHECK(delegate_->websocket_handshake_stream_create_helper());
       websocket_stream_ =
           delegate_->websocket_handshake_stream_create_helper()
-              ->CreateBasicStream(std::move(connection_), using_proxy);
+              ->CreateBasicStream(std::move(connection_), using_proxy,
+                                  session_->websocket_endpoint_lock_manager());
     } else {
       stream_ = std::make_unique<HttpBasicStream>(
           std::move(connection_), using_proxy,
@@ -1376,9 +1371,6 @@ void HttpStreamFactoryImpl::Job::InitSSLConfig(SSLConfig* ssl_config,
     // handshake; renegotiation on the proxy connection is unsupported.
     ssl_config->false_start_enabled = false;
   }
-
-  if (request_info_.load_flags & LOAD_VERIFY_EV_CERT)
-    ssl_config->verify_ev_cert = true;
 
   // Disable Channel ID if privacy mode is enabled.
   if (request_info_.privacy_mode == PRIVACY_MODE_ENABLED)

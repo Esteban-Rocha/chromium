@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
@@ -37,6 +36,7 @@
 #include "components/omnibox/browser/autocomplete_match.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/sync/base/model_type.h"
 #include "components/sync/driver/sync_service_utils.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -255,10 +255,10 @@ bool ChromeAutocompleteProviderClient::SearchSuggestEnabled() const {
   return profile_->GetPrefs()->GetBoolean(prefs::kSearchSuggestEnabled);
 }
 
-bool ChromeAutocompleteProviderClient::TabSyncEnabledAndUnencrypted() const {
-  return syncer::IsTabSyncEnabledAndUnencrypted(
-      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile_),
-      profile_->GetPrefs());
+bool ChromeAutocompleteProviderClient::IsTabUploadToGoogleActive() const {
+  return syncer::GetUploadToGoogleState(
+             ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile_),
+             syncer::ModelType::PROXY_TABS) == syncer::UploadState::ACTIVE;
 }
 
 bool ChromeAutocompleteProviderClient::IsAuthenticated() const {

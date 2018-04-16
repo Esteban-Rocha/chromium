@@ -8,10 +8,9 @@
 
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/values.h"
 #include "content/shell/renderer/layout_test/blink_test_runner.h"
-#include "third_party/WebKit/public/web/WebLeakDetector.h"
+#include "third_party/blink/public/web/web_leak_detector.h"
 
 using blink::WebLeakDetector;
 
@@ -68,10 +67,10 @@ LeakDetector::LeakDetector(BlinkTestRunner* test_runner)
 LeakDetector::~LeakDetector() {
 }
 
-void LeakDetector::TryLeakDetection(blink::WebFrame* frame) {
+void LeakDetector::TryLeakDetection() {
   blink::WebLeakDetector* web_leak_detector =
       blink::WebLeakDetector::Create(this);
-  web_leak_detector->PrepareForLeakDetection(frame);
+  web_leak_detector->PrepareForLeakDetection();
   web_leak_detector->CollectGarbageAndReport();
 }
 

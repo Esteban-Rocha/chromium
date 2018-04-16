@@ -122,6 +122,20 @@ if (is_win) {
   }
 }
 
+# To download the corpus for local fuzzing use:
+# gsutil -m rsync \
+#   gs://clusterfuzz-corpus/libfuzzer/zucchini_disassembler_win32_fuzzer \
+#   components/zucchini/testdata/disassembler_win32_fuzzer
+fuzzer_test("zucchini_disassembler_win32_fuzzer") {
+  sources = [
+    "disassembler_win32_fuzzer.cc",
+  ]
+  deps = [
+    ":zucchini_lib",
+    "//base",
+  ]
+}
+
 fuzzer_test("zucchini_patch_fuzzer") {
   sources = [
     "patch_fuzzer.cc",
@@ -143,6 +157,7 @@ test("zucchini_unittests") {
     "buffer_source_unittest.cc",
     "buffer_view_unittest.cc",
     "crc32_unittest.cc",
+    "disassembler_dex_unittest.cc",
     "element_detection_unittest.cc",
     "encoded_view_unittest.cc",
     "equivalence_map_unittest.cc",

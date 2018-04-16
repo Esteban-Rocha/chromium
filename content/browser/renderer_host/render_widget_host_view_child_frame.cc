@@ -10,7 +10,6 @@
 
 #include "base/debug/dump_without_crashing.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
@@ -40,7 +39,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "gpu/ipc/common/gpu_messages.h"
 #include "services/service_manager/runner/common/client_util.h"
-#include "third_party/WebKit/public/platform/WebTouchEvent.h"
+#include "third_party/blink/public/platform/web_touch_event.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -931,6 +930,11 @@ void RenderWidgetHostViewChildFrame::SetWantsAnimateOnlyBeginFrames() {
     support_->SetWantsAnimateOnlyBeginFrames();
 }
 
+void RenderWidgetHostViewChildFrame::TakeFallbackContentFrom(
+    RenderWidgetHostView* view) {
+  // This method only makes sense for top-level views.
+}
+
 InputEventAckState RenderWidgetHostViewChildFrame::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
   if (input_event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
@@ -1030,7 +1034,8 @@ void RenderWidgetHostViewChildFrame::DisableAutoResize(
 viz::ScopedSurfaceIdAllocator
 RenderWidgetHostViewChildFrame::ResizeDueToAutoResize(
     const gfx::Size& new_size,
-    uint64_t sequence_number) {
+    uint64_t sequence_number,
+    const viz::LocalSurfaceId& local_surface_id) {
   // TODO(cblume): This doesn't currently suppress allocation.
   // It maintains existing behavior while using the suppression style.
   // This will be addressed in a follow-up patch.

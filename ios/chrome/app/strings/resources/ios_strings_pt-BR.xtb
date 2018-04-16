@@ -160,6 +160,7 @@ Por exemplo, alguns websites podem reagir a esse pedido mostrando anúncios que 
 <translation id="3789841737615482174">Instalar</translation>
 <translation id="385051799172605136">Voltar</translation>
 <translation id="3897092660631435901">Menu</translation>
+<translation id="3915450441834151894">Informações do site</translation>
 <translation id="3928666092801078803">Combinar meus dados</translation>
 <translation id="3950820424414687140">Fazer login</translation>
 <translation id="3963231839620026525">Nova guia anônima</translation>
@@ -168,6 +169,7 @@ Por exemplo, alguns websites podem reagir a esse pedido mostrando anúncios que 
 <translation id="4002066346123236978">Título</translation>
 <translation id="4038354071007134711">Nenhum app deste dispositivo pode abrir o arquivo.</translation>
 <translation id="4049507953662678203">Verifique se você tem uma conexão de rede e tente novamente.</translation>
+<translation id="4084682180776658562">Favorito</translation>
 <translation id="411254640334432676">Falha no download.</translation>
 <translation id="4121993058175073134">Para enviar dados de exportação líquida, configure sua conta de e-mail no aplicativo "Configurações".</translation>
 <translation id="4124987746317609294">Intervalo de tempo</translation>
@@ -223,6 +225,7 @@ Seus dados são criptografados com sua senha longa de sincronização. Informe-a
 <translation id="5197255632782567636">Internet</translation>
 <translation id="5228579091201413441">Ativar sincronização</translation>
 <translation id="5244474230056479698">Sincronizado com <ph name="EMAIL" /></translation>
+<translation id="527973086555161537">Abra uma guia para navegar na Web com privacidade.</translation>
 <translation id="5300589172476337783">Mostrar</translation>
 <translation id="5317780077021120954">Salvar</translation>
 <translation id="5327248766486351172">Nome</translation>
@@ -302,6 +305,7 @@ Seus dados foram criptografados com sua senha longa de sincronização no dia <p
 <translation id="6445981559479772097">Mensagem enviada.</translation>
 <translation id="6464071786529933911">Abrir em nova guia anônima</translation>
 <translation id="6482629121755362506"><ph name="NUMBER_OF_SELECTED_BOOKMARKS" /> itens excluídos</translation>
+<translation id="6528048372317642110">O download do arquivo está disponível</translation>
 <translation id="6541915733953096570">Da última hora</translation>
 <translation id="6570040839871198836">Preench. auto.</translation>
 <translation id="6656103420185847513">Editar pasta</translation>
@@ -427,7 +431,6 @@ Seus dados foram criptografados com sua senha longa de sincronização no dia <p
 <translation id="9083392325882095631">1 item</translation>
 <translation id="9100610230175265781">Senha necessária</translation>
 <translation id="9148126808321036104">Faça login novamente</translation>
-<translation id="915371508759614899">Cancelar download?</translation>
 <translation id="9157836665414082580">Bloquear caixas de diálogo</translation>
 <translation id="9188680907066685419">Sair da conta gerenciada</translation>
 <translation id="9203116392574189331">Transição</translation>

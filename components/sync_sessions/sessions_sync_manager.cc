@@ -445,8 +445,6 @@ bool SessionsSyncManager::InitFromSyncModel(
       if (specifics.has_header() && !found_current_header) {
         // This is our previous header node, reuse it.
         found_current_header = true;
-        if (specifics.header().has_client_name())
-          current_session_name_ = specifics.header().client_name();
 
         // The specifics from the SyncData are immutable. Create a mutable copy
         // to hold the rewritten ids.
@@ -456,8 +454,8 @@ bool SessionsSyncManager::InitFromSyncModel(
         // the specifics in place.
         for (auto& window :
              *rewritten_specifics.mutable_header()->mutable_window()) {
-          session_id_map[window.window_id()] = SessionID::NewUnique();
-          window.set_window_id(session_id_map[window.window_id()].id());
+          session_id_map.emplace(window.window_id(), SessionID::NewUnique());
+          window.set_window_id(session_id_map.at(window.window_id()).id());
 
           google::protobuf::RepeatedField<int>* tab_ids = window.mutable_tab();
           for (int i = 0; i < tab_ids->size(); i++) {
@@ -465,9 +463,9 @@ bool SessionsSyncManager::InitFromSyncModel(
             if (tab_iter == session_id_map.end()) {
               // SessionID::SessionID() automatically increments a static
               // variable, forcing a new id to be generated each time.
-              session_id_map[tab_ids->Get(i)] = SessionID::NewUnique();
+              session_id_map.emplace(tab_ids->Get(i), SessionID::NewUnique());
             }
-            *(tab_ids->Mutable(i)) = session_id_map[tab_ids->Get(i)].id();
+            *(tab_ids->Mutable(i)) = session_id_map.at(tab_ids->Get(i)).id();
             // Note: the tab id of the SessionTab will be updated when the tab
             // node itself is processed.
           }
@@ -560,8 +558,8 @@ void SessionsSyncManager::DeleteForeignSessionInternal(
     return;
   }
 
-  std::set<int> tab_node_ids_to_delete;
-  session_tracker_.LookupForeignTabNodeIds(tag, &tab_node_ids_to_delete);
+  const std::set<int> tab_node_ids_to_delete =
+      session_tracker_.LookupTabNodeIds(tag);
   if (DisassociateForeignSession(tag)) {
     // Only tell sync to delete the header if there was one.
     change_output->push_back(

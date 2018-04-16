@@ -13,8 +13,10 @@
 #include "ash/components/shortcut_viewer/views/keyboard_shortcut_item_view.h"
 #include "ash/components/shortcut_viewer/views/ksv_search_box_view.h"
 #include "ash/components/strings/grit/ash_components_strings.h"
+#include "ash/public/cpp/app_list/internal_app_id_constants.h"
 #include "ash/public/cpp/shelf_item.h"
 #include "ash/public/cpp/window_properties.h"
+#include "ash/resources/grit/ash_resources.h"
 #include "base/bind.h"
 #include "base/i18n/string_search.h"
 #include "base/metrics/user_metrics.h"
@@ -22,6 +24,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/base/default_style.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -105,7 +108,7 @@ views::Widget* KeyboardShortcutView::Show(gfx::NativeWindow context) {
     constexpr gfx::Size kKSVWindowSize(800, 512);
     gfx::Rect window_bounds(kKSVWindowSize);
     if (context) {
-      window_bounds = context->GetRootWindow()->bounds();
+      window_bounds = context->GetRootWindow()->GetBoundsInScreen();
       window_bounds.ClampToCenteredSize(kKSVWindowSize);
     }
     views::Widget::CreateWindowWithContextAndBounds(new KeyboardShortcutView(),
@@ -117,12 +120,7 @@ views::Widget* KeyboardShortcutView::Show(gfx::NativeWindow context) {
     window->SetProperty(ash::kFrameInactiveColorKey, SK_ColorWHITE);
 
     // Set shelf icon.
-    // An app id for keyboard shortcut viewer window, also used to identify the
-    // shelf item. Generated as
-    // crx_file::id_util::GenerateId("org.chromium.keyboardshortcutviewer")
-    static constexpr char kKeyboardShortcutViewerId[] =
-        "dieikdblbimmfmfinbibdlalidbnbchd";
-    const ash::ShelfID shelf_id(kKeyboardShortcutViewerId);
+    const ash::ShelfID shelf_id(app_list::kInternalAppIdKeyboardShortcutViewer);
     window->SetProperty(ash::kShelfIDKey,
                         new std::string(shelf_id.Serialize()));
     window->SetProperty<int>(ash::kShelfItemTypeKey, ash::TYPE_DIALOG);
@@ -131,18 +129,31 @@ views::Widget* KeyboardShortcutView::Show(gfx::NativeWindow context) {
     // shelf uses the window title to set the shelf item's tooltip text. The
     // shelf observes changes to the |kWindowIconKey| property and handles that
     // by initializing the shelf item including its tooltip text.
+    // TODO(wutao): we can remove resource id IDS_KSV_TITLE after implementing
+    // internal app shelf launcher.
     window->SetTitle(l10n_util::GetStringUTF16(IDS_KSV_TITLE));
     gfx::ImageSkia* icon =
         ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-            IDR_KEYBOARD_SHORTCUT_VIEWER_APP_ICON);
+            IDR_KEYBOARD_SHORTCUT_VIEWER_LOGO_192);
     // The new gfx::ImageSkia instance is owned by the window itself.
     window->SetProperty(aura::client::kWindowIconKey,
                         new gfx::ImageSkia(*icon));
+
+    g_ksv_view->AddAccelerator(
+        ui::Accelerator(ui::VKEY_W, ui::EF_CONTROL_DOWN));
 
     g_ksv_view->GetWidget()->Show();
     g_ksv_view->search_box_view_->search_box()->RequestFocus();
   }
   return g_ksv_view->GetWidget();
+}
+
+bool KeyboardShortcutView::AcceleratorPressed(
+    const ui::Accelerator& accelerator) {
+  DCHECK_EQ(ui::VKEY_W, accelerator.key_code());
+  DCHECK_EQ(ui::EF_CONTROL_DOWN, accelerator.modifiers());
+  GetWidget()->Close();
+  return true;
 }
 
 void KeyboardShortcutView::Layout() {

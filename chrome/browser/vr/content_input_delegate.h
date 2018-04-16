@@ -14,7 +14,7 @@
 #include "chrome/browser/vr/macros.h"
 #include "chrome/browser/vr/model/text_input_info.h"
 #include "chrome/browser/vr/text_edit_action.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 
 namespace blink {
 class WebGestureEvent;
@@ -105,6 +105,8 @@ class ContentInputDelegate {
   void OnWebInputTextChangedForTest(const base::string16& text) {
     OnWebInputTextChanged(text);
   }
+
+  void ClearTextInputState();
 
  private:
   void UpdateGesture(const gfx::PointF& normalized_content_hit_point,

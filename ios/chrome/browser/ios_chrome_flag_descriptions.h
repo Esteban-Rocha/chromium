@@ -11,6 +11,10 @@ namespace flag_descriptions {
 extern const char kAutofillIOSDelayBetweenFieldsName[];
 extern const char kAutofillIOSDelayBetweenFieldsDescription[];
 
+// Title and description for the flag to controll the dynamic autofill.
+extern const char kAutofillDynamicFormsName[];
+extern const char kAutofillDynamicFormsDescription[];
+
 // Title and description for the flag to control redirection to the task
 // scheduler.
 extern const char kBrowserTaskScheduler[];
@@ -50,6 +54,11 @@ extern const char kFeedbackKitV2Name[];
 extern const char kFeedbackKitV2Description[];
 extern const char kFeedbackKitV2WithSSOServiceName[];
 extern const char kFeedbackKitV2WithSSOServiceDescription[];
+
+// Title and description for the flag used to enable fullscreen's contentInset
+// based implementation.
+extern const char kFullscreenContentInsetName[];
+extern const char kFullscreenContentInsetDescription[];
 
 // Title and description for the flag to enable History batch filtering.
 extern const char kHistoryBatchUpdatesFilterName[];
@@ -120,18 +129,13 @@ extern const char kShowAutofillTypePredictionsDescription[];
 extern const char kTabSwitcherPresentsBVCName[];
 extern const char kTabSwitcherPresentsBVCDescription[];
 
-// Title and description for the flag to choose the position of the toolbars'
-// buttons.
-extern const char kToolbarButtonPositionsName[];
-extern const char kToolbarButtonPositionsDescription[];
+// Title and description for the flag to enable the UI Refresh location bar.
+extern const char kUIRefreshLocationBarName[];
+extern const char kUIRefreshLocationBarDescription[];
 
 // Title and description for the flag to enable the phase 1 UI Refresh.
 extern const char kUIRefreshPhase1Name[];
 extern const char kUIRefreshPhase1Description[];
-
-// Title and description for the flag to toggle the flag of the search button.
-extern const char kSearchIconToggleName[];
-extern const char kSearchIconToggleDescription[];
 
 // Title and description for the flag to enable the unified consent.
 extern const char kUnifiedConsentName[];

@@ -49,6 +49,7 @@ extern const CGFloat kProgressBarHeight;
 extern const CGFloat kToolsMenuButtonWidth;
 extern const CGFloat kAdaptiveToolbarButtonHeight;
 extern const CGFloat kAdaptiveToolbarButtonWidth;
+extern const CGFloat kOmniboxButtonWidth;
 extern const CGFloat kToolbarButtonWidth;
 extern const CGFloat kLeadingLocationBarButtonWidth;
 extern const CGFloat kToolbarButtonTitleNormalColor;
@@ -66,6 +67,11 @@ extern const CGFloat kBlurBackgroundAlpha;
 
 // Alpha for the tint color of the buttons.
 extern const CGFloat kToolbarButtonTintColorAlpha;
+// Alpha for the tint color of the buttons when in the highlighted state.
+extern const CGFloat kToolbarButtonTintColorAlphaHighlighted;
+extern const CGFloat kIncognitoToolbarButtonTintColorAlphaHighlighted;
+// Delta of alpha for the tint color of the buttons in the dimmed state.
+extern const CGFloat kToolbarButtonDimmedTintColorAlphaDelta;
 
 // Maximum number of tabs displayed by the button containing the tab count.
 extern const NSInteger kShowTabStripButtonMaxTabCount;
@@ -100,6 +106,8 @@ extern NSString* const kToolbarStackButtonIdentifier;
 extern NSString* const kToolbarShareButtonIdentifier;
 // Accessibility identifier of the omnibox button.
 extern NSString* const kToolbarOmniboxButtonIdentifier;
+// Accessibility identifier of the cancel omnibox edit button.
+extern NSString* const kToolbarCancelOmniboxEditButtonIdentifier;
 
 // The maximum number to display in the tab switcher button.
 extern NSInteger const kStackButtonMaxTabCount;

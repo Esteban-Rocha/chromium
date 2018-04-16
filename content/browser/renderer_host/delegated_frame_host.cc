@@ -11,7 +11,6 @@
 
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
@@ -302,8 +301,13 @@ void DelegatedFrameHost::WasResized(
       // On Windows and Linux, we would like to produce new content as soon as
       // possible or the OS will create an additional black gutter. Until we can
       // block resize on surface synchronization on these platforms, we will not
-      // block UI on the top-level renderer.
-      deadline_policy = cc::DeadlinePolicy::UseSpecifiedDeadline(0u);
+      // block UI on the top-level renderer. The exception to this is if we're
+      // using an infinite deadline, in which case we should respect the
+      // specified deadline and block UI since that's what was requested.
+      if (deadline_policy.policy_type() !=
+          cc::DeadlinePolicy::kUseInfiniteDeadline) {
+        deadline_policy = cc::DeadlinePolicy::UseSpecifiedDeadline(0u);
+      }
 #endif
       client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
           surface_id, current_frame_size_in_dip_, GetGutterColor(),
@@ -583,13 +587,9 @@ void DelegatedFrameHost::OnBeginFrame(const viz::BeginFrameArgs& args) {
 }
 
 void DelegatedFrameHost::EvictDelegatedFrame() {
-  if (!HasSavedFrame())
-    return;
-
-  std::vector<viz::SurfaceId> surface_ids = {GetCurrentSurfaceId()};
-
-  GetHostFrameSinkManager()->EvictSurfaces(surface_ids);
-
+  // It is possible that we are embedding the contents of previous
+  // DelegatedFrameHost. In this case, HasSavedFrame() will return false but we
+  // still need to clear the layer.
   if (enable_surface_synchronization_) {
     if (HasFallbackSurface()) {
       client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
@@ -601,6 +601,10 @@ void DelegatedFrameHost::EvictDelegatedFrame() {
     UpdateGutters();
   }
 
+  if (!HasSavedFrame())
+    return;
+  std::vector<viz::SurfaceId> surface_ids = {GetCurrentSurfaceId()};
+  GetHostFrameSinkManager()->EvictSurfaces(surface_ids);
   frame_evictor_->DiscardedFrame();
 }
 
@@ -741,6 +745,27 @@ void DelegatedFrameHost::WindowTitleChanged(const std::string& title) {
   auto* host_frame_sink_manager = GetHostFrameSinkManager();
   if (host_frame_sink_manager)
     host_frame_sink_manager->SetFrameSinkDebugLabel(frame_sink_id_, title);
+}
+
+void DelegatedFrameHost::TakeFallbackContentFrom(DelegatedFrameHost* other) {
+  if (!other->HasFallbackSurface())
+    return;
+  if (HasFallbackSurface())
+    return;
+  if (!HasPrimarySurface()) {
+    client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
+        *other->client_->DelegatedFrameHostGetLayer()->GetFallbackSurfaceId(),
+        other->client_->DelegatedFrameHostGetLayer()->size(),
+        other->client_->DelegatedFrameHostGetLayer()->background_color(),
+        cc::DeadlinePolicy::UseDefaultDeadline(),
+        false /* stretch_content_to_fill_bounds */);
+  }
+  client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
+      *other->client_->DelegatedFrameHostGetLayer()->GetFallbackSurfaceId());
+  if (!enable_surface_synchronization_) {
+    current_frame_size_in_dip_ = other->current_frame_size_in_dip_;
+    UpdateGutters();
+  }
 }
 
 }  // namespace content

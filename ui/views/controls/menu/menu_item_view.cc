@@ -628,6 +628,11 @@ void MenuItemView::SetMargins(int top_margin, int bottom_margin) {
   invalidate_dimensions();
 }
 
+void MenuItemView::SetForcedVisualSelection(bool selected) {
+  forced_visual_selection_ = selected;
+  SchedulePaint();
+}
+
 MenuItemView::MenuItemView(MenuItemView* parent,
                            int command,
                            MenuItemView::Type type)
@@ -654,6 +659,8 @@ MenuItemView::MenuItemView(MenuItemView* parent,
 }
 
 MenuItemView::~MenuItemView() {
+  if (GetMenuController())
+    GetMenuController()->OnMenuItemDestroying(this);
   delete submenu_;
   for (auto* item : removed_items_)
     delete item;
@@ -825,6 +832,8 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
       (mode == PB_NORMAL && IsSelected() &&
        parent_menu_item_->GetSubmenu()->GetShowSelection(this) &&
        (NonIconChildViewsCount() == 0));
+  if (forced_visual_selection_.has_value())
+    render_selection = *forced_visual_selection_;
 
   MenuDelegate *delegate = GetDelegate();
   bool emphasized =
@@ -882,12 +891,10 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
                                   flags);
   if (!subtitle_.empty()) {
     canvas->DrawStringRectWithFlags(
-        subtitle_,
-        font_list,
+        subtitle_, font_list,
         GetNativeTheme()->GetSystemColor(
-            ui::NativeTheme::kColorId_MenuItemSubtitleColor),
-        text_bounds + gfx::Vector2d(0, font_list.GetHeight()),
-        flags);
+            ui::NativeTheme::kColorId_MenuItemMinorTextColor),
+        text_bounds + gfx::Vector2d(0, font_list.GetHeight()), flags);
   }
 
   PaintMinorIconAndText(canvas,
@@ -946,7 +953,7 @@ SkColor MenuItemView::GetTextColor(bool minor,
                                    bool render_selection,
                                    bool emphasized) const {
   ui::NativeTheme::ColorId color_id =
-      minor ? ui::NativeTheme::kColorId_MenuItemSubtitleColor
+      minor ? ui::NativeTheme::kColorId_MenuItemMinorTextColor
             : ui::NativeTheme::kColorId_EnabledMenuItemForegroundColor;
   if (enabled()) {
     if (render_selection)
@@ -1033,6 +1040,25 @@ MenuItemView::MenuItemDimensions MenuItemView::CalculateDimensions() const {
     return dimensions;
   }
 
+  const gfx::FontList& font_list = GetFontList();
+  base::string16 minor_text = GetMinorText();
+  if (menu_config.fixed_text_item_height &&
+      menu_config.fixed_container_item_height && menu_config.fixed_menu_width &&
+      GetMenuController() && !GetMenuController()->is_combobox()) {
+    bool has_children = NonIconChildViewsCount() > 0;
+    dimensions.height = has_children ? menu_config.fixed_container_item_height
+                                     : menu_config.fixed_text_item_height;
+    dimensions.children_width = 0;
+    dimensions.minor_text_width =
+        minor_text.empty() ? 0 : gfx::GetStringWidth(minor_text, font_list);
+    int leave_for_minor = dimensions.minor_text_width
+                              ? dimensions.minor_text_width +
+                                    menu_config.label_to_minor_text_padding
+                              : 0;
+    dimensions.standard_width = menu_config.fixed_menu_width - leave_for_minor;
+    return dimensions;
+  }
+
   dimensions.height = child_size.height();
   // Adjust item content height if menu has both items with and without icons.
   // This way all menu items will have the same height.
@@ -1045,9 +1071,6 @@ MenuItemView::MenuItemDimensions MenuItemView::CalculateDimensions() const {
   // In case of a container, only the container size needs to be filled.
   if (IsContainer())
     return dimensions;
-
-  // Determine the length of the label text.
-  const gfx::FontList& font_list = GetFontList();
 
   // Get Icon margin overrides for this particular item.
   const MenuDelegate* delegate = GetDelegate();
@@ -1062,6 +1085,7 @@ MenuItemView::MenuItemDimensions MenuItemView::CalculateDimensions() const {
   }
   int label_start = GetLabelStartForThisItem();
 
+  // Determine the length of the label text.
   int string_width = gfx::GetStringWidth(title_, font_list);
   if (!subtitle_.empty()) {
     string_width = std::max(string_width,
@@ -1071,7 +1095,6 @@ MenuItemView::MenuItemDimensions MenuItemView::CalculateDimensions() const {
   dimensions.standard_width = string_width + label_start +
       item_right_margin_;
   // Determine the length of the right-side text.
-  base::string16 minor_text = GetMinorText();
   dimensions.minor_text_width =
       minor_text.empty() ? 0 : gfx::GetStringWidth(minor_text, font_list);
 

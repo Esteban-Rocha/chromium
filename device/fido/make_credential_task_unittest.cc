@@ -13,7 +13,7 @@
 #include "device/fido/authenticator_make_credential_response.h"
 #include "device/fido/ctap_make_credential_request.h"
 #include "device/fido/fido_constants.h"
-#include "device/fido/fido_response_test_data.h"
+#include "device/fido/fido_test_data.h"
 #include "device/fido/make_credential_task.h"
 #include "device/fido/mock_fido_device.h"
 #include "device/fido/test_callback_receiver.h"
@@ -54,9 +54,7 @@ class FidoMakeCredentialTaskTest : public testing::Test {
             u2f_parsing_utils::Materialize(kClientDataHash), std::move(rp),
             std::move(user),
             PublicKeyCredentialParams(
-                {{kU2fCredentialType,
-                  base::strict_cast<int>(
-                      CoseAlgorithmIdentifier::kCoseEs256)}})),
+                std::vector<PublicKeyCredentialParams::CredentialInfo>(1))),
         AuthenticatorSelectionCriteria(), callback_receiver_.callback());
   }
 
@@ -72,9 +70,7 @@ class FidoMakeCredentialTaskTest : public testing::Test {
             u2f_parsing_utils::Materialize(kClientDataHash), std::move(rp),
             std::move(user),
             PublicKeyCredentialParams(
-                {{kU2fCredentialType,
-                  base::strict_cast<int>(
-                      CoseAlgorithmIdentifier::kCoseEs256)}})),
+                std::vector<PublicKeyCredentialParams::CredentialInfo>(1))),
         std::move(criteria), callback_receiver_.callback());
   }
 
@@ -134,8 +130,7 @@ TEST_F(FidoMakeCredentialTaskTest,
       AuthenticatorSelectionCriteria(
           AuthenticatorSelectionCriteria::AuthenticatorAttachment::kAny,
           false /* require_resident_key */,
-          AuthenticatorSelectionCriteria::UserVerificationRequirement::
-              kRequired));
+          UserVerificationRequirement::kRequired));
   make_credential_callback_receiver().WaitForCallback();
 
   EXPECT_EQ(CtapDeviceResponseCode::kCtap2ErrOther,
@@ -160,8 +155,7 @@ TEST_F(FidoMakeCredentialTaskTest,
       AuthenticatorSelectionCriteria(
           AuthenticatorSelectionCriteria::AuthenticatorAttachment::kPlatform,
           false /* require_resident_key */,
-          AuthenticatorSelectionCriteria::UserVerificationRequirement::
-              kPreferred));
+          UserVerificationRequirement::kPreferred));
   make_credential_callback_receiver().WaitForCallback();
 
   EXPECT_EQ(CtapDeviceResponseCode::kCtap2ErrOther,
@@ -184,8 +178,7 @@ TEST_F(FidoMakeCredentialTaskTest,
       AuthenticatorSelectionCriteria(
           AuthenticatorSelectionCriteria::AuthenticatorAttachment::kAny,
           true /* require_resident_key */,
-          AuthenticatorSelectionCriteria::UserVerificationRequirement::
-              kPreferred));
+          UserVerificationRequirement::kPreferred));
   make_credential_callback_receiver().WaitForCallback();
 
   EXPECT_EQ(CtapDeviceResponseCode::kCtap2ErrOther,
@@ -211,8 +204,7 @@ TEST_F(FidoMakeCredentialTaskTest,
       AuthenticatorSelectionCriteria(
           AuthenticatorSelectionCriteria::AuthenticatorAttachment::kPlatform,
           true /* require_resident_key */,
-          AuthenticatorSelectionCriteria::UserVerificationRequirement::
-              kRequired));
+          UserVerificationRequirement::kRequired));
   make_credential_callback_receiver().WaitForCallback();
 
   EXPECT_EQ(CtapDeviceResponseCode::kSuccess,
@@ -226,6 +218,26 @@ TEST_F(FidoMakeCredentialTaskTest,
   EXPECT_EQ(AuthenticatorSupportedOptions::UserVerificationAvailability::
                 kSupportedAndConfigured,
             device_options.user_verification_availability());
+}
+
+TEST_F(FidoMakeCredentialTaskTest, TestIncompatibleUserVerificationSetting) {
+  auto device = std::make_unique<MockFidoDevice>();
+
+  device->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestGetInfoResponseWithoutUvSupport);
+
+  const auto task = CreateMakeCredentialTaskWithAuthenticatorSelectionCriteria(
+      device.get(),
+      AuthenticatorSelectionCriteria(
+          AuthenticatorSelectionCriteria::AuthenticatorAttachment::kAny,
+          false /* require_resident_key */,
+          UserVerificationRequirement::kRequired));
+  make_credential_callback_receiver().WaitForCallback();
+  EXPECT_EQ(ProtocolVersion::kCtap, device->supported_protocol());
+  EXPECT_EQ(CtapDeviceResponseCode::kCtap2ErrOther,
+            make_credential_callback_receiver().status());
+  EXPECT_FALSE(make_credential_callback_receiver().value());
 }
 
 }  // namespace device

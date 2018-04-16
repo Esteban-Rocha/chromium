@@ -13,7 +13,6 @@
 #include "base/guid.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/sys_info.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -379,14 +378,6 @@ bool EasyUnlockService::UpdateScreenlockState(ScreenlockState state) {
   return true;
 }
 
-ScreenlockState EasyUnlockService::GetScreenlockState() {
-  EasyUnlockScreenlockStateHandler* handler = GetScreenlockStateHandler();
-  if (!handler)
-    return ScreenlockState::INACTIVE;
-
-  return handler->state();
-}
-
 void EasyUnlockService::AttemptAuth(const AccountId& account_id) {
   const EasyUnlockAuthAttempt::Type auth_attempt_type =
       GetType() == TYPE_REGULAR ? EasyUnlockAuthAttempt::TYPE_UNLOCK
@@ -527,18 +518,10 @@ void EasyUnlockService::Shutdown() {
   weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
-void EasyUnlockService::ReloadAppAndLockScreen() {
-  // Make sure lock screen state set by the extension gets reset.
-  ResetScreenlockState();
-  app_manager_->ReloadApp();
-  NotifyUserUpdated();
-}
-
 void EasyUnlockService::UpdateAppState() {
   if (IsAllowed()) {
     EnsureTpmKeyPresentIfNeeded();
     app_manager_->LoadApp();
-    NotifyUserUpdated();
 
     if (proximity_auth_system_)
       proximity_auth_system_->Start();
@@ -567,18 +550,6 @@ void EasyUnlockService::UpdateAppState() {
 
 void EasyUnlockService::DisableAppWithoutResettingScreenlockState() {
   app_manager_->DisableAppIfLoaded();
-}
-
-void EasyUnlockService::NotifyUserUpdated() {
-  const AccountId& account_id = GetAccountId();
-  if (!account_id.is_valid())
-    return;
-
-  // Notify the easy unlock app that the user info changed.
-  bool logged_in = GetType() == TYPE_REGULAR;
-  bool data_ready = logged_in || GetRemoteDevices() != NULL;
-  app_manager_->SendUserUpdatedEvent(account_id.GetUserEmail(), logged_in,
-                                     data_ready);
 }
 
 void EasyUnlockService::NotifyTurnOffOperationStatusChanged() {

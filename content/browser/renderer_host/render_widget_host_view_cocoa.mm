@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/debug/crash_logging.h"
+#include "base/mac/bind_objc_block.h"
 #include "base/mac/mac_util.h"
 #include "base/strings/sys_string_conversions.h"
 #import "content/browser/accessibility/browser_accessibility_cocoa.h"
@@ -16,22 +17,12 @@
 #import "content/browser/cocoa/system_hotkey_helper_mac.h"
 #import "content/browser/cocoa/system_hotkey_map.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_mac.h"
-#include "content/browser/renderer_host/render_view_host_delegate.h"
-#include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
-#import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_editcommand_helper.h"
-#import "content/browser/renderer_host/text_input_client_mac.h"
-#include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_plugin_guest_manager.h"
 #import "content/public/browser/render_widget_host_view_mac_delegate.h"
-#include "content/public/browser/web_contents.h"
 #import "ui/base/clipboard/clipboard_util_mac.h"
 #import "ui/base/cocoa/appkit_utils.h"
 #include "ui/base/cocoa/cocoa_base_utils.h"
-#include "ui/base/cocoa/text_services_context_menu.h"
 #include "ui/display/screen.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
@@ -40,14 +31,11 @@ using content::BrowserAccessibility;
 using content::BrowserAccessibilityManager;
 using content::EditCommand;
 using content::NativeWebKeyboardEvent;
-using content::RenderViewHost;
 using content::RenderWidgetHostImpl;
 using content::RenderWidgetHostNSViewClient;
 using content::RenderWidgetHostView;
 using content::RenderWidgetHostViewMac;
 using content::RenderWidgetHostViewMacEditCommandHelper;
-using content::TextInputClientMac;
-using content::WebContents;
 using content::WebGestureEventBuilder;
 using content::WebMouseEventBuilder;
 using content::WebMouseWheelEventBuilder;
@@ -63,21 +51,6 @@ BOOL EventIsReservedBySystem(NSEvent* event) {
   content::SystemHotkeyHelperMac* helper =
       content::SystemHotkeyHelperMac::GetInstance();
   return helper->map()->IsEventReserved(event);
-}
-
-RenderWidgetHostView* GetRenderWidgetHostViewToUse(
-    RenderWidgetHostViewMac* render_widget_host_view) {
-  WebContents* web_contents = render_widget_host_view->GetWebContents();
-  if (!web_contents)
-    return render_widget_host_view;
-  content::BrowserPluginGuestManager* guest_manager =
-      web_contents->GetBrowserContext()->GetGuestManager();
-  if (!guest_manager)
-    return render_widget_host_view;
-  content::WebContents* guest = guest_manager->GetFullPageGuest(web_contents);
-  if (!guest)
-    return render_widget_host_view;
-  return guest->GetRenderWidgetHostView();
 }
 
 // TODO(suzhe): Upstream this function.
@@ -145,28 +118,23 @@ void ExtractUnderlines(NSAttributedString* string,
 - (void)windowChangedGlobalFrame:(NSNotification*)notification;
 - (void)windowDidBecomeKey:(NSNotification*)notification;
 - (void)windowDidResignKey:(NSNotification*)notification;
-- (void)showLookUpDictionaryOverlayInternal:(NSAttributedString*)string
-                              baselinePoint:(NSPoint)baselinePoint
-                                 targetView:(NSView*)view;
 - (void)sendViewBoundsInWindowToClient;
 - (void)sendWindowFrameInScreenToClient;
 @end
 
 @implementation RenderWidgetHostViewCocoa
-@synthesize selectedRange = selectedRange_;
 @synthesize markedRange = markedRange_;
 
 - (id)initWithClient:(std::unique_ptr<RenderWidgetHostNSViewClient>)client {
   self = [super initWithFrame:NSZeroRect];
   if (self) {
     self.acceptsTouchEvents = YES;
-    editCommand_helper_.reset(new RenderWidgetHostViewMacEditCommandHelper);
-    editCommand_helper_->AddEditingSelectorsToClass([self class]);
+    editCommandHelper_.reset(new RenderWidgetHostViewMacEditCommandHelper);
+    editCommandHelper_->AddEditingSelectorsToClass([self class]);
 
     client_ = std::move(client);
     renderWidgetHostView_ = client_->GetRenderWidgetHostViewMac();
     canBeKeyView_ = YES;
-    pinchHasReachedZoomThreshold_ = false;
     isStylusEnteringProximity_ = false;
   }
   return self;
@@ -217,6 +185,29 @@ void ExtractUnderlines(NSAttributedString* string,
   gfxViewBoundsInWindow.set_y(NSHeight([enclosingWindow frame]) -
                               NSMaxY(viewBoundsInWindow));
   client_->OnNSViewBoundsInWindowChanged(gfxViewBoundsInWindow, true);
+}
+
+- (void)setTextSelectionText:(base::string16)text
+                      offset:(size_t)offset
+                       range:(gfx::Range)range {
+  textSelectionText_ = text;
+  textSelectionOffset_ = offset;
+  textSelectionRange_ = range;
+}
+
+- (base::string16)selectedText {
+  gfx::Range textRange(textSelectionOffset_,
+                       textSelectionOffset_ + textSelectionText_.size());
+  gfx::Range intersectionRange = textRange.Intersect(textSelectionRange_);
+  if (intersectionRange.is_empty())
+    return base::string16();
+  return textSelectionText_.substr(
+      intersectionRange.start() - textSelectionOffset_,
+      intersectionRange.length());
+}
+
+- (void)setCompositionRange:(gfx::Range)range {
+  compositionRange_ = range;
 }
 
 - (void)sendWindowFrameInScreenToClient {
@@ -556,8 +547,6 @@ void ExtractUnderlines(NSAttributedString* string,
   // Don't cancel child popups; the key events are probably what's triggering
   // the popup in the first place.
 
-  RenderWidgetHostImpl* widgetHost = renderWidgetHostView_->host();
-  DCHECK(widgetHost);
 
   NativeWebKeyboardEvent event(theEvent);
   ui::LatencyInfo latency_info;
@@ -567,13 +556,6 @@ void ExtractUnderlines(NSAttributedString* string,
   }
 
   latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
-
-  // If there are multiple widgets on the page (such as when there are
-  // out-of-process iframes), pick the one that should process this event.
-  if (widgetHost->delegate())
-    widgetHost = widgetHost->delegate()->GetFocusedRenderWidgetHost(widgetHost);
-  if (!widgetHost)
-    return;
 
   // Do not forward key up events unless preceded by a matching key down,
   // otherwise we might get an event from releasing the return key in the
@@ -585,13 +567,20 @@ void ExtractUnderlines(NSAttributedString* string,
       return;
   }
 
-  bool shouldAutohideCursor =
-      renderWidgetHostView_->GetTextInputType() != ui::TEXT_INPUT_TYPE_NONE &&
-      eventType == NSKeyDown && !(modifierFlags & NSCommandKeyMask);
+  // Tell the client that we are beginning a keyboard event. This ensures that
+  // all event and Ime messages target the same RenderWidgetHost throughout this
+  // function call.
+  client_->OnNSViewBeginKeyboardEvent();
+
+  ui::TextInputType textInputType = ui::TEXT_INPUT_TYPE_NONE;
+  client_->OnNSViewSyncGetTextInputType(&textInputType);
+  bool shouldAutohideCursor = textInputType != ui::TEXT_INPUT_TYPE_NONE &&
+                              eventType == NSKeyDown &&
+                              !(modifierFlags & NSCommandKeyMask);
 
   // We only handle key down events and just simply forward other events.
   if (eventType != NSKeyDown) {
-    widgetHost->ForwardKeyboardEventWithLatencyInfo(event, latency_info);
+    client_->OnNSViewForwardKeyboardEvent(event, latency_info);
 
     // Possibly autohide the cursor.
     if (shouldAutohideCursor) {
@@ -599,6 +588,7 @@ void ExtractUnderlines(NSAttributedString* string,
       cursorHidden_ = YES;
     }
 
+    client_->OnNSViewEndKeyboardEvent();
     return;
   }
 
@@ -648,7 +638,7 @@ void ExtractUnderlines(NSAttributedString* string,
     NativeWebKeyboardEvent fakeEvent = event;
     fakeEvent.windows_key_code = 0xE5;  // VKEY_PROCESSKEY
     fakeEvent.skip_in_browser = true;
-    widgetHost->ForwardKeyboardEventWithLatencyInfo(fakeEvent, latency_info);
+    client_->OnNSViewForwardKeyboardEvent(fakeEvent, latency_info);
     // If this key event was handled by the input method, but
     // -doCommandBySelector: (invoked by the call to -interpretKeyEvents: above)
     // enqueued edit commands, then in order to let webkit handle them
@@ -659,15 +649,13 @@ void ExtractUnderlines(NSAttributedString* string,
     if (hasEditCommands_ && !hasMarkedText_)
       delayEventUntilAfterImeCompostion = YES;
   } else {
-    widgetHost->ForwardKeyboardEventWithCommands(event, latency_info,
-                                                 &editCommands_);
+    client_->OnNSViewForwardKeyboardEventWithCommands(event, latency_info,
+                                                      editCommands_);
   }
 
   // Calling ForwardKeyboardEventWithCommands() could have destroyed the
-  // widget. When the widget was destroyed,
-  // |renderWidgetHostView_->host()| will be set to NULL. So we
-  // check it here and return immediately if it's NULL.
-  if (!renderWidgetHostView_->host())
+  // widget.
+  if (clientWasDestroyed_)
     return;
 
   // Then send keypress and/or composition related events.
@@ -684,8 +672,8 @@ void ExtractUnderlines(NSAttributedString* string,
   BOOL textInserted = NO;
   if (textToBeInserted_.length() >
       ((hasMarkedText_ || oldHasMarkedText) ? 0u : 1u)) {
-    widgetHost->ImeCommitText(textToBeInserted_, std::vector<ui::ImeTextSpan>(),
-                              gfx::Range::InvalidRange(), 0);
+    client_->OnNSViewImeCommitText(textToBeInserted_,
+                                   gfx::Range::InvalidRange());
     textInserted = YES;
   }
 
@@ -696,15 +684,15 @@ void ExtractUnderlines(NSAttributedString* string,
     // composition node in WebKit.
     // When marked text is available, |markedTextSelectedRange_| will be the
     // range being selected inside the marked text.
-    widgetHost->ImeSetComposition(markedText_, ime_text_spans_,
-                                  setMarkedTextReplacementRange_,
-                                  markedTextSelectedRange_.location,
-                                  NSMaxRange(markedTextSelectedRange_));
+    client_->OnNSViewImeSetComposition(markedText_, ime_text_spans_,
+                                       setMarkedTextReplacementRange_,
+                                       markedTextSelectedRange_.location,
+                                       NSMaxRange(markedTextSelectedRange_));
   } else if (oldHasMarkedText && !hasMarkedText_ && !textInserted) {
     if (unmarkTextCalled_) {
-      widgetHost->ImeFinishComposingText(false);
+      client_->OnNSViewImeFinishComposingText();
     } else {
-      widgetHost->ImeCancelComposition();
+      client_->OnNSViewImeCancelComposition();
     }
   }
 
@@ -726,20 +714,17 @@ void ExtractUnderlines(NSAttributedString* string,
     fakeEvent.skip_in_browser = true;
     ui::LatencyInfo fake_event_latency_info = latency_info;
     fake_event_latency_info.set_source_event_type(ui::SourceEventType::OTHER);
-    widgetHost->ForwardKeyboardEventWithLatencyInfo(fakeEvent,
-                                                    fake_event_latency_info);
+    client_->OnNSViewForwardKeyboardEvent(fakeEvent, fake_event_latency_info);
     // Not checking |renderWidgetHostView_->host()| here because
     // a key event with |skip_in_browser| == true won't be handled by browser,
     // thus it won't destroy the widget.
 
-    widgetHost->ForwardKeyboardEventWithCommands(event, fake_event_latency_info,
-                                                 &editCommands_);
+    client_->OnNSViewForwardKeyboardEventWithCommands(
+        event, fake_event_latency_info, editCommands_);
 
     // Calling ForwardKeyboardEventWithCommands() could have destroyed the
-    // widget. When the widget was destroyed,
-    // |renderWidgetHostView_->host()| will be set to NULL. So we
-    // check it here and return immediately if it's NULL.
-    if (!renderWidgetHostView_->host())
+    // widget.
+    if (clientWasDestroyed_)
       return;
   }
 
@@ -753,7 +738,7 @@ void ExtractUnderlines(NSAttributedString* string,
       event.text[0] = textToBeInserted_[0];
       event.text[1] = 0;
       event.skip_in_browser = true;
-      widgetHost->ForwardKeyboardEventWithLatencyInfo(event, latency_info);
+      client_->OnNSViewForwardKeyboardEvent(event, latency_info);
     } else if ((!textInserted || delayEventUntilAfterImeCompostion) &&
                event.text[0] != '\0' &&
                ((modifierFlags & kCtrlCmdKeyMask) ||
@@ -763,7 +748,7 @@ void ExtractUnderlines(NSAttributedString* string,
       // cases, unless the key event generated any other command.
       event.SetType(blink::WebInputEvent::kChar);
       event.skip_in_browser = true;
-      widgetHost->ForwardKeyboardEventWithLatencyInfo(event, latency_info);
+      client_->OnNSViewForwardKeyboardEvent(event, latency_info);
     }
   }
 
@@ -772,6 +757,8 @@ void ExtractUnderlines(NSAttributedString* string,
     [NSCursor setHiddenUntilMouseMoves:YES];
     cursorHidden_ = YES;
   }
+
+  client_->OnNSViewEndKeyboardEvent();
 }
 
 - (BOOL)suppressNextKeyUpForTesting:(int)keyCode {
@@ -804,38 +791,28 @@ void ExtractUnderlines(NSAttributedString* string,
 
 - (void)handleBeginGestureWithEvent:(NSEvent*)event {
   [responderDelegate_ beginGestureWithEvent:event];
-  gestureBeginEvent_.reset(
-      new WebGestureEvent(WebGestureEventBuilder::Build(event, self)));
 
-  // If the page is at the minimum zoom level, require a threshold be reached
-  // before the pinch has an effect.
-  if (renderWidgetHostView_->page_at_minimum_scale_) {
-    pinchHasReachedZoomThreshold_ = false;
-    pinchUnusedAmount_ = 1;
-  }
+  WebGestureEvent gestureBeginEvent(WebGestureEventBuilder::Build(event, self));
+
+  client_->OnNSViewGestureBegin(gestureBeginEvent);
 }
 
 - (void)handleEndGestureWithEvent:(NSEvent*)event {
   [responderDelegate_ endGestureWithEvent:event];
+
+  if (clientWasDestroyed_)
+    return;
 
   // On macOS 10.11+, the end event has type = NSEventTypeMagnify and phase =
   // NSEventPhaseEnded. On macOS 10.10 and older, the event has type =
   // NSEventTypeEndGesture.
   if ([event type] == NSEventTypeMagnify ||
       [event type] == NSEventTypeEndGesture) {
-    gestureBeginEvent_.reset();
-
-    if (!renderWidgetHostView_->host())
-      return;
-
-    if (gestureBeginPinchSent_) {
-      WebGestureEvent endEvent(WebGestureEventBuilder::Build(event, self));
-      endEvent.SetType(WebInputEvent::kGesturePinchEnd);
-      endEvent.SetSourceDevice(
-          blink::WebGestureDevice::kWebGestureDeviceTouchpad);
-      renderWidgetHostView_->SendGesturePinchEvent(&endEvent);
-      gestureBeginPinchSent_ = NO;
-    }
+    WebGestureEvent endEvent(WebGestureEventBuilder::Build(event, self));
+    endEvent.SetType(WebInputEvent::kGesturePinchEnd);
+    endEvent.SetSourceDevice(
+        blink::WebGestureDevice::kWebGestureDeviceTouchpad);
+    client_->OnNSViewGestureEnd(endEvent);
   }
 }
 
@@ -890,119 +867,19 @@ void ExtractUnderlines(NSAttributedString* string,
 - (void)smartMagnifyWithEvent:(NSEvent*)event {
   const WebGestureEvent& smartMagnifyEvent =
       WebGestureEventBuilder::Build(event, self);
-  if (renderWidgetHostView_ && renderWidgetHostView_->host()) {
-    renderWidgetHostView_->host()->ForwardGestureEvent(smartMagnifyEvent);
-  }
+  client_->OnNSViewSmartMagnify(smartMagnifyEvent);
 }
 
-- (void)showLookUpDictionaryOverlayInternal:(NSAttributedString*)string
-                              baselinePoint:(NSPoint)baselinePoint
-                                 targetView:(NSView*)view {
-  if ([string length] == 0) {
-    // The PDF plugin does not support getting the attributed string at point.
-    // Until it does, use NSPerformService(), which opens Dictionary.app.
-    // TODO(shuchen): Support GetStringAtPoint() & GetStringFromRange() for PDF.
-    // See https://crbug.com/152438.
-    NSString* text = nil;
-    if (auto* selection = renderWidgetHostView_->GetTextSelection())
-      text = base::SysUTF16ToNSString(selection->selected_text());
-
-    if ([text length] == 0)
-      return;
-    scoped_refptr<ui::UniquePasteboard> pasteboard = new ui::UniquePasteboard;
-    NSArray* types = [NSArray arrayWithObject:NSStringPboardType];
-    [pasteboard->get() declareTypes:types owner:nil];
-    if ([pasteboard->get() setString:text forType:NSStringPboardType])
-      NSPerformService(@"Look Up in Dictionary", pasteboard->get());
-    return;
-  }
-  NSPoint flippedBaselinePoint = {
-      baselinePoint.x, [view frame].size.height - baselinePoint.y,
-  };
-  [view showDefinitionForAttributedString:string atPoint:flippedBaselinePoint];
-}
-
-- (void)showLookUpDictionaryOverlayFromRange:(NSRange)range
-                                  targetView:(NSView*)targetView {
-  content::RenderWidgetHostViewBase* focusedView =
-      renderWidgetHostView_->GetFocusedViewForTextSelection();
-  if (!focusedView)
-    return;
-
-  RenderWidgetHostImpl* widgetHost =
-      RenderWidgetHostImpl::From(focusedView->GetRenderWidgetHost());
-  if (!widgetHost)
-    return;
-
-  int32_t targetWidgetProcessId = widgetHost->GetProcess()->GetID();
-  int32_t targetWidgetRoutingId = widgetHost->GetRoutingID();
-  TextInputClientMac::GetInstance()->GetStringFromRange(
-      widgetHost, range, ^(NSAttributedString* string, NSPoint baselinePoint) {
-        if (!content::RenderWidgetHost::FromID(targetWidgetProcessId,
-                                               targetWidgetRoutingId)) {
-          // By the time we get here |widgetHost| might have been destroyed.
-          // (See https://crbug.com/737032).
-          return;
-        }
-
-        if (auto* rwhv = widgetHost->GetView()) {
-          gfx::Point pointInRootView = rwhv->TransformPointToRootCoordSpace(
-              gfx::Point(baselinePoint.x, baselinePoint.y));
-          baselinePoint.x = pointInRootView.x();
-          baselinePoint.y = pointInRootView.y();
-        }
-        [self showLookUpDictionaryOverlayInternal:string
-                                    baselinePoint:baselinePoint
-                                       targetView:targetView];
-      });
-}
-
-- (void)showLookUpDictionaryOverlayAtPoint:(NSPoint)point {
-  gfx::PointF rootPoint(point.x, NSHeight([self frame]) - point.y);
-  gfx::PointF transformedPoint;
-  if (!renderWidgetHostView_->host() ||
-      !renderWidgetHostView_->host()->delegate() ||
-      !renderWidgetHostView_->host()->delegate()->GetInputEventRouter())
-    return;
-
-  RenderWidgetHostImpl* widgetHost =
-      renderWidgetHostView_->host()
-          ->delegate()
-          ->GetInputEventRouter()
-          ->GetRenderWidgetHostAtPoint(renderWidgetHostView_, rootPoint,
-                                       &transformedPoint);
-  if (!widgetHost)
-    return;
-
-  int32_t targetWidgetProcessId = widgetHost->GetProcess()->GetID();
-  int32_t targetWidgetRoutingId = widgetHost->GetRoutingID();
-  TextInputClientMac::GetInstance()->GetStringAtPoint(
-      widgetHost, gfx::ToFlooredPoint(transformedPoint),
-      ^(NSAttributedString* string, NSPoint baselinePoint) {
-        if (!content::RenderWidgetHost::FromID(targetWidgetProcessId,
-                                               targetWidgetRoutingId)) {
-          // By the time we get here |widgetHost| might have been destroyed.
-          // (See https://crbug.com/737032).
-          return;
-        }
-
-        if (auto* rwhv = widgetHost->GetView()) {
-          gfx::Point pointInRootView = rwhv->TransformPointToRootCoordSpace(
-              gfx::Point(baselinePoint.x, baselinePoint.y));
-          baselinePoint.x = pointInRootView.x();
-          baselinePoint.y = pointInRootView.y();
-        }
-        [self showLookUpDictionaryOverlayInternal:string
-                                    baselinePoint:baselinePoint
-                                       targetView:self];
-      });
+- (void)showLookUpDictionaryOverlayFromRange:(NSRange)range {
+  client_->OnNSViewLookUpDictionaryOverlayFromRange(gfx::Range(range));
 }
 
 // This is invoked only on 10.8 or newer when the user taps a word using
 // three fingers.
 - (void)quickLookWithEvent:(NSEvent*)event {
   NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
-  [self showLookUpDictionaryOverlayAtPoint:point];
+  gfx::PointF rootPoint(point.x, NSHeight([self frame]) - point.y);
+  client_->OnNSViewLookUpDictionaryOverlayAtPoint(rootPoint);
 }
 
 // This method handles 2 different types of hardware events.
@@ -1079,7 +956,7 @@ void ExtractUnderlines(NSAttributedString* string,
 
 // Called repeatedly during a pinch gesture, with incremental change values.
 - (void)magnifyWithEvent:(NSEvent*)event {
-  if (!renderWidgetHostView_->host())
+  if (clientWasDestroyed_)
     return;
 
 #if defined(MAC_OS_X_VERSION_10_11) && \
@@ -1109,38 +986,8 @@ void ExtractUnderlines(NSAttributedString* string,
     return;
   }
 
-  // If, due to nesting of multiple gestures (e.g, from multiple touch
-  // devices), the beginning of the gesture has been lost, skip the remainder
-  // of the gesture.
-  if (!gestureBeginEvent_)
-    return;
-
-  if (!pinchHasReachedZoomThreshold_) {
-    pinchUnusedAmount_ *= (1 + [event magnification]);
-    if (pinchUnusedAmount_ < 0.667 || pinchUnusedAmount_ > 1.5)
-      pinchHasReachedZoomThreshold_ = true;
-  }
-
-  // Send a GesturePinchBegin event if none has been sent yet.
-  if (!gestureBeginPinchSent_) {
-    if (renderWidgetHostView_->wheel_scroll_latching_enabled()) {
-      // Before starting a pinch sequence, send the pending wheel end event to
-      // finish scrolling.
-      renderWidgetHostView_->mouse_wheel_phase_handler_
-          .DispatchPendingWheelEndEvent();
-    }
-    WebGestureEvent beginEvent(*gestureBeginEvent_);
-    beginEvent.SetType(WebInputEvent::kGesturePinchBegin);
-    beginEvent.SetSourceDevice(
-        blink::WebGestureDevice::kWebGestureDeviceTouchpad);
-    renderWidgetHostView_->SendGesturePinchEvent(&beginEvent);
-    gestureBeginPinchSent_ = YES;
-  }
-
-  // Send a GesturePinchUpdate event.
   WebGestureEvent updateEvent = WebGestureEventBuilder::Build(event, self);
-  updateEvent.data.pinch_update.zoom_disabled = !pinchHasReachedZoomThreshold_;
-  renderWidgetHostView_->SendGesturePinchEvent(&updateEvent);
+  client_->OnNSViewGestureUpdate(updateEvent);
 }
 
 - (void)viewWillMoveToWindow:(NSWindow*)newWindow {
@@ -1247,7 +1094,7 @@ void ExtractUnderlines(NSAttributedString* string,
 }
 
 - (BOOL)canBecomeKeyView {
-  if (!renderWidgetHostView_->host())
+  if (clientWasDestroyed_)
     return NO;
 
   return canBeKeyView_;
@@ -1342,12 +1189,16 @@ void ExtractUnderlines(NSAttributedString* string,
       return valid;
   }
 
+  bool is_render_view = false;
+  client_->OnNSViewSyncIsRenderViewHost(&is_render_view);
+
+  bool is_speaking = false;
+  client_->OnNSViewSyncIsSpeaking(&is_speaking);
+
   SEL action = [item action];
-  BOOL is_render_view =
-      RenderViewHost::From(renderWidgetHostView_->host()) != nullptr;
 
   if (action == @selector(stopSpeaking:))
-    return is_render_view && ui::TextServicesContextMenu::IsSpeaking();
+    return is_render_view && is_speaking;
 
   if (action == @selector(startSpeaking:))
     return is_render_view;
@@ -1362,11 +1213,11 @@ void ExtractUnderlines(NSAttributedString* string,
     return is_render_view;
   }
 
-  return editCommand_helper_->IsMenuItemEnabled(action, self);
+  return editCommandHelper_->IsMenuItemEnabled(action, self);
 }
 
-- (RenderWidgetHostViewMac*)renderWidgetHostViewMac {
-  return renderWidgetHostView_;
+- (RenderWidgetHostNSViewClient*)renderWidgetHostNSViewClient {
+  return client_.get();
 }
 
 - (NSArray*)accessibilityArrayAttributeValues:(NSString*)attribute
@@ -1387,7 +1238,7 @@ void ExtractUnderlines(NSAttributedString* string,
 
 - (id)accessibilityAttributeValue:(NSString*)attribute {
   BrowserAccessibilityManager* manager =
-      renderWidgetHostView_->host()->GetRootBrowserAccessibilityManager();
+      client_->GetRootBrowserAccessibilityManager();
 
   // Contents specifies document view of RenderWidgetHostViewCocoa provided by
   // BrowserAccessibilityManager. Children includes all subviews in addition to
@@ -1413,7 +1264,7 @@ void ExtractUnderlines(NSAttributedString* string,
 
 - (id)accessibilityHitTest:(NSPoint)point {
   BrowserAccessibilityManager* manager =
-      renderWidgetHostView_->host()->GetRootBrowserAccessibilityManager();
+      client_->GetRootBrowserAccessibilityManager();
   if (!manager)
     return self;
   NSPoint pointInWindow =
@@ -1428,13 +1279,13 @@ void ExtractUnderlines(NSAttributedString* string,
 
 - (BOOL)accessibilityIsIgnored {
   BrowserAccessibilityManager* manager =
-      renderWidgetHostView_->host()->GetRootBrowserAccessibilityManager();
+      client_->GetRootBrowserAccessibilityManager();
   return !manager;
 }
 
 - (NSUInteger)accessibilityGetIndexOf:(id)child {
   BrowserAccessibilityManager* manager =
-      renderWidgetHostView_->host()->GetRootBrowserAccessibilityManager();
+      client_->GetRootBrowserAccessibilityManager();
   // Only child is root.
   if (manager && ToBrowserAccessibilityCocoa(manager->GetRoot()) == child) {
     return 0;
@@ -1445,7 +1296,7 @@ void ExtractUnderlines(NSAttributedString* string,
 
 - (id)accessibilityFocusedUIElement {
   BrowserAccessibilityManager* manager =
-      renderWidgetHostView_->host()->GetRootBrowserAccessibilityManager();
+      client_->GetRootBrowserAccessibilityManager();
   if (manager) {
     BrowserAccessibility* focused_item = manager->GetFocus();
     DCHECK(focused_item);
@@ -1539,54 +1390,42 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   thePoint = ui::ConvertPointFromScreenToWindow([self window], thePoint);
   thePoint = [self convertPoint:thePoint fromView:nil];
   thePoint.y = NSHeight([self frame]) - thePoint.y;
-
-  if (!renderWidgetHostView_->host() ||
-      !renderWidgetHostView_->host()->delegate() ||
-      !renderWidgetHostView_->host()->delegate()->GetInputEventRouter())
-    return NSNotFound;
-
   gfx::PointF rootPoint(thePoint.x, thePoint.y);
-  gfx::PointF transformedPoint;
-  RenderWidgetHostImpl* widgetHost =
-      renderWidgetHostView_->host()
-          ->delegate()
-          ->GetInputEventRouter()
-          ->GetRenderWidgetHostAtPoint(renderWidgetHostView_, rootPoint,
-                                       &transformedPoint);
-  if (!widgetHost)
-    return NSNotFound;
 
-  NSUInteger index =
-      TextInputClientMac::GetInstance()->GetCharacterIndexAtPoint(
-          widgetHost, gfx::ToFlooredPoint(transformedPoint));
-  return index;
+  uint32_t index = UINT32_MAX;
+  client_->OnNSViewSyncGetCharacterIndexAtPoint(rootPoint, &index);
+  // |index| could be WTF::notFound (-1) and its value is different from
+  // NSNotFound so we need to convert it.
+  if (index == UINT32_MAX)
+    return NSNotFound;
+  size_t char_index = index;
+  return NSUInteger(char_index);
 }
 
 - (NSRect)firstViewRectForCharacterRange:(NSRange)theRange
                              actualRange:(NSRangePointer)actualRange {
-  NSRect rect;
-  if (!renderWidgetHostView_->GetCachedFirstRectForCharacterRange(
-          theRange, &rect, actualRange)) {
-    rect = TextInputClientMac::GetInstance()->GetFirstRectForRange(
-        renderWidgetHostView_->GetFocusedWidget(), theRange);
-
-    // TODO(thakis): Pipe |actualRange| through TextInputClientMac machinery.
-    if (actualRange)
-      *actualRange = theRange;
-  }
+  gfx::Rect gfxRect;
+  gfx::Range gfxActualRange;
+  if (actualRange)
+    gfxActualRange = gfx::Range(*actualRange);
+  client_->OnNSViewSyncGetFirstRectForRange(gfx::Range(theRange), &gfxRect,
+                                            &gfxActualRange);
+  if (actualRange)
+    *actualRange = gfxActualRange.ToNSRange();
 
   // The returned rectangle is in WebKit coordinates (upper left origin), so
   // flip the coordinate system.
   NSRect viewFrame = [self frame];
-  rect.origin.y = NSHeight(viewFrame) - NSMaxY(rect);
-  return rect;
+  NSRect flippedRect = NSRectFromCGRect(gfxRect.ToCGRect());
+  flippedRect.origin.y = NSHeight(viewFrame) - NSMaxY(flippedRect);
+  return flippedRect;
 }
 
 - (NSRect)firstRectForCharacterRange:(NSRange)theRange
                          actualRange:(NSRangePointer)actualRange {
   // During tab closure, events can arrive after RenderWidgetHostViewMac::
   // Destroy() is called, which will have set |host()| to null.
-  if (!renderWidgetHostView_->GetFocusedWidget()) {
+  if (clientWasDestroyed_) {
     [self cancelComposition];
     return NSZeroRect;
   }
@@ -1601,9 +1440,7 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
 }
 
 - (NSRange)selectedRange {
-  if (selectedRange_.location == NSNotFound)
-    return NSMakeRange(NSNotFound, 0);
-  return selectedRange_;
+  return textSelectionRange_.ToNSRange();
 }
 
 - (NSRange)markedRange {
@@ -1631,52 +1468,37 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   if (range.length >= std::numeric_limits<NSUInteger>::max() - range.location)
     return nil;
 
-  const gfx::Range requested_range(range);
-  if (requested_range.is_reversed())
+  const gfx::Range requestedRange(range);
+  if (requestedRange.is_reversed())
     return nil;
 
-  gfx::Range expected_range;
-  const base::string16* expected_text;
-  const content::TextInputManager::CompositionRangeInfo* compositionInfo =
-      renderWidgetHostView_->GetCompositionRangeInfo();
-  const content::TextInputManager::TextSelection* selection =
-      renderWidgetHostView_->GetTextSelection();
-  if (!selection)
-    return nil;
+  gfx::Range expectedRange;
+  const base::string16* expectedText;
 
-  if (compositionInfo && !compositionInfo->range.is_empty()) {
+  if (!compositionRange_.is_empty()) {
     // This method might get called after TextInputState.type is reset to none,
     // in which case there will be no composition range information
-    // (https://crbug.com/698672).
-    expected_text = &markedText_;
-    expected_range = compositionInfo->range;
+    // https://crbug.com/698672
+    expectedText = &markedText_;
+    expectedRange = compositionRange_.Intersect(
+        gfx::Range(compositionRange_.start(),
+                   compositionRange_.start() + expectedText->length()));
   } else {
-    expected_text = &selection->text();
-    size_t offset = selection->offset();
-    expected_range = gfx::Range(offset, offset + expected_text->size());
+    expectedText = &textSelectionText_;
+    size_t offset = textSelectionOffset_;
+    expectedRange = gfx::Range(offset, offset + expectedText->size());
   }
 
-  gfx::Range actual_range = expected_range.Intersect(requested_range);
-  if (!actual_range.IsValid())
+  gfx::Range gfxActualRange = expectedRange.Intersect(requestedRange);
+  if (!gfxActualRange.IsValid())
     return nil;
-
-  // Gets the raw bytes to avoid unnecessary string copies for generating
-  // NSString.
-  const base::char16* bytes =
-      &(*expected_text)[actual_range.start() - expected_range.start()];
-  // Avoid integer overflow.
-  base::CheckedNumeric<size_t> requested_len = actual_range.length();
-  requested_len *= sizeof(base::char16);
-  NSUInteger bytes_len =
-      base::strict_cast<NSUInteger, size_t>(requested_len.ValueOrDefault(0));
-  base::scoped_nsobject<NSString> ns_string([[NSString alloc]
-      initWithBytes:bytes
-             length:bytes_len
-           encoding:NSUTF16LittleEndianStringEncoding]);
   if (actualRange)
-    *actualRange = actual_range.ToNSRange();
+    *actualRange = gfxActualRange.ToNSRange();
 
-  return [[[NSAttributedString alloc] initWithString:ns_string] autorelease];
+  base::string16 string = expectedText->substr(
+      gfxActualRange.start() - expectedRange.start(), gfxActualRange.length());
+  return [[[NSAttributedString alloc]
+      initWithString:base::SysUTF16ToNSString(string)] autorelease];
 }
 
 - (NSInteger)conversationIdentifier {
@@ -1687,7 +1509,9 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
 // nil when the caret is in non-editable content or password box to avoid
 // making input methods do their work.
 - (NSTextInputContext*)inputContext {
-  switch (renderWidgetHostView_->GetTextInputType()) {
+  ui::TextInputType textInputType = ui::TEXT_INPUT_TYPE_NONE;
+  client_->OnNSViewSyncGetTextInputType(&textInputType);
+  switch (textInputType) {
     case ui::TEXT_INPUT_TYPE_NONE:
     case ui::TEXT_INPUT_TYPE_PASSWORD:
       return nil;
@@ -1720,9 +1544,7 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   // If we are handling a key down event, then FinishComposingText() will be
   // called in keyEvent: method.
   if (!handlingKeyDown_) {
-    if (renderWidgetHostView_->GetActiveWidget()) {
-      renderWidgetHostView_->GetActiveWidget()->ImeFinishComposingText(false);
-    }
+    client_->OnNSViewImeFinishComposingText();
   } else {
     unmarkTextCalled_ = YES;
   }
@@ -1765,11 +1587,9 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   if (handlingKeyDown_) {
     setMarkedTextReplacementRange_ = gfx::Range(replacementRange);
   } else {
-    if (renderWidgetHostView_->GetActiveWidget()) {
-      renderWidgetHostView_->GetActiveWidget()->ImeSetComposition(
-          markedText_, ime_text_spans_, gfx::Range(replacementRange),
-          newSelRange.location, NSMaxRange(newSelRange));
-    }
+    client_->OnNSViewImeSetComposition(
+        markedText_, ime_text_spans_, gfx::Range(replacementRange),
+        newSelRange.location, NSMaxRange(newSelRange));
   }
 }
 
@@ -1795,10 +1615,7 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
                           base::CompareCase::INSENSITIVE_ASCII))
       editCommands_.push_back(EditCommand(command, ""));
   } else {
-    if (renderWidgetHostView_->host()->delegate()) {
-      renderWidgetHostView_->host()->delegate()->ExecuteEditCommand(
-          command, base::nullopt);
-    }
+    client_->OnNSViewExecuteEditCommand(command);
   }
 }
 
@@ -1824,11 +1641,8 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
     textToBeInserted_.append(base::SysNSStringToUTF16(im_text));
   } else {
     gfx::Range replacement_range(replacementRange);
-    if (renderWidgetHostView_->GetActiveWidget()) {
-      renderWidgetHostView_->GetActiveWidget()->ImeCommitText(
-          base::SysNSStringToUTF16(im_text), std::vector<ui::ImeTextSpan>(),
-          replacement_range, 0);
-    }
+    client_->OnNSViewImeCommitText(base::SysNSStringToUTF16(im_text),
+                                   replacement_range);
   }
 
   // Inserting text will delete all marked text automatically.
@@ -1868,70 +1682,50 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
 }
 
 - (void)undo:(id)sender {
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (web_contents)
-    web_contents->Undo();
+  client_->OnNSViewUndo();
 }
 
 - (void)redo:(id)sender {
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (web_contents)
-    web_contents->Redo();
+  client_->OnNSViewRedo();
 }
 
 - (void)cut:(id)sender {
-  if (auto* delegate =
-          renderWidgetHostView_->GetFocusedRenderWidgetHostDelegate()) {
-    delegate->Cut();
-  }
+  client_->OnNSViewCut();
 }
 
 - (void)copy:(id)sender {
-  if (auto* delegate =
-          renderWidgetHostView_->GetFocusedRenderWidgetHostDelegate()) {
-    delegate->Copy();
-  }
+  client_->OnNSViewCopy();
 }
 
 - (void)copyToFindPboard:(id)sender {
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (web_contents)
-    web_contents->CopyToFindPboard();
+  client_->OnNSViewCopyToFindPboard();
 }
 
 - (void)paste:(id)sender {
-  if (auto* delegate =
-          renderWidgetHostView_->GetFocusedRenderWidgetHostDelegate()) {
-    delegate->Paste();
-  }
+  client_->OnNSViewPaste();
 }
 
 - (void)pasteAndMatchStyle:(id)sender {
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (web_contents)
-    web_contents->PasteAndMatchStyle();
+  client_->OnNSViewPasteAndMatchStyle();
 }
 
 - (void)selectAll:(id)sender {
-  // editCommand_helper_ adds implementations for most NSResponder methods
+  // editCommandHelper_ adds implementations for most NSResponder methods
   // dynamically. But the renderer side only sends selection results back to
   // the browser if they were triggered by a keyboard event or went through
   // one of the Select methods on RWH. Since selectAll: is called from the
   // menu handler, neither is true.
   // Explicitly call SelectAll() here to make sure the renderer returns
   // selection results.
-  if (auto* delegate =
-          renderWidgetHostView_->GetFocusedRenderWidgetHostDelegate()) {
-    delegate->SelectAll();
-  }
+  client_->OnNSViewSelectAll();
 }
 
 - (void)startSpeaking:(id)sender {
-  GetRenderWidgetHostViewToUse(renderWidgetHostView_)->SpeakSelection();
+  client_->OnNSViewSpeakSelection();
 }
 
 - (void)stopSpeaking:(id)sender {
-  ui::TextServicesContextMenu::StopSpeaking();
+  client_->OnNSViewStopSpeaking();
 }
 
 - (void)cancelComposition {
@@ -1950,10 +1744,7 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
   if (!hasMarkedText_)
     return;
 
-  if (renderWidgetHostView_->GetActiveWidget()) {
-    renderWidgetHostView_->GetActiveWidget()->ImeFinishComposingText(false);
-  }
-
+  client_->OnNSViewImeFinishComposingText();
   [self cancelComposition];
 }
 
@@ -1961,14 +1752,14 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
 
 - (id)validRequestorForSendType:(NSString*)sendType
                      returnType:(NSString*)returnType {
+  ui::TextInputType textInputType = ui::TEXT_INPUT_TYPE_NONE;
+  client_->OnNSViewSyncGetTextInputType(&textInputType);
+
   id requestor = nil;
   BOOL sendTypeIsString = [sendType isEqual:NSStringPboardType];
   BOOL returnTypeIsString = [returnType isEqual:NSStringPboardType];
-  const content::TextInputManager::TextSelection* selection =
-      renderWidgetHostView_->GetTextSelection();
-  BOOL hasText = selection && !selection->selected_text().empty();
-  BOOL takesText =
-      renderWidgetHostView_->GetTextInputType() != ui::TEXT_INPUT_TYPE_NONE;
+  BOOL hasText = !textSelectionRange_.is_empty();
+  BOOL takesText = textInputType != ui::TEXT_INPUT_TYPE_NONE;
 
   if (sendTypeIsString && hasText && !returnType) {
     requestor = self;
@@ -2010,16 +1801,12 @@ extern NSString* NSTextInputReplacementRangeAttributeName;
 @implementation RenderWidgetHostViewCocoa (NSServicesRequests)
 
 - (BOOL)writeSelectionToPasteboard:(NSPasteboard*)pboard types:(NSArray*)types {
-  const content::TextInputManager::TextSelection* selection =
-      renderWidgetHostView_->GetTextSelection();
-  if (!selection || selection->selected_text().empty() ||
+  if (textSelectionRange_.is_empty() ||
       ![types containsObject:NSStringPboardType]) {
     return NO;
   }
 
-  base::scoped_nsobject<NSString> text([[NSString alloc]
-      initWithUTF8String:base::UTF16ToUTF8(selection->selected_text())
-                             .c_str()]);
+  NSString* text = base::SysUTF16ToNSString([self selectedText]);
   NSArray* toDeclare = [NSArray arrayWithObject:NSStringPboardType];
   [pboard declareTypes:toDeclare owner:nil];
   return [pboard setString:text forType:NSStringPboardType];

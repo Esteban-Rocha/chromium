@@ -18,10 +18,10 @@
 #include "content/renderer/service_worker/web_service_worker_provider_impl.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_provider_type.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_provider_type.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_provider_client.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -178,6 +178,10 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   // Currently this can be called only for clients that are Documents,
   // see comments of |container_host_|.
   mojom::ServiceWorkerContainerHost* container_host() const;
+
+  // Pings the container host and calls |callback| once a pong arrived. Useful
+  // for waiting for all messages the host sent thus far to arrive.
+  void PingContainerHost(base::OnceClosure callback);
 
  private:
   friend class base::DeleteHelper<ServiceWorkerProviderContext>;

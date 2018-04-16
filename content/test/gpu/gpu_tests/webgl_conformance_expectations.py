@@ -4,14 +4,15 @@
 import os
 
 from gpu_tests.gpu_test_expectations import GpuTestExpectations
+from gpu_tests import webgl_test_util
 
 # See the GpuTestExpectations class for documentation.
 
 class WebGLConformanceExpectations(GpuTestExpectations):
-  def __init__(self, conformance_path, url_prefixes=None, is_asan=False):
-    self.conformance_path = conformance_path
+  def __init__(self, is_asan=False):
+    self.conformance_path = webgl_test_util.conformance_path
     super(WebGLConformanceExpectations, self).__init__(
-      url_prefixes=url_prefixes, is_asan=is_asan)
+      url_prefixes=webgl_test_util.url_prefixes_to_trim, is_asan=is_asan)
 
   def Fail(self, pattern, condition=None, bug=None):
     self.CheckPatternIsValid(pattern)
@@ -216,6 +217,8 @@ class WebGLConformanceExpectations(GpuTestExpectations):
     #     ['win', 'nvidia', 'no_passthrough'], bug=679696)
 
     # Win10 / NVIDIA Quadro P400 / D3D9 failures
+    self.Flaky('conformance/canvas/canvas-test.html',
+        ['win10', ('nvidia', 0x1cb3), 'd3d9'], bug=829389)
     self.Fail('conformance/canvas/drawingbuffer-static-canvas-test.html',
         ['win10', ('nvidia', 0x1cb3), 'd3d9'], bug=680754)
     self.Fail('conformance/canvas/' +
@@ -223,6 +226,8 @@ class WebGLConformanceExpectations(GpuTestExpectations):
         ['win10', ('nvidia', 0x1cb3), 'd3d9'], bug=680754)
     self.Flaky('conformance/extensions/oes-texture-float-with-video.html',
         ['win10', ('nvidia', 0x1cb3), 'd3d9'], bug=750896)
+    self.Flaky('conformance/glsl/misc/shader-with-non-reserved-words.html',
+        ['win10', ('nvidia', 0x1cb3), 'd3d9'], bug=829389)
     self.Flaky('conformance/glsl/variables/gl-frontfacing.html',
         ['win10', ('nvidia', 0x1cb3), 'd3d9'], bug=825416)
     self.Fail('conformance/ogles/GL/atan/atan_001_to_008.html',
@@ -233,6 +238,9 @@ class WebGLConformanceExpectations(GpuTestExpectations):
         ['win10', ('nvidia', 0x1cb3), 'd3d9'], bug=750896)
     self.Flaky('conformance/textures/video/*',
         ['win10', ('nvidia', 0x1cb3), 'd3d9'], bug=750896)
+
+    self.Flaky('conformance/uniforms/uniform-samplers-test.html',
+        ['win10', ('nvidia', 0x1cb3), 'passthrough', 'd3d9'], bug=829389)
 
     # Win10 / NVIDIA Quadro P400 failures
     self.Flaky('conformance/textures/image_bitmap_from_video/' +
@@ -674,6 +682,9 @@ class WebGLConformanceExpectations(GpuTestExpectations):
         'copy-tex-image-and-sub-image-2d.html',
         ['android', ('qualcomm', 'Adreno (TM) 420'), 'no_passthrough'],
         bug=499555)
+    self.Flaky('conformance/textures/misc/' +
+        'tex-video-using-tex-unit-non-zero.html',
+        ['android', ('qualcomm', 'Adreno (TM) 420')], bug=830901)
     self.Fail('conformance/uniforms/uniform-samplers-test.html',
         ['android', ('qualcomm', 'Adreno (TM) 430'), 'no_passthrough'],
         bug=663071)

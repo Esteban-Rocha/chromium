@@ -32,7 +32,7 @@
 #include "net/base/url_util.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/special_storage_policy.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -224,8 +224,8 @@ void ServiceWorkerContextWrapper::DeleteAndStartOver() {
     // here.
     return;
   }
-  context_core_->DeleteAndStartOver(
-      base::Bind(&ServiceWorkerContextWrapper::DidDeleteAndStartOver, this));
+  context_core_->DeleteAndStartOver(base::BindOnce(
+      &ServiceWorkerContextWrapper::DidDeleteAndStartOver, this));
 }
 
 StoragePartitionImpl* ServiceWorkerContextWrapper::storage_partition() const {
@@ -281,7 +281,7 @@ void ServiceWorkerContextWrapper::RegisterServiceWorker(
       net::SimplifyUrlForRequest(options.scope), options.update_via_cache);
   context()->RegisterServiceWorker(
       net::SimplifyUrlForRequest(script_url), options_to_pass,
-      base::Bind(&FinishRegistrationOnIO, base::Passed(std::move(callback))));
+      base::BindOnce(&FinishRegistrationOnIO, std::move(callback)));
 }
 
 void ServiceWorkerContextWrapper::UnregisterServiceWorker(
@@ -302,7 +302,7 @@ void ServiceWorkerContextWrapper::UnregisterServiceWorker(
 
   context()->UnregisterServiceWorker(
       net::SimplifyUrlForRequest(pattern),
-      base::Bind(&FinishUnregistrationOnIO, base::Passed(std::move(callback))));
+      base::BindOnce(&FinishUnregistrationOnIO, std::move(callback)));
 }
 
 bool ServiceWorkerContextWrapper::StartingExternalRequest(
@@ -815,6 +815,16 @@ void ServiceWorkerContextWrapper::AddObserver(
 void ServiceWorkerContextWrapper::RemoveObserver(
     ServiceWorkerContextCoreObserver* observer) {
   core_observer_list_->RemoveObserver(observer);
+}
+
+base::WeakPtr<ServiceWorkerProviderHost>
+ServiceWorkerContextWrapper::PreCreateHostForSharedWorker(
+    int process_id,
+    mojom::ServiceWorkerProviderInfoForSharedWorkerPtr* out_provider_info) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  return ServiceWorkerProviderHost::PreCreateForSharedWorker(
+      context()->AsWeakPtr(), process_id, out_provider_info);
 }
 
 ServiceWorkerContextWrapper::~ServiceWorkerContextWrapper() {

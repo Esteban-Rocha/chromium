@@ -71,30 +71,30 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/platform/FilePathConversion.h"
-#include "third_party/WebKit/public/platform/WebCursorInfo.h"
-#include "third_party/WebKit/public/platform/WebDragData.h"
-#include "third_party/WebKit/public/platform/WebDragOperation.h"
-#include "third_party/WebKit/public/platform/WebMouseEvent.h"
-#include "third_party/WebKit/public/platform/WebPoint.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/scheduler/render_widget_scheduling_state.h"
-#include "third_party/WebKit/public/platform/scheduler/web_main_thread_scheduler.h"
-#include "third_party/WebKit/public/web/WebAutofillClient.h"
-#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
-#include "third_party/WebKit/public/web/WebFrameWidget.h"
-#include "third_party/WebKit/public/web/WebInputMethodController.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebPagePopup.h"
-#include "third_party/WebKit/public/web/WebPopupMenuInfo.h"
-#include "third_party/WebKit/public/web/WebRange.h"
-#include "third_party/WebKit/public/web/WebSettings.h"
-#include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/public/web/WebWidget.h"
+#include "third_party/blink/public/platform/file_path_conversion.h"
+#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/web_render_widget_scheduling_state.h"
+#include "third_party/blink/public/platform/web_cursor_info.h"
+#include "third_party/blink/public/platform/web_drag_data.h"
+#include "third_party/blink/public/platform/web_drag_operation.h"
+#include "third_party/blink/public/platform/web_mouse_event.h"
+#include "third_party/blink/public/platform/web_point.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
+#include "third_party/blink/public/platform/web_size.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_autofill_client.h"
+#include "third_party/blink/public/web/web_device_emulation_params.h"
+#include "third_party/blink/public/web/web_frame_widget.h"
+#include "third_party/blink/public/web/web_input_method_controller.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_node.h"
+#include "third_party/blink/public/web/web_page_popup.h"
+#include "third_party/blink/public/web/web_popup_menu_info.h"
+#include "third_party/blink/public/web/web_range.h"
+#include "third_party/blink/public/web/web_settings.h"
+#include "third_party/blink/public/web/web_view.h"
+#include "third_party/blink/public/web/web_widget.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_features.h"
@@ -391,7 +391,6 @@ RenderWidget::RenderWidget(
       closing_(false),
       host_closing_(false),
       is_swapped_out_(swapped_out),
-      for_oopif_(false),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       text_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
       text_input_flags_(0),
@@ -408,6 +407,7 @@ RenderWidget::RenderWidget(
       has_host_context_menu_location_(false),
       has_added_input_handler_(false),
       has_focus_(false),
+      for_oopif_(false),
 #if defined(OS_MACOSX)
       text_input_client_observer_(new TextInputClientObserver(this)),
 #endif
@@ -425,7 +425,7 @@ RenderWidget::RenderWidget(
   // In tests there may not be a RenderThreadImpl.
   if (RenderThreadImpl::current()) {
     render_widget_scheduling_state_ = RenderThreadImpl::current()
-                                          ->GetRendererScheduler()
+                                          ->GetWebMainThreadScheduler()
                                           ->NewRenderWidgetSchedulingState();
     render_widget_scheduling_state_->SetHidden(is_hidden_);
   }
@@ -585,7 +585,7 @@ void RenderWidget::Init(const ShowCallback& show_callback,
         render_thread_impl && compositor_
             ? render_thread_impl->compositor_task_runner()
             : nullptr,
-        render_thread_impl ? render_thread_impl->GetRendererScheduler()
+        render_thread_impl ? render_thread_impl->GetWebMainThreadScheduler()
                            : nullptr);
   }
 
@@ -1315,6 +1315,17 @@ gfx::Size RenderWidget::GetSizeForWebWidget() const {
 }
 
 void RenderWidget::Resize(const ResizeParams& params) {
+  viz::LocalSurfaceId new_local_surface_id;
+  // If the content_source_id of ResizeParams doesn't match
+  // |current_content_source_id_|, then the given LocalSurfaceId was generated
+  // before the navigation. Continue with the resize but don't use the
+  // LocalSurfaceId until the right one comes.
+  if (params.local_surface_id &&
+      params.content_source_id == current_content_source_id_) {
+    new_local_surface_id = child_local_surface_id_allocator_.UpdateFromParent(
+        params.local_surface_id.value());
+  }
+
   if (params.auto_resize_enabled && auto_resize_mode_ &&
       (!params.auto_resize_sequence_number ||
        auto_resize_sequence_number_ != params.auto_resize_sequence_number)) {
@@ -1343,15 +1354,6 @@ void RenderWidget::Resize(const ResizeParams& params) {
   if (!GetWebWidget())
     return;
 
-  // If the content_source_id of ResizeParams doesn't match
-  // |current_content_source_id_|, then the given LocalSurfaceId was generated
-  // before the navigation. Continue with the resize but don't use the
-  // LocalSurfaceId until the right one comes.
-  viz::LocalSurfaceId new_local_surface_id;
-  if (params.local_surface_id &&
-      params.content_source_id == current_content_source_id_) {
-    new_local_surface_id = *params.local_surface_id;
-  }
   gfx::Size new_compositor_viewport_pixel_size =
       params.auto_resize_enabled
           ? gfx::ScaleToCeiledSize(size_,
@@ -1491,8 +1493,8 @@ blink::WebLayerTreeView* RenderWidget::InitializeLayerTreeView() {
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   if (render_thread) {
     input_event_queue_ = new MainThreadEventQueue(
-        this, render_thread->GetRendererScheduler()->InputTaskRunner(),
-        render_thread->GetRendererScheduler(), should_generate_frame_sink);
+        this, render_thread->GetWebMainThreadScheduler()->InputTaskRunner(),
+        render_thread->GetWebMainThreadScheduler(), should_generate_frame_sink);
 
     InputHandlerManager* input_handler_manager =
         render_thread->input_handler_manager();
@@ -2351,9 +2353,11 @@ void RenderWidget::DidAutoResize(const gfx::Size& new_size) {
     ++auto_resize_sequence_number_;
     gfx::Size new_compositor_viewport_pixel_size =
         gfx::ScaleToCeiledSize(size_, GetWebScreenInfo().device_scale_factor);
-    UpdateSurfaceAndScreenInfo(viz::LocalSurfaceId(),
-                               new_compositor_viewport_pixel_size,
-                               screen_info_);
+    viz::LocalSurfaceId local_surface_id;
+    if (!compositor_viewport_pixel_size_.IsEmpty())
+      local_surface_id = child_local_surface_id_allocator_.GenerateId();
+    UpdateSurfaceAndScreenInfo(
+        local_surface_id, new_compositor_viewport_pixel_size, screen_info_);
 
     if (!resizing_mode_selector_->is_synchronous_mode()) {
       need_resize_ack_for_auto_resize_ = true;
@@ -2649,9 +2653,10 @@ uint32_t RenderWidget::GetContentSourceId() {
 }
 
 void RenderWidget::DidNavigate() {
+  ++current_content_source_id_;
   if (!compositor_)
     return;
-  compositor_->SetContentSourceId(++current_content_source_id_);
+  compositor_->SetContentSourceId(current_content_source_id_);
 
   UpdateSurfaceAndScreenInfo(viz::LocalSurfaceId(),
                              compositor_viewport_pixel_size_, screen_info_);
@@ -2699,6 +2704,11 @@ void RenderWidget::DidResizeOrRepaintAck() {
   params.view_size = size_;
   params.flags = next_paint_flags_;
   params.sequence_number = auto_resize_sequence_number_;
+  if (child_local_surface_id_allocator_.GetCurrentLocalSurfaceId().is_valid()) {
+    params.child_allocated_local_surface_id =
+        child_local_surface_id_allocator_.GetCurrentLocalSurfaceId();
+    DCHECK(params.child_allocated_local_surface_id.value().is_valid());
+  }
 
   Send(new ViewHostMsg_ResizeOrRepaint_ACK(routing_id_, params));
   next_paint_flags_ = 0;

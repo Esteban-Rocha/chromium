@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/metrics/histogram_macros.h"
+#include "chrome/browser/chromeos/apps/intent_helper/apps_navigation_throttle.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -99,7 +99,9 @@ void ArcNavigationThrottle::OnAppCandidatesReceived(
     // This scenario shouldn't be accessed as ArcNavigationThrottle is created
     // iff there are ARC apps which can actually handle the given URL.
     DVLOG(1) << "There are no app candidates for this URL: " << url;
-    RecordUma(CloseReason::ERROR, Platform::CHROME);
+    chromeos::AppsNavigationThrottle::RecordUma(
+        std::string(), chromeos::AppType::INVALID,
+        chromeos::IntentPickerCloseReason::ERROR, false /* should_persist */);
     std::move(callback).Run(chromeos::AppsNavigationAction::RESUME, {});
     return;
   }
@@ -128,7 +130,7 @@ bool ArcNavigationThrottle::DidLaunchPreferredArcApp(
   bool cancel_navigation = false;
   const size_t index = FindPreferredApp(app_candidates, url);
   if (index != app_candidates.size()) {
-    CloseReason close_reason = CloseReason::PREFERRED_ACTIVITY_FOUND;
+    auto close_reason = chromeos::IntentPickerCloseReason::PREFERRED_APP_FOUND;
     const std::string package_name = app_candidates[index]->package_name;
 
     // Make sure that the instance at least supports HandleUrl.
@@ -141,7 +143,7 @@ bool ArcNavigationThrottle::DidLaunchPreferredArcApp(
     }
 
     if (!instance) {
-      close_reason = CloseReason::ERROR;
+      close_reason = chromeos::IntentPickerCloseReason::ERROR;
     } else if (ArcIntentHelperBridge::IsIntentHelperPackage(package_name)) {
       chrome::SetIntentPickerViewVisibility(
           chrome::FindBrowserWithWebContents(web_contents), true);
@@ -149,9 +151,9 @@ bool ArcNavigationThrottle::DidLaunchPreferredArcApp(
       instance->HandleUrl(url.spec(), package_name);
       cancel_navigation = true;
     }
-
-    Platform platform = GetDestinationPlatform(package_name, close_reason);
-    RecordUma(close_reason, platform);
+    chromeos::AppsNavigationThrottle::RecordUma(
+        package_name, chromeos::AppType::ARC, close_reason,
+        false /* should_persist */);
   }
   return cancel_navigation;
 }
@@ -167,7 +169,9 @@ void ArcNavigationThrottle::ArcAppIconQuery(
       web_contents->GetBrowserContext());
   if (!intent_helper_bridge) {
     LOG(ERROR) << "Cannot get an instance of ArcIntentHelperBridge";
-    RecordUma(CloseReason::ERROR, Platform::CHROME);
+    chromeos::AppsNavigationThrottle::RecordUma(
+        std::string(), chromeos::AppType::INVALID,
+        chromeos::IntentPickerCloseReason::ERROR, false /* should_persist */);
     std::move(callback).Run({});
     return;
   }
@@ -202,68 +206,42 @@ void ArcNavigationThrottle::OnAppIconsReceived(
                           candidate->package_name, candidate->name);
   }
 
-  std::move(callback).Run(app_info);
+  std::move(callback).Run(std::move(app_info));
 }
 
 // static
-void ArcNavigationThrottle::OnIntentPickerClosed(
+bool ArcNavigationThrottle::MaybeLaunchOrPersistArcApp(
     const GURL& url,
-    const std::string& pkg,
-    arc::ArcNavigationThrottle::CloseReason close_reason) {
+    const std::string& package_name,
+    bool should_launch,
+    bool should_persist) {
   auto* arc_service_manager = arc::ArcServiceManager::Get();
   arc::mojom::IntentHelperInstance* instance = nullptr;
   if (arc_service_manager) {
     instance = ARC_GET_INSTANCE_FOR_METHOD(
         arc_service_manager->arc_bridge_service()->intent_helper(), HandleUrl);
   }
-  if (!instance)
-    close_reason = CloseReason::ERROR;
 
-  switch (close_reason) {
-    case CloseReason::ERROR:
-    case CloseReason::CHROME_PRESSED:
-    case CloseReason::DIALOG_DEACTIVATED: {
-      break;
-    }
-    case CloseReason::PREFERRED_ACTIVITY_FOUND: {
-      if (!arc::ArcIntentHelperBridge::IsIntentHelperPackage(pkg))
-        instance->HandleUrl(url.spec(), pkg);
-      break;
-    }
-    case arc::ArcNavigationThrottle::CloseReason::ARC_APP_PREFERRED_PRESSED: {
-      DCHECK(arc_service_manager);
-      if (ARC_GET_INSTANCE_FOR_METHOD(
-              arc_service_manager->arc_bridge_service()->intent_helper(),
-              AddPreferredPackage)) {
-        instance->AddPreferredPackage(pkg);
-      }
-      instance->HandleUrl(url.spec(), pkg);
-      break;
-    }
-    case arc::ArcNavigationThrottle::CloseReason::CHROME_PREFERRED_PRESSED: {
-      DCHECK(arc_service_manager);
-      if (ARC_GET_INSTANCE_FOR_METHOD(
-              arc_service_manager->arc_bridge_service()->intent_helper(),
-              AddPreferredPackage)) {
-        instance->AddPreferredPackage(pkg);
-      }
-      break;
-    }
-    case arc::ArcNavigationThrottle::CloseReason::ARC_APP_PRESSED: {
-      instance->HandleUrl(url.spec(), pkg);
-      break;
-    }
-    case arc::ArcNavigationThrottle::CloseReason::OBSOLETE_ALWAYS_PRESSED:
-    case arc::ArcNavigationThrottle::CloseReason::OBSOLETE_JUST_ONCE_PRESSED:
-    case arc::ArcNavigationThrottle::CloseReason::INVALID: {
-      NOTREACHED();
-      return;
+  // With no instance, or if we neither want to launch an ARC app or persist the
+  // preference to the container, return early.
+  if (!instance || !(should_launch || should_persist))
+    return false;
+
+  if (should_persist) {
+    DCHECK(arc_service_manager);
+    if (ARC_GET_INSTANCE_FOR_METHOD(
+            arc_service_manager->arc_bridge_service()->intent_helper(),
+            AddPreferredPackage)) {
+      instance->AddPreferredPackage(package_name);
     }
   }
 
-  arc::ArcNavigationThrottle::Platform platform =
-      arc::ArcNavigationThrottle::GetDestinationPlatform(pkg, close_reason);
-  arc::ArcNavigationThrottle::RecordUma(close_reason, platform);
+  if (should_launch) {
+    instance->HandleUrl(url.spec(), package_name);
+    return true;
+  }
+
+  return false;
 }
 
 // static
@@ -275,29 +253,6 @@ size_t ArcNavigationThrottle::GetAppIndex(
       return i;
   }
   return app_candidates.size();
-}
-
-// static
-ArcNavigationThrottle::Platform ArcNavigationThrottle::GetDestinationPlatform(
-    const std::string& selected_app_package,
-    CloseReason close_reason) {
-  return (close_reason != CloseReason::ERROR &&
-          close_reason != CloseReason::DIALOG_DEACTIVATED &&
-          !ArcIntentHelperBridge::IsIntentHelperPackage(selected_app_package))
-             ? Platform::ARC
-             : Platform::CHROME;
-}
-
-// static
-void ArcNavigationThrottle::RecordUma(CloseReason close_reason,
-                                      Platform platform) {
-  UMA_HISTOGRAM_ENUMERATION("Arc.IntentHandlerAction",
-                            static_cast<int>(close_reason),
-                            static_cast<int>(CloseReason::SIZE));
-
-  UMA_HISTOGRAM_ENUMERATION("Arc.IntentHandlerDestinationPlatform",
-                            static_cast<int>(platform),
-                            static_cast<int>(Platform::SIZE));
 }
 
 // static

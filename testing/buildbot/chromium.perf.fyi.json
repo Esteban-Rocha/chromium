@@ -4,7 +4,8 @@
       {
         "args": [
           "-v",
-          "--browser=android-chromium"
+          "--browser=android-chromium",
+          "--upload-results"
         ],
         "isolate_name": "performance_test_suite",
         "merge": {
@@ -446,97 +447,6 @@
       }
     ]
   },
-  "Mac 10.12 Laptop Low End": {
-    "isolated_scripts": [
-      {
-        "args": [
-          "-v",
-          "--browser=release",
-          "--non-telemetry=true"
-        ],
-        "isolate_name": "load_library_perf_tests_v2",
-        "merge": {
-          "args": [
-            "--service-account-file",
-            "/creds/service_accounts/service-account-chromium-perf-histograms.json"
-          ],
-          "script": "//tools/perf/process_perf_results.py"
-        },
-        "name": "load_library_perf_tests_v2",
-        "override_compile_targets": [
-          "load_library_perf_tests_v2"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:1626",
-              "os": "Mac-10.12",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 36000,
-          "ignore_task_failure": false,
-          "io_timeout": 1800,
-          "shards": 1,
-          "upload_test_results": true
-        },
-        "trigger_script": {
-          "args": [
-            "--multiple-trigger-configs",
-            "[{\"id\": \"build195-a9\"}]",
-            "--multiple-dimension-script-verbose",
-            "True"
-          ],
-          "script": "//testing/trigger_scripts/perf_device_trigger.py"
-        }
-      },
-      {
-        "args": [
-          "-v",
-          "--browser=release"
-        ],
-        "isolate_name": "performance_test_suite",
-        "merge": {
-          "args": [
-            "--service-account-file",
-            "/creds/service_accounts/service-account-chromium-perf-histograms.json"
-          ],
-          "script": "//tools/perf/process_perf_results.py"
-        },
-        "name": "performance_test_suite",
-        "override_compile_targets": [
-          "performance_test_suite"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:1626",
-              "os": "Mac-10.12",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 36000,
-          "ignore_task_failure": false,
-          "io_timeout": 1800,
-          "shards": 26,
-          "upload_test_results": true
-        },
-        "trigger_script": {
-          "args": [
-            "--multiple-trigger-configs",
-            "[{\"id\": \"build195-a9\"}, {\"id\": \"build196-a9\"}, {\"id\": \"build197-a9\"}, {\"id\": \"build198-a9\"}, {\"id\": \"build199-a9\"}, {\"id\": \"build200-a9\"}, {\"id\": \"build201-a9\"}, {\"id\": \"build202-a9\"}, {\"id\": \"build203-a9\"}, {\"id\": \"build204-a9\"}, {\"id\": \"build205-a9\"}, {\"id\": \"build206-a9\"}, {\"id\": \"build207-a9\"}, {\"id\": \"build208-a9\"}, {\"id\": \"build209-a9\"}, {\"id\": \"build210-a9\"}, {\"id\": \"build211-a9\"}, {\"id\": \"build212-a9\"}, {\"id\": \"build213-a9\"}, {\"id\": \"build214-a9\"}, {\"id\": \"build215-a9\"}, {\"id\": \"build216-a9\"}, {\"id\": \"build217-a9\"}, {\"id\": \"build218-a9\"}, {\"id\": \"build219-a9\"}, {\"id\": \"build220-a9\"}]",
-            "--multiple-dimension-script-verbose",
-            "True"
-          ],
-          "script": "//testing/trigger_scripts/perf_device_trigger.py"
-        }
-      }
-    ]
-  },
   "Mojo Linux Perf": {
     "isolated_scripts": [
       {
@@ -573,10 +483,53 @@
     "isolated_scripts": [
       {
         "args": [
+          "--non-telemetry=true",
+          "--migrated-test=true"
+        ],
+        "isolate_name": "load_library_perf_tests",
+        "merge": {
+          "args": [
+            "--service-account-file",
+            "/creds/service_accounts/service-account-chromium-perf-histograms.json"
+          ],
+          "script": "//tools/perf/process_perf_results.py"
+        },
+        "name": "load_library_perf_tests",
+        "override_compile_targets": [
+          "load_library_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "os": "Linux",
+              "pool": "chrome.tests.perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 36000,
+          "ignore_task_failure": false,
+          "io_timeout": 1800,
+          "shards": 1,
+          "upload_test_results": true
+        },
+        "trigger_script": {
+          "args": [
+            "--multiple-trigger-configs",
+            "[{\"id\": \"swarm77-c7\"}]",
+            "--multiple-dimension-script-verbose",
+            "True"
+          ],
+          "script": "//testing/trigger_scripts/perf_device_trigger.py"
+        }
+      },
+      {
+        "args": [
           "-v",
           "--browser=reference",
-          "--xvfb",
-          "--testing=true"
+          "--upload-results",
+          "--testing=true",
+          "--xvfb"
         ],
         "isolate_name": "telemetry_perf_tests_experimental",
         "merge": {
@@ -595,7 +548,7 @@
           "dimension_sets": [
             {
               "os": "Linux",
-              "pool": "Chrome-perf-fyi"
+              "pool": "chrome.tests.perf-fyi"
             }
           ],
           "expiration": 36000,
@@ -608,7 +561,7 @@
         "trigger_script": {
           "args": [
             "--multiple-trigger-configs",
-            "[{\"id\": \"swarm823-c4\"}, {\"id\": \"swarm846-c4\"}, {\"id\": \"swarm847-c4\"}]",
+            "[{\"id\": \"swarm77-c7\"}, {\"id\": \"swarm78-c7\"}, {\"id\": \"swarm79-c7\"}]",
             "--multiple-dimension-script-verbose",
             "True"
           ],

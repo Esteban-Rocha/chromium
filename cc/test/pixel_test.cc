@@ -5,7 +5,6 @@
 #include "cc/test/pixel_test.h"
 
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -188,6 +187,14 @@ void PixelTest::SetUpGLRenderer(bool flipped_output_surface) {
   renderer_ = std::make_unique<viz::GLRenderer>(
       &renderer_settings_, output_surface_.get(), resource_provider_.get(),
       base::ThreadTaskRunnerHandle::Get());
+  renderer_->Initialize();
+  renderer_->SetVisible(true);
+}
+
+void PixelTest::SetUpSkiaRenderer() {
+  SetUpGLWithoutRenderer(false);
+  renderer_ = std::make_unique<viz::SkiaRenderer>(
+      &renderer_settings_, output_surface_.get(), resource_provider_.get());
   renderer_->Initialize();
   renderer_->SetVisible(true);
 }

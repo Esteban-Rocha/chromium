@@ -6,6 +6,7 @@
 
 #include <math.h>
 
+#include <algorithm>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -19,7 +20,6 @@
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -97,13 +97,16 @@
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
 #include "storage/browser/fileapi/isolated_context.h"
-#include "third_party/WebKit/public/web/WebImeTextSpan.h"
+#include "third_party/blink/public/web/web_ime_text_span.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
 #include "ui/display/screen.h"
 #include "ui/events/blink/web_input_event_traits.h"
 #include "ui/events/event.h"
+#include "ui/events/keycodes/dom/dom_code.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -1112,6 +1115,7 @@ void RenderWidgetHostImpl::StopHangMonitorTimeout() {
 
 void RenderWidgetHostImpl::DidNavigate(uint32_t next_source_id) {
   current_content_source_id_ = next_source_id;
+  did_receive_first_frame_after_navigation_ = false;
 
   if (enable_surface_synchronization_) {
     // Resize messages before navigation are not acked, so reset
@@ -1265,7 +1269,10 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
       } else if (GetView()->wheel_scroll_latching_enabled()) {
         // When wheel scroll latching is enabled, no GSE is sent before GFS, so
         // is_in_gesture_scroll must be true.
-        DCHECK(is_in_gesture_scroll_[gesture_event.SourceDevice()]);
+        // TODO(sahel): This often gets tripped on Debug builds in ChromeOS
+        // indicating some kind of gesture event ordering race.
+        // https://crbug.com/821237.
+        // DCHECK(is_in_gesture_scroll_[gesture_event.SourceDevice()]);
 
         // The FlingController handles GFS with touchpad source and sends wheel
         // events to progress the fling, the wheel events will get processed by
@@ -1912,6 +1919,14 @@ bool RenderWidgetHostImpl::IsKeyboardLocked() const {
   return view_ ? view_->IsKeyboardLocked() : false;
 }
 
+void RenderWidgetHostImpl::GetContentRenderingTimeoutFrom(
+    RenderWidgetHostImpl* other) {
+  if (other->new_content_rendering_timeout_->IsRunning()) {
+    new_content_rendering_timeout_->Start(
+        other->new_content_rendering_timeout_->GetCurrentDelay());
+  }
+}
+
 bool RenderWidgetHostImpl::IsMouseLocked() const {
   return view_ ? view_->IsMouseLocked() : false;
 }
@@ -2154,6 +2169,7 @@ void RenderWidgetHostImpl::OnResizeOrRepaintACK(
   DidCompleteResizeOrRepaint(params, paint_start);
 
   last_auto_resize_request_number_ = params.sequence_number;
+  last_auto_resize_surface_id_ = params.child_allocated_local_surface_id;
 
   if (auto_resize_enabled_) {
     bool post_callback = new_auto_size_.IsEmpty();
@@ -2314,15 +2330,17 @@ void RenderWidgetHostImpl::RequestKeyboardLock(
     return;
   }
 
-  // If keyboard lock is already active, then skip the request and just update
-  // the set of keys used for the lock.  Otherwise call through the delegate to
-  // request keyboard lock.  Cancel the request if we don't have a delegate.
   DCHECK(!keys_to_lock.has_value() || !keys_to_lock.value().empty());
   keyboard_keys_to_lock_ = std::move(keys_to_lock);
   keyboard_lock_requested_ = true;
-  if (IsKeyboardLocked())
-    LockKeyboard();
-  else if (!delegate_->RequestKeyboardLock(this))
+
+  const int esc_native_key_code =
+      ui::KeycodeConverter::DomCodeToNativeKeycode(ui::DomCode::ESCAPE);
+  const bool esc_requested =
+      !keyboard_keys_to_lock_.has_value() ||
+      base::ContainsKey(keyboard_keys_to_lock_.value(), esc_native_key_code);
+
+  if (!delegate_->RequestKeyboardLock(this, esc_requested))
     CancelKeyboardLock();
 }
 
@@ -2616,12 +2634,13 @@ void RenderWidgetHostImpl::DelayedAutoResized() {
 
   if (view_) {
     viz::ScopedSurfaceIdAllocator scoped_allocator =
-        view_->ResizeDueToAutoResize(new_size,
-                                     last_auto_resize_request_number_);
+        view_->ResizeDueToAutoResize(new_size, last_auto_resize_request_number_,
+                                     last_auto_resize_surface_id_.value());
 
     if (delegate_) {
       delegate_->ResizeDueToAutoResize(this, new_size,
-                                       last_auto_resize_request_number_);
+                                       last_auto_resize_request_number_,
+                                       last_auto_resize_surface_id_.value());
     }
   }
 }
@@ -2844,7 +2863,6 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
     viz::CompositorFrame frame,
     viz::mojom::HitTestRegionListPtr hit_test_region_list,
     uint64_t submit_time) {
-  // TODO(gklassen): Route hit-test data to appropriate HitTestAggregator.
   TRACE_EVENT_FLOW_END0(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
                         "SubmitCompositorFrame", local_surface_id.hash());
 
@@ -2979,10 +2997,12 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
 
     // After navigation, if a frame belonging to the new page is received, stop
     // the timer that triggers clearing the graphics of the last page.
-    if (new_content_rendering_timeout_ &&
-        last_received_content_source_id_ >= current_content_source_id_ &&
-        new_content_rendering_timeout_->IsRunning()) {
-      new_content_rendering_timeout_->Stop();
+    if (last_received_content_source_id_ >= current_content_source_id_) {
+      did_receive_first_frame_after_navigation_ = true;
+      if (new_content_rendering_timeout_ &&
+          new_content_rendering_timeout_->IsRunning()) {
+        new_content_rendering_timeout_->Stop();
+      }
     }
   }
 
@@ -3110,6 +3130,7 @@ void RenderWidgetHostImpl::ProgressFling(TimeTicks current_time) {
 
 void RenderWidgetHostImpl::DidReceiveFirstFrameAfterNavigation() {
   DCHECK(enable_surface_synchronization_);
+  did_receive_first_frame_after_navigation_ = true;
   if (!new_content_rendering_timeout_ ||
       !new_content_rendering_timeout_->IsRunning()) {
     return;
@@ -3118,11 +3139,11 @@ void RenderWidgetHostImpl::DidReceiveFirstFrameAfterNavigation() {
 }
 
 void RenderWidgetHostImpl::ForceFirstFrameAfterNavigationTimeout() {
-  if (new_content_rendering_timeout_ &&
-      new_content_rendering_timeout_->IsRunning()) {
+  if (did_receive_first_frame_after_navigation_)
+    return;
+  if (new_content_rendering_timeout_)
     new_content_rendering_timeout_->Stop();
-    ClearDisplayedGraphics();
-  }
+  ClearDisplayedGraphics();
 }
 
 void RenderWidgetHostImpl::StopFling() {

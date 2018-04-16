@@ -116,7 +116,6 @@ public class TabModalPresenter
             mRunEnterAnimationOnCallback = true;
         }
         mChromeActivity.addViewObscuringAllTabs(mDialogContainer);
-        updateContainerHierarchy(true);
     }
 
     @Override
@@ -247,6 +246,9 @@ public class TabModalPresenter
                 mDidClearTextControls = true;
             }
 
+            // Hide app menu in case it is opened.
+            mChromeActivity.getAppMenuHandler().hideAppMenu();
+
             // Force toolbar to show and disable overflow menu.
             mActiveTab.onTabModalDialogStateChanged(true);
 
@@ -291,7 +293,12 @@ public class TabModalPresenter
                 .setDuration(mEnterExitAnimationDurationMs)
                 .alpha(1f)
                 .setInterpolator(BakedBezierInterpolator.FADE_IN_CURVE)
-                .setListener(null)
+                .setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        updateContainerHierarchy(true);
+                    }
+                })
                 .start();
     }
 

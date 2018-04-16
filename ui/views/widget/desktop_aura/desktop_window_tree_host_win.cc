@@ -198,7 +198,7 @@ aura::WindowTreeHost* DesktopWindowTreeHostWin::AsWindowTreeHost() {
 void DesktopWindowTreeHostWin::ShowWindowWithState(
     ui::WindowShowState show_state) {
   if (compositor())
-    compositor()->SetVisible(true);
+    compositor()->SetVisible(show_state != ui::SHOW_STATE_MINIMIZED);
   message_handler_->ShowWindowWithState(show_state);
 }
 
@@ -570,6 +570,10 @@ bool DesktopWindowTreeHostWin::CaptureSystemKeyEventsImpl(
 
 void DesktopWindowTreeHostWin::ReleaseSystemKeyEventCapture() {
   keyboard_hook_.reset();
+}
+
+bool DesktopWindowTreeHostWin::IsKeyLocked(int native_key_code) {
+  return keyboard_hook_ && keyboard_hook_->IsKeyLocked(native_key_code);
 }
 
 void DesktopWindowTreeHostWin::SetCursorNative(gfx::NativeCursor cursor) {
@@ -965,13 +969,8 @@ void DesktopWindowTreeHostWin::HandleWindowSizeUnchanged() {
   // changed (can occur on Windows 10 when snapping a window to the side of
   // the screen). In that case do a resize to the current size to reenable
   // swaps.
-  // TODO(ccameron): This will violate surface invariants.
-  if (compositor()) {
-    compositor()->SetScaleAndSize(
-        compositor()->device_scale_factor(),
-        message_handler_->GetClientAreaBounds().size(),
-        window()->GetLocalSurfaceId());
-  }
+  if (compositor())
+    compositor()->ReenableSwap();
 }
 
 void DesktopWindowTreeHostWin::HandleWindowScaleFactorChanged(

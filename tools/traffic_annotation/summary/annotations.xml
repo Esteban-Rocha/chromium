@@ -36,7 +36,6 @@ Refer to README.md for content description and update process.
  <item id="cast_socket" hash_code="115192205" type="0" content_hash_code="63056899" os_list="linux,windows" file_path="components/cast_channel/cast_socket.cc"/>
  <item id="cast_udp_socket" hash_code="22573197" type="0" content_hash_code="75328301" os_list="linux,windows" file_path="components/mirroring/service/udp_socket_client.cc"/>
  <item id="cast_udp_transport" hash_code="5576536" type="0" content_hash_code="107643273" os_list="linux,windows" file_path="media/cast/net/udp_transport_impl.cc"/>
- <item id="certificate_reporting_service_test" hash_code="98123372" type="0" content_hash_code="136253658" os_list="linux,windows" file_path="chrome/browser/safe_browsing/certificate_reporting_service.cc"/>
  <item id="certificate_verifier" hash_code="113553577" type="0" content_hash_code="62346354" os_list="linux,windows" file_path="net/cert_net/cert_net_fetcher_impl.cc"/>
  <item id="chrome_apps_socket_api" hash_code="8591273" type="0" content_hash_code="70868355" os_list="linux,windows" file_path="extensions/browser/api/socket/socket.cc"/>
  <item id="chrome_cleaner" hash_code="27071967" type="0" content_hash_code="111240292" os_list="windows" file_path="chrome/browser/safe_browsing/chrome_cleaner/chrome_cleaner_fetcher_win.cc"/>
@@ -143,7 +142,7 @@ Refer to README.md for content description and update process.
  <item id="network_location_request" hash_code="96590038" type="2" content_hash_code="59824433" os_list="linux,windows" semantics_fields="2,3,4,5" policy_fields="-1" file_path="device/geolocation/network_location_request.cc"/>
  <item id="network_time_component" hash_code="46188932" type="0" content_hash_code="28051857" os_list="linux,windows" file_path="components/network_time/network_time_tracker.cc"/>
  <item id="notification_image_reporter" hash_code="70126372" type="0" content_hash_code="29754543" os_list="linux,windows" file_path="chrome/browser/safe_browsing/notification_image_reporter.cc"/>
- <item id="ntp_contextual_suggestions_fetch" hash_code="95711309" type="0" content_hash_code="29742597" os_list="linux,windows" file_path="components/ntp_snippets/contextual/contextual_json_request.cc"/>
+ <item id="ntp_contextual_suggestions_fetch" hash_code="95711309" type="0" content_hash_code="71905054" os_list="linux,windows" file_path="components/ntp_snippets/contextual/contextual_suggestions_fetch.cc"/>
  <item id="ntp_snippets_fetch" hash_code="15418154" type="0" content_hash_code="10078959" os_list="linux,windows" file_path="components/ntp_snippets/remote/json_request.cc"/>
  <item id="oauth2_access_token_fetcher" hash_code="27915688" type="0" content_hash_code="33501872" os_list="linux,windows" file_path="google_apis/gaia/oauth2_access_token_fetcher_impl.cc"/>
  <item id="oauth2_api_call_flow" hash_code="29188932" type="2" content_hash_code="108831236" os_list="linux,windows" policy_fields="-1" file_path="google_apis/gaia/oauth2_api_call_flow.cc"/>
@@ -263,4 +262,5 @@ Refer to README.md for content description and update process.
  <item id="webstore_installer" hash_code="18764319" type="0" content_hash_code="11030110" os_list="linux,windows" file_path="chrome/browser/extensions/webstore_installer.cc"/>
  <item id="webui_content_scripts_download" hash_code="100545943" type="0" content_hash_code="119898059" os_list="linux,windows" file_path="extensions/browser/guest_view/web_view/web_ui/web_ui_url_fetcher.cc"/>
  <item id="xmpp_signal_strategy" hash_code="88906454" type="0" content_hash_code="88958321" os_list="linux,windows" file_path="remoting/signaling/xmpp_signal_strategy.cc"/>
+ <item id="per_user_topic_registration_request" hash_code="10498172" type="0" content_hash_code="32495619" os_list="linux,windows,android" file_path="components/invalidation/impl/per_user_topic_registration_request.cc"/>
 </annotations>

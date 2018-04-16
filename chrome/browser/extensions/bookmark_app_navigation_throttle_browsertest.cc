@@ -42,6 +42,7 @@
 #include "net/base/escape.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/http/http_request_headers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -75,6 +76,8 @@ enum class WindowAccessResult {
 
 namespace {
 
+const char kTextPlainEncType[] = "text/plain";
+
 const char kQueryParam[] = "test=";
 const char kQueryParamName[] = "test";
 
@@ -100,6 +103,10 @@ class BookmarkAppNavigationObserver : public content::TestNavigationObserver {
 
   bool last_navigation_is_post() const { return last_navigation_is_post_; }
 
+  const net::HttpRequestHeaders& last_request_headers() const {
+    return last_request_headers_;
+  }
+
   const scoped_refptr<network::ResourceRequestBody>&
   last_resource_request_body() const {
     return last_resource_request_body_;
@@ -109,12 +116,16 @@ class BookmarkAppNavigationObserver : public content::TestNavigationObserver {
   void OnDidFinishNavigation(
       content::NavigationHandle* navigation_handle) override {
     last_navigation_is_post_ = navigation_handle->IsPost();
+    last_request_headers_ = navigation_handle->GetRequestHeaders();
     last_resource_request_body_ = navigation_handle->GetResourceRequestBody();
     content::TestNavigationObserver::OnDidFinishNavigation(navigation_handle);
   }
 
   // True if the last navigation was a post.
   bool last_navigation_is_post_;
+
+  // The request headers of the last navigation.
+  net::HttpRequestHeaders last_request_headers_;
 
   // The request body of the last navigation if it was a post request.
   scoped_refptr<network::ResourceRequestBody> last_resource_request_body_;
@@ -212,6 +223,18 @@ void ExecuteContextMenuLinkCommandAndWait(content::WebContents* web_contents,
   TestRenderViewContextMenu menu(web_contents->GetMainFrame(), params);
   menu.Init();
   menu.ExecuteCommand(command_id, 0 /* event_flags */);
+  observer->WaitForNavigationFinished();
+}
+
+void OpenPopupAndWait(content::WebContents* web_contents,
+                      const GURL& target_url) {
+  auto observer = GetTestNavigationObserver(target_url);
+  const std::string script = base::StringPrintf(
+      "(() => {"
+      "  window.openedWindow = window.open('%s', '_blank', 'toolbar=no');"
+      "})();",
+      target_url.spec().c_str());
+  ASSERT_TRUE(content::ExecuteScript(web_contents, script));
   observer->WaitForNavigationFinished();
 }
 
@@ -376,6 +399,7 @@ void SubmitFormAndWait(content::WebContents* web_contents,
       "const form = document.createElement('form');"
       "form.action = '%s';"
       "form.method = '%s';"
+      "form.enctype = '%s';"
       "const input = document.createElement('input');"
       "input.name = '%s';"
       "form.appendChild(input);"
@@ -387,17 +411,26 @@ void SubmitFormAndWait(content::WebContents* web_contents,
       "})();",
       target_url.spec().c_str(),
       method == net::URLFetcher::RequestType::POST ? "post" : "get",
-      kQueryParamName);
+      kTextPlainEncType, kQueryParamName);
   ASSERT_TRUE(content::ExecuteScript(web_contents, script));
   observer.WaitForNavigationFinished();
 
   EXPECT_EQ(is_post, observer.last_navigation_is_post());
   if (is_post) {
+    const net::HttpRequestHeaders& headers = observer.last_request_headers();
+    std::string post_content_type;
+    headers.GetHeader(net::HttpRequestHeaders::kContentType,
+                      &post_content_type);
+    EXPECT_EQ(kTextPlainEncType, post_content_type);
+
     const std::vector<network::DataElement>* elements =
         observer.last_resource_request_body()->elements();
     EXPECT_EQ(1u, elements->size());
     const auto& element = elements->front();
-    EXPECT_EQ(kQueryParam, std::string(element.bytes(), element.length()));
+
+    // The text/plain enconding algorithm appends "\r\n".
+    EXPECT_EQ(std::string(kQueryParam) + "\r\n",
+              std::string(element.bytes(), element.length()));
   }
 }
 
@@ -738,6 +771,7 @@ class BookmarkAppNavigationThrottleBaseBrowserTest
     Browser* new_app_browser = chrome::FindLastActive();
     EXPECT_NE(new_app_browser, browser());
     EXPECT_NE(new_app_browser, app_browser);
+    EXPECT_TRUE(new_app_browser->is_app());
 
     EXPECT_EQ(num_tabs_browser, browser()->tab_strip_model()->count());
     EXPECT_EQ(num_tabs_app_browser, app_browser->tab_strip_model()->count());
@@ -1770,6 +1804,78 @@ IN_PROC_BROWSER_TEST_P(BookmarkAppNavigationThrottleCommonBrowserTest,
                                   kOpenInChromeProceedOutOfScopeLaunch,
                               1}});
   }
+}
+
+// Tests that popups to out-of-scope URLs are opened in regular popup windows
+// and not in app windows.
+IN_PROC_BROWSER_TEST_P(BookmarkAppNavigationThrottleCommonBrowserTest,
+                       OutOfScopePopup) {
+  InstallTestBookmarkApp();
+  Browser* app_browser = OpenTestBookmarkApp();
+
+  base::HistogramTester scoped_histogram;
+
+  size_t num_browsers = chrome::GetBrowserCount(profile());
+  int num_tabs_browser = browser()->tab_strip_model()->count();
+  int num_tabs_app_browser = app_browser->tab_strip_model()->count();
+
+  content::WebContents* app_web_contents =
+      app_browser->tab_strip_model()->GetActiveWebContents();
+
+  content::WebContents* initial_tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
+
+  GURL initial_app_url = app_web_contents->GetLastCommittedURL();
+  GURL initial_tab_url = initial_tab->GetLastCommittedURL();
+
+  // Open a popup to an out-of-scope URL.
+  const GURL out_of_scope_url =
+      https_server().GetURL(kAppUrlHost, kOutOfScopeUrlPath);
+  OpenPopupAndWait(app_web_contents, out_of_scope_url);
+
+  EXPECT_EQ(++num_browsers, chrome::GetBrowserCount(profile()));
+
+  Browser* new_popup_browser = chrome::FindLastActive();
+  EXPECT_NE(new_popup_browser, browser());
+  EXPECT_NE(new_popup_browser, app_browser);
+  EXPECT_TRUE(new_popup_browser->is_type_popup());
+  EXPECT_FALSE(new_popup_browser->is_app());
+
+  EXPECT_EQ(num_tabs_browser, browser()->tab_strip_model()->count());
+  EXPECT_EQ(num_tabs_app_browser, app_browser->tab_strip_model()->count());
+
+  EXPECT_EQ(initial_app_url, app_web_contents->GetLastCommittedURL());
+
+  content::WebContents* new_popup_web_contents =
+      new_popup_browser->tab_strip_model()->GetActiveWebContents();
+  EXPECT_EQ(out_of_scope_url, new_popup_web_contents->GetLastCommittedURL());
+
+  ExpectNavigationResultHistogramEquals(
+      scoped_histogram,
+      {{BookmarkAppNavigationThrottleResult::
+            kReparentIntoPopupProceedOutOfScopeInitialNavigation,
+        1}});
+}
+
+// Tests that popups to in-scope URLs are opened in App windows.
+IN_PROC_BROWSER_TEST_P(BookmarkAppNavigationThrottleCommonBrowserTest,
+                       InScopePopup) {
+  InstallTestBookmarkApp();
+  Browser* app_browser = OpenTestBookmarkApp();
+
+  base::HistogramTester scoped_histogram;
+
+  // Open a popup to an out-of-scope URL.
+  const GURL in_scope_url = https_server().GetURL(kAppUrlHost, kInScopeUrlPath);
+  TestAppActionOpensAppWindowWithOpener(
+      app_browser, in_scope_url,
+      base::Bind(&OpenPopupAndWait,
+                 app_browser->tab_strip_model()->GetActiveWebContents(),
+                 in_scope_url));
+
+  ExpectNavigationResultHistogramEquals(
+      scoped_histogram,
+      {{BookmarkAppNavigationThrottleResult::kProceedInAppSameScope, 1}});
 }
 
 INSTANTIATE_TEST_CASE_P(

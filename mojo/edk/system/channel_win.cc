@@ -17,6 +17,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_for_io.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "base/win/win_util.h"
@@ -29,7 +30,7 @@ namespace {
 
 class ChannelWin : public Channel,
                    public base::MessageLoop::DestructionObserver,
-                   public base::MessageLoopForIO::IOHandler {
+                   public base::MessagePumpForIO::IOHandler {
  public:
   ChannelWin(Delegate* delegate,
              ScopedPlatformHandle handle,
@@ -171,14 +172,19 @@ class ChannelWin : public Channel,
   }
 
   // base::MessageLoop::IOHandler:
-  void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+  void OnIOCompleted(base::MessagePumpForIO::IOContext* context,
                      DWORD bytes_transfered,
                      DWORD error) override {
     if (error != ERROR_SUCCESS) {
-      if (context == &write_context_)
+      if (context == &write_context_) {
+        {
+          base::AutoLock lock(write_lock_);
+          reject_writes_ = true;
+        }
         OnWriteError(Error::kDisconnected);
-      else
+      } else {
         OnError(Error::kDisconnected);
+      }
     } else if (context == &connect_context_) {
       DCHECK(is_connect_pending_);
       is_connect_pending_ = false;
@@ -308,14 +314,14 @@ class ChannelWin : public Channel,
   ScopedPlatformHandle handle_;
   const scoped_refptr<base::TaskRunner> io_task_runner_;
 
-  base::MessageLoopForIO::IOContext connect_context_;
-  base::MessageLoopForIO::IOContext read_context_;
+  base::MessagePumpForIO::IOContext connect_context_;
+  base::MessagePumpForIO::IOContext read_context_;
   bool is_connect_pending_ = false;
   bool is_read_pending_ = false;
 
   // Protects all fields potentially accessed on multiple threads via Write().
   base::Lock write_lock_;
-  base::MessageLoopForIO::IOContext write_context_;
+  base::MessagePumpForIO::IOContext write_context_;
   base::circular_deque<Channel::MessagePtr> outgoing_messages_;
   bool delay_writes_ = true;
   bool reject_writes_ = false;

@@ -52,13 +52,13 @@ class TestExtensionPrefs::IncrementalClock : public base::Clock {
 
   ~IncrementalClock() override {}
 
-  base::Time Now() override {
+  base::Time Now() const override {
     current_time_ += base::TimeDelta::FromSeconds(10);
     return current_time_;
   }
 
  private:
-  base::Time current_time_;
+  mutable base::Time current_time_;
 
   DISALLOW_COPY_AND_ASSIGN(IncrementalClock);
 };
@@ -142,6 +142,7 @@ scoped_refptr<Extension> TestExtensionPrefs::AddExtension(
   base::DictionaryValue dictionary;
   dictionary.SetString(manifest_keys::kName, name);
   dictionary.SetString(manifest_keys::kVersion, "0.1");
+  dictionary.SetInteger(manifest_keys::kManifestVersion, 2);
   return AddExtensionWithManifest(dictionary, Manifest::INTERNAL);
 }
 

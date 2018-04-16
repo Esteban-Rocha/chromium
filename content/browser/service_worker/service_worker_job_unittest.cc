@@ -8,7 +8,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
 #include "base/optional.h"
 #include "base/run_loop.h"
 #include "base/test/test_simple_task_runner.h"
@@ -35,10 +34,10 @@
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 using net::IOBuffer;
 using net::TestCompletionCallback;
@@ -82,8 +81,8 @@ ServiceWorkerRegisterJob::RegistrationCallback SaveRegistration(
     bool* called,
     scoped_refptr<ServiceWorkerRegistration>* registration) {
   *called = false;
-  return base::Bind(
-      &SaveRegistrationCallback, expected_status, called, registration);
+  return base::BindOnce(&SaveRegistrationCallback, expected_status, called,
+                        registration);
 }
 
 ServiceWorkerStorage::FindRegistrationCallback SaveFoundRegistration(
@@ -107,7 +106,7 @@ ServiceWorkerUnregisterJob::UnregistrationCallback SaveUnregistration(
     ServiceWorkerStatusCode expected_status,
     bool* called) {
   *called = false;
-  return base::Bind(&SaveUnregistrationCallback, expected_status, called);
+  return base::BindOnce(&SaveUnregistrationCallback, expected_status, called);
 }
 
 }  // namespace
@@ -832,9 +831,7 @@ const std::string kScope("scope/");
 const std::string kScript("script.js");
 
 void RunNestedUntilIdle() {
-  base::MessageLoop::ScopedNestableTaskAllower allow(
-      base::MessageLoop::current());
-  base::RunLoop().RunUntilIdle();
+  base::RunLoop(base::RunLoop::Type::kNestableTasksAllowed).RunUntilIdle();
 }
 
 void OnIOComplete(int* rv_out, int rv) {

@@ -6,8 +6,8 @@ package org.chromium.chrome.browser.contextual_suggestions;
 
 import android.support.annotation.Nullable;
 
+import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.browser.ChromeActivity;
-import org.chromium.chrome.browser.ntp.snippets.SuggestionsSource;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.suggestions.SuggestionsNavigationDelegate;
 import org.chromium.chrome.browser.suggestions.SuggestionsNavigationDelegateImpl;
@@ -51,8 +51,9 @@ public class ContextualSuggestionsCoordinator {
         mProfile = Profile.getLastUsedProfile().getOriginalProfile();
 
         mModel = new ContextualSuggestionsModel();
-        mMediator = new ContextualSuggestionsMediator(mActivity, mProfile, tabModelSelector,
-                activity.getFullscreenManager(), this, mModel);
+        mMediator = new ContextualSuggestionsMediator(mProfile, tabModelSelector,
+                activity.getFullscreenManager(), this, mModel,
+                mBottomSheetController.getBottomSheet());
     }
 
     /** Called when the containing activity is destroyed. */
@@ -62,6 +63,14 @@ public class ContextualSuggestionsCoordinator {
         if (mToolbarCoordinator != null) mToolbarCoordinator.destroy();
         if (mContentCoordinator != null) mContentCoordinator.destroy();
         if (mBottomSheetContent != null) mBottomSheetContent.destroy();
+    }
+
+    /**
+     * Called when accessibility mode changes.
+     * @param enabled Whether accessibility mode is enabled.
+     */
+    public void onAccessibilityModeChanged(boolean enabled) {
+        mMediator.onAccessibilityModeChanged();
     }
 
     /**
@@ -100,17 +109,17 @@ public class ContextualSuggestionsCoordinator {
      * Finish showing the contextual suggestions in the {@link BottomSheet}.
      * {@link #showContentInSheet()} must be called prior to calling this method.
      *
-     * @param suggestionsSource The {@link SuggestionsSource} used to retrieve additional things
-     *                          needed to display suggestions (e.g. favicons, thumbnails).
+     * @param suggestionsSource The {@link ContextualSuggestionsSource} used to retrieve additional
+     *                          things needed to display suggestions (e.g. favicons, thumbnails).
      */
-    void showSuggestions(SuggestionsSource suggestionsSource) {
+    void showSuggestions(ContextualSuggestionsSource suggestionsSource) {
         SuggestionsNavigationDelegate navigationDelegate = new SuggestionsNavigationDelegateImpl(
                 mActivity, mProfile, mBottomSheetController.getBottomSheet(), mTabModelSelector);
-        SuggestionsUiDelegateImpl uiDelegate =
-                new SuggestionsUiDelegateImpl(suggestionsSource, new DummyEventReporter(),
-                        navigationDelegate, mProfile, mBottomSheetController.getBottomSheet(),
-                        mActivity.getChromeApplication().getReferencePool(),
-                        mActivity.getSnackbarManager());
+        SuggestionsUiDelegateImpl uiDelegate = new SuggestionsUiDelegateImpl(suggestionsSource,
+                new ContextualSuggestionsEventReporter(mTabModelSelector, suggestionsSource),
+                navigationDelegate, mProfile, mBottomSheetController.getBottomSheet(),
+                mActivity.getChromeApplication().getReferencePool(),
+                mBottomSheetController.getSnackbarManager());
 
         mContentCoordinator.showSuggestions(mActivity, mProfile, uiDelegate, mModel,
                 mActivity.getWindowAndroid(), mActivity::closeContextMenu);
@@ -132,6 +141,13 @@ public class ContextualSuggestionsCoordinator {
         mBottomSheetController.getBottomSheet().removeObserver(observer);
     }
 
+    /**
+     * Expand the {@link BottomSheet}.
+     */
+    void expandBottomSheet() {
+        mBottomSheetController.expandSheet();
+    }
+
     /** Removes contextual suggestions from the {@link BottomSheet}. */
     void removeSuggestions() {
         if (mToolbarCoordinator != null) {
@@ -149,5 +165,15 @@ public class ContextualSuggestionsCoordinator {
             mBottomSheetContent.destroy();
             mBottomSheetContent = null;
         }
+    }
+
+    @VisibleForTesting
+    ContextualSuggestionsMediator getMediatorForTesting() {
+        return mMediator;
+    }
+
+    @VisibleForTesting
+    ContextualSuggestionsModel getModelForTesting() {
+        return mModel;
     }
 }

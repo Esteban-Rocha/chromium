@@ -55,9 +55,23 @@ OpenVRRenderLoop::~OpenVRRenderLoop() {
   Stop();
 }
 
+void OpenVRRenderLoop::SubmitFrameMissing(int16_t frame_index,
+                                          const gpu::SyncToken& sync_token) {
+  // Nothing to do. It's OK to start the next frame even if the current
+  // one didn't get sent to OpenVR.
+}
+
 void OpenVRRenderLoop::SubmitFrame(int16_t frame_index,
                                    const gpu::MailboxHolder& mailbox,
                                    base::TimeDelta time_waited) {
+  NOTREACHED();
+}
+
+void OpenVRRenderLoop::SubmitFrameDrawnIntoTexture(
+    int16_t frame_index,
+    const gpu::SyncToken& sync_token,
+    base::TimeDelta time_waited) {
+  // Not currently implemented for Windows.
   NOTREACHED();
 }
 
@@ -238,7 +252,8 @@ void OpenVRRenderLoop::GetVSync(
                  : base::TimeDelta();
 
   std::move(callback).Run(std::move(pose), time, frame,
-                          mojom::VRPresentationProvider::VSyncStatus::SUCCESS);
+                          mojom::VRPresentationProvider::VSyncStatus::SUCCESS,
+                          base::nullopt);
 }
 
 std::vector<mojom::XRInputSourceStatePtr> OpenVRRenderLoop::GetInputState(

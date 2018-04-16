@@ -368,8 +368,6 @@ jumbo_static_library("sync") {
     "engine_impl/update_handler.h",
     "engine_impl/uss_migrator.cc",
     "engine_impl/uss_migrator.h",
-    "engine_impl/worker_entity_tracker.cc",
-    "engine_impl/worker_entity_tracker.h",
     "js/js_backend.h",
     "js/js_controller.h",
     "js/js_event_details.cc",
@@ -561,6 +559,7 @@ jumbo_static_library("sync") {
     "//components/version_info",
     "//crypto",
     "//google_apis",
+    "//services/identity/public/cpp",
     "//sql",
     "//third_party/cacheinvalidation",
     "//third_party/crc32c",
@@ -619,6 +618,7 @@ static_library("test_support_base") {
     "test/mock_invalidation.h",
     "test/mock_invalidation_tracker.cc",
     "test/mock_invalidation_tracker.h",
+    "test/test_matchers.h",
     "test/trackable_mock_invalidation.cc",
     "test/trackable_mock_invalidation.h",
   ]
@@ -862,7 +862,6 @@ source_set("unit_tests") {
     "engine_impl/syncer_unittest.cc",
     "engine_impl/syncer_util_unittest.cc",
     "engine_impl/uss_migrator_unittest.cc",
-    "engine_impl/worker_entity_tracker_unittest.cc",
     "js/js_event_details_unittest.cc",
     "js/sync_js_controller_unittest.cc",
     "model/entity_data_unittest.cc",
@@ -1065,7 +1064,6 @@ if (is_android) {
     deps = [
       ":test_support_proto_java_prepare",
     ]
-    generate_lite = true
   }
 
   android_library("sync_java_test_support") {

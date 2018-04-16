@@ -12,7 +12,6 @@
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_restrictions.h"
@@ -322,7 +321,7 @@ void DrmDisplayHostManager::OnGpuProcessLaunched() {
         MapDevPathToSysPath(primary_graphics_card_path_);
 
     if (!handle) {
-      handle.reset(new DrmDeviceHandle());
+      handle = std::make_unique<DrmDeviceHandle>();
       if (!handle->Initialize(primary_graphics_card_path_,
                               drm_devices_[primary_graphics_card_path_]))
         LOG(FATAL) << "Failed to open primary graphics card";
@@ -331,8 +330,10 @@ void DrmDisplayHostManager::OnGpuProcessLaunched() {
 
   // Send the primary device first since this is used to initialize graphics
   // state.
-  proxy_->GpuAddGraphicsDevice(drm_devices_[primary_graphics_card_path_],
-                               handle->PassFD());
+  if (!proxy_->GpuAddGraphicsDevice(drm_devices_[primary_graphics_card_path_],
+                                    handle->PassFD())) {
+    LOG(ERROR) << "Failed to add primary graphics device.";
+  }
 }
 
 void DrmDisplayHostManager::OnGpuThreadReady() {

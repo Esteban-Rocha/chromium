@@ -33,8 +33,12 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoHidDevice : public FidoDevice {
   // Send a command to this device.
   void DeviceTransact(std::vector<uint8_t> command,
                       DeviceCallback callback) final;
+
+  // FidoDevice:
   // Send a wink command if supported.
   void TryWink(WinkCallback callback) final;
+  // Send command to cancel any outstanding requests on this device.
+  void Cancel() final;
   // Use a string identifier to compare to other devices.
   std::string GetId() const final;
 
@@ -92,16 +96,17 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoHidDevice : public FidoDevice {
                           bool success,
                           uint8_t report_id,
                           const base::Optional<std::vector<uint8_t>>& buf);
+  void OnKeepAlive(DeviceCallback callback);
   void OnWink(WinkCallback callback,
               bool success,
               std::unique_ptr<FidoHidMessage> response);
   void ArmTimeout(DeviceCallback callback);
   void OnTimeout(DeviceCallback callback);
+
   base::WeakPtr<FidoDevice> GetWeakPtr() override;
 
   uint32_t channel_id_ = kBroadcastChannel;
   uint8_t capabilities_ = 0;
-  State state_ = State::kInit;
 
   base::CancelableOnceClosure timeout_callback_;
   std::queue<std::pair<std::vector<uint8_t>, DeviceCallback>>

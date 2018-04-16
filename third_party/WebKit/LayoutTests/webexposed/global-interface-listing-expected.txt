@@ -192,39 +192,10 @@ interface Animation : EventTarget
     setter startTime
 interface AnimationEffect
     attribute @@toStringTag
-    getter timing
     method constructor
     method getComputedTiming
-interface AnimationEffectTiming : AnimationEffectTimingReadOnly
-    attribute @@toStringTag
-    getter delay
-    getter direction
-    getter duration
-    getter easing
-    getter endDelay
-    getter fill
-    getter iterationStart
-    getter iterations
-    method constructor
-    setter delay
-    setter direction
-    setter duration
-    setter easing
-    setter endDelay
-    setter fill
-    setter iterationStart
-    setter iterations
-interface AnimationEffectTimingReadOnly
-    attribute @@toStringTag
-    getter delay
-    getter direction
-    getter duration
-    getter easing
-    getter endDelay
-    getter fill
-    getter iterationStart
-    getter iterations
-    method constructor
+    method getTiming
+    method updateTiming
 interface AnimationEvent : Event
     attribute @@toStringTag
     getter animationName
@@ -1164,6 +1135,7 @@ interface CustomElementRegistry
     method constructor
     method define
     method get
+    method upgrade
     method whenDefined
 interface CustomEvent : Event
     attribute @@toStringTag
@@ -1545,6 +1517,8 @@ interface Document : Node
     getter onended
     getter onerror
     getter onfocus
+    getter onformdata
+    getter onfreeze
     getter onfullscreenchange
     getter onfullscreenerror
     getter ongotpointercapture
@@ -1585,6 +1559,7 @@ interface Document : Node
     getter onreadystatechange
     getter onreset
     getter onresize
+    getter onresume
     getter onscroll
     getter onsearch
     getter onsecuritypolicyviolation
@@ -1731,6 +1706,8 @@ interface Document : Node
     setter onended
     setter onerror
     setter onfocus
+    setter onformdata
+    setter onfreeze
     setter onfullscreenchange
     setter onfullscreenerror
     setter ongotpointercapture
@@ -1771,6 +1748,7 @@ interface Document : Node
     setter onreadystatechange
     setter onreset
     setter onresize
+    setter onresume
     setter onscroll
     setter onsearch
     setter onsecuritypolicyviolation
@@ -2110,6 +2088,10 @@ interface FormData
     method keys
     method set
     method values
+interface FormDataEvent : Event
+    attribute @@toStringTag
+    getter formData
+    method constructor
 interface GainNode : AudioNode
     attribute @@toStringTag
     getter gain
@@ -2293,7 +2275,6 @@ interface HTMLBodyElement : HTMLElement
     getter onblur
     getter onerror
     getter onfocus
-    getter onfreeze
     getter onhashchange
     getter onlanguagechange
     getter onload
@@ -2306,7 +2287,6 @@ interface HTMLBodyElement : HTMLElement
     getter onpopstate
     getter onrejectionhandled
     getter onresize
-    getter onresume
     getter onscroll
     getter onstorage
     getter onunhandledrejection
@@ -2324,7 +2304,6 @@ interface HTMLBodyElement : HTMLElement
     setter onblur
     setter onerror
     setter onfocus
-    setter onfreeze
     setter onhashchange
     setter onlanguagechange
     setter onload
@@ -2337,7 +2316,6 @@ interface HTMLBodyElement : HTMLElement
     setter onpopstate
     setter onrejectionhandled
     setter onresize
-    setter onresume
     setter onscroll
     setter onstorage
     setter onunhandledrejection
@@ -2486,6 +2464,7 @@ interface HTMLElement : Element
     getter onended
     getter onerror
     getter onfocus
+    getter onformdata
     getter ongotpointercapture
     getter oninput
     getter oninvalid
@@ -2581,6 +2560,7 @@ interface HTMLElement : Element
     setter onended
     setter onerror
     setter onfocus
+    setter onformdata
     setter ongotpointercapture
     setter oninput
     setter oninvalid
@@ -2740,7 +2720,6 @@ interface HTMLFrameSetElement : HTMLElement
     getter onblur
     getter onerror
     getter onfocus
-    getter onfreeze
     getter onhashchange
     getter onlanguagechange
     getter onload
@@ -2753,7 +2732,6 @@ interface HTMLFrameSetElement : HTMLElement
     getter onpopstate
     getter onrejectionhandled
     getter onresize
-    getter onresume
     getter onscroll
     getter onstorage
     getter onunhandledrejection
@@ -2767,7 +2745,6 @@ interface HTMLFrameSetElement : HTMLElement
     setter onblur
     setter onerror
     setter onfocus
-    setter onfreeze
     setter onhashchange
     setter onlanguagechange
     setter onload
@@ -2780,7 +2757,6 @@ interface HTMLFrameSetElement : HTMLElement
     setter onpopstate
     setter onrejectionhandled
     setter onresize
-    setter onresume
     setter onscroll
     setter onstorage
     setter onunhandledrejection
@@ -5713,6 +5689,7 @@ interface SVGElement : Element
     getter onended
     getter onerror
     getter onfocus
+    getter onformdata
     getter ongotpointercapture
     getter oninput
     getter oninvalid
@@ -5795,6 +5772,7 @@ interface SVGElement : Element
     setter onended
     setter onerror
     setter onfocus
+    setter onformdata
     setter ongotpointercapture
     setter oninput
     setter oninvalid
@@ -9354,7 +9332,7 @@ interface webkitURL
     getter onended
     getter onerror
     getter onfocus
-    getter onfreeze
+    getter onformdata
     getter ongotpointercapture
     getter onhashchange
     getter oninput
@@ -9399,7 +9377,6 @@ interface webkitURL
     getter onrejectionhandled
     getter onreset
     getter onresize
-    getter onresume
     getter onscroll
     getter onsearch
     getter onseeked
@@ -9539,7 +9516,7 @@ interface webkitURL
     setter onended
     setter onerror
     setter onfocus
-    setter onfreeze
+    setter onformdata
     setter ongotpointercapture
     setter onhashchange
     setter oninput
@@ -9584,7 +9561,6 @@ interface webkitURL
     setter onrejectionhandled
     setter onreset
     setter onresize
-    setter onresume
     setter onscroll
     setter onsearch
     setter onseeked

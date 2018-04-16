@@ -28,37 +28,44 @@ class PostTaskAndReplyRelay {
   PostTaskAndReplyRelay(PostTaskAndReplyRelay&&) = default;
 
   ~PostTaskAndReplyRelay() {
-    // This destructor can run:
-    // 1) On origin sequence, when:
-    //    1a) Posting |task_| fails.
-    //    1b) |reply_| is cancelled before running.
-    //    1c) |reply_| completes.
-    // 2) On destination sequence, when:
-    //    2a) |task_| is cancelled before running.
-    //    2b) Posting |reply_| fails.
-
-    // |task_| can still be alive if the destination task runner was no longer
-    // accepting tasks or if it was cancelled before being run. Destroy it ahead
-    // of |reply_| to keep happens-before expectations sane. |task_| can be
-    // safely destroyed on origin or destination sequence per being constructed
-    // on the former and designed to be ran on the latter.
-    DCHECK(task_.is_null() || !reply_.is_null());
-    task_.Reset();
-
     if (reply_) {
-      if (reply_task_runner_->RunsTasksInCurrentSequence()) {
-        // Case 1a) or 1b).
-        reply_.Reset();
-      } else {
+      // This can run:
+      // 1) On origin sequence, when:
+      //    1a) Posting |task_| fails.
+      //    1b) |reply_| is cancelled before running.
+      //    1c) The DeleteSoon() below is scheduled.
+      // 2) On destination sequence, when:
+      //    2a) |task_| is cancelled before running.
+      //    2b) Posting |reply_| fails.
+
+      if (!reply_task_runner_->RunsTasksInCurrentSequence()) {
         // Case 2a) or 2b).
-        // Destroy |reply_| asynchronously on |reply_task_runner_| since it can
-        // rightfully be affine to it. As always, DeleteSoon() might leak its
-        // argument if the target execution environment is shutdown (e.g.
-        // MessageLoop deleted, TaskScheduler shutdown).
-        auto reply_to_delete = std::make_unique<OnceClosure>(std::move(reply_));
-        ANNOTATE_LEAKING_OBJECT_PTR(reply_to_delete.get());
-        reply_task_runner_->DeleteSoon(from_here_, std::move(reply_to_delete));
+        //
+        // Destroy callbacks asynchronously on |reply_task_runner| since their
+        // destructors can rightfully be affine to it. As always, DeleteSoon()
+        // might leak its argument if the target execution environment is
+        // shutdown (e.g. MessageLoop deleted, TaskScheduler shutdown).
+        //
+        // Note: while it's obvious why |reply_| can be affine to
+        // |reply_task_runner|, the reason that |task_| can also be affine to it
+        // is that it if neither tasks ran, |task_| may still hold an object
+        // which was intended to be moved to |reply_| when |task_| ran (such an
+        // object's destruction can be affine to |reply_task_runner_| -- e.g.
+        // https://crbug.com/829122).
+        auto relay_to_delete =
+            std::make_unique<PostTaskAndReplyRelay>(std::move(*this));
+        ANNOTATE_LEAKING_OBJECT_PTR(relay_to_delete.get());
+        reply_task_runner_->DeleteSoon(from_here_, std::move(relay_to_delete));
       }
+
+      // Case 1a), 1b), 1c).
+      //
+      // Callbacks will be destroyed synchronously at the end of this scope.
+    } else {
+      // This can run when both callbacks have run or have been moved to another
+      // PostTaskAndReplyRelay instance. If |reply_| is null, |task_| must be
+      // null too.
+      DCHECK(!task_);
     }
   }
 
@@ -87,7 +94,6 @@ class PostTaskAndReplyRelay {
   static void RunReply(PostTaskAndReplyRelay relay) {
     DCHECK(!relay.task_);
     DCHECK(relay.reply_);
-    // Case 1c).
     std::move(relay.reply_).Run();
   }
 

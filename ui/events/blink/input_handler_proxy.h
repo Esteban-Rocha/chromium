@@ -10,10 +10,10 @@
 #include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "cc/input/input_handler.h"
-#include "third_party/WebKit/public/platform/WebGestureCurve.h"
-#include "third_party/WebKit/public/platform/WebGestureCurveTarget.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
-#include "third_party/WebKit/public/web/WebActiveFlingParameters.h"
+#include "third_party/blink/public/platform/web_gesture_curve.h"
+#include "third_party/blink/public/platform/web_gesture_curve_target.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
+#include "third_party/blink/public/web/web_active_fling_parameters.h"
 #include "ui/events/blink/blink_features.h"
 #include "ui/events/blink/input_scroll_elasticity_controller.h"
 #include "ui/events/blink/snap_fling_controller.h"
@@ -223,6 +223,7 @@ class InputHandlerProxy : public cc::InputHandlerClient,
 #endif
   bool gesture_scroll_on_impl_thread_;
   bool gesture_pinch_on_impl_thread_;
+  bool in_inertial_scrolling_ = false;
   bool scroll_sequence_ignored_;
   // This is always false when there are no flings on the main thread, but
   // conservative in the sense that we might not be actually flinging when it is

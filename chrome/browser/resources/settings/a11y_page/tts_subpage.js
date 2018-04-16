@@ -20,4 +20,18 @@ Polymer({
     },
   },
 
+  /** @private */
+  onManageGoogleTtsEngineSettingsClick_: function() {
+    settings.navigateTo(settings.routes.MANAGE_GOOGLE_TTS_ENGINE_SETTINGS);
+  },
+
+  /** @private */
+  onPreviewTtsClick_: function() {
+    let utter = new window.SpeechSynthesisUtterance();
+    if (!utter)
+      return;
+    utter.text = this.$.previewInput.value;
+    window.speechSynthesis.speak(utter);
+  },
+
 });

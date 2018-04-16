@@ -186,7 +186,7 @@ bool GetBookmarkOverrideCommand(Profile* profile,
   DCHECK(command);
 
   ui::Accelerator bookmark_page_accelerator =
-      chrome::GetPrimaryChromeAcceleratorForCommandId(IDC_BOOKMARK_PAGE);
+      chrome::GetPrimaryChromeAcceleratorForBookmarkPage();
   if (bookmark_page_accelerator.key_code() == ui::VKEY_UNKNOWN)
     return false;
 
@@ -1230,11 +1230,11 @@ bool CanCreateBookmarkApp(const Browser* browser) {
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 #if defined(OS_CHROMEOS)
-void QueryAndDisplayArcApps(
-    const Browser* browser,
-    const std::vector<chromeos::IntentPickerAppInfo>& app_info,
-    IntentPickerResponse callback) {
-  browser->window()->ShowIntentPickerBubble(app_info, callback);
+void ShowIntentPickerBubble(const Browser* browser,
+                            std::vector<chromeos::IntentPickerAppInfo> app_info,
+                            IntentPickerResponse callback) {
+  browser->window()->ShowIntentPickerBubble(std::move(app_info),
+                                            std::move(callback));
 }
 
 void SetIntentPickerViewVisibility(Browser* browser, bool visible) {

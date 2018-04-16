@@ -11,6 +11,7 @@
 #import "ios/chrome/browser/ui/commands/open_new_tab_command.h"
 #import "ios/chrome/browser/ui/popup_menu/cells/popup_menu_footer_item.h"
 #import "ios/chrome/browser/ui/popup_menu/cells/popup_menu_item.h"
+#import "ios/chrome/browser/ui/popup_menu/popup_menu_table_view_controller_commands.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -96,11 +97,10 @@ const CGFloat kScrollIndicatorVerticalInsets = 11;
 
 - (void)tableView:(UITableView*)tableView
     didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
-  TableViewItem<PopupMenuItem>* item =
-      [self.tableViewModel itemAtIndexPath:indexPath];
   UIView* cell = [self.tableView cellForRowAtIndexPath:indexPath];
   CGPoint center = [cell convertPoint:cell.center toView:nil];
-  [self executeActionForIdentifier:item.actionIdentifier origin:center];
+  [self executeActionForItem:[self.tableViewModel itemAtIndexPath:indexPath]
+                      origin:center];
 }
 
 - (CGFloat)tableView:(UITableView*)tableView
@@ -114,8 +114,9 @@ const CGFloat kScrollIndicatorVerticalInsets = 11;
 
 // Executes the action associated with |identifier|, using |origin| as the point
 // of origin of the action if one is needed.
-- (void)executeActionForIdentifier:(PopupMenuAction)identifier
-                            origin:(CGPoint)origin {
+- (void)executeActionForItem:(TableViewItem<PopupMenuItem>*)item
+                      origin:(CGPoint)origin {
+  NSInteger identifier = item.actionIdentifier;
   switch (identifier) {
     case PopupMenuActionReload:
       base::RecordAction(UserMetricsAction("MobileMenuReload"));
@@ -141,6 +142,10 @@ const CGFloat kScrollIndicatorVerticalInsets = 11;
       base::RecordAction(UserMetricsAction("MobileMenuReadLater"));
       [self.commandHandler readPageLater];
       break;
+    case PopupMenuActionPageBookmark:
+      base::RecordAction(UserMetricsAction("MobileMenuAddToBookmarks"));
+      [self.dispatcher bookmarkPage];
+      break;
     case PopupMenuActionFindInPage:
       base::RecordAction(UserMetricsAction("MobileMenuFindInPage"));
       [self.dispatcher showFindInPage];
@@ -162,6 +167,9 @@ const CGFloat kScrollIndicatorVerticalInsets = 11;
       base::RecordAction(UserMetricsAction("MobileMenuReportAnIssue"));
       [self.dispatcher
           showReportAnIssueFromViewController:self.baseViewController];
+      // Dismisses the popup menu without animation to allow the snapshot to be
+      // taken without the menu presented.
+      [self.dispatcher dismissPopupMenuAnimated:NO];
       break;
     case PopupMenuActionHelp:
       base::RecordAction(UserMetricsAction("MobileMenuHelp"));
@@ -195,10 +203,14 @@ const CGFloat kScrollIndicatorVerticalInsets = 11;
       base::RecordAction(UserMetricsAction("MobileMenuCloseAllIncognitoTabs"));
       [self.dispatcher closeAllIncognitoTabs];
       break;
+    case PopupMenuActionNavigate:
+      // No metrics for this item.
+      [self.commandHandler navigateToPageForItem:item];
+      break;
   }
 
   // Close the tools menu.
-  [self.dispatcher dismissPopupMenu];
+  [self.dispatcher dismissPopupMenuAnimated:YES];
 }
 
 @end

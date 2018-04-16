@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "base/macros.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -53,10 +54,11 @@ constexpr char kKeyboardLockMethodCallWithSomeKeys[] =
     "  () => { window.domAutomationController.send(false); },"
     ");";
 
+// Calling lock() with no valid key codes will cause the promise to be rejected.
 constexpr char kKeyboardLockMethodCallWithAllInvalidKeys[] =
-    "navigator.keyboard.lock(['BlerghLeft', 'BlargRight']).then("
-    "  () => { window.domAutomationController.send(true); },"
+    "navigator.keyboard.lock(['BlerghLeft', 'BlarghRight']).then("
     "  () => { window.domAutomationController.send(false); },"
+    "  () => { window.domAutomationController.send(true); },"
     ");";
 
 constexpr char kKeyboardLockMethodCallWithSomeInvalidKeys[] =
@@ -106,25 +108,48 @@ class FakeKeyboardLockWebContentsDelegate : public WebContentsDelegate {
   void ExitFullscreenModeForTab(WebContents* web_contents) override;
   bool IsFullscreenForTabOrPending(
       const WebContents* web_contents) const override;
+  void RequestKeyboardLock(WebContents* web_contents,
+                           bool esc_key_locked) override;
+  void CancelKeyboardLockRequest(WebContents* web_contents) override;
 
  private:
   bool is_fullscreen_ = false;
+  bool keyboard_lock_requested_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeKeyboardLockWebContentsDelegate);
 };
 
 void FakeKeyboardLockWebContentsDelegate::EnterFullscreenModeForTab(
     WebContents* web_contents,
     const GURL& origin) {
   is_fullscreen_ = true;
+  if (keyboard_lock_requested_)
+    web_contents->GotResponseToKeyboardLockRequest(/*allowed=*/true);
 }
 
 void FakeKeyboardLockWebContentsDelegate::ExitFullscreenModeForTab(
     WebContents* web_contents) {
   is_fullscreen_ = false;
+  if (keyboard_lock_requested_)
+    web_contents->GotResponseToKeyboardLockRequest(/*allowed=*/false);
 }
 
 bool FakeKeyboardLockWebContentsDelegate::IsFullscreenForTabOrPending(
     const WebContents* web_contents) const {
   return is_fullscreen_;
+}
+
+void FakeKeyboardLockWebContentsDelegate::RequestKeyboardLock(
+    WebContents* web_contents,
+    bool esc_key_locked) {
+  keyboard_lock_requested_ = true;
+  if (is_fullscreen_)
+    web_contents->GotResponseToKeyboardLockRequest(/*allowed=*/true);
+}
+
+void FakeKeyboardLockWebContentsDelegate::CancelKeyboardLockRequest(
+    WebContents* web_contents) {
+  keyboard_lock_requested_ = false;
 }
 
 }  // namespace

@@ -13,7 +13,6 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/menu/menu_types.h"
 #include "ui/views/focus/external_focus_tracker.h"
-#include "ui/views/view_targeter_delegate.h"
 
 namespace views {
 class ImageButton;
@@ -27,17 +26,16 @@ class MenuRunner;
 class InfoBarView : public infobars::InfoBar,
                     public views::View,
                     public views::ButtonListener,
-                    public views::ExternalFocusTracker,
-                    public views::ViewTargeterDelegate {
+                    public views::ExternalFocusTracker {
  public:
   explicit InfoBarView(std::unique_ptr<infobars::InfoBarDelegate> delegate);
+  ~InfoBarView() override;
 
-  const infobars::InfoBarContainer::Delegate* container_delegate() const;
+  // Requests that the infobar recompute its target height.
+  void RecalculateHeight();
 
  protected:
   using Labels = std::vector<views::Label*>;
-
-  ~InfoBarView() override;
 
   // Creates a label with the appropriate font and color for an infobar.
   views::Label* CreateLabel(const base::string16& text) const;
@@ -57,6 +55,7 @@ class InfoBarView : public infobars::InfoBar,
   void Layout() override;
   void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) override;
+  void OnPaint(gfx::Canvas* canvas) override;
   void OnThemeChanged() override;
   void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
@@ -75,12 +74,14 @@ class InfoBarView : public infobars::InfoBar,
   int StartX() const;
   int EndX() const;
 
-  // Given a |view|, returns the centered y position within |child_container_|,
-  // taking into account animation so the control "slides in" (or out) as we
-  // animate open and closed.
+  // Given a |view|, returns the centered y position, taking into account
+  // animation so the control "slides in" (or out) as we animate open and
+  // closed.
   int OffsetY(views::View* view) const;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(InfoBarViewTest, ShouldDrawSeparator);
+
   // Does the actual work for AssignWidths().  Assumes |labels| is sorted by
   // decreasing preferred width.
   static void AssignWidthsSorted(Labels* labels, int available_width);
@@ -88,7 +89,7 @@ class InfoBarView : public infobars::InfoBar,
   // InfoBar:
   void PlatformSpecificShow(bool animate) override;
   void PlatformSpecificHide(bool animate) override;
-  void PlatformSpecificOnHeightsRecalculated() override;
+  void PlatformSpecificOnHeightRecalculated() override;
 
   // views::View:
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
@@ -97,9 +98,12 @@ class InfoBarView : public infobars::InfoBar,
   // views::ExternalFocusTracker:
   void OnWillChangeFocus(View* focused_before, View* focused_now) override;
 
-  // views::ViewTargeterDelegate:
-  bool DoesIntersectRect(const View* target,
-                         const gfx::Rect& rect) const override;
+  // Returns whether this infobar should draw a 1 px separator at its top.
+  bool ShouldDrawSeparator() const;
+
+  // Returns how many DIPs the container should reserve for a separator between
+  // infobars, in addition to the height of the infobars themselves.
+  int GetSeparatorHeightDip() const;
 
   // Returns the current color for the theme property |id|.  Will return the
   // wrong value if no theme provider is available.

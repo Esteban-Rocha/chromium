@@ -32,7 +32,7 @@ def _GetMainRevision(commit_pos):
 def _GetDashboardJson(options):
   main_revision = _GetMainRevision(options.got_revision_cp)
   revisions = _GetPerfDashboardRevisionsWithProperties(
-    options.got_webrtc_revision, options.got_v8_revision, options.version,
+    options.got_webrtc_revision, options.got_v8_revision,
     options.git_revision, main_revision)
   reference_build = 'reference' in options.name
   stripped_test_name = options.name.replace('.reference', '')
@@ -46,31 +46,16 @@ def _GetDashboardJson(options):
     dashboard_json = results_dashboard.MakeListOfPoints(
       results, options.configuration_name, stripped_test_name,
       options.buildername, options.buildnumber, {},
-      _GetMachineGroup(options.perf_dashboard_machine_group,
-          options.is_luci_builder), revisions_dict=revisions)
+      options.perf_dashboard_machine_group,
+      revisions_dict=revisions)
   else:
     dashboard_json = results_dashboard.MakeDashboardJsonV1(
       results,
       revisions, stripped_test_name, options.configuration_name,
       options.buildername, options.buildnumber,
       {}, reference_build,
-      perf_dashboard_machine_group=_GetMachineGroup(
-          options.perf_dashboard_machine_group, options.is_luci_builder))
+      perf_dashboard_machine_group=options.perf_dashboard_machine_group)
   return dashboard_json
-
-def _GetMachineGroup(perf_dashboard_machine_group, is_luci_builder):
-  if is_luci_builder and not perf_dashboard_machine_group:
-    raise ValueError(
-        "Luci builder must set 'perf_dashboard_machine_group'. See "
-        'bit.ly/perf-dashboard-machine-group for more details')
-  elif not is_luci_builder:
-    # TODO(crbug.com/801289):
-    # Remove this code path once all builders are converted to LUCI.
-    # perf_dashboard_machine_group = chromium_utils.GetActiveMaster()
-    # hardcoding the result of this line for now
-    perf_dashboard_machine_group = 'ChromiumPerfFyi'
-  return perf_dashboard_machine_group
-
 
 def _GetDashboardHistogramData(options):
   revisions = {
@@ -90,8 +75,7 @@ def _GetDashboardHistogramData(options):
       options.results_file, stripped_test_name,
       options.configuration_name, options.buildername, options.buildnumber,
       revisions, is_reference_build,
-      perf_dashboard_machine_group=_GetMachineGroup(
-          options.perf_dashboard_machine_group, options.is_luci_builder))
+      perf_dashboard_machine_group=options.perf_dashboard_machine_group)
 
 
 def _CreateParser():
@@ -104,13 +88,11 @@ def _CreateParser():
   parser.add_option('--got-revision-cp')
   parser.add_option('--configuration-name')
   parser.add_option('--results-url')
-  parser.add_option('--is-luci-builder', action='store_true', default=False)
   parser.add_option('--perf-dashboard-machine-group')
   parser.add_option('--buildername')
   parser.add_option('--buildnumber')
   parser.add_option('--got-webrtc-revision')
   parser.add_option('--got-v8-revision')
-  parser.add_option('--version')
   parser.add_option('--git-revision')
   parser.add_option('--output-json-dashboard-url')
   parser.add_option('--send-as-histograms', action='store_true')
@@ -134,6 +116,10 @@ def main(args):
   else:
     oauth_token = None
 
+  if not options.perf_dashboard_machine_group:
+    print 'Error: Invalid perf dashboard machine group'
+    return 1
+
   if not options.send_as_histograms:
     dashboard_json = _GetDashboardJson(options)
   else:
@@ -149,8 +135,7 @@ def main(args):
       dashboard_url = GetDashboardUrl(options.name,
           options.configuration_name, options.results_url,
           options.got_revision_cp,
-          options.perf_dashboard_machine_group,
-          options.is_luci_builder)
+          options.perf_dashboard_machine_group)
       with open(options.output_json_dashboard_url, 'w') as f:
         json.dump(dashboard_url if dashboard_url else '', f)
 
@@ -172,15 +157,13 @@ if __name__ == '__main__':
 
 
 def GetDashboardUrl(name, configuration_name, results_url,
-    got_revision_cp, perf_dashboard_machine_group=None,
-    is_luci_builder=False):
+    got_revision_cp, perf_dashboard_machine_group):
   """Optionally writes the dashboard url to a file
     and returns a link to the dashboard.
   """
   name = name.replace('.reference', '')
   dashboard_url = results_url + RESULTS_LINK_PATH % (
-      urllib.quote(_GetMachineGroup(perf_dashboard_machine_group,
-          is_luci_builder)),
+      urllib.quote(perf_dashboard_machine_group),
       urllib.quote(configuration_name),
       urllib.quote(name),
       _GetMainRevision(got_revision_cp))
@@ -189,7 +172,7 @@ def GetDashboardUrl(name, configuration_name, results_url,
 
 
 def _GetPerfDashboardRevisionsWithProperties(
-    got_webrtc_revision, got_v8_revision, version, git_revision, main_revision,
+    got_webrtc_revision, got_v8_revision, git_revision, main_revision,
     point_id=None):
   """Fills in the same revisions fields that process_log_utils does."""
 
@@ -197,7 +180,6 @@ def _GetPerfDashboardRevisionsWithProperties(
   versions['rev'] = main_revision
   versions['webrtc_git'] = got_webrtc_revision
   versions['v8_rev'] = got_v8_revision
-  versions['ver'] = version
   versions['git_revision'] = git_revision
   versions['point_id'] = point_id
   # There are a lot of "bad" revisions to check for, so clean them all up here.

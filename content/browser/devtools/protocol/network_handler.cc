@@ -17,14 +17,18 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "content/browser/background_sync/background_sync_manager.h"
 #include "content/browser/devtools/devtools_interceptor_controller.h"
 #include "content/browser/devtools/devtools_session.h"
 #include "content/browser/devtools/devtools_url_loader_interceptor.h"
 #include "content/browser/devtools/protocol/page.h"
 #include "content/browser/devtools/protocol/security.h"
+#include "content/browser/devtools/service_worker_devtools_agent_host.h"
+#include "content/browser/devtools/service_worker_devtools_manager.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/storage_partition_impl.h"
 #include "content/common/navigation_params.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -44,6 +48,7 @@
 #include "content/public/common/content_switches.h"
 #include "net/base/net_errors.h"
 #include "net/base/upload_bytes_element_reader.h"
+#include "net/cert/ct_policy_status.h"
 #include "net/cert/ct_sct_to_string.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_store.h"
@@ -78,6 +83,26 @@ using ClearBrowserCookiesCallback =
 
 const char kDevToolsEmulateNetworkConditionsClientId[] =
     "X-DevTools-Emulate-Network-Conditions-Client-Id";
+
+Network::CertificateTransparencyCompliance SerializeCTPolicyCompliance(
+    net::ct::CTPolicyCompliance ct_compliance) {
+  switch (ct_compliance) {
+    case net::ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS:
+      return Network::CertificateTransparencyComplianceEnum::Compliant;
+    case net::ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS:
+    case net::ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS:
+      return Network::CertificateTransparencyComplianceEnum::NotCompliant;
+    case net::ct::CTPolicyCompliance::CT_POLICY_BUILD_NOT_TIMELY:
+    case net::ct::CTPolicyCompliance::
+        CT_POLICY_COMPLIANCE_DETAILS_NOT_AVAILABLE:
+      return Network::CertificateTransparencyComplianceEnum::Unknown;
+    case net::ct::CTPolicyCompliance::CT_POLICY_MAX:
+      NOTREACHED();
+      return Network::CertificateTransparencyComplianceEnum::Unknown;
+  }
+  NOTREACHED();
+  return Network::CertificateTransparencyComplianceEnum::Unknown;
+}
 
 std::unique_ptr<Network::Cookie> BuildCookie(
     const net::CanonicalCookie& cookie) {
@@ -319,7 +344,7 @@ void DeleteSelectedCookiesOnIO(net::URLRequestContextGetter* context_getter,
         cookie, std::move(once_callback));
   }
   if (!filtered_list.size())
-    std::move(callback).Run();
+    DeletedCookiesOnIO(std::move(callback), 0);
 }
 
 void DeleteCookiesOnIO(net::URLRequestContextGetter* context_getter,
@@ -836,6 +861,62 @@ std::string StripFragment(const GURL& url) {
 
 }  // namespace
 
+class BackgroundSyncRestorer {
+ public:
+  BackgroundSyncRestorer(const std::string& host_id,
+                         StoragePartition* storage_partition)
+      : host_id_(host_id), storage_partition_(storage_partition) {
+    SetServiceWorkerOffline(true);
+  }
+
+  ~BackgroundSyncRestorer() { SetServiceWorkerOffline(false); }
+
+  void SetStoragePartition(StoragePartition* storage_partition) {
+    storage_partition_ = storage_partition;
+  }
+
+ private:
+  void SetServiceWorkerOffline(bool offline) {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    scoped_refptr<DevToolsAgentHost> host =
+        DevToolsAgentHost::GetForId(host_id_);
+    if (!host || !storage_partition_ ||
+        host->GetType() != DevToolsAgentHost::kTypeServiceWorker) {
+      return;
+    }
+    scoped_refptr<ServiceWorkerDevToolsAgentHost> service_worker_host =
+        static_cast<ServiceWorkerDevToolsAgentHost*>(host.get());
+    scoped_refptr<BackgroundSyncContext> sync_context =
+        static_cast<StoragePartitionImpl*>(storage_partition_)
+            ->GetBackgroundSyncContext();
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::BindOnce(
+            &SetServiceWorkerOfflineOnIO, sync_context,
+            base::RetainedRef(static_cast<ServiceWorkerContextWrapper*>(
+                storage_partition_->GetServiceWorkerContext())),
+            service_worker_host->version_id(), offline));
+  }
+
+  static void SetServiceWorkerOfflineOnIO(
+      scoped_refptr<BackgroundSyncContext> sync_context,
+      scoped_refptr<ServiceWorkerContextWrapper> swcontext,
+      int64_t version_id,
+      bool offline) {
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
+    ServiceWorkerVersion* version = swcontext.get()->GetLiveVersion(version_id);
+    if (!version)
+      return;
+    sync_context->background_sync_manager()->EmulateServiceWorkerOffline(
+        version->registration_id(), offline);
+  }
+
+  std::string host_id_;
+  StoragePartition* storage_partition_;
+
+  DISALLOW_COPY_AND_ASSIGN(BackgroundSyncRestorer);
+};
+
 NetworkHandler::NetworkHandler(const std::string& host_id)
     : DevToolsDomainHandler(Network::Metainfo::domainName),
       browser_context_(nullptr),
@@ -881,6 +962,8 @@ void NetworkHandler::SetRenderer(int render_process_host_id,
     browser_context_ = nullptr;
   }
   host_ = frame_host;
+  if (background_sync_restorer_)
+    background_sync_restorer_->SetStoragePartition(storage_partition_);
 }
 
 Response NetworkHandler::Enable(Maybe<int> max_total_size,
@@ -1302,6 +1385,8 @@ std::unique_ptr<protocol::Network::SecurityDetails> BuildSecurityDetails(
           .SetCertificateId(0)  // Keep this in protocol for compatability.
           .SetSignedCertificateTimestampList(
               std::move(signed_certificate_timestamp_list))
+          .SetCertificateTransparencyCompliance(
+              SerializeCTPolicyCompliance(ssl_info.ct_policy_compliance))
           .Build();
 
   if (ssl_info.key_exchange_group != 0) {
@@ -1312,6 +1397,7 @@ std::unique_ptr<protocol::Network::SecurityDetails> BuildSecurityDetails(
   }
   if (mac)
     security_details->SetMac(mac);
+
   return security_details;
 }
 
@@ -1424,12 +1510,13 @@ void NetworkHandler::NavigationRequestWillBeSent(
   request->SetMixedContentType(Security::MixedContentTypeEnum::None);
 
   std::unique_ptr<Network::Initiator> initiator;
-  base::DictionaryValue* initiator_value =
-      nav_request.begin_params()->devtools_initiator.get();
-  if (initiator_value) {
+  const base::Optional<base::Value>& initiator_optional =
+      nav_request.begin_params()->devtools_initiator;
+  if (initiator_optional.has_value()) {
     ErrorSupport ignored_errors;
     initiator = Network::Initiator::fromValue(
-        toProtocolValue(initiator_value, 1000).get(), &ignored_errors);
+        toProtocolValue(&initiator_optional.value(), 1000).get(),
+        &ignored_errors);
   }
   if (!initiator) {
     initiator = Network::Initiator::Create()
@@ -1866,7 +1953,14 @@ void NetworkHandler::SetNetworkConditions(
     return;
   network::mojom::NetworkContext* context =
       storage_partition_->GetNetworkContext();
+  bool offline = conditions ? conditions->offline : false;
   context->SetNetworkConditions(host_id_, std::move(conditions));
+
+  if (offline == !!background_sync_restorer_)
+    return;
+  background_sync_restorer_.reset(
+      offline ? new BackgroundSyncRestorer(host_id_, storage_partition_)
+              : nullptr);
 }
 
 }  // namespace protocol

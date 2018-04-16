@@ -4,9 +4,9 @@
 
 #include "chrome/browser/ui/views/intent_picker_bubble_view.h"
 
-#include "base/bind.h"
+#include <utility>
+
 #include "base/i18n/rtl.h"
-#include "base/logging.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/apps/intent_helper/apps_navigation_throttle.h"
@@ -19,7 +19,6 @@
 #include "content/public/browser/navigation_handle.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/views/animation/ink_drop_host_view.h"
 #include "ui/views/border.h"
@@ -70,7 +69,7 @@ views::Separator* CreateHorizontalSeparator() {
 class IntentPickerLabelButton : public views::LabelButton {
  public:
   IntentPickerLabelButton(views::ButtonListener* listener,
-                          gfx::Image* icon,
+                          const gfx::Image* icon,
                           const std::string& launch_name,
                           const std::string& display_name)
       : LabelButton(listener,
@@ -113,9 +112,9 @@ IntentPickerBubbleView* IntentPickerBubbleView::intent_picker_bubble_ = nullptr;
 views::Widget* IntentPickerBubbleView::ShowBubble(
     views::View* anchor_view,
     content::WebContents* web_contents,
-    const std::vector<AppInfo>& app_info,
+    std::vector<AppInfo> app_info,
     bool disable_stay_in_chrome,
-    const IntentPickerResponse& intent_picker_cb) {
+    IntentPickerResponse intent_picker_cb) {
   if (intent_picker_bubble_) {
     views::Widget* widget =
         views::BubbleDialogDelegateView::CreateBubble(intent_picker_bubble_);
@@ -124,13 +123,15 @@ views::Widget* IntentPickerBubbleView::ShowBubble(
   }
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
   if (!browser || !BrowserView::GetBrowserViewForBrowser(browser)) {
-    intent_picker_cb.Run(kInvalidLaunchName,
-                         arc::ArcNavigationThrottle::CloseReason::ERROR);
+    std::move(intent_picker_cb)
+        .Run(kInvalidLaunchName, chromeos::AppType::INVALID,
+             chromeos::IntentPickerCloseReason::ERROR, false);
     return nullptr;
   }
   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
   intent_picker_bubble_ = new IntentPickerBubbleView(
-      app_info, intent_picker_cb, web_contents, disable_stay_in_chrome);
+      std::move(app_info), std::move(intent_picker_cb), web_contents,
+      disable_stay_in_chrome);
   intent_picker_bubble_->set_margins(gfx::Insets());
 
   if (anchor_view) {
@@ -162,13 +163,13 @@ views::Widget* IntentPickerBubbleView::ShowBubble(
 
 // static
 std::unique_ptr<IntentPickerBubbleView>
-IntentPickerBubbleView::CreateBubbleView(
-    const std::vector<AppInfo>& app_info,
-    bool disable_stay_in_chrome,
-    const IntentPickerResponse& intent_picker_cb,
-    content::WebContents* web_contents) {
+IntentPickerBubbleView::CreateBubbleView(std::vector<AppInfo> app_info,
+                                         bool disable_stay_in_chrome,
+                                         IntentPickerResponse intent_picker_cb,
+                                         content::WebContents* web_contents) {
   std::unique_ptr<IntentPickerBubbleView> bubble(new IntentPickerBubbleView(
-      app_info, intent_picker_cb, web_contents, disable_stay_in_chrome));
+      std::move(app_info), std::move(intent_picker_cb), web_contents,
+      disable_stay_in_chrome));
   bubble->Init();
   return bubble;
 }
@@ -185,28 +186,26 @@ void IntentPickerBubbleView::CloseBubble() {
 }
 
 bool IntentPickerBubbleView::Accept() {
-  RunCallback(
-      app_info_[selected_app_tag_].launch_name,
-      remember_selection_checkbox_->checked()
-          ? arc::ArcNavigationThrottle::CloseReason::ARC_APP_PREFERRED_PRESSED
-          : arc::ArcNavigationThrottle::CloseReason::ARC_APP_PRESSED);
+  RunCallback(app_info_[selected_app_tag_].launch_name,
+              app_info_[selected_app_tag_].type,
+              chromeos::IntentPickerCloseReason::OPEN_APP,
+              remember_selection_checkbox_->checked());
   return true;
 }
 
 bool IntentPickerBubbleView::Cancel() {
-  RunCallback(
-      arc::ArcIntentHelperBridge::kArcIntentHelperPackageName,
-      remember_selection_checkbox_->checked()
-          ? arc::ArcNavigationThrottle::CloseReason::CHROME_PREFERRED_PRESSED
-          : arc::ArcNavigationThrottle::CloseReason::CHROME_PRESSED);
+  RunCallback(arc::ArcIntentHelperBridge::kArcIntentHelperPackageName,
+              chromeos::AppType::INVALID,
+              chromeos::IntentPickerCloseReason::STAY_IN_CHROME,
+              remember_selection_checkbox_->checked());
   return true;
 }
 
 bool IntentPickerBubbleView::Close() {
   // Whenever closing the bubble without pressing |Just once| or |Always| we
   // need to report back that the user didn't select anything.
-  RunCallback(kInvalidLaunchName,
-              arc::ArcNavigationThrottle::CloseReason::DIALOG_DEACTIVATED);
+  RunCallback(kInvalidLaunchName, chromeos::AppType::INVALID,
+              chromeos::IntentPickerCloseReason::DIALOG_DEACTIVATED, false);
   return true;
 }
 
@@ -225,7 +224,7 @@ void IntentPickerBubbleView::Init() {
 
   size_t i = 0;
   size_t to_erase = app_info_.size();
-  for (AppInfo app_info : app_info_) {
+  for (const auto& app_info : app_info_) {
     if (arc::ArcIntentHelperBridge::IsIntentHelperPackage(
             app_info.launch_name)) {
       to_erase = i;
@@ -279,6 +278,7 @@ void IntentPickerBubbleView::Init() {
   remember_selection_checkbox_ = new views::Checkbox(l10n_util::GetStringUTF16(
       IDS_INTENT_PICKER_BUBBLE_VIEW_REMEMBER_SELECTION));
   layout->AddView(remember_selection_checkbox_);
+  UpdateCheckboxState();
 
   layout->AddPaddingRow(0, kTitlePadding);
 }
@@ -303,17 +303,17 @@ base::string16 IntentPickerBubbleView::GetDialogButtonLabel(
 }
 
 IntentPickerBubbleView::IntentPickerBubbleView(
-    const std::vector<AppInfo>& app_info,
+    std::vector<AppInfo> app_info,
     IntentPickerResponse intent_picker_cb,
     content::WebContents* web_contents,
     bool disable_stay_in_chrome)
     : LocationBarBubbleDelegateView(nullptr /* anchor_view */,
                                     gfx::Point(),
                                     web_contents),
-      intent_picker_cb_(intent_picker_cb),
+      intent_picker_cb_(std::move(intent_picker_cb)),
       selected_app_tag_(0),
       scroll_view_(nullptr),
-      app_info_(app_info),
+      app_info_(std::move(app_info)),
       remember_selection_checkbox_(nullptr),
       disable_stay_in_chrome_(disable_stay_in_chrome) {
   chrome::RecordDialogCreation(chrome::DialogIdentifier::INTENT_PICKER);
@@ -326,8 +326,8 @@ IntentPickerBubbleView::~IntentPickerBubbleView() {
 // If the widget gets closed without an app being selected we still need to use
 // the callback so the caller can Resume the navigation.
 void IntentPickerBubbleView::OnWidgetDestroying(views::Widget* widget) {
-  RunCallback(kInvalidLaunchName,
-              arc::ArcNavigationThrottle::CloseReason::DIALOG_DEACTIVATED);
+  RunCallback(kInvalidLaunchName, chromeos::AppType::INVALID,
+              chromeos::IntentPickerCloseReason::DIALOG_DEACTIVATED, false);
 }
 
 void IntentPickerBubbleView::ButtonPressed(views::Button* sender,
@@ -377,14 +377,13 @@ IntentPickerLabelButton* IntentPickerBubbleView::GetIntentPickerLabelButtonAt(
 
 void IntentPickerBubbleView::RunCallback(
     const std::string& launch_name,
-    arc::ArcNavigationThrottle::CloseReason close_reason) {
+    chromeos::AppType app_type,
+    chromeos::IntentPickerCloseReason close_reason,
+    bool should_persist) {
   if (!intent_picker_cb_.is_null()) {
-    // We must ensure |intent_picker_cb_| is only Run() once, this is why we
-    // have a temporary |callback| helper, so we can set the original callback
-    // to null and still report back to whoever started the UI.
-    auto callback = intent_picker_cb_;
-    intent_picker_cb_.Reset();
-    callback.Run(launch_name, close_reason);
+    // Calling Run() will make |intent_picker_cb_| null.
+    std::move(intent_picker_cb_)
+        .Run(launch_name, app_type, close_reason, should_persist);
   }
 
   intent_picker_bubble_ = nullptr;
@@ -410,11 +409,24 @@ void IntentPickerBubbleView::SetSelectedAppIndex(int index,
   GetIntentPickerLabelButtonAt(selected_app_tag_)->MarkAsUnselected(nullptr);
   selected_app_tag_ = index;
   GetIntentPickerLabelButtonAt(selected_app_tag_)->MarkAsSelected(event);
+  UpdateCheckboxState();
 }
 
 size_t IntentPickerBubbleView::CalculateNextAppIndex(int delta) {
   size_t size = GetScrollViewSize();
   return static_cast<size_t>((selected_app_tag_ + size + delta) % size);
+}
+
+void IntentPickerBubbleView::UpdateCheckboxState() {
+  // TODO(crbug.com/826982): allow PWAs to have their decision persisted when
+  // there is a central Chrome OS apps registry to store persistence.
+  const bool should_enable =
+      app_info_[selected_app_tag_].type != chromeos::AppType::PWA;
+
+  // Reset the checkbox state to the default unchecked if becomes disabled.
+  if (!should_enable)
+    remember_selection_checkbox_->SetChecked(false);
+  remember_selection_checkbox_->SetEnabled(should_enable);
 }
 
 gfx::ImageSkia IntentPickerBubbleView::GetAppImageForTesting(size_t index) {

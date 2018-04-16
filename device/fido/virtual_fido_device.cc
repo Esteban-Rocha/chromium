@@ -92,6 +92,28 @@ VirtualFidoDevice::State::State()
     : attestation_cert_common_name("Batch Certificate"),
       individual_attestation_cert_common_name("Individual Certificate") {}
 VirtualFidoDevice::State::~State() = default;
+
+bool VirtualFidoDevice::State::InjectRegistration(
+    const std::vector<uint8_t>& credential_id,
+    const std::string& relying_party_id) {
+  std::vector<uint8_t> application_parameter(crypto::kSHA256Length);
+  crypto::SHA256HashString(relying_party_id, application_parameter.data(),
+                           application_parameter.size());
+
+  auto private_key = crypto::ECPrivateKey::Create();
+  if (!private_key) {
+    return false;
+  }
+  RegistrationData registration(std::move(private_key),
+                                std::move(application_parameter),
+                                0 /* signature counter */);
+
+  bool was_inserted;
+  std::tie(std::ignore, was_inserted) =
+      registrations.emplace(credential_id, std::move(registration));
+  return was_inserted;
+}
+
 VirtualFidoDevice::VirtualFidoDevice()
     : state_(new State), weak_factory_(this) {}
 
@@ -106,6 +128,9 @@ void VirtualFidoDevice::TryWink(WinkCallback cb) {
   std::move(cb).Run();
 }
 
+// Cancel operation is not supported on U2F devices.
+void VirtualFidoDevice::Cancel() {}
+
 std::string VirtualFidoDevice::GetId() const {
   // Use our heap address to get a unique-ish number. (0xffe1 is a prime).
   return "VirtualFidoDevice-" + std::to_string((size_t)this % 0xffe1);
@@ -115,6 +140,16 @@ void VirtualFidoDevice::DeviceTransact(std::vector<uint8_t> command,
                                        DeviceCallback cb) {
   // Note, here we are using the code-under-test in this fake.
   auto parsed_command = apdu::ApduCommand::CreateFromMessage(command);
+
+  // If malformed U2F request is received, respond with error immediately.
+  if (!parsed_command) {
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            std::move(cb),
+            ErrorStatus(apdu::ApduResponse::Status::SW_INS_NOT_SUPPORTED)));
+    return;
+  }
 
   base::Optional<std::vector<uint8_t>> response;
 

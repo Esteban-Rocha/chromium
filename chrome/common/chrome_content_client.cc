@@ -15,7 +15,6 @@
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
-#include "base/memory/ptr_util.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "base/strings/string16.h"
@@ -32,16 +31,18 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/pepper_flash.h"
-#include "chrome/common/profiling/profiling_client.h"
 #include "chrome/common/secure_origin_whitelist.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/common_resources.h"
 #include "components/crash/core/common/crash_key.h"
 #include "components/dom_distiller/core/url_constants.h"
+#include "components/services/heap_profiling/public/cpp/client.h"
 #include "components/version_info/version_info.h"
 #include "content/public/common/cdm_info.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/service_manager_connection.h"
+#include "content/public/common/simple_connection_filter.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/user_agent.h"
 #include "extensions/buildflags/buildflags.h"
@@ -709,7 +710,14 @@ media::MediaDrmBridgeClient* ChromeContentClient::GetMediaDrmBridgeClient() {
 
 void ChromeContentClient::OnServiceManagerConnected(
     content::ServiceManagerConnection* connection) {
-  static base::LazyInstance<profiling::ProfilingClient>::Leaky
-      profiling_client = LAZY_INSTANCE_INITIALIZER;
-  profiling_client.Get().OnServiceManagerConnected(connection);
+  static base::LazyInstance<heap_profiling::Client>::Leaky profiling_client =
+      LAZY_INSTANCE_INITIALIZER;
+
+  std::unique_ptr<service_manager::BinderRegistry> registry(
+      new service_manager::BinderRegistry);
+  registry->AddInterface(
+      base::BindRepeating(&heap_profiling::Client::BindToInterface,
+                          base::Unretained(&profiling_client.Get())));
+  connection->AddConnectionFilter(
+      std::make_unique<content::SimpleConnectionFilter>(std::move(registry)));
 }

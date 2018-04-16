@@ -121,6 +121,8 @@ class OmniboxSeparatedLineView : public views::View {
   void OnMatchUpdate(const AutocompleteMatch& match);
   void OnHighlightUpdate(const AutocompleteMatch& match);
 
+  bool CanProcessEventsWithinSubtree() const override { return false; }
+
  protected:
   // views::View:
   void Layout() override;
@@ -243,8 +245,7 @@ void OmniboxResultView::SetMatch(const AutocompleteMatch& match) {
   keyword_view_->icon()->SetVisible(match_.associated_keyword.get());
 
   if (OmniboxFieldTrial::InTabSwitchSuggestionWithButtonTrial() &&
-      match.type == AutocompleteMatchType::TAB_SEARCH &&
-      !keyword_view_->icon()->visible()) {
+      match.has_tab_match && !keyword_view_->icon()->visible()) {
     suggestion_tab_switch_button_ =
         std::make_unique<OmniboxTabSwitchButton>(this, GetTextHeight());
     suggestion_tab_switch_button_->set_owned_by_client();
@@ -431,9 +432,8 @@ void OmniboxResultView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   node_data->AddIntAttribute(ax::mojom::IntAttribute::kSetSize,
                              model_->child_count());
 
-  node_data->AddState(ax::mojom::State::kSelectable);
-  if (IsSelected())
-    node_data->AddState(ax::mojom::State::kSelected);
+  node_data->AddBoolAttribute(ax::mojom::BoolAttribute::kSelected,
+                              IsSelected());
   if (is_hovered_)
     node_data->AddState(ax::mojom::State::kHovered);
 }
@@ -507,11 +507,11 @@ int OmniboxResultView::GetVerticalMargin() const {
   int min_height =
       GetLayoutConstant(LOCATION_BAR_ICON_SIZE) + (kIconVerticalPad * 2);
 
+  // Make sure the minimum height of an omnibox result matches the height of the
+  // location bar view / non-results section of the omnibox popup in touch.
   if (Md::IsTouchOptimizedUiEnabled()) {
-    // The touchable spec specifies a height of 44 DIP. Ensure that's satisfied.
-    // Answer rows can still exceed this size.
-    constexpr int kTouchOptimizedResultHeight = 44;
-    min_height = std::max(min_height, kTouchOptimizedResultHeight);
+    min_height = std::max(
+        min_height, RoundedOmniboxResultsFrame::GetNonResultSectionHeight());
   }
 
   return std::max(kVerticalMargin, (min_height - GetTextHeight()) / 2);

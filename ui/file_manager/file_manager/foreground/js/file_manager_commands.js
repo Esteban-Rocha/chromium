@@ -172,7 +172,8 @@ CommandUtil.canExecuteAlways = function(event) {
  */
 CommandUtil.forceDefaultHandler = function(node, commandId) {
   var doc = node.ownerDocument;
-  var command = doc.querySelector('command[id="' + commandId + '"]');
+  var command = /** @type {!cr.ui.Command} */ (
+      doc.querySelector('command[id="' + commandId + '"]'));
   node.addEventListener('keydown', function(e) {
     if (command.matchesEvent(e)) {
       // Prevent cr.ui.CommandManager of handling it and leave it
@@ -1447,11 +1448,11 @@ CommandHandler.COMMANDS_['zip-selection'] = /** @type {Command} */ ({
 
     var isOnEligibleLocation = CommandHandler.IS_ZIP_ARCHIVER_PACKER_ENABLED_ ?
         true :
-        !fileManager.directoryModel.isOnDrive();
+        !fileManager.directoryModel.isOnDrive() &&
+            !fileManager.directoryModel.isOnMTP();
 
     event.canExecute = dirEntry && !fileManager.directoryModel.isReadOnly() &&
-        !fileManager.directoryModel.isOnMTP() && isOnEligibleLocation &&
-        selection && selection.totalCount > 0;
+        isOnEligibleLocation && selection && selection.totalCount > 0;
   }
 });
 
@@ -1885,4 +1886,19 @@ CommandHandler.COMMANDS_['set-wallpaper'] = /** @type {Command} */ ({
     event.canExecute = type.subtype === 'JPEG' || type.subtype === 'PNG';
     event.command.setHidden(false);
   }
+});
+
+/**
+ * Opens settings/storage sub page.
+ * @type {Command}
+ */
+CommandHandler.COMMANDS_['volume-storage'] = /** @type {Command} */ ({
+  /**
+   * @param {!Event} event Command event.
+   * @param {!CommandHandlerDeps} fileManager CommandHandlerDeps to use.
+   */
+  execute: function(event, fileManager) {
+    chrome.fileManagerPrivate.openSettingsSubpage('storage');
+  },
+  canExecute: CommandUtil.canExecuteAlways
 });

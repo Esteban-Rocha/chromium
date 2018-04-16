@@ -65,11 +65,15 @@ class WallpaperControllerClient : public ash::mojom::WallpaperControllerClient,
   void RemovePolicyWallpaper(const AccountId& account_id);
   void SetAnimationDuration(const base::TimeDelta& animation_duration);
   void OpenWallpaperPickerIfAllowed();
+  void MinimizeInactiveWindows(const std::string& user_id_hash);
+  void RestoreMinimizedWindows(const std::string& user_id_hash);
   void AddObserver(ash::mojom::WallpaperObserverAssociatedPtrInfo observer);
   void GetWallpaperImage(
       ash::mojom::WallpaperController::GetWallpaperImageCallback callback);
   void GetWallpaperColors(
       ash::mojom::WallpaperController::GetWallpaperColorsCallback callback);
+  void IsWallpaperBlurred(
+      ash::mojom::WallpaperController::IsWallpaperBlurredCallback callback);
   void IsActiveUserWallpaperControlledByPolicy(
       ash::mojom::WallpaperController::
           IsActiveUserWallpaperControlledByPolicyCallback callback);

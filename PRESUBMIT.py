@@ -337,7 +337,9 @@ _BANNED_CPP_FUNCTIONS = (
         'Specify libraries to link with in build files and not in the source.',
       ),
       True,
-      (),
+      (
+          r'^third_party[\\\/]abseil-cpp[\\\/].*',
+      ),
     ),
     (
       'base::SequenceChecker',
@@ -552,7 +554,7 @@ _BANNED_CPP_FUNCTIONS = (
         'net::URLFetcher may still be used in binaries that do not embed',
         'content.',
       ),
-      True,
+      False,
       (
         r'^ios[\\\/].*\.(cc|h)$',
         r'.*[\\\/]ios[\\\/].*\.(cc|h)$',
@@ -1585,10 +1587,41 @@ def _CheckUniquePtr(input_api, output_api):
       black_list=(_EXCLUDED_PATHS + _TEST_CODE_EXCLUDED_PATHS +
                   input_api.DEFAULT_BLACK_LIST),
       white_list=(file_inclusion_pattern,))
-  return_construct_pattern = input_api.re.compile(
-      r'(=|\breturn|^)\s*std::unique_ptr<.*?(?<!])>\(([^)]|$)')
+
+  # Pattern to capture a single "<...>" block of template arguments. It can
+  # handle linearly nested blocks, such as "<std::vector<std::set<T>>>", but
+  # cannot handle branching structures, such as "<pair<set<T>,set<U>>". The
+  # latter would likely require counting that < and > match, which is not
+  # expressible in regular languages. Should the need arise, one can introduce
+  # limited counting (matching up to a total number of nesting depth), which
+  # should cover all practical cases for already a low nesting limit.
+  template_arg_pattern = (
+      r'<[^>]*'       # Opening block of <.
+      r'>([^<]*>)?')  # Closing block of >.
+  # Prefix expressing that whatever follows is not already inside a <...>
+  # block.
+  not_inside_template_arg_pattern = r'(^|[^<,\s]\s*)'
   null_construct_pattern = input_api.re.compile(
-      r'\b(?<!<)std::unique_ptr<[^>]*>([^(<]*>)?\(\)')
+      not_inside_template_arg_pattern
+      + r'\bstd::unique_ptr'
+      + template_arg_pattern
+      + r'\(\)')
+
+  # Same as template_arg_pattern, but excluding type arrays, e.g., <T[]>.
+  template_arg_no_array_pattern = (
+      r'<[^>]*[^]]'        # Opening block of <.
+      r'>([^(<]*[^]]>)?')  # Closing block of >.
+  # Prefix saying that what follows is the start of an expression.
+  start_of_expr_pattern = r'(=|\breturn|^)\s*'
+  # Suffix saying that what follows are call parentheses with a non-empty list
+  # of arguments.
+  nonempty_arg_list_pattern = r'\(([^)]|$)'
+  return_construct_pattern = input_api.re.compile(
+      start_of_expr_pattern
+      + r'std::unique_ptr'
+      + template_arg_no_array_pattern
+      + nonempty_arg_list_pattern)
+
   problems_constructor = []
   problems_nullptr = []
   for f in input_api.AffectedSourceFiles(sources):
@@ -1610,15 +1643,15 @@ def _CheckUniquePtr(input_api, output_api):
           '%s:%d\n    %s' % (local_path, line_number, line.strip()))
 
   errors = []
-  if problems_constructor:
+  if problems_nullptr:
     errors.append(output_api.PresubmitError(
         'The following files use std::unique_ptr<T>(). Use nullptr instead.',
-        problems_constructor))
-  if problems_nullptr:
+        problems_nullptr))
+  if problems_constructor:
     errors.append(output_api.PresubmitError(
         'The following files use explicit std::unique_ptr constructor.'
         'Use std::make_unique<T>() instead.',
-        problems_nullptr))
+        problems_constructor))
   return errors
 
 
@@ -2768,7 +2801,6 @@ def _CommonChecks(input_api, output_api):
           source_file_filter=lambda x: x.LocalPath().endswith('.grd')))
   results.extend(_CheckSpamLogging(input_api, output_api))
   results.extend(_CheckForAnonymousVariables(input_api, output_api))
-  results.extend(_CheckUniquePtr(input_api, output_api))
   results.extend(_CheckUserActionUpdate(input_api, output_api))
   results.extend(_CheckNoDeprecatedCss(input_api, output_api))
   results.extend(_CheckNoDeprecatedJs(input_api, output_api))
@@ -3168,6 +3200,7 @@ def CheckChangeOnUpload(input_api, output_api):
   results.extend(_CheckSyslogUseWarning(input_api, output_api))
   results.extend(_CheckGoogleSupportAnswerUrl(input_api, output_api))
   results.extend(_CheckCrbugLinksHaveHttps(input_api, output_api))
+  results.extend(_CheckUniquePtr(input_api, output_api))
   return results
 
 

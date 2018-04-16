@@ -70,8 +70,7 @@ void Resizer::UpdateTransform(const gfx::Transform& head_pose) {
   set_world_space_transform_dirty();
 }
 
-bool Resizer::OnBeginFrame(const base::TimeTicks& time,
-                           const gfx::Transform& head_pose) {
+bool Resizer::OnBeginFrame(const gfx::Transform& head_pose) {
   if (enabled_) {
     UpdateTransform(head_pose);
     return true;
@@ -87,5 +86,10 @@ void Resizer::DumpGeometry(std::ostringstream* os) const {
   *os << "s(" << right.x() << ") ";
 }
 #endif
+
+bool Resizer::ShouldUpdateWorldSpaceTransform(
+    bool parent_transform_changed) const {
+  return true;
+}
 
 }  // namespace vr

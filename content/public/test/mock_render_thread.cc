@@ -5,7 +5,6 @@
 #include "content/public/test/mock_render_thread.h"
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/unguessable_token.h"
@@ -22,7 +21,7 @@
 #include "ipc/message_filter.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/web/WebScriptController.h"
+#include "third_party/blink/public/web/web_script_controller.h"
 
 namespace content {
 

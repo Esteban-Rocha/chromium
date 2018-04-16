@@ -145,6 +145,10 @@ BrowserNonClientFrameViewAsh::BrowserNonClientFrameViewAsh(
 }
 
 BrowserNonClientFrameViewAsh::~BrowserNonClientFrameViewAsh() {
+  if (frame() && frame()->GetNativeWindow() &&
+      frame()->GetNativeWindow()->HasObserver(this)) {
+    frame()->GetNativeWindow()->RemoveObserver(this);
+  }
   if (TabletModeClient::Get())
     TabletModeClient::Get()->RemoveObserver(this);
   ash::Shell::Get()->RemoveShellObserver(this);
@@ -188,6 +192,8 @@ void BrowserNonClientFrameViewAsh::Init() {
   // TabletModeClient may not be initialized during unit tests.
   if (TabletModeClient::Get())
     TabletModeClient::Get()->AddObserver(this);
+
+  frame()->GetNativeWindow()->AddObserver(this);
 }
 
 ash::mojom::SplitViewObserverPtr
@@ -441,10 +447,13 @@ void BrowserNonClientFrameViewAsh::ChildPreferredSizeChanged(
 void BrowserNonClientFrameViewAsh::OnOverviewModeStarting() {
   in_overview_mode_ = true;
 
-  // Update the window icon so that overview mode can grab the icon from
-  // aura::client::kWindowIcon to display.
-  if (base::FeatureList::IsEnabled(ash::features::kNewOverviewUi))
+  // Update the window icon if needed so that overview mode can grab the icon
+  // from kAppIconKey or kWindowIconKey to display.
+  if (base::FeatureList::IsEnabled(ash::features::kNewOverviewUi) &&
+      !frame()->GetNativeWindow()->GetProperty(
+          aura::client::kHasOverviewIcon)) {
     frame()->UpdateWindowIcon();
+  }
 
   frame()->GetNativeWindow()->SetProperty(aura::client::kTopViewColor,
                                           GetFrameColor());
@@ -522,6 +531,26 @@ void BrowserNonClientFrameViewAsh::OnSplitViewStateChanged(
     ash::mojom::SplitViewState current_state) {
   split_view_state_ = current_state;
   OnOverviewOrSplitviewModeChanged();
+}
+
+void BrowserNonClientFrameViewAsh::OnWindowDestroying(aura::Window* window) {
+  DCHECK_EQ(frame()->GetNativeWindow(), window);
+  window->RemoveObserver(this);
+}
+
+void BrowserNonClientFrameViewAsh::OnWindowPropertyChanged(aura::Window* window,
+                                                           const void* key,
+                                                           intptr_t old) {
+  DCHECK_EQ(frame()->GetNativeWindow(), window);
+  if (key != aura::client::kShowStateKey)
+    return;
+  frame_header_->OnShowStateChanged(
+      window->GetProperty(aura::client::kShowStateKey));
+}
+
+HostedAppButtonContainer*
+BrowserNonClientFrameViewAsh::GetHostedAppButtonContainerForTesting() const {
+  return hosted_app_button_container_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -604,13 +633,14 @@ BrowserNonClientFrameViewAsh::CreateFrameHeader() {
     if (theme_color) {
       SkColor opaque_theme_color =
           SkColorSetA(theme_color.value(), SK_AlphaOPAQUE);
-      default_frame_header->SetFrameColors(opaque_theme_color,
-                                           opaque_theme_color);
+      default_frame_header->SetThemeColor(opaque_theme_color);
     }
 
     // Add the container for extra hosted app buttons (e.g app menu button).
     SkColor active_color = ash::FrameCaptionButton::GetButtonColor(
-        default_frame_header->ShouldUseLightImages());
+        theme_color ? ash::FrameCaptionButton::ColorMode::kThemed
+                    : ash::FrameCaptionButton::ColorMode::kDefault,
+        default_frame_header->GetActiveFrameColor());
     const float inactive_alpha_ratio =
         ash::FrameCaptionButton::GetInactiveButtonColorAlphaRatio();
     SkColor inactive_color =
@@ -623,9 +653,7 @@ BrowserNonClientFrameViewAsh::CreateFrameHeader() {
     frame_header_origin_text_ =
         std::make_unique<ash::FrameHeaderOriginText>(
             browser->hosted_app_controller()->GetFormattedUrlOrigin(),
-            active_color, inactive_color,
-            default_frame_header->GetActiveFrameColor(),
-            default_frame_header->GetInactiveFrameColor())
+            active_color, inactive_color)
             .release();
     AddChildView(frame_header_origin_text_);
 

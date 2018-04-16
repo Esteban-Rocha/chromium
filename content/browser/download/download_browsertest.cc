@@ -36,7 +36,7 @@
 #include "components/download/public/common/download_file_factory.h"
 #include "components/download/public/common/download_file_impl.h"
 #include "components/download/public/common/download_task_runner.h"
-#include "components/download/public/common/parallel_download_utils.h"
+#include "components/download/public/common/parallel_download_configs.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_resource_handler.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -2901,8 +2901,8 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeDataUrl) {
   ASSERT_TRUE(server.ShutdownAndWaitUntilComplete());
 }
 
-// A request for a non-existent resource should result in an aborted navigation,
-// and the old site staying current.
+// A request for a non-existent same-origin resource should result in a
+// DownloadItem that's created in an interrupted state.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeServerError) {
   GURL download_url =
       embedded_test_server()->GetURL("/download/does-not-exist");
@@ -2910,15 +2910,16 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeServerError) {
       std::string("/download/download-attribute.html?target=") +
       download_url.spec());
 
-  auto observer = std::make_unique<content::TestNavigationObserver>(
-      shell()->web_contents(), 2);
-  NavigateToURL(shell(), document_url);
-  observer->Wait();
-  EXPECT_FALSE(observer->last_navigation_succeeded());
+  download::DownloadItem* download =
+      StartDownloadAndReturnItem(shell(), document_url);
+  WaitForInterrupt(download);
+
+  EXPECT_EQ(download::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT,
+            download->GetLastReason());
 }
 
-// A request that fails before it gets a response from the server should also
-// result in the old page staying current.
+// A cross-origin request that fails before it gets a response from the server
+// should result in the old page staying current.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeNetworkError) {
   SetupErrorInjectionDownloads();
   GURL url = TestDownloadHttpResponse::GetNextURLForDownload();
@@ -3183,14 +3184,7 @@ IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, Resumption) {
 
 // Verifies that if the last slice is finished, parallel download resumption
 // can complete.
-#if defined(OS_CHROMEOS)
-// Failing on ChromeOS: https://crbug.com/822450
-#define MAYBE_ResumptionLastSliceFinished DISABLED_ResumptionLastSliceFinished
-#else
-#define MAYBE_ResumptionLastSliceFinished ResumptionLastSliceFinished
-#endif
-IN_PROC_BROWSER_TEST_F(ParallelDownloadTest,
-                       MAYBE_ResumptionLastSliceFinished) {
+IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, ResumptionLastSliceFinished) {
   // Create the received slices data, last slice is actually finished.
   std::vector<download::DownloadItem::ReceivedSlice> received_slices = {
       download::DownloadItem::ReceivedSlice(0, 1000),
@@ -3206,16 +3200,7 @@ IN_PROC_BROWSER_TEST_F(ParallelDownloadTest,
 // Verifies that if the last slice is finished, but the database record is not
 // finished, which may happen in database migration.
 // When the server sends HTTP range not satisfied, the download can complete.
-#if defined(OS_WIN) || defined(OS_ANDROID)
-// Failing on Windows: https://crbug.com/814310
-// Failing on Android: https://crbug.com/817801
-#define MAYBE_ResumptionLastSliceUnfinished \
-  DISABLED_ResumptionLastSliceUnfinished
-#else
-#define MAYBE_ResumptionLastSliceUnfinished ResumptionLastSliceUnfinished
-#endif
-IN_PROC_BROWSER_TEST_F(ParallelDownloadTest,
-                       MAYBE_ResumptionLastSliceUnfinished) {
+IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, ResumptionLastSliceUnfinished) {
   // Create the received slices data, last slice is actually finished.
   std::vector<download::DownloadItem::ReceivedSlice> received_slices = {
       download::DownloadItem::ReceivedSlice(0, 1000),
@@ -3330,19 +3315,11 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, UploadBytes) {
   }
 }
 
-#if defined(OS_ANDROID)
-// Flaky on Android: https://crbug.com/827525
-#define MAYBE_FetchErrorResponseBodyResumption \
-  DISABLED_FetchErrorResponseBodyResumption
-#else
-#define MAYBE_FetchErrorResponseBodyResumption FetchErrorResponseBodyResumption
-#endif
 // Verify the case that the first response is HTTP 200, and then interrupted,
 // and the second response is HTTP 404, the response body of 404 should be
 // fetched.
 // Also verify the request header is correctly piped to download item.
-IN_PROC_BROWSER_TEST_F(DownloadContentTest,
-                       MAYBE_FetchErrorResponseBodyResumption) {
+IN_PROC_BROWSER_TEST_F(DownloadContentTest, FetchErrorResponseBodyResumption) {
   SetupErrorInjectionDownloads();
   GURL url = TestDownloadHttpResponse::GetNextURLForDownload();
   GURL server_url = embedded_test_server()->GetURL(url.host(), url.path());

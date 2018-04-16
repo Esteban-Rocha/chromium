@@ -16,6 +16,10 @@ const char kAutofillIOSDelayBetweenFieldsDescription[] =
     "Delay between the different fields of a form being autofilled. In "
     "milliseconds.";
 
+const char kAutofillDynamicFormsName[] = "Autofill dynamic forms";
+const char kAutofillDynamicFormsDescription[] =
+    "Refills forms that dynamically change after an initial fill";
+
 const char kBrowserTaskScheduler[] = "Task Scheduler";
 const char kBrowserTaskSchedulerDescription[] =
     "Enables redirection of some task posting APIs to the task scheduler.";
@@ -57,6 +61,12 @@ const char kFeedbackKitV2WithSSOServiceName[] =
     "FeedbackKit V2 with SSOService configured for FeedbackKit";
 const char kFeedbackKitV2WithSSOServiceDescription[] =
     "Send SSOService with configuration for FeedbackKit V2.";
+
+const char kFullscreenContentInsetName[] = "Fullscreen ContentInset";
+const char kFullscreenContentInsetDescription[] =
+    "When enabled, fullscreen will be implemented by adjusting the "
+    "contentInset of the WKWebView's scroll view rather than adjusting its "
+    "frame.";
 
 const char kHistoryBatchUpdatesFilterName[] = "History Single Batch Filtering";
 const char kHistoryBatchUpdatesFilterDescription[] =
@@ -135,17 +145,14 @@ const char kTabSwitcherPresentsBVCDescription[] =
     "BVC is visible, the tab switcher will remain in the VC hierarchy "
     "underneath it.";
 
-const char kToolbarButtonPositionsName[] = "Toolbar's buttons positions";
-const char kToolbarButtonPositionsDescription[] =
-    "Position of the toolbars buttons.";
+const char kUIRefreshLocationBarName[] = "UI Refresh Location Bar";
+const char kUIRefreshLocationBarDescription[] =
+    "When enabled, the UI Refresh location bar with a custom steady-state will "
+    "be displayed.";
 
 const char kUIRefreshPhase1Name[] = "UI Refresh Phase 1";
 const char kUIRefreshPhase1Description[] =
     "When enabled, the first phase of the iOS UI refresh will be displayed.";
-
-const char kSearchIconToggleName[] = "Change the icon for the search button";
-const char kSearchIconToggleDescription[] =
-    "Different icons for the search button.";
 
 const char kUnifiedConsentName[] = "Unified Consent";
 const char kUnifiedConsentDescription[] =

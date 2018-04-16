@@ -72,9 +72,11 @@ TEST_F(BufferTest, TestInitWithAlloc) {
   ASSERT_FALSE(on_destroy_called());
 }
 
-#if defined(ADDRESS_SANITIZER) || defined(OS_FUCHSIA)
-// ASAN malloc by default triggers crash instead of returning null on failure.
-// Fuchsia malloc() also crashes on allocation failure in some kernel builds.
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER) || defined(OS_FUCHSIA)
+// ASAN and MSAN malloc by default triggers crash instead of returning null on
+// failure. Fuchsia malloc() also crashes on allocation failure in some kernel
+// builds.
 #define MAYBE_TestInitWithHugeAllocFails DISABLED_TestInitWithHugeAllocFails
 #else
 #define MAYBE_TestInitWithHugeAllocFails TestInitWithHugeAllocFails
@@ -108,6 +110,7 @@ TEST_F(BufferTest, TestInitWithDataAndCallback) {
   EXPECT_EQ(Cronet_Buffer_GetSize(buffer), kTestBufferSize);
   Cronet_Buffer_Destroy(buffer);
   ASSERT_TRUE(on_destroy_called());
+  Cronet_BufferCallback_Destroy(buffer_callback);
 }
 
 // Example of posting application on_destroy to the executor and passing
@@ -129,6 +132,8 @@ TEST_F(BufferTest, TestCronetBufferAsync) {
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(on_destroy_called());
   Cronet_Executor_Destroy(executor);
+  Cronet_BufferCallback_Destroy(buffer_callback);
+  Cronet_Runnable_Destroy(runnable);
 }
 
 }  // namespace

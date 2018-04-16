@@ -91,6 +91,7 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
 
   // SurfaceClient implementation.
   void OnSurfaceActivated(Surface* surface) override;
+  void OnSurfaceDiscarded(Surface* surface) override;
   void RefResources(
       const std::vector<TransferableResource>& resources) override;
   void UnrefResources(const std::vector<ReturnedResource>& resources) override;
@@ -182,7 +183,7 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   Surface* CreateSurface(const SurfaceInfo& surface_info);
 
   void OnAggregatedDamage(const LocalSurfaceId& local_surface_id,
-                          const gfx::Size& frame_size_in_pixels,
+                          const CompositorFrame& frame,
                           const gfx::Rect& damage_rect,
                           base::TimeTicks expected_display_time) const;
 
